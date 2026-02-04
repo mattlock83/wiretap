@@ -8,10 +8,11 @@ import (
 )
 
 type Config struct {
-	HTTP  HTTPConfig
-	Log   LogConfig
-	Proxy ProxyConfig
-	Mock  MockConfig
+	HTTP     HTTPConfig
+	Log      LogConfig
+	Proxy    ProxyConfig
+	Mock     MockConfig
+	Artifact ArtifactConfig
 }
 
 type HTTPConfig struct {
@@ -36,6 +37,10 @@ type MockConfig struct {
 	ListenAddr string
 }
 
+type ArtifactConfig struct {
+	OutputDir string
+}
+
 func DefaultConfig() Config {
 	return Config{
 		HTTP: HTTPConfig{
@@ -55,6 +60,9 @@ func DefaultConfig() Config {
 		Mock: MockConfig{
 			ListenAddr: "127.0.0.1:19090",
 		},
+		Artifact: ArtifactConfig{
+			OutputDir: "artifacts",
+		},
 	}
 }
 
@@ -68,6 +76,9 @@ func (c Config) Validate() error {
 	}
 	if c.Proxy.ListenAddr == "" {
 		errs = append(errs, errors.New("proxy.listen_addr must not be empty"))
+	}
+	if c.Artifact.OutputDir == "" {
+		errs = append(errs, errors.New("artifact.output_dir must not be empty"))
 	}
 	if c.HTTP.ReadTimeout < 0 {
 		errs = append(errs, errors.New("http.read_timeout must be non-negative"))

@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/tls"
 	"errors"
@@ -31,6 +32,7 @@ type Config struct {
 	ListenAddr string
 	Mode       Mode
 	TLSManager *tlsmgr.Manager
+	Recorder   Recorder
 	// UpstreamTLSConfig allows customizing TLS verification for upstream servers (used in MITM mode).
 	UpstreamTLSConfig *tls.Config
 	IdleTimeout       time.Duration
@@ -52,6 +54,27 @@ type Server struct {
 	once       sync.Once
 }
 
+// Recorder receives captured HTTP exchanges.
+type Recorder interface {
+	RecordHTTP(exchange HTTPExchange)
+}
+
+// HTTPExchange captures a proxied request/response pair.
+type HTTPExchange struct {
+	Method          string
+	URL             string
+	RequestHeaders  map[string][]string
+	RequestBody     []byte
+	Status          int
+	ResponseHeaders map[string][]string
+	ResponseBody    []byte
+	StartedAt       time.Time
+	Duration        time.Duration
+	Error           string
+}
+
+var ErrAlreadyStarted = errors.New("proxy already started")
+
 // NewServer returns a proxy server instance.
 func NewServer(cfg Config) *Server {
 	if cfg.Mode == "" {
@@ -69,7 +92,7 @@ func NewServer(cfg Config) *Server {
 // Start begins listening for proxy traffic.
 func (s *Server) Start(ctx context.Context) (Info, error) {
 	if s.server != nil {
-		return Info{}, errors.New("proxy already started")
+		return Info{}, ErrAlreadyStarted
 	}
 
 	addr := s.cfg.ListenAddr
@@ -112,6 +135,29 @@ func (s *Server) Stop(ctx context.Context) error {
 	return err
 }
 
+// SetMode updates the proxy mode before the server starts.
+func (s *Server) SetMode(mode Mode) error {
+	if s.server != nil {
+		return ErrAlreadyStarted
+	}
+	if mode == "" {
+		return errors.New("mode must not be empty")
+	}
+	if mode == ModeMITM && s.cfg.TLSManager == nil {
+		return errors.New("mitm mode requires tls manager")
+	}
+	s.cfg.Mode = mode
+	return nil
+}
+
+// CACertPEM returns the CA certificate when running in MITM mode.
+func (s *Server) CACertPEM() ([]byte, error) {
+	if s.cfg.TLSManager == nil {
+		return nil, nil
+	}
+	return s.cfg.TLSManager.CACertPEM()
+}
+
 // ServeHTTP handles proxy requests.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodConnect {
@@ -123,6 +169,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleHTTP(w http.ResponseWriter, r *http.Request) {
 	transport := s.httpTransport(nil)
+	started := time.Now()
+
+	reqBody, _ := io.ReadAll(r.Body)
+	_ = r.Body.Close()
+	r.Body = io.NopCloser(bytes.NewReader(reqBody))
 
 	req := r.Clone(r.Context())
 	if req.URL.Scheme == "" {
@@ -136,10 +187,35 @@ func (s *Server) handleHTTP(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := transport.RoundTrip(req)
 	if err != nil {
+		s.recordHTTP(HTTPExchange{
+			Method:         req.Method,
+			URL:            req.URL.String(),
+			RequestHeaders: cloneHeader(req.Header),
+			RequestBody:    reqBody,
+			StartedAt:      started,
+			Duration:       time.Since(started),
+			Error:          err.Error(),
+		})
 		writeProxyError(w, http.StatusBadGateway, err)
 		return
 	}
 	defer resp.Body.Close()
+
+	respBody, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	resp.Body = io.NopCloser(bytes.NewReader(respBody))
+
+	s.recordHTTP(HTTPExchange{
+		Method:          req.Method,
+		URL:             req.URL.String(),
+		RequestHeaders:  cloneHeader(req.Header),
+		RequestBody:     reqBody,
+		Status:          resp.StatusCode,
+		ResponseHeaders: cloneHeader(resp.Header),
+		ResponseBody:    respBody,
+		StartedAt:       started,
+		Duration:        time.Since(started),
+	})
 
 	copyHeader(w.Header(), resp.Header)
 	w.WriteHeader(resp.StatusCode)
@@ -222,6 +298,11 @@ func (s *Server) proxyTLSRequests(clientTLS net.Conn) {
 			return
 		}
 
+		started := time.Now()
+		reqBody, _ := io.ReadAll(req.Body)
+		_ = req.Body.Close()
+		req.Body = io.NopCloser(bytes.NewReader(reqBody))
+
 		req.URL.Scheme = "https"
 		if req.URL.Host == "" {
 			req.URL.Host = req.Host
@@ -231,8 +312,33 @@ func (s *Server) proxyTLSRequests(clientTLS net.Conn) {
 
 		resp, err := s.httpTransport(s.upstreamTLSConfig(req.URL.Host)).RoundTrip(req)
 		if err != nil {
+			s.recordHTTP(HTTPExchange{
+				Method:         req.Method,
+				URL:            req.URL.String(),
+				RequestHeaders: cloneHeader(req.Header),
+				RequestBody:    reqBody,
+				StartedAt:      started,
+				Duration:       time.Since(started),
+				Error:          err.Error(),
+			})
 			return
 		}
+
+		respBody, _ := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		resp.Body = io.NopCloser(bytes.NewReader(respBody))
+
+		s.recordHTTP(HTTPExchange{
+			Method:          req.Method,
+			URL:             req.URL.String(),
+			RequestHeaders:  cloneHeader(req.Header),
+			RequestBody:     reqBody,
+			Status:          resp.StatusCode,
+			ResponseHeaders: cloneHeader(resp.Header),
+			ResponseBody:    respBody,
+			StartedAt:       started,
+			Duration:        time.Since(started),
+		})
 
 		_ = resp.Write(clientTLS)
 		resp.Body.Close()
@@ -292,6 +398,23 @@ func copyHeader(dst, src http.Header) {
 			dst.Add(key, value)
 		}
 	}
+}
+
+func (s *Server) recordHTTP(exchange HTTPExchange) {
+	if s.cfg.Recorder == nil {
+		return
+	}
+	s.cfg.Recorder.RecordHTTP(exchange)
+}
+
+func cloneHeader(header http.Header) map[string][]string {
+	out := make(map[string][]string, len(header))
+	for key, values := range header {
+		copied := make([]string, len(values))
+		copy(copied, values)
+		out[key] = copied
+	}
+	return out
 }
 
 func writeProxyError(w http.ResponseWriter, status int, err error) {

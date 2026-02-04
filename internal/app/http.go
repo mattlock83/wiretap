@@ -22,6 +22,18 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("/healthz", a.handleHealthz)
 	mux.HandleFunc("/v1/lifecycle/start", a.handleLifecycleStart)
 	mux.HandleFunc("/v1/lifecycle/stop", a.handleLifecycleStop)
+	mux.HandleFunc("/v1/testcases/start", a.handleTestCaseStart)
+	mux.HandleFunc("/v1/testcases/finish", a.handleTestCaseFinish)
+	mux.HandleFunc("/v1/artifact", a.handleArtifact)
+	mux.HandleFunc("/v1/stubs", a.handleStubs)
+	mux.HandleFunc("/v1/stubs/clear", a.handleStubsClear)
+	mux.HandleFunc("/v1/assertions", a.handleAssertions)
+	mux.HandleFunc("/v1/expectations", a.handleExpectations)
+	mux.HandleFunc("/v1/schemas", a.handleSchemas)
+	mux.HandleFunc("/v1/proxy/start", a.handleProxyStart)
+	mux.HandleFunc("/v1/mock/start", a.handleMockStart)
+	mux.HandleFunc("/v1/proxy/mode", a.handleProxyMode)
+	mux.HandleFunc("/v1/proxy/ca", a.handleProxyCA)
 	return loggingMiddleware(a.logger, mux)
 }
 

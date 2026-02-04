@@ -308,7 +308,7 @@ components:
           type: [string, number, boolean, object, array, "null"]
         result:
           type: string
-          enum: [pass, fail, error]
+          enum: [pass, fail, error, recorded]
         message:
           type: string
       additionalProperties: false

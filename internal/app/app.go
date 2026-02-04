@@ -21,6 +21,10 @@ type App struct {
 	logger    *slog.Logger
 	lifecycle *core.Lifecycle
 	server    *http.Server
+	store     *TestCaseStore
+
+	proxyComponent *ProxyComponent
+	mockComponent  *MockComponent
 }
 
 func New(deps Deps) (*App, error) {
@@ -37,9 +41,11 @@ func New(deps Deps) (*App, error) {
 		logger = newLogger(cfg.Log)
 	}
 
+	store := NewTestCaseStore(cfg.Artifact.OutputDir)
+
 	proxy := deps.Proxy
 	if proxy == nil {
-		component, err := NewProxyComponent(cfg.Proxy, logger)
+		component, err := NewProxyComponent(cfg.Proxy, logger, store)
 		if err != nil {
 			return nil, err
 		}
@@ -60,6 +66,14 @@ func New(deps Deps) (*App, error) {
 		cfg:       cfg,
 		logger:    logger,
 		lifecycle: lifecycle,
+		store:     store,
+	}
+
+	if component, ok := proxy.(*ProxyComponent); ok {
+		app.proxyComponent = component
+	}
+	if component, ok := mock.(*MockComponent); ok {
+		app.mockComponent = component
 	}
 
 	app.server = &http.Server{

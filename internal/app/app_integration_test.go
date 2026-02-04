@@ -15,7 +15,8 @@ func TestLifecycleEndpointsStartComponents(t *testing.T) {
 	cfg.Proxy.CABaseDir = t.TempDir()
 	cfg.Mock.ListenAddr = "127.0.0.1:0"
 
-	proxyComponent, err := NewProxyComponent(cfg.Proxy, nil)
+	store := NewTestCaseStore(cfg.Artifact.OutputDir)
+	proxyComponent, err := NewProxyComponent(cfg.Proxy, nil, store)
 	if err != nil {
 		t.Fatalf("new proxy component: %v", err)
 	}

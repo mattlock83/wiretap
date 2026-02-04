@@ -18,7 +18,7 @@ type ProxyComponent struct {
 	info   proxy.Info
 }
 
-func NewProxyComponent(cfg core.ProxyConfig, logger *slog.Logger) (*ProxyComponent, error) {
+func NewProxyComponent(cfg core.ProxyConfig, logger *slog.Logger, recorder proxy.Recorder) (*ProxyComponent, error) {
 	mode := proxy.Mode(cfg.Mode)
 	if mode == "" {
 		mode = proxy.ModeMITM
@@ -42,6 +42,7 @@ func NewProxyComponent(cfg core.ProxyConfig, logger *slog.Logger) (*ProxyCompone
 		ListenAddr: cfg.ListenAddr,
 		Mode:       mode,
 		TLSManager: mgr,
+		Recorder:   recorder,
 		Logger:     stdLogger,
 	})
 
@@ -72,6 +73,20 @@ func (p *ProxyComponent) Info() proxy.Info {
 		return proxy.Info{}
 	}
 	return p.info
+}
+
+func (p *ProxyComponent) SetMode(mode proxy.Mode) error {
+	if p == nil || p.server == nil {
+		return nil
+	}
+	return p.server.SetMode(mode)
+}
+
+func (p *ProxyComponent) CACertPEM() ([]byte, error) {
+	if p == nil || p.server == nil {
+		return nil, nil
+	}
+	return p.server.CACertPEM()
 }
 
 type MockComponent struct {
@@ -111,6 +126,27 @@ func (m *MockComponent) Addr() string {
 		return ""
 	}
 	return m.addr
+}
+
+func (m *MockComponent) RegisterStub(stub mock.Stub) {
+	if m == nil || m.server == nil {
+		return
+	}
+	m.server.RegisterStub(stub)
+}
+
+func (m *MockComponent) ClearStubs() {
+	if m == nil || m.server == nil {
+		return
+	}
+	m.server.ClearStubs()
+}
+
+func (m *MockComponent) Recorder() *mock.Recorder {
+	if m == nil || m.server == nil {
+		return nil
+	}
+	return m.server.Recorder()
 }
 
 func defaultCABaseDir() string {

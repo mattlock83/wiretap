@@ -17,6 +17,7 @@ func TestConfigValidateErrors(t *testing.T) {
 	cfg.HTTP.ListenAddr = ""
 	cfg.Mock.ListenAddr = ""
 	cfg.Proxy.ListenAddr = ""
+	cfg.Artifact.OutputDir = ""
 	cfg.HTTP.ReadTimeout = -1
 	cfg.Log.Format = "xml"
 	cfg.Proxy.Mode = "socks5"
