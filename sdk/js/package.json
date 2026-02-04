@@ -1,0 +1,14 @@
+{
+  "name": "@phrond/sdk",
+  "version": "0.1.0",
+  "description": "JavaScript SDK for the Phrond recorder core",
+  "main": "src/index.js",
+  "type": "commonjs",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node --test"
+  }
+}
