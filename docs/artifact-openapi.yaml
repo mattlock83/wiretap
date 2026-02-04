@@ -1,0 +1,329 @@
+openapi: 3.1.0
+info:
+  title: Test Artifact Schema
+  version: 1.0.0
+  description: Schema for YAML artifacts produced by the recorder.
+paths:
+  /artifact:
+    get:
+      summary: Artifact document
+      description: Returns a single artifact document. This is a schema anchor for validation.
+      responses:
+        "200":
+          description: Artifact
+          content:
+            application/yaml:
+              schema:
+                $ref: "#/components/schemas/Artifact"
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Artifact"
+components:
+  schemas:
+    Artifact:
+      type: object
+      required:
+        - version
+        - testcase
+        - traffic
+      properties:
+        version:
+          type: integer
+          minimum: 1
+        testcase:
+          $ref: "#/components/schemas/TestCase"
+        environment:
+          $ref: "#/components/schemas/Environment"
+        schemas:
+          type: array
+          items:
+            $ref: "#/components/schemas/SchemaRef"
+        traffic:
+          type: array
+          items:
+            $ref: "#/components/schemas/Flow"
+        assertions:
+          type: array
+          items:
+            $ref: "#/components/schemas/Assertion"
+        redactions:
+          type: array
+          items:
+            $ref: "#/components/schemas/Redaction"
+        meta:
+          type: object
+          additionalProperties: true
+      additionalProperties: false
+
+    TestCase:
+      type: object
+      required:
+        - id
+        - name
+        - started_at
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        started_at:
+          type: string
+          format: date-time
+        finished_at:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [pass, fail, error]
+        tags:
+          type: array
+          items:
+            type: string
+        meta:
+          type: object
+          additionalProperties: true
+      additionalProperties: false
+
+    Environment:
+      type: object
+      properties:
+        sut_base_url:
+          type: string
+        proxy_listen:
+          type: string
+        mock_base_url:
+          type: string
+        proxy_mode:
+          type: string
+          enum: [mitm, passthrough]
+      additionalProperties: false
+
+    SchemaRef:
+      type: object
+      required:
+        - id
+        - role
+        - type
+        - source
+      properties:
+        id:
+          type: string
+        role:
+          type: string
+          enum: [sut, fake]
+        type:
+          type: string
+          enum: [openapi, protobuf]
+        source:
+          $ref: "#/components/schemas/SchemaSource"
+        openapi_version:
+          type: string
+        protobuf_package:
+          type: string
+        protobuf_service:
+          type: string
+      additionalProperties: false
+
+    SchemaSource:
+      type: object
+      required:
+        - type
+      properties:
+        type:
+          type: string
+          enum: [file, inline, url]
+        path:
+          type: string
+        url:
+          type: string
+        content:
+          type: string
+        sha256:
+          type: string
+      additionalProperties: false
+
+    Flow:
+      type: object
+      required:
+        - id
+        - protocol
+        - channel
+        - request
+        - response
+      properties:
+        id:
+          type: string
+        protocol:
+          type: string
+          enum: [http, grpc]
+        channel:
+          type: string
+          enum: [test_to_sut, sut_to_mock]
+        started_at:
+          type: string
+          format: date-time
+        duration_ms:
+          type: integer
+          minimum: 0
+        request:
+          oneOf:
+            - $ref: "#/components/schemas/HttpRequest"
+            - $ref: "#/components/schemas/GrpcMessage"
+        response:
+          oneOf:
+            - $ref: "#/components/schemas/HttpResponse"
+            - $ref: "#/components/schemas/GrpcMessage"
+        grpc:
+          $ref: "#/components/schemas/GrpcMeta"
+        assertion_ids:
+          type: array
+          items:
+            type: string
+        matched_stub_id:
+          type: string
+      additionalProperties: false
+
+    HttpRequest:
+      type: object
+      required:
+        - method
+        - url
+      properties:
+        method:
+          type: string
+        url:
+          type: string
+        headers:
+          $ref: "#/components/schemas/Headers"
+        body:
+          $ref: "#/components/schemas/Body"
+      additionalProperties: false
+
+    HttpResponse:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: integer
+          minimum: 100
+          maximum: 599
+        headers:
+          $ref: "#/components/schemas/Headers"
+        body:
+          $ref: "#/components/schemas/Body"
+      additionalProperties: false
+
+    GrpcMeta:
+      type: object
+      properties:
+        service:
+          type: string
+        method:
+          type: string
+        authority:
+          type: string
+        status:
+          type: integer
+        status_message:
+          type: string
+      additionalProperties: false
+
+    GrpcMessage:
+      type: object
+      properties:
+        content_type:
+          type: string
+        headers:
+          $ref: "#/components/schemas/Headers"
+        body:
+          $ref: "#/components/schemas/Body"
+        trailers:
+          $ref: "#/components/schemas/Headers"
+      additionalProperties: false
+
+    Headers:
+      type: object
+      additionalProperties:
+        type: array
+        items:
+          type: string
+
+    Body:
+      type: object
+      properties:
+        encoding:
+          type: string
+          enum: [utf8, base64, binary]
+        text:
+          type: string
+        bytes:
+          type: string
+          description: Base64-encoded bytes when encoding=base64.
+        decoded:
+          $ref: "#/components/schemas/DecodedBody"
+      additionalProperties: false
+
+    DecodedBody:
+      type: object
+      properties:
+        encoding:
+          type: string
+          enum: [json, protojson, text]
+        text:
+          type: string
+        schema_ref:
+          type: string
+      additionalProperties: false
+
+    Assertion:
+      type: object
+      required:
+        - id
+        - channel
+        - phase
+        - operator
+        - result
+      properties:
+        id:
+          type: string
+        channel:
+          type: string
+          enum: [test_to_sut, sut_to_mock]
+        phase:
+          type: string
+          enum: [request, response]
+        flow_id:
+          type: string
+        field:
+          type: string
+        path_lang:
+          type: string
+          enum: [jsonpath, protoPath, header, status]
+        operator:
+          type: string
+        expected:
+          type: [string, number, boolean, object, array, "null"]
+        actual:
+          type: [string, number, boolean, object, array, "null"]
+        result:
+          type: string
+          enum: [pass, fail, error]
+        message:
+          type: string
+      additionalProperties: false
+
+    Redaction:
+      type: object
+      required:
+        - field
+        - rule
+      properties:
+        field:
+          type: string
+        rule:
+          type: string
+          enum: [mask, remove]
+        replacement:
+          type: string
+      additionalProperties: false
