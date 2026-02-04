@@ -124,6 +124,8 @@ func (s *TestCaseStore) FinishCase(status string, env *artifact.Environment, moc
 		art.Meta["expectations"] = state.expectation
 	}
 
+	evaluateAssertions(art)
+
 	if len(art.Redactions) > 0 {
 		if err := redact.Apply(art, art.Redactions); err != nil {
 			return nil, "", err

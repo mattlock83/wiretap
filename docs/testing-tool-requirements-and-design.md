@@ -274,6 +274,7 @@ Notes:
 - Add `protocol: "grpc"` and a `grpc` section for gRPC calls later.
 - The current encoder writes JSON (valid YAML 1.2) for deterministic output without external YAML dependencies.
 - Assertion results default to `recorded` when the SDK captures a check without evaluation.
+- The core currently evaluates `equals` and `exists` for `jsonpath`, `header`, and `status` assertions at test case finish.
 
 ## 11) Implementation Task List
 
