@@ -90,6 +90,7 @@ The system should be extensible to support gRPC/protos later, while implementing
 3. Requests are captured on both channels.
 4. Test records assertions via SDK.
 5. SDK finalizes test case, triggers artifact generation.
+   - The core service stops the proxy and mock server after test case completion.
 
 ### 6.4 Internal Interfaces (Go Sketches)
 These are intentionally minimal and designed to keep HTTP now while allowing gRPC later.
@@ -160,6 +161,7 @@ type ArtifactWriter interface {
 - Store CA key/cert in a secure local directory.
 - Provide SDK helper to output trust instructions.
 - Allow overriding CA storage via `PHROND_PROXY_CA_DIR`.
+- Artifact output directory can be overridden with `PHROND_ARTIFACT_DIR`.
 
 ### 7.3 Security/Redaction
 - SDK accepts redaction rules (header and JSON field paths).

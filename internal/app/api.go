@@ -37,6 +37,19 @@ func (a *App) handleTestCaseStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if a.proxyComponent != nil {
+		if err := a.proxyComponent.Start(r.Context()); err != nil && !errors.Is(err, proxy.ErrAlreadyStarted) {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+	}
+	if a.mockComponent != nil {
+		if err := a.mockComponent.Start(r.Context()); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+	}
+
 	if a.mockComponent != nil {
 		if recorder := a.mockComponent.Recorder(); recorder != nil {
 			recorder.Clear()
@@ -78,6 +91,13 @@ func (a *App) handleTestCaseFinish(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 		return
+	}
+
+	if a.mockComponent != nil {
+		_ = a.mockComponent.Stop(r.Context())
+	}
+	if a.proxyComponent != nil {
+		_ = a.proxyComponent.Stop(r.Context())
 	}
 
 	resp := map[string]any{
