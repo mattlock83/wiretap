@@ -30,6 +30,7 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("/v1/assertions", a.handleAssertions)
 	mux.HandleFunc("/v1/expectations", a.handleExpectations)
 	mux.HandleFunc("/v1/schemas", a.handleSchemas)
+	mux.HandleFunc("/v1/redactions", a.handleRedactions)
 	mux.HandleFunc("/v1/proxy/start", a.handleProxyStart)
 	mux.HandleFunc("/v1/mock/start", a.handleMockStart)
 	mux.HandleFunc("/v1/proxy/mode", a.handleProxyMode)

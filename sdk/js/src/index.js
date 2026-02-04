@@ -58,6 +58,10 @@ class Harness {
     return this._post("/v1/schemas", schema);
   }
 
+  async addRedaction(rule) {
+    return this._post("/v1/redactions", rule);
+  }
+
   async setProxyMode(mode) {
     return this._post("/v1/proxy/mode", { mode });
   }

@@ -26,5 +26,6 @@ await harness.startLifecycle();
 - `harness.assertField(assertion)`
 - `harness.expectCall(expectation)`
 - `harness.setSchema(schema)`
+- `harness.addRedaction(rule)`
 - `harness.setProxyMode(mode)`
 - `harness.getCaCertificate()`

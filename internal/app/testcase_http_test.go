@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/phrond/evermock/core"
+	"github.com/phrond/evermock/internal/artifact"
 )
 
 func TestTestCaseLifecycleWritesArtifact(t *testing.T) {
@@ -47,6 +48,17 @@ func TestTestCaseLifecycleWritesArtifact(t *testing.T) {
 		t.Fatalf("unexpected start status: %d", resp.StatusCode)
 	}
 
+	redactionPayload := map[string]any{"field": "request.headers.authorization", "rule": "mask"}
+	redactionBody, _ := json.Marshal(redactionPayload)
+	resp, err = http.Post(server.URL+"/v1/redactions", "application/json", bytes.NewReader(redactionBody))
+	if err != nil {
+		t.Fatalf("redactions request: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("unexpected redaction status: %d", resp.StatusCode)
+	}
+
 	finishPayload := map[string]any{"status": "pass"}
 	finishBody, _ := json.Marshal(finishPayload)
 	resp, err = http.Post(server.URL+"/v1/testcases/finish", "application/json", bytes.NewReader(finishBody))
@@ -59,13 +71,17 @@ func TestTestCaseLifecycleWritesArtifact(t *testing.T) {
 	}
 
 	var finishResp struct {
-		Path string `json:"path"`
+		Path     string            `json:"path"`
+		Artifact artifact.Artifact `json:"artifact"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&finishResp); err != nil {
 		t.Fatalf("decode finish response: %v", err)
 	}
 	if finishResp.Path == "" {
 		t.Fatalf("expected artifact path")
+	}
+	if len(finishResp.Artifact.Redactions) != 1 {
+		t.Fatalf("expected redactions to be recorded")
 	}
 
 	if !filepath.IsAbs(finishResp.Path) {

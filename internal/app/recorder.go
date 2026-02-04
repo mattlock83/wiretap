@@ -12,6 +12,7 @@ import (
 	"github.com/phrond/evermock/internal/artifact"
 	"github.com/phrond/evermock/internal/mock"
 	"github.com/phrond/evermock/internal/proxy"
+	"github.com/phrond/evermock/internal/redact"
 )
 
 type TestCaseStore struct {
@@ -38,6 +39,7 @@ type testCaseState struct {
 	assertions  []artifact.Assertion
 	schemas     []artifact.SchemaRef
 	expectation []Expectation
+	redactions  []artifact.Redaction
 }
 
 type Expectation struct {
@@ -114,12 +116,18 @@ func (s *TestCaseStore) FinishCase(status string, env *artifact.Environment, moc
 		Schemas:    append([]artifact.SchemaRef{}, state.schemas...),
 		Traffic:    flows,
 		Assertions: append([]artifact.Assertion{}, state.assertions...),
-		Redactions: nil,
+		Redactions: append([]artifact.Redaction{}, state.redactions...),
 		Meta:       map[string]any{},
 	}
 
 	if len(state.expectation) > 0 {
 		art.Meta["expectations"] = state.expectation
+	}
+
+	if len(art.Redactions) > 0 {
+		if err := redact.Apply(art, art.Redactions); err != nil {
+			return nil, "", err
+		}
 	}
 
 	path, err := artifact.WriteFile(s.outputDir, art)
@@ -183,6 +191,16 @@ func (s *TestCaseStore) AddExpectation(expectation Expectation) {
 	}
 	s.expectSeq++
 	s.active.expectation = append(s.active.expectation, expectation)
+}
+
+func (s *TestCaseStore) AddRedaction(rule artifact.Redaction) artifact.Redaction {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.active == nil {
+		return rule
+	}
+	s.active.redactions = append(s.active.redactions, rule)
+	return rule
 }
 
 func (s *TestCaseStore) RecordHTTP(exchange proxy.HTTPExchange) {
