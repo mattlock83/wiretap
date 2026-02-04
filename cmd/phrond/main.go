@@ -60,6 +60,12 @@ func applyEnv(cfg *core.Config) {
 	if v := strings.TrimSpace(os.Getenv("PHROND_PROXY_MODE")); v != "" {
 		cfg.Proxy.Mode = strings.ToLower(v)
 	}
+	if v := strings.TrimSpace(os.Getenv("PHROND_PROXY_LISTEN")); v != "" {
+		cfg.Proxy.ListenAddr = v
+	}
+	if v := strings.TrimSpace(os.Getenv("PHROND_PROXY_CA_DIR")); v != "" {
+		cfg.Proxy.CABaseDir = v
+	}
 	if v := strings.TrimSpace(os.Getenv("PHROND_HTTP_READ_TIMEOUT")); v != "" {
 		cfg.HTTP.ReadTimeout = parseDuration(v, cfg.HTTP.ReadTimeout)
 	}

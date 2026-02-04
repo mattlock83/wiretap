@@ -27,7 +27,9 @@ type LogConfig struct {
 }
 
 type ProxyConfig struct {
-	Mode string // "mitm" | "passthrough" (future)
+	ListenAddr string
+	Mode       string // "mitm" | "passthrough"
+	CABaseDir  string
 }
 
 type MockConfig struct {
@@ -47,7 +49,8 @@ func DefaultConfig() Config {
 			Format: "text",
 		},
 		Proxy: ProxyConfig{
-			Mode: "mitm",
+			ListenAddr: "127.0.0.1:18080",
+			Mode:       "mitm",
 		},
 		Mock: MockConfig{
 			ListenAddr: "127.0.0.1:19090",
@@ -62,6 +65,9 @@ func (c Config) Validate() error {
 	}
 	if c.Mock.ListenAddr == "" {
 		errs = append(errs, errors.New("mock.listen_addr must not be empty"))
+	}
+	if c.Proxy.ListenAddr == "" {
+		errs = append(errs, errors.New("proxy.listen_addr must not be empty"))
 	}
 	if c.HTTP.ReadTimeout < 0 {
 		errs = append(errs, errors.New("http.read_timeout must be non-negative"))

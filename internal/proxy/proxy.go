@@ -152,6 +152,11 @@ func (s *Server) handleConnect(w http.ResponseWriter, r *http.Request) {
 		host = host + ":443"
 	}
 
+	if s.cfg.Mode == ModeMITM && s.cfg.TLSManager == nil {
+		writeProxyError(w, http.StatusInternalServerError, errors.New("mitm mode requires tls manager"))
+		return
+	}
+
 	hijacker, ok := w.(http.Hijacker)
 	if !ok {
 		writeProxyError(w, http.StatusInternalServerError, errors.New("hijacking not supported"))
@@ -169,10 +174,6 @@ func (s *Server) handleConnect(w http.ResponseWriter, r *http.Request) {
 
 	switch s.cfg.Mode {
 	case ModeMITM:
-		if s.cfg.TLSManager == nil {
-			_ = clientConn.Close()
-			return
-		}
 		s.mitmTunnel(clientConn, host)
 	default:
 		s.passthroughTunnel(clientConn, host)
@@ -206,20 +207,12 @@ func (s *Server) mitmTunnel(clientConn net.Conn, hostport string) {
 		return
 	}
 
-	upstreamConfig := s.upstreamTLSConfig(hostport)
-	upstreamTLS, err := tls.Dial("tcp", hostport, upstreamConfig)
-	if err != nil {
-		_ = clientTLS.Close()
-		return
-	}
-
-	s.proxyTLSRequests(clientTLS, upstreamTLS)
+	s.proxyTLSRequests(clientTLS)
 }
 
-func (s *Server) proxyTLSRequests(clientTLS net.Conn, upstreamTLS net.Conn) {
+func (s *Server) proxyTLSRequests(clientTLS net.Conn) {
 	defer func() {
 		_ = clientTLS.Close()
-		_ = upstreamTLS.Close()
 	}()
 
 	clientReader := bufio.NewReader(clientTLS)

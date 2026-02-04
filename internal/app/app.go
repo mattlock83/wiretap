@@ -39,11 +39,15 @@ func New(deps Deps) (*App, error) {
 
 	proxy := deps.Proxy
 	if proxy == nil {
-		proxy = &NoopComponent{name: "proxy", logger: logger}
+		component, err := NewProxyComponent(cfg.Proxy, logger)
+		if err != nil {
+			return nil, err
+		}
+		proxy = component
 	}
 	mock := deps.Mock
 	if mock == nil {
-		mock = &NoopComponent{name: "mock", logger: logger}
+		mock = NewMockComponent(cfg.Mock)
 	}
 
 	lifecycle := &core.Lifecycle{
