@@ -16,7 +16,15 @@ await harness.startLifecycle();
 - `harness.healthz()`
 - `harness.startLifecycle()`
 - `harness.stopLifecycle()`
+- `harness.startTestCase(name, meta)`
+- `harness.finishTestCase(status)`
+- `harness.getArtifact()`
+- `harness.startProxy(config)`
+- `harness.startMockServer(config)`
 - `harness.registerStub(stub)`
 - `harness.clearStubs()`
 - `harness.assertField(assertion)`
+- `harness.expectCall(expectation)`
 - `harness.setSchema(schema)`
+- `harness.setProxyMode(mode)`
+- `harness.getCaCertificate()`

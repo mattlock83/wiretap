@@ -18,6 +18,26 @@ class Harness {
     return this._post("/v1/lifecycle/stop", {});
   }
 
+  async startTestCase(name, meta) {
+    return this._post("/v1/testcases/start", { name, meta });
+  }
+
+  async finishTestCase(status) {
+    return this._post("/v1/testcases/finish", { status });
+  }
+
+  async getArtifact() {
+    return this._get("/v1/artifact");
+  }
+
+  async startProxy(config) {
+    return this._post("/v1/proxy/start", config || {});
+  }
+
+  async startMockServer(config) {
+    return this._post("/v1/mock/start", config || {});
+  }
+
   async registerStub(stub) {
     return this._post("/v1/stubs", stub);
   }
@@ -30,8 +50,20 @@ class Harness {
     return this._post("/v1/assertions", assertion);
   }
 
+  async expectCall(expectation) {
+    return this._post("/v1/expectations", expectation);
+  }
+
   async setSchema(schema) {
     return this._post("/v1/schemas", schema);
+  }
+
+  async setProxyMode(mode) {
+    return this._post("/v1/proxy/mode", { mode });
+  }
+
+  async getCaCertificate() {
+    return this._get("/v1/proxy/ca");
   }
 
   async _get(path) {

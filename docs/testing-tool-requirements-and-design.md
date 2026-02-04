@@ -159,6 +159,7 @@ type ArtifactWriter interface {
 - Generate a local CA and issue dynamic per-host certificates.
 - Store CA key/cert in a secure local directory.
 - Provide SDK helper to output trust instructions.
+- Allow overriding CA storage via `PHROND_PROXY_CA_DIR`.
 
 ### 7.3 Security/Redaction
 - SDK accepts redaction rules (header and JSON field paths).
@@ -269,6 +270,7 @@ redactions:
 Notes:
 - For binary or gRPC payloads, use `encoding: "base64"` and store `body.bytes`.
 - Add `protocol: "grpc"` and a `grpc` section for gRPC calls later.
+- The current encoder writes JSON (valid YAML 1.2) for deterministic output without external YAML dependencies.
 
 ## 11) Implementation Task List
 
