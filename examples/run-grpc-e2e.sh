@@ -16,9 +16,6 @@ GRPC_MOCK_PORT="${GRPC_MOCK_PORT:-$(pick_port)}"
 BUILD_DIR="${BUILD_DIR:-$(mktemp -d)}"
 
 cleanup() {
-  if [[ -n "${SUT_PID:-}" ]]; then
-    kill "${SUT_PID}" 2>/dev/null || true
-  fi
   if [[ -n "${PHROND_PID:-}" ]]; then
     kill "${PHROND_PID}" 2>/dev/null || true
   fi
@@ -51,10 +48,6 @@ go build ${GOFLAGS} -o "${BUILD_DIR}/phrond-grpc-sut" ./examples/grpc/sut
 nohup "${BUILD_DIR}/phrond-core" > /tmp/phrond-core.log 2>&1 &
 PHROND_PID=$!
 
-# Start gRPC SUT
-nohup "${BUILD_DIR}/phrond-grpc-sut" > /tmp/phrond-grpc-sut.log 2>&1 &
-SUT_PID=$!
-
 wait_for_http() {
   local url="$1"
   for i in {1..40}; do
@@ -72,14 +65,9 @@ if ! wait_for_http "http://127.0.0.1:${PHROND_PORT}/healthz"; then
   exit 1
 fi
 
-if ! wait_for_http "https://127.0.0.1:${SUT_PORT}/healthz"; then
-  echo "SUT failed to start. See /tmp/phrond-grpc-sut.log"
-  tail -n 50 /tmp/phrond-grpc-sut.log || true
-  exit 1
-fi
-
-# Run JS example (uses SDK to drive the test case)
-node ./examples/grpc/basic-test.js
+# Run Go example (starts its own SUT using the built binary)
+export SUT_BINARY="${BUILD_DIR}/phrond-grpc-sut"
+go run ./examples/grpc/client
 
 popd >/dev/null
 

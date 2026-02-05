@@ -1,6 +1,7 @@
 # gRPC Example
 
 This example drives a gRPC-only SUT through the recorder core and captures gRPC traffic.
+Proto definition lives in `examples/grpc/examplepb/example.proto`.
 
 ## What it does
 - Starts the recorder core (Go)
@@ -20,7 +21,7 @@ Or run manually:
 
 ```bash
 go run ./cmd/phrond
-node ./examples/grpc/basic-test.js
+go run ./examples/grpc/client
 ```
 
 Artifacts are written to `./artifacts` by default.
