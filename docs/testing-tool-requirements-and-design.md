@@ -92,6 +92,22 @@ The system should be extensible to support gRPC/protos later, while implementing
 5. SDK finalizes test case, triggers artifact generation.
    - The core service stops the proxy and mock server after test case completion.
 
+### 6.4 Architecture Diagram
+
+```mermaid
+flowchart LR
+  Test["Test Code + JS SDK"] -->|test-to-sut HTTP| Proxy["Capture Proxy"]
+  Proxy -->|forward| SUT["System Under Test (SUT)"]
+  SUT -->|sut-to-mock HTTP| Mock["Mock Server"]
+
+  Test -->|assertions, schemas, lifecycle| Core["Recorder Core API"]
+  Proxy -->|captured test-to-sut flow| Core
+  Mock -->|captured sut-to-mock flow| Core
+
+  Core -->|YAML artifact per test case| Artifact["Artifact Writer"]
+  Artifact -->|traffic + assertions + schemas| File["artifact.yaml"]
+```
+
 ### 6.4 Internal Interfaces (Go Sketches)
 These are intentionally minimal and designed to keep HTTP now while allowing gRPC later.
 
