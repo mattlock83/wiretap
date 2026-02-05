@@ -28,6 +28,13 @@ The script will:
 - Send a POST through the proxy
 - Write an artifact to `./artifacts`
 
+### Environment Overrides
+You can override ports and artifact output with:
+
+```sh
+PHROND_PORT=18001 SUT_PORT=18091 PROXY_PORT=18081 MOCK_PORT=19091 ARTIFACT_DIR=./tmp/artifacts ./examples/run-e2e.sh
+```
+
 ## Polling Test Case Status
 You can check progress with:
 

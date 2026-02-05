@@ -51,7 +51,12 @@ function postViaProxy(proxyUrl, targetUrl, body) {
 }
 
 async function main() {
-  const harness = createHarness({ baseUrl: "http://127.0.0.1:18000" });
+  const baseUrl =
+    process.env.PHROND_BASE_URL ||
+    (process.env.PHROND_HTTP_LISTEN
+      ? `http://${process.env.PHROND_HTTP_LISTEN}`
+      : "http://127.0.0.1:18000");
+  const harness = createHarness({ baseUrl });
 
   await harness.startTestCase("basic", { suite: "examples" });
 
@@ -70,7 +75,7 @@ async function main() {
     response: { status: 200, body: "beta-ok" }
   });
 
-  const sutListen = "127.0.0.1:18090";
+  const sutListen = process.env.SUT_LISTEN || "127.0.0.1:18090";
   const sutProcessUrl = `http://${sutListen}/process`;
 
   const sut = spawn("go", ["run", "./examples/system/sut"], {
@@ -89,7 +94,11 @@ async function main() {
   }
 
   const payload = JSON.stringify({ id: "123", action: "process" });
-  const result = await postViaProxy(`http://${proxyInfo.listen_addr}`, sutProcessUrl, payload);
+  const proxyListen = proxyInfo.listen_addr || proxyInfo.ListenAddr;
+  if (!proxyListen) {
+    throw new Error("Proxy listen address not returned");
+  }
+  const result = await postViaProxy(`http://${proxyListen}`, sutProcessUrl, payload);
   console.log("SUT response:", result.status, result.body);
 
   const finish = await harness.finishTestCase("pass");

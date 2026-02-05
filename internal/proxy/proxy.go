@@ -41,8 +41,8 @@ type Config struct {
 
 // Info reports proxy runtime configuration.
 type Info struct {
-	ListenAddr string
-	Mode       Mode
+	ListenAddr string `json:"listen_addr"`
+	Mode       Mode   `json:"mode"`
 }
 
 // Server is an explicit forward proxy with CONNECT + MITM support.
