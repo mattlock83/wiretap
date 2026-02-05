@@ -82,6 +82,16 @@ func (s *TestCaseStore) StartCase(name string, tags []string, meta map[string]an
 	return &artifact.TestCase{ID: id, Name: name, StartedAt: startedAt, Tags: tags, Meta: meta}, nil
 }
 
+type TestCaseStatus struct {
+	Active      bool       `json:"active"`
+	CurrentID   string     `json:"current_id,omitempty"`
+	CurrentName string     `json:"current_name,omitempty"`
+	StartedAt   *time.Time `json:"started_at,omitempty"`
+	LastID      string     `json:"last_id,omitempty"`
+	LastStatus  string     `json:"last_status,omitempty"`
+	LastPath    string     `json:"last_path,omitempty"`
+}
+
 func (s *TestCaseStore) FinishCase(status string, env *artifact.Environment, mockExchanges []mock.Exchange) (*artifact.Artifact, string, error) {
 	s.mu.Lock()
 	state := s.active
@@ -142,6 +152,24 @@ func (s *TestCaseStore) FinishCase(status string, env *artifact.Environment, moc
 	s.mu.Unlock()
 
 	return art, path, nil
+}
+
+func (s *TestCaseStore) Status() TestCaseStatus {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	status := TestCaseStatus{}
+	if s.active != nil {
+		status.Active = true
+		status.CurrentID = s.active.id
+		status.CurrentName = s.active.name
+		status.StartedAt = &s.active.startedAt
+	}
+	if s.last != nil {
+		status.LastID = s.last.TestCase.ID
+		status.LastStatus = s.last.TestCase.Status
+	}
+	return status
 }
 
 func (s *TestCaseStore) LastArtifact() *artifact.Artifact {

@@ -24,6 +24,7 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("/v1/lifecycle/stop", a.handleLifecycleStop)
 	mux.HandleFunc("/v1/testcases/start", a.handleTestCaseStart)
 	mux.HandleFunc("/v1/testcases/finish", a.handleTestCaseFinish)
+	mux.HandleFunc("/v1/testcases/status", a.handleTestCaseStatus)
 	mux.HandleFunc("/v1/artifact", a.handleArtifact)
 	mux.HandleFunc("/v1/stubs", a.handleStubs)
 	mux.HandleFunc("/v1/stubs/clear", a.handleStubsClear)

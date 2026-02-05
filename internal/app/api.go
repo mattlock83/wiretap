@@ -107,6 +107,19 @@ func (a *App) handleTestCaseFinish(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
+func (a *App) handleTestCaseStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+	if a.store == nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "store not configured"})
+		return
+	}
+	status := a.store.Status()
+	writeJSON(w, http.StatusOK, status)
+}
+
 func (a *App) handleArtifact(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})

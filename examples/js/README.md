@@ -20,3 +20,10 @@ node examples/js/basic-test.js
 ```sh
 PHROND_ARTIFACT_DIR=./tmp/artifacts go run ./cmd/phrond
 ```
+
+## Polling Test Case Status
+You can check progress with:
+
+```sh
+curl http://127.0.0.1:18000/v1/testcases/status
+```
