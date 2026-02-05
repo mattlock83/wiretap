@@ -1,6 +1,6 @@
 # JavaScript Example
 
-This example shows how to use the JS SDK to call the recorder core and generate an artifact.
+This example spins up a simple SUT that calls two downstream endpoints and exercises the proxy + mock server.
 
 ## Run
 1. Start the core service:
@@ -15,11 +15,11 @@ go run ./cmd/phrond
 node examples/js/basic-test.js
 ```
 
-3. The artifact will be written to `./artifacts` by default. Override with:
-
-```sh
-PHROND_ARTIFACT_DIR=./tmp/artifacts go run ./cmd/phrond
-```
+The script will:
+- Start a test case and the proxy/mock servers
+- Launch the SUT in `examples/system/sut`
+- Send a POST through the proxy
+- Write an artifact to `./artifacts`
 
 ## Polling Test Case Status
 You can check progress with:
