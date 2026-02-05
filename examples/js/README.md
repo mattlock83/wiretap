@@ -15,6 +15,13 @@ go run ./cmd/phrond
 node examples/js/basic-test.js
 ```
 
+## One-Command Run
+You can run the full flow with:
+
+```sh
+./examples/run-e2e.sh
+```
+
 The script will:
 - Start a test case and the proxy/mock servers
 - Launch the SUT in `examples/system/sut`
