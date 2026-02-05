@@ -5,13 +5,44 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ARTIFACT_DIR="${ARTIFACT_DIR:-$ROOT_DIR/artifacts}"
 
 pick_port() {
-  node -e 'const net=require("net");const s=net.createServer();s.listen(0,"127.0.0.1",()=>{console.log(s.address().port);s.close();});'
+  local base=20000
+  local span=30000
+  if command -v lsof >/dev/null 2>&1; then
+    for _ in {1..60}; do
+      local port=$((base + (RANDOM % span)))
+      if ! lsof -iTCP:"${port}" -sTCP:LISTEN >/dev/null 2>&1; then
+        echo "${port}"
+        return
+      fi
+    done
+  fi
+  echo $((base + (RANDOM % span)))
 }
 
-PHROND_PORT="${PHROND_PORT:-$(pick_port)}"
-SUT_PORT="${SUT_PORT:-$(pick_port)}"
-GRPC_PROXY_PORT="${GRPC_PROXY_PORT:-$(pick_port)}"
-GRPC_MOCK_PORT="${GRPC_MOCK_PORT:-$(pick_port)}"
+pick_unique_port() {
+  local used="$1"
+  local port
+  while true; do
+    port="$(pick_port)"
+    if [[ " ${used} " != *" ${port} "* ]]; then
+      echo "${port}"
+      return
+    fi
+  done
+}
+
+USED_PORTS=""
+PHROND_PORT="${PHROND_PORT:-$(pick_unique_port "${USED_PORTS}")}"
+USED_PORTS="${USED_PORTS} ${PHROND_PORT}"
+SUT_PORT="${SUT_PORT:-$(pick_unique_port "${USED_PORTS}")}"
+USED_PORTS="${USED_PORTS} ${SUT_PORT}"
+PROXY_PORT="${PROXY_PORT:-$(pick_unique_port "${USED_PORTS}")}"
+USED_PORTS="${USED_PORTS} ${PROXY_PORT}"
+MOCK_PORT="${MOCK_PORT:-$(pick_unique_port "${USED_PORTS}")}"
+USED_PORTS="${USED_PORTS} ${MOCK_PORT}"
+GRPC_PROXY_PORT="${GRPC_PROXY_PORT:-$(pick_unique_port "${USED_PORTS}")}"
+USED_PORTS="${USED_PORTS} ${GRPC_PROXY_PORT}"
+GRPC_MOCK_PORT="${GRPC_MOCK_PORT:-$(pick_unique_port "${USED_PORTS}")}"
 
 BUILD_DIR="${BUILD_DIR:-$(mktemp -d)}"
 
@@ -28,6 +59,8 @@ trap cleanup EXIT
 mkdir -p "$ARTIFACT_DIR"
 
 export PHROND_HTTP_LISTEN="127.0.0.1:${PHROND_PORT}"
+export PHROND_PROXY_LISTEN="127.0.0.1:${PROXY_PORT}"
+export PHROND_MOCK_LISTEN="127.0.0.1:${MOCK_PORT}"
 export PHROND_GRPC_PROXY_LISTEN="127.0.0.1:${GRPC_PROXY_PORT}"
 export PHROND_GRPC_MOCK_LISTEN="127.0.0.1:${GRPC_MOCK_PORT}"
 export PHROND_ARTIFACT_DIR="$ARTIFACT_DIR"

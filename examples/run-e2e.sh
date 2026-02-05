@@ -5,7 +5,18 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ARTIFACT_DIR="${ARTIFACT_DIR:-$ROOT_DIR/artifacts}"
 
 pick_port() {
-  node -e 'const net=require("net");const s=net.createServer();s.listen(0,"127.0.0.1",()=>{console.log(s.address().port);s.close();});'
+  local base=20000
+  local span=30000
+  if command -v lsof >/dev/null 2>&1; then
+    for _ in {1..60}; do
+      local port=$((base + (RANDOM % span)))
+      if ! lsof -iTCP:"${port}" -sTCP:LISTEN >/dev/null 2>&1; then
+        echo "${port}"
+        return
+      fi
+    done
+  fi
+  echo $((base + (RANDOM % span)))
 }
 
 PHROND_PORT="${PHROND_PORT:-$(pick_port)}"
