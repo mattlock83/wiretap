@@ -27,7 +27,7 @@ The system should be extensible to support gRPC/protos later, while implementing
 - Minimal provider burden (consumer-driven), similar intent to Pact but without provider-side setup.
 
 ## 3) Non-Goals (v1)
-- gRPC traffic capture and decoding (planned for v2).
+- Protobuf decoding and rich gRPC schema-aware assertions (planned for v2).
 - Full service virtualization beyond deterministic HTTP responses (e.g., streaming SSE or WebSockets).
 - Persistent mock state or complex data stores.
 - UI for viewing artifacts (CLI tooling acceptable in v1).
@@ -38,10 +38,11 @@ The system should be extensible to support gRPC/protos later, while implementing
 1. Start and stop a capture proxy per test case.
 2. Start and stop a mock server per test case.
 3. Register HTTP stubs with matching rules and responses.
-4. Capture request/response pairs for both channels.
+4. Capture HTTP and gRPC request/response pairs for both channels.
 5. Record and evaluate field-level assertions in tests.
 6. Export a YAML artifact per test case.
 7. Attach OpenAPI spec references to test cases.
+8. Register gRPC stubs with matching rules and responses (raw bytes).
 
 ### 4.2 HTTPS Support
 1. Proxy must support HTTPS via explicit proxy configuration.
@@ -52,7 +53,7 @@ The system should be extensible to support gRPC/protos later, while implementing
 
 ### 4.3 Extensibility for gRPC
 1. Architecture must allow HTTP/2 and TLS MITM without redesign.
-2. Artifact schema must have protocol discriminators (HTTP vs gRPC) and store raw bytes.
+2. Artifact schema must have protocol discriminators (HTTP vs gRPC) and store raw bytes (implemented).
 3. Schema references must include Protobuf descriptors for later decoding.
 4. Assertion paths must be protocol-agnostic with an extensible path language.
 

@@ -96,6 +96,10 @@ components:
         proxy_mode:
           type: string
           enum: [mitm, passthrough]
+        grpc_proxy_listen:
+          type: string
+        grpc_mock_base_url:
+          type: string
       additionalProperties: false
 
     SchemaRef:

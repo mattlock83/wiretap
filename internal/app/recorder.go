@@ -10,6 +10,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/phrond/evermock/internal/artifact"
+	"github.com/phrond/evermock/internal/grpcmock"
+	"github.com/phrond/evermock/internal/grpcproxy"
 	"github.com/phrond/evermock/internal/mock"
 	"github.com/phrond/evermock/internal/proxy"
 	"github.com/phrond/evermock/internal/redact"
@@ -92,7 +94,7 @@ type TestCaseStatus struct {
 	LastPath    string     `json:"last_path,omitempty"`
 }
 
-func (s *TestCaseStore) FinishCase(status string, env *artifact.Environment, mockExchanges []mock.Exchange) (*artifact.Artifact, string, error) {
+func (s *TestCaseStore) FinishCase(status string, env *artifact.Environment, mockExchanges []mock.Exchange, grpcExchanges []grpcmock.Exchange) (*artifact.Artifact, string, error) {
 	s.mu.Lock()
 	state := s.active
 	if state == nil {
@@ -109,6 +111,10 @@ func (s *TestCaseStore) FinishCase(status string, env *artifact.Environment, moc
 	flows := append([]artifact.Flow{}, state.flows...)
 	for _, exchange := range mockExchanges {
 		flow := s.flowFromMock(exchange)
+		flows = append(flows, flow)
+	}
+	for _, exchange := range grpcExchanges {
+		flow := s.flowFromGrpcMock(exchange)
 		flows = append(flows, flow)
 	}
 
@@ -246,6 +252,19 @@ func (s *TestCaseStore) RecordHTTP(exchange proxy.HTTPExchange) {
 	s.active.flows = append(s.active.flows, flow)
 }
 
+func (s *TestCaseStore) RecordGRPC(exchange grpcproxy.Exchange) {
+	flow := s.flowFromGrpcProxy(exchange)
+	if flow.ID == "" {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.active == nil {
+		return
+	}
+	s.active.flows = append(s.active.flows, flow)
+}
+
 func (s *TestCaseStore) nextFlowID() string {
 	s.flowSeq++
 	return fmt.Sprintf("flow-%d", s.flowSeq)
@@ -300,6 +319,73 @@ func (s *TestCaseStore) flowFromMock(exchange mock.Exchange) artifact.Flow {
 			Headers: cloneHeaders(exchange.Response.Headers),
 			Body:    bodyFromString(exchange.Response.Body),
 		}},
+		MatchedStubID: exchange.MatchedStubID,
+	}
+}
+
+func (s *TestCaseStore) flowFromGrpcProxy(exchange grpcproxy.Exchange) artifact.Flow {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.active == nil {
+		return artifact.Flow{}
+	}
+	id := s.nextFlowID()
+	return artifact.Flow{
+		ID:         id,
+		Protocol:   "grpc",
+		Channel:    "test_to_sut",
+		StartedAt:  exchange.StartedAt,
+		DurationMS: exchange.Duration.Milliseconds(),
+		Request: artifact.Message{GRPC: &artifact.GrpcMessage{
+			ContentType: exchange.RequestContentType,
+			Headers:     cloneHeaders(exchange.RequestHeaders),
+			Body:        bodyFromBytes(exchange.RequestBody),
+		}},
+		Response: artifact.Message{GRPC: &artifact.GrpcMessage{
+			ContentType: exchange.ResponseContentType,
+			Headers:     cloneHeaders(exchange.ResponseHeaders),
+			Body:        bodyFromBytes(exchange.ResponseBody),
+			Trailers:    cloneHeaders(exchange.ResponseTrailers),
+		}},
+		GRPC: &artifact.GrpcMeta{
+			Service:       exchange.Service,
+			Method:        exchange.Method,
+			Authority:     exchange.Authority,
+			Status:        exchange.Status,
+			StatusMessage: exchange.StatusMessage,
+		},
+	}
+}
+
+func (s *TestCaseStore) flowFromGrpcMock(exchange grpcmock.Exchange) artifact.Flow {
+	s.mu.Lock()
+	id := s.nextFlowID()
+	s.mu.Unlock()
+
+	return artifact.Flow{
+		ID:         id,
+		Protocol:   "grpc",
+		Channel:    "sut_to_mock",
+		StartedAt:  exchange.StartedAt,
+		DurationMS: exchange.FinishedAt.Sub(exchange.StartedAt).Milliseconds(),
+		Request: artifact.Message{GRPC: &artifact.GrpcMessage{
+			ContentType: exchange.Request.ContentType,
+			Headers:     cloneHeaders(exchange.Request.Headers),
+			Body:        bodyFromBytes(exchange.Request.Body),
+		}},
+		Response: artifact.Message{GRPC: &artifact.GrpcMessage{
+			ContentType: exchange.Response.ContentType,
+			Headers:     cloneHeaders(exchange.Response.Headers),
+			Body:        bodyFromBytes(exchange.Response.Body),
+			Trailers:    cloneHeaders(exchange.Response.Trailers),
+		}},
+		GRPC: &artifact.GrpcMeta{
+			Service:       exchange.Request.Service,
+			Method:        exchange.Request.Method,
+			Authority:     exchange.Request.Authority,
+			Status:        exchange.Response.Status,
+			StatusMessage: exchange.Response.StatusMessage,
+		},
 		MatchedStubID: exchange.MatchedStubID,
 	}
 }

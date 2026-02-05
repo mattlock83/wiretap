@@ -81,12 +81,28 @@ class Harness {
     return this._post("/v1/mock/start", config || {});
   }
 
+  async startGrpcProxy(config) {
+    return this._post("/v1/grpc/proxy/start", config || {});
+  }
+
+  async startGrpcMockServer(config) {
+    return this._post("/v1/grpc/mock/start", config || {});
+  }
+
   async registerStub(stub) {
     return this._post("/v1/stubs", stub);
   }
 
   async clearStubs() {
     return this._post("/v1/stubs/clear", {});
+  }
+
+  async registerGrpcStub(stub) {
+    return this._post("/v1/grpc/stubs", stub);
+  }
+
+  async clearGrpcStubs() {
+    return this._post("/v1/grpc/stubs/clear", {});
   }
 
   async assertField(assertion) {

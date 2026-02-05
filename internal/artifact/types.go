@@ -57,10 +57,12 @@ type TestCase struct {
 
 // Environment describes runtime addresses.
 type Environment struct {
-	SUTBaseURL  string `yaml:"sut_base_url,omitempty" json:"sut_base_url,omitempty"`
-	ProxyListen string `yaml:"proxy_listen,omitempty" json:"proxy_listen,omitempty"`
-	MockBaseURL string `yaml:"mock_base_url,omitempty" json:"mock_base_url,omitempty"`
-	ProxyMode   string `yaml:"proxy_mode,omitempty" json:"proxy_mode,omitempty"`
+	SUTBaseURL      string `yaml:"sut_base_url,omitempty" json:"sut_base_url,omitempty"`
+	ProxyListen     string `yaml:"proxy_listen,omitempty" json:"proxy_listen,omitempty"`
+	MockBaseURL     string `yaml:"mock_base_url,omitempty" json:"mock_base_url,omitempty"`
+	ProxyMode       string `yaml:"proxy_mode,omitempty" json:"proxy_mode,omitempty"`
+	GRPCProxyListen string `yaml:"grpc_proxy_listen,omitempty" json:"grpc_proxy_listen,omitempty"`
+	GRPCMockBaseURL string `yaml:"grpc_mock_base_url,omitempty" json:"grpc_mock_base_url,omitempty"`
 }
 
 // SchemaRef identifies schemas attached to the test case.

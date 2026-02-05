@@ -23,8 +23,12 @@ await harness.startLifecycle();
 - `harness.waitForStatus({ intervalMs, timeoutMs })`
 - `harness.startProxy(config)`
 - `harness.startMockServer(config)`
+- `harness.startGrpcProxy(config)`
+- `harness.startGrpcMockServer(config)`
 - `harness.registerStub(stub)`
 - `harness.clearStubs()`
+- `harness.registerGrpcStub(stub)`
+- `harness.clearGrpcStubs()`
 - `harness.assertField(assertion)`
 - `harness.expectCall(expectation)`
 - `harness.setSchema(schema)`
