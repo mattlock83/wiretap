@@ -77,3 +77,24 @@ test("errors include status and body", async () => {
 
   await server.close();
 });
+
+test("waitForStatus polls until inactive", async () => {
+  let callCount = 0;
+  const server = await startServer(async (req, res) => {
+    callCount += 1;
+    res.setHeader("content-type", "application/json");
+    if (callCount < 3) {
+      res.end(JSON.stringify({ active: true }));
+      return;
+    }
+    res.end(JSON.stringify({ active: false, last_status: "pass" }));
+  });
+
+  const harness = createHarness({ baseUrl: server.url, timeoutMs: 5000 });
+  const status = await harness.waitForStatus({ intervalMs: 10, timeoutMs: 1000 });
+
+  assert.equal(status.active, false);
+  assert.equal(status.last_status, "pass");
+
+  await server.close();
+});

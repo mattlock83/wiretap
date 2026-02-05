@@ -30,6 +30,25 @@ class Harness {
     return this._get("/v1/artifact");
   }
 
+  async waitForStatus(options = {}) {
+    const intervalMs = options.intervalMs || 500;
+    const timeoutMs = options.timeoutMs || 30_000;
+    const start = Date.now();
+
+    while (true) {
+      const status = await this._get("/v1/testcases/status");
+      if (!status.active) {
+        return status;
+      }
+      if (Date.now() - start > timeoutMs) {
+        const err = new Error("timed out waiting for test case to finish");
+        err.status = status;
+        throw err;
+      }
+      await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    }
+  }
+
   async startProxy(config) {
     return this._post("/v1/proxy/start", config || {});
   }
