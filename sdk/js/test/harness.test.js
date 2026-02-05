@@ -98,3 +98,25 @@ test("waitForStatus polls until inactive", async () => {
 
   await server.close();
 });
+
+test("downloadArtifact saves file", async () => {
+  const server = await startServer(async (req, res) => {
+    res.setHeader("content-type", "application/yaml");
+    res.end("version: 1\n");
+  });
+
+  const harness = createHarness({ baseUrl: server.url });
+  const { mkdtemp, readFile } = require("node:fs/promises");
+  const { tmpdir } = require("node:os");
+  const { join } = require("node:path");
+
+  const dir = await mkdtemp(join(tmpdir(), "phrond-"));
+  const filePath = join(dir, "artifact.yaml");
+
+  await harness.downloadArtifact(filePath);
+
+  const content = await readFile(filePath, "utf8");
+  assert.equal(content, "version: 1\n");
+
+  await server.close();
+});

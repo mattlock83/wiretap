@@ -19,6 +19,7 @@ await harness.startLifecycle();
 - `harness.startTestCase(name, meta)`
 - `harness.finishTestCase(status)`
 - `harness.getArtifact()`
+- `harness.downloadArtifact(filePath)`
 - `harness.waitForStatus({ intervalMs, timeoutMs })`
 - `harness.startProxy(config)`
 - `harness.startMockServer(config)`

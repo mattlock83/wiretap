@@ -34,3 +34,9 @@ The artifact can be downloaded directly from the core service:
 ```sh
 curl -L http://127.0.0.1:18000/v1/artifact -o artifact.yaml
 ```
+
+Or via the JS SDK:
+
+```js
+await harness.downloadArtifact("./artifact.yaml");
+```

@@ -30,6 +30,30 @@ class Harness {
     return this._get("/v1/artifact");
   }
 
+  async downloadArtifact(filePath) {
+    if (!filePath) {
+      throw new Error("filePath is required");
+    }
+    if (typeof fetch !== "function") {
+      throw new Error("global fetch is not available; require Node.js >= 18");
+    }
+
+    const url = new URL("/v1/artifact", this.baseUrl);
+    const res = await fetch(url);
+    if (!res.ok) {
+      const text = await res.text();
+      const err = new Error(`artifact download failed: ${res.status}`);
+      err.status = res.status;
+      err.body = text;
+      throw err;
+    }
+
+    const { writeFile } = require("node:fs/promises");
+    const buffer = Buffer.from(await res.arrayBuffer());
+    await writeFile(filePath, buffer);
+    return { path: filePath };
+  }
+
   async waitForStatus(options = {}) {
     const intervalMs = options.intervalMs || 500;
     const timeoutMs = options.timeoutMs || 30_000;
