@@ -1,0 +1,38 @@
+package main
+
+import (
+	"flag"
+	"fmt"
+	"os"
+
+	"github.com/phrond/evermock/core"
+)
+
+type cliConfig struct {
+	printCA bool
+}
+
+func parseCLI(cfg *core.Config) cliConfig {
+	var cli cliConfig
+	flag.BoolVar(&cli.printCA, "print-ca", false, "print proxy CA certificate and exit")
+	flag.Parse()
+
+	if v := os.Getenv("PHROND_ARTIFACT_DIR"); v != "" {
+		cfg.Artifact.OutputDir = v
+	}
+
+	return cli
+}
+
+func handleCLI(cli cliConfig, cfg core.Config) bool {
+	if !cli.printCA {
+		return false
+	}
+	fmt.Println("Proxy CA is stored under:")
+	if cfg.Proxy.CABaseDir != "" {
+		fmt.Println(cfg.Proxy.CABaseDir)
+	} else {
+		fmt.Println("<default cache dir>")
+	}
+	return true
+}

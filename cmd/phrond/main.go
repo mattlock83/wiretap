@@ -16,8 +16,12 @@ import (
 func main() {
 	cfg := core.DefaultConfig()
 	applyEnv(&cfg)
+	cli := parseCLI(&cfg)
 
 	logger := appLogger(cfg.Log)
+	if handleCLI(cli, cfg) {
+		return
+	}
 	appInstance, err := app.New(app.Deps{Config: cfg, Logger: logger})
 	if err != nil {
 		logger.Error("failed to initialize", "error", err)

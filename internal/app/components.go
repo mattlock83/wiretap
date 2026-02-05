@@ -75,6 +75,13 @@ func (p *ProxyComponent) Info() proxy.Info {
 	return p.info
 }
 
+func (p *ProxyComponent) ListenAddr() string {
+	if p == nil || p.server == nil {
+		return ""
+	}
+	return p.server.ListenAddr()
+}
+
 func (p *ProxyComponent) SetMode(mode proxy.Mode) error {
 	if p == nil || p.server == nil {
 		return nil

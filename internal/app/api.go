@@ -121,7 +121,15 @@ func (a *App) handleArtifact(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "no artifact available"})
 		return
 	}
-	writeJSON(w, http.StatusOK, artifactDoc)
+	data, err := artifact.EncodeBytes(artifactDoc)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	w.Header().Set("Content-Type", "application/yaml")
+	w.Header().Set("Content-Disposition", "attachment; filename=\"artifact.yaml\"")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(data)
 }
 
 func (a *App) handleStubs(w http.ResponseWriter, r *http.Request) {
@@ -242,13 +250,13 @@ func (a *App) handleProxyStart(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := a.proxyComponent.Start(r.Context()); err != nil {
 		if errors.Is(err, proxy.ErrAlreadyStarted) {
-			writeJSON(w, http.StatusOK, a.proxyComponent.Info())
+			writeJSON(w, http.StatusOK, mergeProxyInfo(a.proxyComponent))
 			return
 		}
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, a.proxyComponent.Info())
+	writeJSON(w, http.StatusOK, mergeProxyInfo(a.proxyComponent))
 }
 
 func (a *App) handleMockStart(w http.ResponseWriter, r *http.Request) {
@@ -316,7 +324,7 @@ func (a *App) handleProxyCA(w http.ResponseWriter, r *http.Request) {
 func (a *App) environmentSnapshot() *artifact.Environment {
 	env := &artifact.Environment{}
 	if a.proxyComponent != nil {
-		info := a.proxyComponent.Info()
+		info := mergeProxyInfo(a.proxyComponent)
 		if info.ListenAddr != "" {
 			env.ProxyListen = normalizeURL(info.ListenAddr)
 		}
@@ -338,4 +346,17 @@ func normalizeURL(raw string) string {
 		return raw
 	}
 	return "http://" + raw
+}
+
+func mergeProxyInfo(component *ProxyComponent) proxy.Info {
+	if component == nil {
+		return proxy.Info{}
+	}
+	info := component.Info()
+	if info.ListenAddr == "" {
+		if addr := component.ListenAddr(); addr != "" {
+			info.ListenAddr = addr
+		}
+	}
+	return info
 }

@@ -135,6 +135,14 @@ func (s *Server) Stop(ctx context.Context) error {
 	return err
 }
 
+// ListenAddr returns the bound address if the listener is active.
+func (s *Server) ListenAddr() string {
+	if s.listener == nil {
+		return ""
+	}
+	return s.listener.Addr().String()
+}
+
 // SetMode updates the proxy mode before the server starts.
 func (s *Server) SetMode(mode Mode) error {
 	if s.server != nil {
