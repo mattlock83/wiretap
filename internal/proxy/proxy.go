@@ -111,13 +111,14 @@ func (s *Server) Start(ctx context.Context) (Info, error) {
 		IdleTimeout:       s.cfg.IdleTimeout,
 	}
 
+	shutdownCh := s.shutdownCh
 	go func() {
 		if err := s.server.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			if s.cfg.Logger != nil {
 				s.cfg.Logger.Printf("proxy serve error: %v", err)
 			}
 		}
-		close(s.shutdownCh)
+		close(shutdownCh)
 	}()
 
 	return Info{ListenAddr: ln.Addr().String(), Mode: s.cfg.Mode}, nil
@@ -132,6 +133,17 @@ func (s *Server) Stop(ctx context.Context) error {
 	s.once.Do(func() {
 		err = s.server.Shutdown(ctx)
 	})
+	shutdownCh := s.shutdownCh
+	if shutdownCh != nil {
+		select {
+		case <-shutdownCh:
+		case <-ctx.Done():
+		}
+	}
+	s.server = nil
+	s.listener = nil
+	s.shutdownCh = make(chan struct{})
+	s.once = sync.Once{}
 	return err
 }
 

@@ -27,9 +27,6 @@ MOCK_PORT="${MOCK_PORT:-$(pick_port)}"
 BUILD_DIR="${BUILD_DIR:-$(mktemp -d)}"
 
 cleanup() {
-  if [[ -n "${SUT_PID:-}" ]]; then
-    kill "${SUT_PID}" 2>/dev/null || true
-  fi
   if [[ -n "${PHROND_PID:-}" ]]; then
     kill "${PHROND_PID}" 2>/dev/null || true
   fi
@@ -62,10 +59,6 @@ go build ${GOFLAGS} -o "${BUILD_DIR}/phrond-sut" ./examples/system/sut
 nohup "${BUILD_DIR}/phrond-core" > /tmp/phrond-core.log 2>&1 &
 PHROND_PID=$!
 
-# Start SUT
-nohup "${BUILD_DIR}/phrond-sut" > /tmp/phrond-sut.log 2>&1 &
-SUT_PID=$!
-
 wait_for() {
   local url="$1"
   for i in {1..40}; do
@@ -83,13 +76,8 @@ if ! wait_for "http://127.0.0.1:${PHROND_PORT}/healthz"; then
   exit 1
 fi
 
-if ! wait_for "http://127.0.0.1:${SUT_PORT}/healthz"; then
-  echo "SUT failed to start. See /tmp/phrond-sut.log"
-  tail -n 50 /tmp/phrond-sut.log || true
-  exit 1
-fi
-
 # Run JS example (uses SDK to drive the test case)
+export SUT_BINARY="${BUILD_DIR}/phrond-sut"
 node ./examples/js/basic-test.js
 
 # Generate coverage reports

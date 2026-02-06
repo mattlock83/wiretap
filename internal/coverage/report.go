@@ -38,23 +38,17 @@ type Report struct {
 }
 
 type SpecCoverageGroup struct {
-	Specs          []SpecCoverage  `json:"specs" yaml:"specs"`
-	Exercised      []string        `json:"exercised,omitempty" yaml:"exercised,omitempty"`
-	NotCovered     []string        `json:"not_covered,omitempty" yaml:"not_covered,omitempty"`
-	Faked          []string        `json:"faked,omitempty" yaml:"faked,omitempty"`
-	AssertedFields []AssertedField `json:"asserted_fields,omitempty" yaml:"asserted_fields,omitempty"`
+	Specs []SpecCoverage `json:"specs" yaml:"specs"`
 }
 
 type SpecCoverage struct {
-	SchemaID            string                `json:"schema_id" yaml:"schema_id"`
-	Role                string                `json:"role" yaml:"role"`
-	Type                string                `json:"type" yaml:"type"`
-	Source              string                `json:"source" yaml:"source"`
-	Exercised           []string              `json:"exercised,omitempty" yaml:"exercised,omitempty"`
-	NotCovered          []string              `json:"not_covered,omitempty" yaml:"not_covered,omitempty"`
-	Faked               []string              `json:"faked,omitempty" yaml:"faked,omitempty"`
-	AssertedByOperation []OperationAssertions `json:"asserted_by_operation,omitempty" yaml:"asserted_by_operation,omitempty"`
-	Interactions        []OperationSamples    `json:"interactions,omitempty" yaml:"interactions,omitempty"`
+	SchemaID   string             `json:"schema_id" yaml:"schema_id"`
+	Role       string             `json:"role" yaml:"role"`
+	Type       string             `json:"type" yaml:"type"`
+	Source     string             `json:"source" yaml:"source"`
+	Exercised  []OperationSamples `json:"exercised,omitempty" yaml:"exercised,omitempty"`
+	NotCovered []OperationSamples `json:"not_covered,omitempty" yaml:"not_covered,omitempty"`
+	Faked      []OperationSamples `json:"faked,omitempty" yaml:"faked,omitempty"`
 }
 
 type AssertedField struct {
@@ -441,11 +435,10 @@ const reportHTMLTemplate = `<!DOCTYPE html>
               <h4>Exercised</h4>
               {{ if $spec.Exercised }}
                 {{ range $spec.Exercised }}
-                  {{ $samples := samplesForOp $spec.Interactions . }}
                   <details class="op">
-                    <summary>{{ . }}</summary>
-                    {{ if $samples }}
-                      {{ range $samples }}
+                    <summary>{{ .Operation }}</summary>
+                    {{ if .Samples }}
+                      {{ range .Samples }}
                         <div class="sample">
                           <div class="sample-title">Test Case: {{ .TestCase }}</div>
                           <div class="sample-body">
@@ -477,7 +470,7 @@ const reportHTMLTemplate = `<!DOCTYPE html>
               {{ if $spec.NotCovered }}
                 {{ range $spec.NotCovered }}
                   <details class="op">
-                    <summary>{{ . }}</summary>
+                    <summary>{{ .Operation }}</summary>
                     <div class="meta">Not exercised by tests.</div>
                   </details>
                 {{ end }}
@@ -505,11 +498,10 @@ const reportHTMLTemplate = `<!DOCTYPE html>
               <h4>Faked</h4>
               {{ if $spec.Faked }}
                 {{ range $spec.Faked }}
-                  {{ $samples := samplesForOp $spec.Interactions . }}
                   <details class="op">
-                    <summary>{{ . }}</summary>
-                    {{ if $samples }}
-                      {{ range $samples }}
+                    <summary>{{ .Operation }}</summary>
+                    {{ if .Samples }}
+                      {{ range .Samples }}
                         <div class="sample">
                           <div class="sample-title">Test Case: {{ .TestCase }}</div>
                           <div class="sample-body">
@@ -629,9 +621,7 @@ func buildCoverage(entries []artifactEntry) (SpecCoverageGroup, SpecCoverageGrou
 	var notes []string
 	flows := []artifact.Flow{}
 	flowEntries := []flowEntry{}
-	assertions := []artifact.Assertion{}
 	schemas := []artifact.SchemaRef{}
-	flowIndex := map[string]artifact.Flow{}
 
 	for _, entry := range entries {
 		if entry.Doc == nil {
@@ -645,16 +635,7 @@ func buildCoverage(entries []artifactEntry) (SpecCoverageGroup, SpecCoverageGrou
 			flows = append(flows, flow)
 			flowEntries = append(flowEntries, flowEntry{Flow: flow, TestCase: tcName})
 		}
-		assertions = append(assertions, entry.Doc.Assertions...)
 		schemas = append(schemas, entry.Doc.Schemas...)
-	}
-	for _, flow := range flows {
-		if flow.ID != "" {
-			flowIndex[flow.ID] = flow
-		}
-		if flow.MatchedStubID != "" {
-			flowIndex[flow.MatchedStubID] = flow
-		}
 	}
 
 	providedSchemas, providedNotes := loadSchemas(filterSchemas(schemas, "sut"))
@@ -665,43 +646,12 @@ func buildCoverage(entries []artifactEntry) (SpecCoverageGroup, SpecCoverageGrou
 	markCoverage(flows, providedSchemas, "test_to_sut")
 	markCoverage(flows, dependentSchemas, "sut_to_mock")
 
-	providedGroup := SpecCoverageGroup{Specs: exportSpecs(providedSchemas, true)}
-	dependentGroup := SpecCoverageGroup{Specs: exportSpecs(dependentSchemas, false)}
+	providedSamples := buildOperationSamples(flowEntries, providedSchemas, "test_to_sut")
+	dependentSamples := buildOperationSamples(flowEntries, dependentSchemas, "sut_to_mock")
 
-	providedInteractions := buildOperationSamples(flowEntries, providedSchemas, "test_to_sut")
-	dependentInteractions := buildOperationSamples(flowEntries, dependentSchemas, "sut_to_mock")
-	for i := range providedGroup.Specs {
-		specID := providedGroup.Specs[i].SchemaID
-		if ops, ok := providedInteractions[specID]; ok {
-			providedGroup.Specs[i].Interactions = ops
-		}
-	}
-	for i := range dependentGroup.Specs {
-		specID := dependentGroup.Specs[i].SchemaID
-		if ops, ok := dependentInteractions[specID]; ok {
-			dependentGroup.Specs[i].Interactions = ops
-		}
-	}
+	providedGroup := SpecCoverageGroup{Specs: exportSpecs(providedSchemas, true, providedSamples, false)}
+	dependentGroup := SpecCoverageGroup{Specs: exportSpecs(dependentSchemas, false, dependentSamples, true)}
 
-	providedGroup.Exercised = uniqueSorted(collectOps(providedSchemas, "exercised"))
-	providedGroup.NotCovered = uniqueSorted(collectOps(providedSchemas, "not_covered"))
-
-	dependentGroup.Faked = uniqueSorted(collectOps(dependentSchemas, "faked"))
-	dependentGroup.AssertedFields = buildAssertedFields(assertions, "sut_to_mock")
-	assertedBySpec, assertedNotes := buildAssertedFieldsBySpec(assertions, flowIndex, dependentSchemas, "sut_to_mock")
-	notes = append(notes, assertedNotes...)
-	if len(assertedBySpec) > 0 {
-		for i := range dependentGroup.Specs {
-			specID := dependentGroup.Specs[i].SchemaID
-			if ops, ok := assertedBySpec[specID]; ok {
-				dependentGroup.Specs[i].AssertedByOperation = ops
-			}
-		}
-	}
-
-	if len(dependentGroup.AssertedFields) == 0 {
-		notes = append(notes, "No field-level assertions were recorded for sut_to_mock traffic.")
-	}
 	return providedGroup, dependentGroup, notes
 }
 
@@ -788,19 +738,30 @@ func markCoverage(flows []artifact.Flow, schemas []*loadedSchema, channel string
 	}
 }
 
-func exportSpecs(schemas []*loadedSchema, includeNotCovered bool) []SpecCoverage {
+func exportSpecs(schemas []*loadedSchema, includeNotCovered bool, samples map[string]map[string][]FlowSample, includeFaked bool) []SpecCoverage {
 	var specs []SpecCoverage
 	for _, schema := range schemas {
-		coverage := SpecCoverage{
-			SchemaID:  schema.Ref.ID,
-			Role:      schema.Ref.Role,
-			Type:      schema.Ref.Type,
-			Source:    schema.Source,
-			Exercised: uniqueSorted(setToList(schema.Exercised)),
-			Faked:     uniqueSorted(setToList(schema.Faked)),
-		}
+		sampleMap := samples[schema.Ref.ID]
+		exercisedOps := uniqueSorted(setToList(schema.Exercised))
+		fakedOps := uniqueSorted(setToList(schema.Faked))
+		notCoveredOps := []string{}
 		if includeNotCovered {
-			coverage.NotCovered = uniqueSorted(diffOps(schema.Operations, schema.Exercised))
+			notCoveredOps = uniqueSorted(diffOps(schema.Operations, schema.Exercised))
+		}
+		coverage := SpecCoverage{
+			SchemaID: schema.Ref.ID,
+			Role:     schema.Ref.Role,
+			Type:     schema.Ref.Type,
+			Source:   schema.Source,
+		}
+		if len(exercisedOps) > 0 {
+			coverage.Exercised = operationSamplesList(exercisedOps, sampleMap)
+		}
+		if len(notCoveredOps) > 0 {
+			coverage.NotCovered = operationSamplesList(notCoveredOps, nil)
+		}
+		if includeFaked && len(fakedOps) > 0 {
+			coverage.Faked = operationSamplesList(fakedOps, sampleMap)
 		}
 		specs = append(specs, coverage)
 	}
@@ -808,19 +769,28 @@ func exportSpecs(schemas []*loadedSchema, includeNotCovered bool) []SpecCoverage
 	return specs
 }
 
-func collectOps(schemas []*loadedSchema, kind string) []string {
-	var ops []string
-	for _, schema := range schemas {
-		switch kind {
-		case "exercised":
-			ops = append(ops, setToList(schema.Exercised)...)
-		case "faked":
-			ops = append(ops, setToList(schema.Faked)...)
-		case "not_covered":
-			ops = append(ops, diffOps(schema.Operations, schema.Exercised)...)
-		}
+func operationSamplesList(ops []string, samples map[string][]FlowSample) []OperationSamples {
+	if len(ops) == 0 {
+		return nil
 	}
-	return ops
+	out := make([]OperationSamples, 0, len(ops))
+	for _, op := range ops {
+		list := samples[op]
+		if len(list) > 1 {
+			sortSamples(list)
+		}
+		out = append(out, OperationSamples{Operation: op, Samples: list})
+	}
+	return out
+}
+
+func sortSamples(samples []FlowSample) {
+	sort.Slice(samples, func(i, j int) bool {
+		if samples[i].TestCase == samples[j].TestCase {
+			return samples[i].FlowID < samples[j].FlowID
+		}
+		return samples[i].TestCase < samples[j].TestCase
+	})
 }
 
 func buildAssertedFields(assertions []artifact.Assertion, channel string) []AssertedField {
@@ -841,7 +811,7 @@ func buildAssertedFields(assertions []artifact.Assertion, channel string) []Asse
 	return fields
 }
 
-func buildOperationSamples(entries []flowEntry, schemas []*loadedSchema, channel string) map[string][]OperationSamples {
+func buildOperationSamples(entries []flowEntry, schemas []*loadedSchema, channel string) map[string]map[string][]FlowSample {
 	raw := map[string]map[string][]FlowSample{}
 	for _, entry := range entries {
 		flow := entry.Flow
@@ -871,7 +841,7 @@ func buildOperationSamples(entries []flowEntry, schemas []*loadedSchema, channel
 			}
 		}
 	}
-	return normalizeOperationSamples(raw)
+	return raw
 }
 
 func addSample(target map[string]map[string][]FlowSample, schemaID, operation string, sample FlowSample) map[string]map[string][]FlowSample {
@@ -880,25 +850,6 @@ func addSample(target map[string]map[string][]FlowSample, schemaID, operation st
 	}
 	target[schemaID][operation] = append(target[schemaID][operation], sample)
 	return target
-}
-
-func normalizeOperationSamples(raw map[string]map[string][]FlowSample) map[string][]OperationSamples {
-	out := map[string][]OperationSamples{}
-	for schemaID, opMap := range raw {
-		var ops []OperationSamples
-		for op, samples := range opMap {
-			sort.Slice(samples, func(i, j int) bool {
-				if samples[i].TestCase == samples[j].TestCase {
-					return samples[i].FlowID < samples[j].FlowID
-				}
-				return samples[i].TestCase < samples[j].TestCase
-			})
-			ops = append(ops, OperationSamples{Operation: op, Samples: samples})
-		}
-		sort.Slice(ops, func(i, j int) bool { return ops[i].Operation < ops[j].Operation })
-		out[schemaID] = ops
-	}
-	return out
 }
 
 func flowSampleFromFlow(entry flowEntry) FlowSample {

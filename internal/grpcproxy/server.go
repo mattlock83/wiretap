@@ -115,13 +115,14 @@ func (s *Server) Start(ctx context.Context) (Info, error) {
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
+	shutdownCh := s.shutdownCh
 	go func() {
 		if err := s.server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			if s.cfg.Logger != nil {
 				s.cfg.Logger.Printf("grpc proxy serve error: %v", err)
 			}
 		}
-		close(s.shutdownCh)
+		close(shutdownCh)
 	}()
 
 	info := s.Info()
@@ -140,6 +141,17 @@ func (s *Server) Stop(ctx context.Context) error {
 	s.once.Do(func() {
 		err = s.server.Shutdown(ctx)
 	})
+	shutdownCh := s.shutdownCh
+	if shutdownCh != nil {
+		select {
+		case <-shutdownCh:
+		case <-ctx.Done():
+		}
+	}
+	s.server = nil
+	s.listener = nil
+	s.shutdownCh = make(chan struct{})
+	s.once = sync.Once{}
 	return err
 }
 
