@@ -54,6 +54,7 @@ type SpecCoverage struct {
 	NotCovered          []string              `json:"not_covered,omitempty" yaml:"not_covered,omitempty"`
 	Faked               []string              `json:"faked,omitempty" yaml:"faked,omitempty"`
 	AssertedByOperation []OperationAssertions `json:"asserted_by_operation,omitempty" yaml:"asserted_by_operation,omitempty"`
+	Interactions        []OperationSamples    `json:"interactions,omitempty" yaml:"interactions,omitempty"`
 }
 
 type AssertedField struct {
@@ -68,6 +69,33 @@ type AssertedField struct {
 type OperationAssertions struct {
 	Operation string          `json:"operation" yaml:"operation"`
 	Fields    []AssertedField `json:"fields,omitempty" yaml:"fields,omitempty"`
+}
+
+type OperationSamples struct {
+	Operation string       `json:"operation" yaml:"operation"`
+	Samples   []FlowSample `json:"samples,omitempty" yaml:"samples,omitempty"`
+}
+
+type FlowSample struct {
+	TestCase string             `json:"testcase" yaml:"testcase"`
+	FlowID   string             `json:"flow_id,omitempty" yaml:"flow_id,omitempty"`
+	Protocol string             `json:"protocol,omitempty" yaml:"protocol,omitempty"`
+	Channel  string             `json:"channel,omitempty" yaml:"channel,omitempty"`
+	Request  InteractionMessage `json:"request,omitempty" yaml:"request,omitempty"`
+	Response InteractionMessage `json:"response,omitempty" yaml:"response,omitempty"`
+}
+
+type InteractionMessage struct {
+	Method      string           `json:"method,omitempty" yaml:"method,omitempty"`
+	URL         string           `json:"url,omitempty" yaml:"url,omitempty"`
+	Status      int              `json:"status,omitempty" yaml:"status,omitempty"`
+	Headers     artifact.Headers `json:"headers,omitempty" yaml:"headers,omitempty"`
+	Body        string           `json:"body,omitempty" yaml:"body,omitempty"`
+	ContentType string           `json:"content_type,omitempty" yaml:"content_type,omitempty"`
+	GRPCService string           `json:"grpc_service,omitempty" yaml:"grpc_service,omitempty"`
+	GRPCMethod  string           `json:"grpc_method,omitempty" yaml:"grpc_method,omitempty"`
+	GRPCStatus  int              `json:"grpc_status,omitempty" yaml:"grpc_status,omitempty"`
+	GRPCMessage string           `json:"grpc_message,omitempty" yaml:"grpc_message,omitempty"`
 }
 
 type loadedSchema struct {
@@ -87,6 +115,11 @@ type openapiSpec struct {
 
 type protoSpec struct {
 	Services map[string]*desc.ServiceDescriptor
+}
+
+type flowEntry struct {
+	Flow     artifact.Flow
+	TestCase string
 }
 
 // Generate builds a coverage report from artifact files in a directory.
@@ -157,27 +190,13 @@ func writeHTMLReport(w io.Writer, report *Report) error {
 		"join": func(values []string) string {
 			return strings.Join(values, ", ")
 		},
-		"assertionsForOp": func(items []OperationAssertions, op string) []AssertedField {
+		"samplesForOp": func(items []OperationSamples, op string) []FlowSample {
 			for _, item := range items {
 				if item.Operation == op {
-					return item.Fields
+					return item.Samples
 				}
 			}
 			return nil
-		},
-		"assertionSummary": func(field AssertedField) string {
-			label := field.Field
-			if strings.TrimSpace(label) == "" {
-				if field.PathLang != "" {
-					label = field.PathLang
-				} else {
-					label = "body"
-				}
-			}
-			if field.Operator != "" {
-				return fmt.Sprintf("%s (%s)", label, field.Operator)
-			}
-			return label
 		},
 		"formatTime": func(t time.Time) string {
 			if t.IsZero() {
@@ -312,6 +331,36 @@ const reportHTMLTemplate = `<!DOCTYPE html>
       background: #f1f5f9;
       margin-top: 8px;
     }
+    .sample {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px;
+      margin-top: 10px;
+      background: #ffffff;
+    }
+    .sample-title {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+    }
+    .sample-body {
+      margin-top: 8px;
+      display: grid;
+      gap: 6px;
+      font-size: 13px;
+    }
+    .code-block {
+      margin: 0;
+      padding: 8px 10px;
+      background: #0f172a;
+      color: #e2e8f0;
+      border-radius: 8px;
+      font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      font-size: 12px;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
     .meta {
       color: var(--muted);
       font-size: 13px;
@@ -392,9 +441,31 @@ const reportHTMLTemplate = `<!DOCTYPE html>
               <h4>Exercised</h4>
               {{ if $spec.Exercised }}
                 {{ range $spec.Exercised }}
+                  {{ $samples := samplesForOp $spec.Interactions . }}
                   <details class="op">
                     <summary>{{ . }}</summary>
-                    <div class="meta">No assertions recorded.</div>
+                    {{ if $samples }}
+                      {{ range $samples }}
+                        <div class="sample">
+                          <div class="sample-title">Test Case: {{ .TestCase }}</div>
+                          <div class="sample-body">
+                            {{ if eq .Protocol "grpc" }}
+                              <div><strong>Request:</strong> {{ .Request.GRPCService }}/{{ .Request.GRPCMethod }}</div>
+                              {{ if .Request.Body }}<pre class="code-block">{{ .Request.Body }}</pre>{{ end }}
+                              <div><strong>Response:</strong> status {{ .Response.GRPCStatus }}</div>
+                              {{ if .Response.Body }}<pre class="code-block">{{ .Response.Body }}</pre>{{ end }}
+                            {{ else }}
+                              <div><strong>Request:</strong> {{ .Request.Method }} {{ .Request.URL }}</div>
+                              {{ if .Request.Body }}<pre class="code-block">{{ .Request.Body }}</pre>{{ end }}
+                              <div><strong>Response:</strong> {{ .Response.Status }}</div>
+                              {{ if .Response.Body }}<pre class="code-block">{{ .Response.Body }}</pre>{{ end }}
+                            {{ end }}
+                          </div>
+                        </div>
+                      {{ end }}
+                    {{ else }}
+                      <div class="meta">No captured samples.</div>
+                    {{ end }}
                   </details>
                 {{ end }}
               {{ else }}
@@ -434,17 +505,30 @@ const reportHTMLTemplate = `<!DOCTYPE html>
               <h4>Faked</h4>
               {{ if $spec.Faked }}
                 {{ range $spec.Faked }}
-                  {{ $fields := assertionsForOp $spec.AssertedByOperation . }}
+                  {{ $samples := samplesForOp $spec.Interactions . }}
                   <details class="op">
                     <summary>{{ . }}</summary>
-                    {{ if $fields }}
-                      <ul>
-                        {{ range $fields }}
-                          <li>{{ assertionSummary . }}</li>
-                        {{ end }}
-                      </ul>
+                    {{ if $samples }}
+                      {{ range $samples }}
+                        <div class="sample">
+                          <div class="sample-title">Test Case: {{ .TestCase }}</div>
+                          <div class="sample-body">
+                            {{ if eq .Protocol "grpc" }}
+                              <div><strong>Request:</strong> {{ .Request.GRPCService }}/{{ .Request.GRPCMethod }}</div>
+                              {{ if .Request.Body }}<pre class="code-block">{{ .Request.Body }}</pre>{{ end }}
+                              <div><strong>Response:</strong> status {{ .Response.GRPCStatus }}</div>
+                              {{ if .Response.Body }}<pre class="code-block">{{ .Response.Body }}</pre>{{ end }}
+                            {{ else }}
+                              <div><strong>Request:</strong> {{ .Request.Method }} {{ .Request.URL }}</div>
+                              {{ if .Request.Body }}<pre class="code-block">{{ .Request.Body }}</pre>{{ end }}
+                              <div><strong>Response:</strong> {{ .Response.Status }}</div>
+                              {{ if .Response.Body }}<pre class="code-block">{{ .Response.Body }}</pre>{{ end }}
+                            {{ end }}
+                          </div>
+                        </div>
+                      {{ end }}
                     {{ else }}
-                      <div class="meta">No assertions recorded.</div>
+                      <div class="meta">No captured samples.</div>
                     {{ end }}
                   </details>
                 {{ end }}
@@ -544,6 +628,7 @@ func inferSUTName(entries []artifactEntry) string {
 func buildCoverage(entries []artifactEntry) (SpecCoverageGroup, SpecCoverageGroup, []string) {
 	var notes []string
 	flows := []artifact.Flow{}
+	flowEntries := []flowEntry{}
 	assertions := []artifact.Assertion{}
 	schemas := []artifact.SchemaRef{}
 	flowIndex := map[string]artifact.Flow{}
@@ -552,7 +637,14 @@ func buildCoverage(entries []artifactEntry) (SpecCoverageGroup, SpecCoverageGrou
 		if entry.Doc == nil {
 			continue
 		}
-		flows = append(flows, entry.Doc.Traffic...)
+		tcName := strings.TrimSpace(entry.Doc.TestCase.Name)
+		if tcName == "" {
+			tcName = entry.Doc.TestCase.ID
+		}
+		for _, flow := range entry.Doc.Traffic {
+			flows = append(flows, flow)
+			flowEntries = append(flowEntries, flowEntry{Flow: flow, TestCase: tcName})
+		}
 		assertions = append(assertions, entry.Doc.Assertions...)
 		schemas = append(schemas, entry.Doc.Schemas...)
 	}
@@ -575,6 +667,21 @@ func buildCoverage(entries []artifactEntry) (SpecCoverageGroup, SpecCoverageGrou
 
 	providedGroup := SpecCoverageGroup{Specs: exportSpecs(providedSchemas, true)}
 	dependentGroup := SpecCoverageGroup{Specs: exportSpecs(dependentSchemas, false)}
+
+	providedInteractions := buildOperationSamples(flowEntries, providedSchemas, "test_to_sut")
+	dependentInteractions := buildOperationSamples(flowEntries, dependentSchemas, "sut_to_mock")
+	for i := range providedGroup.Specs {
+		specID := providedGroup.Specs[i].SchemaID
+		if ops, ok := providedInteractions[specID]; ok {
+			providedGroup.Specs[i].Interactions = ops
+		}
+	}
+	for i := range dependentGroup.Specs {
+		specID := dependentGroup.Specs[i].SchemaID
+		if ops, ok := dependentInteractions[specID]; ok {
+			dependentGroup.Specs[i].Interactions = ops
+		}
+	}
 
 	providedGroup.Exercised = uniqueSorted(collectOps(providedSchemas, "exercised"))
 	providedGroup.NotCovered = uniqueSorted(collectOps(providedSchemas, "not_covered"))
@@ -732,6 +839,152 @@ func buildAssertedFields(assertions []artifact.Assertion, channel string) []Asse
 		})
 	}
 	return fields
+}
+
+func buildOperationSamples(entries []flowEntry, schemas []*loadedSchema, channel string) map[string][]OperationSamples {
+	raw := map[string]map[string][]FlowSample{}
+	for _, entry := range entries {
+		flow := entry.Flow
+		if flow.Channel != channel {
+			continue
+		}
+		for _, schema := range schemas {
+			switch {
+			case schema.OpenAPI != nil && flow.Protocol == "http":
+				op, ok := openapiOperationFromFlow(flow, schema.OpenAPI)
+				if !ok {
+					continue
+				}
+				if !containsOp(schema.Operations, op) {
+					continue
+				}
+				raw = addSample(raw, schema.Ref.ID, op, flowSampleFromFlow(entry))
+			case schema.Proto != nil && flow.Protocol == "grpc":
+				op := grpcOperationFromFlow(flow)
+				if op == "" {
+					continue
+				}
+				if !containsOp(schema.Operations, op) {
+					continue
+				}
+				raw = addSample(raw, schema.Ref.ID, op, flowSampleFromFlow(entry))
+			}
+		}
+	}
+	return normalizeOperationSamples(raw)
+}
+
+func addSample(target map[string]map[string][]FlowSample, schemaID, operation string, sample FlowSample) map[string]map[string][]FlowSample {
+	if _, ok := target[schemaID]; !ok {
+		target[schemaID] = map[string][]FlowSample{}
+	}
+	target[schemaID][operation] = append(target[schemaID][operation], sample)
+	return target
+}
+
+func normalizeOperationSamples(raw map[string]map[string][]FlowSample) map[string][]OperationSamples {
+	out := map[string][]OperationSamples{}
+	for schemaID, opMap := range raw {
+		var ops []OperationSamples
+		for op, samples := range opMap {
+			sort.Slice(samples, func(i, j int) bool {
+				if samples[i].TestCase == samples[j].TestCase {
+					return samples[i].FlowID < samples[j].FlowID
+				}
+				return samples[i].TestCase < samples[j].TestCase
+			})
+			ops = append(ops, OperationSamples{Operation: op, Samples: samples})
+		}
+		sort.Slice(ops, func(i, j int) bool { return ops[i].Operation < ops[j].Operation })
+		out[schemaID] = ops
+	}
+	return out
+}
+
+func flowSampleFromFlow(entry flowEntry) FlowSample {
+	flow := entry.Flow
+	sample := FlowSample{
+		TestCase: entry.TestCase,
+		FlowID:   flow.ID,
+		Protocol: flow.Protocol,
+		Channel:  flow.Channel,
+	}
+	if flow.Protocol == "http" {
+		if flow.Request.HTTP != nil {
+			sample.Request = httpMessageSample(flow.Request.HTTP)
+		}
+		if flow.Response.HTTP != nil {
+			sample.Response = httpMessageSample(flow.Response.HTTP)
+		}
+		return sample
+	}
+	if flow.Protocol == "grpc" {
+		if flow.Request.GRPC != nil {
+			sample.Request = grpcMessageSample(flow.GRPC, flow.Request.GRPC)
+		} else {
+			sample.Request = grpcMessageSample(flow.GRPC, nil)
+		}
+		if flow.Response.GRPC != nil {
+			sample.Response = grpcMessageSample(flow.GRPC, flow.Response.GRPC)
+		} else {
+			sample.Response = grpcMessageSample(flow.GRPC, nil)
+		}
+	}
+	return sample
+}
+
+func httpMessageSample(msg *artifact.HttpMessage) InteractionMessage {
+	if msg == nil {
+		return InteractionMessage{}
+	}
+	return InteractionMessage{
+		Method:  msg.Method,
+		URL:     msg.URL,
+		Status:  msg.Status,
+		Headers: msg.Headers,
+		Body:    bodyPreview(msg.Body),
+	}
+}
+
+func grpcMessageSample(meta *artifact.GrpcMeta, msg *artifact.GrpcMessage) InteractionMessage {
+	out := InteractionMessage{}
+	if meta != nil {
+		out.GRPCService = meta.Service
+		out.GRPCMethod = meta.Method
+		out.GRPCStatus = meta.Status
+		out.GRPCMessage = meta.StatusMessage
+	}
+	if msg != nil {
+		out.ContentType = msg.ContentType
+		out.Headers = msg.Headers
+		out.Body = bodyPreview(msg.Body)
+	}
+	return out
+}
+
+func bodyPreview(body *artifact.Body) string {
+	if body == nil {
+		return ""
+	}
+	if body.Text != "" {
+		return truncateBody(body.Text)
+	}
+	if body.Decoded != nil && body.Decoded.Text != "" {
+		return truncateBody(body.Decoded.Text)
+	}
+	if body.Bytes != "" {
+		return fmt.Sprintf("[binary payload %d bytes base64]", len(body.Bytes))
+	}
+	return ""
+}
+
+func truncateBody(text string) string {
+	const limit = 360
+	clean := strings.TrimSpace(text)
+	if len(clean) <= limit {
+		return clean
+	}
+	return clean[:limit] + "…"
 }
 
 func buildAssertedFieldsBySpec(assertions []artifact.Assertion, flows map[string]artifact.Flow, schemas []*loadedSchema, channel string) (map[string][]OperationAssertions, []string) {
