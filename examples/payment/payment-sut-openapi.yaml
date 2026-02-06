@@ -1,0 +1,98 @@
+openapi: 3.0.0
+info:
+  title: Payment SUT
+  version: 1.0.0
+paths:
+  /payments/submit:
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [from_account, to_account, amount]
+              properties:
+                from_account:
+                  type: string
+                to_account:
+                  type: string
+                amount:
+                  type: number
+                currency:
+                  type: string
+      responses:
+        "201":
+          description: payment submitted
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - payment_id
+                  - status
+                  - transaction_id
+                  - from_account
+                  - to_account
+                  - amount
+                  - currency
+                  - remaining_balance
+                properties:
+                  payment_id:
+                    type: string
+                  status:
+                    type: string
+                  transaction_id:
+                    type: string
+                  from_account:
+                    type: string
+                  to_account:
+                    type: string
+                  from_account_name:
+                    type: string
+                  to_account_name:
+                    type: string
+                  amount:
+                    type: number
+                  currency:
+                    type: string
+                  remaining_balance:
+                    type: number
+        "422":
+          description: validation failure
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [error_code, message]
+                properties:
+                  error_code:
+                    type: string
+                  message:
+                    type: string
+                  limit:
+                    type: number
+                  available_balance:
+                    type: number
+  /healthz:
+    get:
+      responses:
+        "200":
+          description: healthy
+          content:
+            text/plain:
+              schema:
+                type: string
+  /status:
+    get:
+      responses:
+        "200":
+          description: status
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status:
+                    type: string

@@ -2,10 +2,9 @@
 
 This example uses the high-level JS SDK API and follows the phased flow:
 - suite setup (`setupSuite`)
-- test setup (`suite.setupTest`)
+- test lifecycle (`suite.withTest`)
 - mocking (`test.mockHttp`)
 - SUT requests (`test.get` / `test.postJson`)
-- test teardown (`test.teardown`)
 - suite teardown (`suite.teardown`)
 
 It spins up a simple SUT that calls two downstream endpoints and exercises the proxy + mock server.
@@ -23,6 +22,12 @@ go run ./cmd/phrond
 node --test examples/js/basic-test.js
 ```
 
+For the multi-service payment scenario:
+
+```sh
+node --test examples/js/payment-test.js
+```
+
 ## One-Command Run
 You can run the full flow with:
 
@@ -30,13 +35,18 @@ You can run the full flow with:
 ./examples/run-e2e.sh
 ```
 
+For the payment workflow:
+
+```sh
+./examples/run-payment-e2e.sh
+```
+
 The script will:
 - Set up suite lifecycle and start proxy/mock servers
-- Set up one test case with schemas
+- Run one test case with auto setup/teardown via `suite.withTest(...)`
 - Launch the SUT in `examples/system/sut`
 - Register HTTP mocks
 - Send a POST through the proxy
-- Teardown the test case
 - Teardown the suite lifecycle
 
 ### Environment Overrides

@@ -339,6 +339,105 @@ test("request helpers require proxy component", async () => {
   await server.close();
 });
 
+test("suite.withTest wraps setup and teardown with pass status", async () => {
+  const requests = [];
+  const server = await startServer(async (req, res) => {
+    const body = await readBody(req);
+    requests.push({ method: req.method, path: req.url, body });
+    res.setHeader("content-type", "application/json");
+
+    if (req.url === "/v1/testcases/finish") {
+      res.end(JSON.stringify({ path: "artifacts/case.yaml" }));
+      return;
+    }
+    res.end(JSON.stringify({ status: "ok" }));
+  });
+
+  const harness = createHarness({ baseUrl: server.url });
+  const suite = await harness.setupSuite();
+  const result = await suite.withTest(
+    {
+      name: "with-test-pass",
+      meta: {},
+      schemas: [
+        {
+          id: "sut-openapi",
+          role: "sut",
+          type: "openapi",
+          source: { type: "inline", content: "openapi: 3.0.0\ninfo:\n  title: t\n  version: 1\npaths: {}\n" }
+        }
+      ]
+    },
+    async (testCase) => {
+      await testCase.mockHttp({ id: "http-1" });
+      return "ok";
+    }
+  );
+  await suite.teardown();
+
+  assert.equal(result.result, "ok");
+  assert.equal(result.finish.path, "artifacts/case.yaml");
+  const finishRequest = requests.find((r) => r.path === "/v1/testcases/finish");
+  assert.ok(finishRequest);
+  assert.deepEqual(JSON.parse(finishRequest.body), { status: "pass" });
+  assert.deepEqual(
+    requests.map((r) => r.path),
+    ["/v1/lifecycle/start", "/v1/testcases/start", "/v1/stubs", "/v1/testcases/finish", "/v1/lifecycle/stop"]
+  );
+
+  await server.close();
+});
+
+test("suite.withTest marks failed status when callback throws", async () => {
+  const requests = [];
+  const server = await startServer(async (req, res) => {
+    const body = await readBody(req);
+    requests.push({ method: req.method, path: req.url, body });
+    res.setHeader("content-type", "application/json");
+
+    if (req.url === "/v1/testcases/finish") {
+      res.end(JSON.stringify({ path: "artifacts/case.yaml" }));
+      return;
+    }
+    res.end(JSON.stringify({ status: "ok" }));
+  });
+
+  const harness = createHarness({ baseUrl: server.url });
+  const suite = await harness.setupSuite();
+  await assert.rejects(
+    () =>
+      suite.withTest(
+        {
+          name: "with-test-fail",
+          meta: {},
+          schemas: [
+            {
+              id: "sut-openapi",
+              role: "sut",
+              type: "openapi",
+              source: { type: "inline", content: "openapi: 3.0.0\ninfo:\n  title: t\n  version: 1\npaths: {}\n" }
+            }
+          ]
+        },
+        async () => {
+          throw new Error("boom");
+        }
+      ),
+    /boom/
+  );
+  await suite.teardown();
+
+  const finishRequest = requests.find((r) => r.path === "/v1/testcases/finish");
+  assert.ok(finishRequest);
+  assert.deepEqual(JSON.parse(finishRequest.body), { status: "fail" });
+  assert.deepEqual(
+    requests.map((r) => r.path),
+    ["/v1/lifecycle/start", "/v1/testcases/start", "/v1/testcases/finish", "/v1/lifecycle/stop"]
+  );
+
+  await server.close();
+});
+
 test("top-level setupSuite helper starts lifecycle", async () => {
   const requests = [];
   const server = await startServer(async (req, res) => {

@@ -27,29 +27,35 @@ async function stopSut(proc, timeoutMs = 2_000) {
   ]);
 }
 
-async function startSut(options = {}) {
+async function startHTTPService(options = {}) {
   const {
-    listen = process.env.SUT_LISTEN || "127.0.0.1:18090",
-    dependencyBaseUrl,
-    binary = process.env.SUT_BINARY,
+    name = "service",
+    listen,
+    binary,
+    command,
+    env = {},
+    healthPath = "/healthz",
     healthTimeoutMs = 12_000
   } = options;
 
-  if (!dependencyBaseUrl) {
-    throw new Error("dependencyBaseUrl is required");
+  if (!listen) {
+    throw new Error(`${name} listen address is required`);
   }
 
-  const proc = spawn(binary || "go", binary ? [] : ["run", "./examples/system/sut"], {
+  const defaultCommand = command || ["go", "run", "./examples/system/sut"];
+  const executable = binary || defaultCommand[0];
+  const args = binary ? [] : defaultCommand.slice(1);
+
+  const proc = spawn(executable, args, {
     stdio: "inherit",
     env: {
       ...process.env,
-      SUT_LISTEN: listen,
-      DEPENDENCY_BASE_URL: dependencyBaseUrl
+      ...env
     }
   });
 
   try {
-    await waitForHealth(`http://${listen}/healthz`, healthTimeoutMs);
+    await waitForHealth(`http://${listen}${healthPath}`, healthTimeoutMs);
   } catch (err) {
     await stopSut(proc);
     throw err;
@@ -62,7 +68,31 @@ async function startSut(options = {}) {
   };
 }
 
+async function startSut(options = {}) {
+  const {
+    listen = process.env.SUT_LISTEN || "127.0.0.1:18090",
+    dependencyBaseUrl,
+    binary = process.env.SUT_BINARY
+  } = options;
+
+  if (!dependencyBaseUrl) {
+    throw new Error("dependencyBaseUrl is required");
+  }
+
+  return startHTTPService({
+    name: "sut",
+    listen,
+    binary,
+    command: ["go", "run", "./examples/system/sut"],
+    env: {
+      SUT_LISTEN: listen,
+      DEPENDENCY_BASE_URL: dependencyBaseUrl
+    }
+  });
+}
+
 module.exports = {
+  startHTTPService,
   startSut,
   stopSut
 };

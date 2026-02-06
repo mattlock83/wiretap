@@ -70,6 +70,7 @@ If a component fails to start during suite setup, lifecycle is automatically sto
 Returned suite session:
 - `suite.runtime` (startup responses keyed by component name)
 - `suite.setupTest({ name, meta, tags, sutBaseUrl, schemas })` (schemas required)
+- `suite.withTest(config, async (test) => { ... }, { teardown })` (auto setup + teardown; status defaults to pass/fail by callback result)
 - `suite.teardown()`
 
 Returned test session:

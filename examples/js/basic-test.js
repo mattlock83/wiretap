@@ -1,4 +1,4 @@
-const { test, before, after, beforeEach, afterEach } = require("node:test");
+const { test, before, after } = require("node:test");
 const assert = require("node:assert/strict");
 const { setupSuite } = require("../../sdk/js/src/index");
 const { startSut } = require("./sut");
@@ -20,8 +20,6 @@ const SCHEMAS = [
 
 let suite;
 let sut;
-let caseSession;
-let caseCounter = 0;
 
 before(async () => {
   const baseUrl =
@@ -47,68 +45,62 @@ after(async () => {
   await suite?.teardown();
 });
 
-beforeEach(async () => {
-  caseCounter += 1;
-  caseSession = await suite.setupTest({
-    name: `basic-${caseCounter}`,
-    meta: { suite: "examples" },
-    sutBaseUrl: `http://${sut.listen}`,
-    schemas: SCHEMAS
-  });
-});
+test("basic SUT flow through proxy + mocks", async () => {
+  const { finish } = await suite.withTest(
+    {
+      name: "basic",
+      meta: { suite: "examples" },
+      sutBaseUrl: `http://${sut.listen}`,
+      schemas: SCHEMAS
+    },
+    async (caseSession) => {
+      const payload = JSON.stringify({ id: "123", action: "process" });
+      await caseSession.mockHttp({
+        id: "alpha-basic",
+        match: { method: "POST", path: "/alpha", body: payload },
+        response: {
+          status: 200,
+          body: JSON.stringify({ result: "alpha-ok" }),
+          headers: { "Content-Type": "application/json" }
+        }
+      });
+      await caseSession.mockHttp({
+        id: "beta-basic",
+        match: { method: "POST", path: "/beta", body: payload },
+        response: {
+          status: 200,
+          body: JSON.stringify({ result: "beta-ok" }),
+          headers: { "Content-Type": "application/json" }
+        }
+      });
 
-afterEach(async () => {
-  if (!caseSession) return;
-  const finish = await caseSession.teardown({ status: "pass" });
-  caseSession = null;
+      await caseSession.get("/status");
+      const result = await caseSession.postJson("/process", { id: "123", action: "process" });
+      assert.equal(result.status, 200);
+
+      await caseSession.assertField({
+        flow_id: "alpha-basic",
+        channel: "sut_to_mock",
+        phase: "response",
+        path_lang: "json",
+        field: "result",
+        operator: "equals",
+        expected: "alpha-ok"
+      });
+      await caseSession.assertField({
+        flow_id: "beta-basic",
+        channel: "sut_to_mock",
+        phase: "response",
+        path_lang: "json",
+        field: "result",
+        operator: "equals",
+        expected: "beta-ok"
+      });
+    }
+  );
 
   assert.ok(typeof finish.path === "string" && finish.path.length > 0, "artifact path should be returned");
   if (finish.schemaValidation) {
     assert.equal(finish.schemaValidation.status, "pass");
   }
-});
-
-test("basic SUT flow through proxy + mocks", async () => {
-  const payload = JSON.stringify({ id: "123", action: "process" });
-  await caseSession.mockHttp({
-    id: "alpha-basic",
-    match: { method: "POST", path: "/alpha", body: payload },
-    response: {
-      status: 200,
-      body: JSON.stringify({ result: "alpha-ok" }),
-      headers: { "Content-Type": "application/json" }
-    }
-  });
-  await caseSession.mockHttp({
-    id: "beta-basic",
-    match: { method: "POST", path: "/beta", body: payload },
-    response: {
-      status: 200,
-      body: JSON.stringify({ result: "beta-ok" }),
-      headers: { "Content-Type": "application/json" }
-    }
-  });
-
-  await caseSession.get("/status");
-  const result = await caseSession.postJson("/process", { id: "123", action: "process" });
-  assert.equal(result.status, 200);
-
-  await caseSession.assertField({
-    flow_id: "alpha-basic",
-    channel: "sut_to_mock",
-    phase: "response",
-    path_lang: "json",
-    field: "result",
-    operator: "equals",
-    expected: "alpha-ok"
-  });
-  await caseSession.assertField({
-    flow_id: "beta-basic",
-    channel: "sut_to_mock",
-    phase: "response",
-    path_lang: "json",
-    field: "result",
-    operator: "equals",
-    expected: "beta-ok"
-  });
 });

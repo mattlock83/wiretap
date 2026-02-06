@@ -8,6 +8,9 @@ Phrond is a test harness that captures SUT traffic and mock traffic and writes a
 # HTTP example
 ./examples/run-e2e.sh
 
+# HTTP payment example (multi-service)
+./examples/run-payment-e2e.sh
+
 # gRPC example (proto-based)
 ./examples/run-grpc-e2e.sh
 ```

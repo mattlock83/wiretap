@@ -303,6 +303,46 @@ class SuiteSession {
     });
   }
 
+  async withTest(config, run, options = {}) {
+    if (typeof run !== "function") {
+      throw new Error("withTest requires a run callback");
+    }
+
+    const testSession = await this.setupTest(config);
+    let runResult;
+    let runError;
+    try {
+      runResult = await run(testSession);
+    } catch (err) {
+      runError = err;
+    }
+
+    const teardownOptions = { ...(options.teardown || {}) };
+    if (!teardownOptions.status) {
+      teardownOptions.status = runError ? "fail" : "pass";
+    }
+
+    let finish;
+    let teardownError;
+    try {
+      finish = await testSession.teardown(teardownOptions);
+    } catch (err) {
+      teardownError = err;
+    }
+
+    if (runError) {
+      if (teardownError) {
+        runError.teardownError = teardownError;
+      }
+      throw runError;
+    }
+    if (teardownError) {
+      throw teardownError;
+    }
+
+    return { result: runResult, finish };
+  }
+
   async teardown() {
     return this.harness.stopLifecycle();
   }
