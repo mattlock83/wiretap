@@ -149,6 +149,8 @@ func (s *TestCaseStore) FinishCase(status string, env *artifact.Environment, moc
 		}
 	}
 
+	decodeGRPCPayloads(art)
+
 	path, err := artifact.WriteFile(s.outputDir, art)
 	if err != nil {
 		return nil, "", err
