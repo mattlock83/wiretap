@@ -45,6 +45,16 @@ The system should be extensible to support gRPC/protos later, while implementing
 8. Register gRPC stubs with matching rules and responses (raw bytes).
 9. Validate captured traffic against the provided specs for both SUT and mock channels.
 
+### 4.4 Schema Validation Rules (v1)
+- Tests must provide at least one schema via `schemas` when starting a test case.
+- Traffic is validated against schemas based on role:
+  - `role: sut` validates `test_to_sut` traffic
+  - `role: fake` validates `sut_to_mock` traffic
+- OpenAPI schemas are validated for request + response bodies and headers.
+- Protobuf schemas validate gRPC method existence and message decoding.
+- Proto imports are supported via `source.import_paths` (relative to repo root or absolute paths).
+- Descriptor sets are supported for complex protobufs: set `source.format: descriptor` and provide `source.path` or `source.url`.
+
 ### 4.2 HTTPS Support
 1. Proxy must support HTTPS via explicit proxy configuration.
 2. Proxy must support HTTP CONNECT to establish tunnels.

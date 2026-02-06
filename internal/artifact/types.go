@@ -78,11 +78,13 @@ type SchemaRef struct {
 
 // SchemaSource identifies where the schema came from.
 type SchemaSource struct {
-	Type    string `yaml:"type" json:"type"`
-	Path    string `yaml:"path,omitempty" json:"path,omitempty"`
-	URL     string `yaml:"url,omitempty" json:"url,omitempty"`
-	Content string `yaml:"content,omitempty" json:"content,omitempty"`
-	SHA256  string `yaml:"sha256,omitempty" json:"sha256,omitempty"`
+	Type        string   `yaml:"type" json:"type"`
+	Path        string   `yaml:"path,omitempty" json:"path,omitempty"`
+	URL         string   `yaml:"url,omitempty" json:"url,omitempty"`
+	Content     string   `yaml:"content,omitempty" json:"content,omitempty"`
+	SHA256      string   `yaml:"sha256,omitempty" json:"sha256,omitempty"`
+	Format      string   `yaml:"format,omitempty" json:"format,omitempty"`
+	ImportPaths []string `yaml:"import_paths,omitempty" json:"import_paths,omitempty"`
 }
 
 // Flow captures one request/response exchange.

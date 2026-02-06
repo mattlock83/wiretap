@@ -9,6 +9,23 @@ const { createHarness } = require("@phrond/sdk");
 
 const harness = createHarness({ baseUrl: "http://127.0.0.1:18000" });
 await harness.startLifecycle();
+
+await harness.startTestCase("basic", { suite: "examples" }, {
+  schemas: [
+    {
+      id: "sut-openapi",
+      role: "sut",
+      type: "openapi",
+      source: { type: "file", path: "specs/sut-openapi.yaml" }
+    },
+    {
+      id: "mock-openapi",
+      role: "fake",
+      type: "openapi",
+      source: { type: "file", path: "specs/mock-openapi.yaml" }
+    }
+  ]
+});
 ```
 
 ## API
@@ -16,7 +33,7 @@ await harness.startLifecycle();
 - `harness.healthz()`
 - `harness.startLifecycle()`
 - `harness.stopLifecycle()`
-- `harness.startTestCase(name, meta, { tags, sutBaseUrl, schemas })`
+- `harness.startTestCase(name, meta, { tags, sutBaseUrl, schemas })` (schemas required)
 - `harness.finishTestCase(status)`
 - `harness.getArtifact()`
 - `harness.downloadArtifact(filePath)`

@@ -2,6 +2,7 @@
 
 This example drives a gRPC-only SUT through the recorder core and captures gRPC traffic.
 Proto definition lives in `examples/grpc/examplepb/example.proto`.
+For complex proto imports, pass `source.import_paths` or use a descriptor set (set `source.format = "descriptor"` and point `source.path` or `source.url` at the `.desc` file).
 
 ## What it does
 - Starts the recorder core (Go)

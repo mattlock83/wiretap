@@ -19,6 +19,9 @@ class Harness {
   }
 
   async startTestCase(name, meta, options = {}) {
+    if (!options.schemas || options.schemas.length === 0) {
+      throw new Error("schemas are required; pass options.schemas");
+    }
     const payload = { name, meta };
     if (options.tags) {
       payload.tags = options.tags;
@@ -33,7 +36,14 @@ class Harness {
   }
 
   async finishTestCase(status) {
-    return this._post("/v1/testcases/finish", { status });
+    const resp = await this._post("/v1/testcases/finish", { status });
+    if (resp && resp.schema_validation && !resp.schemaValidation) {
+      resp.schemaValidation = resp.schema_validation;
+    }
+    if (resp && resp.artifact && resp.artifact.meta && resp.artifact.meta.schema_validation && !resp.schemaValidation) {
+      resp.schemaValidation = resp.artifact.meta.schema_validation;
+    }
+    return resp;
   }
 
   async getArtifact() {

@@ -21,6 +21,8 @@ import (
 	"github.com/jhump/protoreflect/desc/protoparse"
 	"github.com/jhump/protoreflect/dynamic"
 	"github.com/phrond/evermock/internal/artifact"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/descriptorpb"
 )
 
 type schemaValidationIssue struct {
@@ -350,6 +352,10 @@ func loadProtoSpec(ref artifact.SchemaRef) (protoSpec, error) {
 	path := strings.TrimSpace(ref.Source.Path)
 	urlStr := strings.TrimSpace(ref.Source.URL)
 	content := strings.TrimSpace(ref.Source.Content)
+	format := strings.ToLower(strings.TrimSpace(ref.Source.Format))
+	if format == "" {
+		format = inferProtoFormat(path, urlStr)
+	}
 
 	cleanup := func() {}
 	var err error
@@ -360,17 +366,39 @@ func loadProtoSpec(ref artifact.SchemaRef) (protoSpec, error) {
 			return protoSpec{}, errors.New("protobuf schema path required")
 		}
 		path = resolvePath(path)
+		if format == "descriptor" {
+			data, readErr := os.ReadFile(path)
+			if readErr != nil {
+				return protoSpec{}, readErr
+			}
+			return loadProtoDescriptor(ref, data)
+		}
 	case "url":
 		if urlStr == "" {
 			return protoSpec{}, errors.New("protobuf schema url required")
 		}
-		path, cleanup, err = downloadToTemp(urlStr, "schema-*.proto")
+		path, cleanup, err = downloadToTemp(urlStr, "schema-*")
 		if err != nil {
 			return protoSpec{}, err
+		}
+		if format == "descriptor" {
+			defer cleanup()
+			data, readErr := os.ReadFile(path)
+			if readErr != nil {
+				return protoSpec{}, readErr
+			}
+			return loadProtoDescriptor(ref, data)
 		}
 	case "inline":
 		if content == "" {
 			return protoSpec{}, errors.New("protobuf schema content required")
+		}
+		if format == "descriptor" {
+			raw, decodeErr := base64.StdEncoding.DecodeString(content)
+			if decodeErr != nil {
+				return protoSpec{}, errors.New("descriptor content must be base64")
+			}
+			return loadProtoDescriptor(ref, raw)
 		}
 		path, cleanup, err = writeTempContent([]byte(content), "schema-*.proto")
 		if err != nil {
@@ -381,7 +409,9 @@ func loadProtoSpec(ref artifact.SchemaRef) (protoSpec, error) {
 	}
 	defer cleanup()
 
-	parser := protoparse.Parser{ImportPaths: []string{filepath.Dir(path)}}
+	importPaths := resolveImportPaths(ref.Source.ImportPaths)
+	importPaths = append([]string{filepath.Dir(path)}, importPaths...)
+	parser := protoparse.Parser{ImportPaths: importPaths}
 	files, err := parser.ParseFiles(filepath.Base(path))
 	if err != nil {
 		return protoSpec{}, err
@@ -394,6 +424,27 @@ func loadProtoSpec(ref artifact.SchemaRef) (protoSpec, error) {
 	}
 	if len(services) == 0 {
 		return protoSpec{}, errors.New("no services found in proto schema")
+	}
+	return protoSpec{ref: ref, services: services}, nil
+}
+
+func loadProtoDescriptor(ref artifact.SchemaRef, data []byte) (protoSpec, error) {
+	set := &descriptorpb.FileDescriptorSet{}
+	if err := proto.Unmarshal(data, set); err != nil {
+		return protoSpec{}, fmt.Errorf("descriptor set decode failed: %w", err)
+	}
+	files, err := desc.CreateFileDescriptorsFromSet(set)
+	if err != nil {
+		return protoSpec{}, err
+	}
+	services := map[string]*desc.ServiceDescriptor{}
+	for _, file := range files {
+		for _, service := range file.GetServices() {
+			services[service.GetFullyQualifiedName()] = service
+		}
+	}
+	if len(services) == 0 {
+		return protoSpec{}, errors.New("no services found in descriptor set")
 	}
 	return protoSpec{ref: ref, services: services}, nil
 }
@@ -445,6 +496,25 @@ func resolvePath(path string) string {
 	return filepath.Join(cwd, path)
 }
 
+func resolveImportPaths(paths []string) []string {
+	if len(paths) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(paths))
+	for _, path := range paths {
+		path = strings.TrimSpace(path)
+		if path == "" {
+			continue
+		}
+		if filepath.IsAbs(path) {
+			out = append(out, path)
+		} else {
+			out = append(out, resolvePath(path))
+		}
+	}
+	return out
+}
+
 func roleForChannel(channel string) string {
 	switch channel {
 	case "sut_to_mock":
@@ -491,4 +561,16 @@ func toHTTPHeader(headers artifact.Headers) http.Header {
 		}
 	}
 	return out
+}
+
+func inferProtoFormat(path, urlStr string) string {
+	candidate := path
+	if candidate == "" {
+		candidate = urlStr
+	}
+	candidate = strings.ToLower(candidate)
+	if strings.HasSuffix(candidate, ".desc") || strings.HasSuffix(candidate, ".pb") || strings.HasSuffix(candidate, ".protoset") || strings.HasSuffix(candidate, ".bin") {
+		return "descriptor"
+	}
+	return "proto"
 }

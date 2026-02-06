@@ -144,6 +144,11 @@ func (a *App) handleTestCaseFinish(w http.ResponseWriter, r *http.Request) {
 		"artifact": artifactDoc,
 		"path":     path,
 	}
+	if artifactDoc != nil && artifactDoc.Meta != nil {
+		if validation, ok := artifactDoc.Meta["schema_validation"]; ok {
+			resp["schema_validation"] = validation
+		}
+	}
 	writeJSON(w, http.StatusOK, resp)
 }
 

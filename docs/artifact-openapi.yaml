@@ -144,6 +144,13 @@ components:
           type: string
         sha256:
           type: string
+        format:
+          type: string
+          description: "For protobuf schemas: proto or descriptor."
+        import_paths:
+          type: array
+          items:
+            type: string
       additionalProperties: false
 
     Flow:
