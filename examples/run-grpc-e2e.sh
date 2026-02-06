@@ -102,6 +102,21 @@ fi
 export SUT_BINARY="${BUILD_DIR}/phrond-grpc-sut"
 go run ./examples/grpc/client
 
+# Generate coverage reports
+go run ./cmd/phrond-coverage \
+  --artifacts "${ARTIFACT_DIR}" \
+  --sut-name "Example gRPC SUT" \
+  --format yaml \
+  --output "${ARTIFACT_DIR}/coverage.yaml"
+
+go run ./cmd/phrond-coverage \
+  --artifacts "${ARTIFACT_DIR}" \
+  --sut-name "Example gRPC SUT" \
+  --format html \
+  --output "${ARTIFACT_DIR}/coverage.html"
+
 popd >/dev/null
 
 echo "Artifacts written to ${ARTIFACT_DIR}"
+echo "Coverage report (YAML): ${ARTIFACT_DIR}/coverage.yaml"
+echo "Coverage report (HTML): ${ARTIFACT_DIR}/coverage.html"

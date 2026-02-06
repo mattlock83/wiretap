@@ -66,10 +66,11 @@ See `sdk/js/README.md` for API details. The SDK enforces schemas on `startTestCa
 
 ## Coverage Report CLI
 
-Generate a spec coverage report from the YAML artifacts:
+Generate a spec coverage report from the artifacts (YAML/JSON):
 
 ```bash
 go run ./cmd/phrond-coverage --artifacts ./artifacts --sut-name "Example SUT" --format yaml --output coverage.yaml
+go run ./cmd/phrond-coverage --artifacts ./artifacts --sut-name "Example SUT" --format html --output coverage.html
 ```
 
 The report includes:

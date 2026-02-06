@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html/template"
 	"io"
 	"net/http"
 	"net/url"
@@ -138,10 +139,262 @@ func WriteReport(w io.Writer, report *Report, format string) error {
 		enc := json.NewEncoder(w)
 		enc.SetIndent("", "  ")
 		return enc.Encode(report)
+	case "html", "htm":
+		return writeHTMLReport(w, report)
 	default:
 		return fmt.Errorf("unsupported format: %s", format)
 	}
 }
+
+func writeHTMLReport(w io.Writer, report *Report) error {
+	tpl := template.New("report").Funcs(template.FuncMap{
+		"join": func(values []string) string {
+			return strings.Join(values, ", ")
+		},
+		"formatTime": func(t time.Time) string {
+			if t.IsZero() {
+				return ""
+			}
+			return t.Format(time.RFC3339)
+		},
+	})
+	parsed, err := tpl.Parse(reportHTMLTemplate)
+	if err != nil {
+		return err
+	}
+	return parsed.Execute(w, report)
+}
+
+const reportHTMLTemplate = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Phrond Coverage Report</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f7f8fb;
+      --panel: #ffffff;
+      --text: #0f172a;
+      --muted: #64748b;
+      --border: #e2e8f0;
+      --accent: #0f766e;
+      --warn: #b45309;
+    }
+    body {
+      margin: 0;
+      font-family: "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+    header {
+      padding: 32px 48px 16px;
+      background: linear-gradient(120deg, #0f766e, #0ea5e9);
+      color: #fff;
+    }
+    header h1 {
+      margin: 0 0 8px;
+      font-size: 28px;
+    }
+    header p {
+      margin: 0;
+      font-size: 14px;
+      opacity: 0.85;
+    }
+    main {
+      padding: 24px 48px 48px;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px 24px;
+      box-shadow: 0 10px 20px rgba(15, 23, 42, 0.05);
+    }
+    .panel h2 {
+      margin: 0 0 12px;
+      font-size: 18px;
+    }
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+    }
+    .summary-card {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 16px;
+      background: #f8fafc;
+    }
+    .summary-card span {
+      display: block;
+      font-size: 12px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 6px;
+    }
+    .summary-card strong {
+      font-size: 20px;
+    }
+    .spec {
+      border-top: 1px dashed var(--border);
+      padding-top: 16px;
+      margin-top: 16px;
+    }
+    .spec h3 {
+      margin: 0 0 4px;
+      font-size: 16px;
+      color: var(--accent);
+    }
+    .meta {
+      color: var(--muted);
+      font-size: 13px;
+      margin-bottom: 8px;
+    }
+    ul {
+      margin: 8px 0 0 18px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    th, td {
+      border: 1px solid var(--border);
+      padding: 8px 10px;
+      text-align: left;
+    }
+    th {
+      background: #f1f5f9;
+    }
+    .notes {
+      color: var(--warn);
+      font-size: 13px;
+    }
+    @media (max-width: 700px) {
+      header, main {
+        padding-left: 20px;
+        padding-right: 20px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Phrond Coverage Report</h1>
+    <p>Generated {{ formatTime .GeneratedAt }} · SUT: {{ .SUTName }}</p>
+  </header>
+  <main>
+    <section class="panel">
+      <h2>Summary</h2>
+      <div class="summary-grid">
+        <div class="summary-card">
+          <span>Artifacts</span>
+          <strong>{{ .ArtifactCount }}</strong>
+        </div>
+        <div class="summary-card">
+          <span>Provided Specs</span>
+          <strong>{{ len .Provided.Specs }}</strong>
+        </div>
+        <div class="summary-card">
+          <span>Dependent Specs</span>
+          <strong>{{ len .Dependent.Specs }}</strong>
+        </div>
+      </div>
+      {{ if .Notes }}
+      <div class="notes" style="margin-top: 16px;">
+        <strong>Notes:</strong>
+        <ul>
+          {{ range .Notes }}<li>{{ . }}</li>{{ end }}
+        </ul>
+      </div>
+      {{ end }}
+    </section>
+
+    <section class="panel">
+      <h2>Provided API Specs</h2>
+      {{ if .Provided.Exercised }}
+      <p class="meta">Exercised: {{ join .Provided.Exercised }}</p>
+      {{ end }}
+      {{ if .Provided.NotCovered }}
+      <p class="meta">Not Covered: {{ join .Provided.NotCovered }}</p>
+      {{ end }}
+      {{ range .Provided.Specs }}
+        <div class="spec">
+          <h3>{{ .SchemaID }}</h3>
+          <div class="meta">Type: {{ .Type }} · Source: {{ .Source }}</div>
+          {{ if .Exercised }}
+            <strong>Exercised</strong>
+            <ul>
+              {{ range .Exercised }}<li>{{ . }}</li>{{ end }}
+            </ul>
+          {{ end }}
+          {{ if .NotCovered }}
+            <strong>Not Covered</strong>
+            <ul>
+              {{ range .NotCovered }}<li>{{ . }}</li>{{ end }}
+            </ul>
+          {{ end }}
+        </div>
+      {{ end }}
+    </section>
+
+    <section class="panel">
+      <h2>Dependent API Specs</h2>
+      {{ if .Dependent.Faked }}
+      <p class="meta">Faked: {{ join .Dependent.Faked }}</p>
+      {{ end }}
+      {{ range .Dependent.Specs }}
+        <div class="spec">
+          <h3>{{ .SchemaID }}</h3>
+          <div class="meta">Type: {{ .Type }} · Source: {{ .Source }}</div>
+          {{ if .Faked }}
+            <strong>Faked</strong>
+            <ul>
+              {{ range .Faked }}<li>{{ . }}</li>{{ end }}
+            </ul>
+          {{ end }}
+        </div>
+      {{ end }}
+
+      {{ if .Dependent.AssertedFields }}
+      <div class="spec">
+        <h3>Asserted Fields</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>Flow</th>
+              <th>Channel</th>
+              <th>Phase</th>
+              <th>Path Lang</th>
+              <th>Field</th>
+              <th>Operator</th>
+            </tr>
+          </thead>
+          <tbody>
+            {{ range .Dependent.AssertedFields }}
+              <tr>
+                <td>{{ .FlowID }}</td>
+                <td>{{ .Channel }}</td>
+                <td>{{ .Phase }}</td>
+                <td>{{ .PathLang }}</td>
+                <td>{{ .Field }}</td>
+                <td>{{ .Operator }}</td>
+              </tr>
+            {{ end }}
+          </tbody>
+        </table>
+      </div>
+      {{ end }}
+    </section>
+  </main>
+</body>
+</html>`
 
 type artifactEntry struct {
 	Path string

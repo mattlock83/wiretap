@@ -92,6 +92,21 @@ fi
 # Run JS example (uses SDK to drive the test case)
 node ./examples/js/basic-test.js
 
+# Generate coverage reports
+go run ./cmd/phrond-coverage \
+  --artifacts "${ARTIFACT_DIR}" \
+  --sut-name "Example HTTP SUT" \
+  --format yaml \
+  --output "${ARTIFACT_DIR}/coverage.yaml"
+
+go run ./cmd/phrond-coverage \
+  --artifacts "${ARTIFACT_DIR}" \
+  --sut-name "Example HTTP SUT" \
+  --format html \
+  --output "${ARTIFACT_DIR}/coverage.html"
+
 popd >/dev/null
 
 echo "Artifacts written to ${ARTIFACT_DIR}"
+echo "Coverage report (YAML): ${ARTIFACT_DIR}/coverage.yaml"
+echo "Coverage report (HTML): ${ARTIFACT_DIR}/coverage.html"
