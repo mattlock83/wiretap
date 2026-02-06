@@ -18,8 +18,18 @@ class Harness {
     return this._post("/v1/lifecycle/stop", {});
   }
 
-  async startTestCase(name, meta) {
-    return this._post("/v1/testcases/start", { name, meta });
+  async startTestCase(name, meta, options = {}) {
+    const payload = { name, meta };
+    if (options.tags) {
+      payload.tags = options.tags;
+    }
+    if (options.sutBaseUrl) {
+      payload.sut_base_url = options.sutBaseUrl;
+    }
+    if (options.schemas) {
+      payload.schemas = options.schemas;
+    }
+    return this._post("/v1/testcases/start", payload);
   }
 
   async finishTestCase(status) {

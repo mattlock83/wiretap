@@ -141,6 +141,7 @@ func (s *TestCaseStore) FinishCase(status string, env *artifact.Environment, moc
 	}
 
 	evaluateAssertions(art)
+	applySchemaValidation(art)
 
 	if len(art.Redactions) > 0 {
 		if err := redact.Apply(art, art.Redactions); err != nil {
@@ -339,12 +340,12 @@ func (s *TestCaseStore) flowFromGrpcProxy(exchange grpcproxy.Exchange) artifact.
 		Request: artifact.Message{GRPC: &artifact.GrpcMessage{
 			ContentType: exchange.RequestContentType,
 			Headers:     cloneHeaders(exchange.RequestHeaders),
-			Body:        bodyFromBytes(exchange.RequestBody),
+			Body:        bodyFromBytesBinary(exchange.RequestBody),
 		}},
 		Response: artifact.Message{GRPC: &artifact.GrpcMessage{
 			ContentType: exchange.ResponseContentType,
 			Headers:     cloneHeaders(exchange.ResponseHeaders),
-			Body:        bodyFromBytes(exchange.ResponseBody),
+			Body:        bodyFromBytesBinary(exchange.ResponseBody),
 			Trailers:    cloneHeaders(exchange.ResponseTrailers),
 		}},
 		GRPC: &artifact.GrpcMeta{
@@ -371,12 +372,12 @@ func (s *TestCaseStore) flowFromGrpcMock(exchange grpcmock.Exchange) artifact.Fl
 		Request: artifact.Message{GRPC: &artifact.GrpcMessage{
 			ContentType: exchange.Request.ContentType,
 			Headers:     cloneHeaders(exchange.Request.Headers),
-			Body:        bodyFromBytes(exchange.Request.Body),
+			Body:        bodyFromBytesBinary(exchange.Request.Body),
 		}},
 		Response: artifact.Message{GRPC: &artifact.GrpcMessage{
 			ContentType: exchange.Response.ContentType,
 			Headers:     cloneHeaders(exchange.Response.Headers),
-			Body:        bodyFromBytes(exchange.Response.Body),
+			Body:        bodyFromBytesBinary(exchange.Response.Body),
 			Trailers:    cloneHeaders(exchange.Response.Trailers),
 		}},
 		GRPC: &artifact.GrpcMeta{
@@ -409,6 +410,13 @@ func bodyFromBytes(raw []byte) *artifact.Body {
 	}
 	if utf8.Valid(raw) {
 		return &artifact.Body{Encoding: "utf8", Text: string(raw)}
+	}
+	return &artifact.Body{Encoding: "base64", Bytes: base64.StdEncoding.EncodeToString(raw)}
+}
+
+func bodyFromBytesBinary(raw []byte) *artifact.Body {
+	if len(raw) == 0 {
+		return nil
 	}
 	return &artifact.Body{Encoding: "base64", Bytes: base64.StdEncoding.EncodeToString(raw)}
 }

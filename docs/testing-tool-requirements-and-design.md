@@ -41,8 +41,9 @@ The system should be extensible to support gRPC/protos later, while implementing
 4. Capture HTTP and gRPC request/response pairs for both channels.
 5. Record and evaluate field-level assertions in tests.
 6. Export a YAML artifact per test case.
-7. Attach OpenAPI spec references to test cases.
+7. Attach OpenAPI or Protobuf spec references to test cases (required).
 8. Register gRPC stubs with matching rules and responses (raw bytes).
+9. Validate captured traffic against the provided specs for both SUT and mock channels.
 
 ### 4.2 HTTPS Support
 1. Proxy must support HTTPS via explicit proxy configuration.

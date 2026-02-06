@@ -39,7 +39,30 @@ func TestEndToEndCaptureAndArtifact(t *testing.T) {
 	defer srv.Close()
 
 	// Start test case (also starts proxy + mock).
-	startBody, _ := json.Marshal(map[string]any{"name": "e2e"})
+	openapiSpec := "openapi: 3.0.0\ninfo:\n  title: Test\n  version: 1.0.0\npaths:\n  /hello:\n    get:\n      responses:\n        \"200\":\n          description: ok\n          content:\n            text/plain:\n              schema:\n                type: string\n"
+	startBody, _ := json.Marshal(map[string]any{
+		"name": "e2e",
+		"schemas": []map[string]any{
+			{
+				"id":   "sut-schema",
+				"role": "sut",
+				"type": "openapi",
+				"source": map[string]any{
+					"type":    "inline",
+					"content": openapiSpec,
+				},
+			},
+			{
+				"id":   "mock-schema",
+				"role": "fake",
+				"type": "openapi",
+				"source": map[string]any{
+					"type":    "inline",
+					"content": openapiSpec,
+				},
+			},
+		},
+	})
 	resp, err := http.Post(srv.URL+"/v1/testcases/start", "application/json", bytes.NewReader(startBody))
 	if err != nil {
 		t.Fatalf("start testcase: %v", err)

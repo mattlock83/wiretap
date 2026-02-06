@@ -1,0 +1,36 @@
+openapi: 3.0.0
+info:
+  title: Example SUT
+  version: 1.0.0
+paths:
+  /process:
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [message, downstream]
+                properties:
+                  message:
+                    type: string
+                  downstream:
+                    type: array
+                    items:
+                      type: object
+                      required: [path, status, body]
+                      properties:
+                        path:
+                          type: string
+                        status:
+                          type: integer
+                        body:
+                          type: string

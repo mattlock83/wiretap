@@ -58,7 +58,22 @@ async function main() {
       : "http://127.0.0.1:18000");
   const harness = createHarness({ baseUrl });
 
-  await harness.startTestCase("basic", { suite: "examples" });
+  await harness.startTestCase("basic", { suite: "examples" }, {
+    schemas: [
+      {
+        id: "sut-openapi",
+        role: "sut",
+        type: "openapi",
+        source: { type: "file", path: "examples/system/sut-openapi.yaml" }
+      },
+      {
+        id: "mock-openapi",
+        role: "fake",
+        type: "openapi",
+        source: { type: "file", path: "examples/system/mock-openapi.yaml" }
+      }
+    ]
+  });
 
   const proxyInfo = await harness.startProxy({});
   const mockInfo = await harness.startMockServer({});

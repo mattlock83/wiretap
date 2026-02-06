@@ -35,7 +35,30 @@ func main() {
 
 	h := &harness{baseURL: baseURL, client: &http.Client{Timeout: 10 * time.Second}}
 
-	if _, err := h.postJSON("/v1/testcases/start", map[string]any{"name": "grpc-basic", "meta": map[string]any{"suite": "examples"}}); err != nil {
+	if _, err := h.postJSON("/v1/testcases/start", map[string]any{
+		"name": "grpc-basic",
+		"meta": map[string]any{"suite": "examples"},
+		"schemas": []map[string]any{
+			{
+				"id":   "grpc-sut",
+				"role": "sut",
+				"type": "protobuf",
+				"source": map[string]any{
+					"type": "file",
+					"path": "examples/grpc/examplepb/example.proto",
+				},
+			},
+			{
+				"id":   "grpc-fake",
+				"role": "fake",
+				"type": "protobuf",
+				"source": map[string]any{
+					"type": "file",
+					"path": "examples/grpc/examplepb/example.proto",
+				},
+			},
+		},
+	}); err != nil {
 		log.Fatalf("start testcase: %v", err)
 	}
 

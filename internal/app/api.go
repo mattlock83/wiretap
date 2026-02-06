@@ -15,10 +15,11 @@ import (
 )
 
 type testCaseStartRequest struct {
-	Name       string         `json:"name"`
-	Tags       []string       `json:"tags"`
-	Meta       map[string]any `json:"meta"`
-	SUTBaseURL string         `json:"sut_base_url"`
+	Name       string               `json:"name"`
+	Tags       []string             `json:"tags"`
+	Meta       map[string]any       `json:"meta"`
+	SUTBaseURL string               `json:"sut_base_url"`
+	Schemas    []artifact.SchemaRef `json:"schemas"`
 }
 
 type testCaseFinishRequest struct {
@@ -37,6 +38,10 @@ func (a *App) handleTestCaseStart(w http.ResponseWriter, r *http.Request) {
 	}
 	if a.store == nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "store not configured"})
+		return
+	}
+	if len(req.Schemas) == 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "at least one schema is required"})
 		return
 	}
 
@@ -80,6 +85,9 @@ func (a *App) handleTestCaseStart(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 		return
+	}
+	for _, schema := range req.Schemas {
+		a.store.AddSchema(schema)
 	}
 	writeJSON(w, http.StatusOK, tc)
 }

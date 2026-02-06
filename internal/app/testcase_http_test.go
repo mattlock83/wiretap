@@ -41,7 +41,21 @@ func TestTestCaseLifecycleWritesArtifact(t *testing.T) {
 	server := httptest.NewServer(appInstance.routes())
 	defer server.Close()
 
-	startPayload := map[string]any{"name": "basic"}
+	openapiSpec := "openapi: 3.0.0\ninfo:\n  title: Test\n  version: 1.0.0\npaths:\n  /process:\n    post:\n      requestBody:\n        required: true\n        content:\n          application/json:\n            schema:\n              type: object\n      responses:\n        \"200\":\n          description: ok\n          content:\n            application/json:\n              schema:\n                type: object\n"
+	startPayload := map[string]any{
+		"name": "basic",
+		"schemas": []map[string]any{
+			{
+				"id":   "sut-schema",
+				"role": "sut",
+				"type": "openapi",
+				"source": map[string]any{
+					"type":    "inline",
+					"content": openapiSpec,
+				},
+			},
+		},
+	}
 	startBody, _ := json.Marshal(startPayload)
 	resp, err := http.Post(server.URL+"/v1/testcases/start", "application/json", bytes.NewReader(startBody))
 	if err != nil {

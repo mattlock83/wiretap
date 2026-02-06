@@ -16,7 +16,7 @@ await harness.startLifecycle();
 - `harness.healthz()`
 - `harness.startLifecycle()`
 - `harness.stopLifecycle()`
-- `harness.startTestCase(name, meta)`
+- `harness.startTestCase(name, meta, { tags, sutBaseUrl, schemas })`
 - `harness.finishTestCase(status)`
 - `harness.getArtifact()`
 - `harness.downloadArtifact(filePath)`
