@@ -78,7 +78,7 @@ fi
 
 # Run JS example (uses SDK to drive the test case)
 export SUT_BINARY="${BUILD_DIR}/phrond-sut"
-node ./examples/js/basic-test.js
+node --test ./examples/js/basic-test.js
 
 # Generate coverage reports
 go run ./cmd/phrond-coverage \

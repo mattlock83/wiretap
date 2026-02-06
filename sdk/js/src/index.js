@@ -1,5 +1,49 @@
 const DEFAULT_BASE_URL = "http://127.0.0.1:18000";
 
+function normalizeComponentConfig(value, name) {
+  if (value === undefined || value === null || value === false) {
+    return null;
+  }
+  if (value === true) {
+    return {};
+  }
+  if (typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`${name} config must be an object, true, or false`);
+  }
+  return value;
+}
+
+function resolveProxyBaseUrl(proxyInfo) {
+  if (!proxyInfo || typeof proxyInfo !== "object") {
+    return null;
+  }
+  const listenAddr = proxyInfo.listen_addr || proxyInfo.ListenAddr || proxyInfo.listenAddr;
+  if (!listenAddr || typeof listenAddr !== "string") {
+    return null;
+  }
+  if (listenAddr.startsWith("http://") || listenAddr.startsWith("https://")) {
+    return listenAddr;
+  }
+  return `http://${listenAddr}`;
+}
+
+function toURL(value, baseUrl) {
+  if (!value || typeof value !== "string") {
+    throw new Error("request path is required");
+  }
+
+  try {
+    return new URL(value);
+  } catch (_) {
+    // continue with base URL resolution
+  }
+
+  if (!baseUrl) {
+    throw new Error("base URL is required to resolve request path");
+  }
+  return new URL(value, baseUrl);
+}
+
 class Harness {
   constructor(config = {}) {
     this.baseUrl = config.baseUrl || DEFAULT_BASE_URL;
@@ -16,6 +60,43 @@ class Harness {
 
   async stopLifecycle() {
     return this._post("/v1/lifecycle/stop", {});
+  }
+
+  async setupSuite(options = {}) {
+    if (typeof options !== "object" || Array.isArray(options)) {
+      throw new Error("suite options must be an object");
+    }
+
+    await this.startLifecycle();
+    try {
+      const runtime = {};
+      const proxyConfig = normalizeComponentConfig(options.proxy, "proxy");
+      const mockServerConfig = normalizeComponentConfig(options.mockServer, "mockServer");
+      const grpcProxyConfig = normalizeComponentConfig(options.grpcProxy, "grpcProxy");
+      const grpcMockServerConfig = normalizeComponentConfig(options.grpcMockServer, "grpcMockServer");
+
+      if (proxyConfig) {
+        runtime.proxy = await this.startProxy(proxyConfig);
+      }
+      if (mockServerConfig) {
+        runtime.mockServer = await this.startMockServer(mockServerConfig);
+      }
+      if (grpcProxyConfig) {
+        runtime.grpcProxy = await this.startGrpcProxy(grpcProxyConfig);
+      }
+      if (grpcMockServerConfig) {
+        runtime.grpcMockServer = await this.startGrpcMockServer(grpcMockServerConfig);
+      }
+
+      return new SuiteSession(this, runtime);
+    } catch (err) {
+      try {
+        await this.stopLifecycle();
+      } catch (_) {
+        // ignore teardown failure and preserve original setup error
+      }
+      throw err;
+    }
   }
 
   async startTestCase(name, meta, options = {}) {
@@ -198,11 +279,232 @@ class Harness {
   }
 }
 
+class SuiteSession {
+  constructor(harness, runtime = {}) {
+    this.harness = harness;
+    this.runtime = runtime;
+    this.proxyBaseUrl = resolveProxyBaseUrl(runtime.proxy);
+  }
+
+  async setupTest(config) {
+    if (!config || typeof config !== "object" || Array.isArray(config)) {
+      throw new Error("test config is required");
+    }
+
+    const { name, meta = {}, tags, sutBaseUrl, schemas } = config;
+    if (!name) {
+      throw new Error("name is required");
+    }
+
+    await this.harness.startTestCase(name, meta, { tags, sutBaseUrl, schemas });
+    return new TestSession(this.harness, {
+      proxyBaseUrl: this.proxyBaseUrl,
+      sutBaseUrl
+    });
+  }
+
+  async teardown() {
+    return this.harness.stopLifecycle();
+  }
+}
+
+class TestSession {
+  constructor(harness, options = {}) {
+    this.harness = harness;
+    this.proxyBaseUrl = options.proxyBaseUrl || null;
+    this.sutBaseUrl = options.sutBaseUrl || null;
+  }
+
+  async mockHttp(stub) {
+    return this.harness.registerStub(stub);
+  }
+
+  async mockGrpc(stub) {
+    return this.harness.registerGrpcStub(stub);
+  }
+
+  async clearMocks(options = {}) {
+    const clearHttp = options.http !== false;
+    const clearGrpc = options.grpc !== false;
+    const result = {};
+
+    if (clearHttp) {
+      result.http = await this.harness.clearStubs();
+    }
+    if (clearGrpc) {
+      result.grpc = await this.harness.clearGrpcStubs();
+    }
+
+    return result;
+  }
+
+  async expectCall(expectation) {
+    return this.harness.expectCall(expectation);
+  }
+
+  async assertField(assertion) {
+    return this.harness.assertField(assertion);
+  }
+
+  async request(options = {}) {
+    if (!options || typeof options !== "object" || Array.isArray(options)) {
+      throw new Error("request options must be an object");
+    }
+
+    const method = (options.method || "GET").toUpperCase();
+    const sutBaseUrl = options.sutBaseUrl || this.sutBaseUrl;
+    if (!sutBaseUrl) {
+      throw new Error("sutBaseUrl is required; pass it to suite.setupTest({ sutBaseUrl }) or test.request({ sutBaseUrl })");
+    }
+
+    const proxyBaseUrl = options.proxyBaseUrl || this.proxyBaseUrl;
+    if (!proxyBaseUrl) {
+      throw new Error("proxy is not configured; start suite with proxy: true to use test.request()");
+    }
+
+    const targetUrl = toURL(options.path, sutBaseUrl);
+    const proxyUrl = toURL(proxyBaseUrl);
+    return this._requestViaProxy(proxyUrl, targetUrl, {
+      method,
+      headers: options.headers,
+      body: options.body
+    });
+  }
+
+  async get(path, options = {}) {
+    return this.request({ ...options, method: "GET", path });
+  }
+
+  async post(path, body, options = {}) {
+    return this.request({ ...options, method: "POST", path, body });
+  }
+
+  async postJson(path, payload, options = {}) {
+    const headers = { ...(options.headers || {}) };
+    if (!headers["Content-Type"] && !headers["content-type"]) {
+      headers["Content-Type"] = "application/json";
+    }
+    return this.post(path, JSON.stringify(payload), {
+      ...options,
+      headers
+    });
+  }
+
+  async teardown(options = {}) {
+    const status = options.status || "pass";
+    const resp = await this.harness.finishTestCase(status);
+
+    if (options.downloadArtifactTo) {
+      resp.downloadedArtifact = await this.harness.downloadArtifact(options.downloadArtifactTo);
+    }
+
+    return resp;
+  }
+
+  async _requestViaProxy(proxyUrl, targetUrl, options = {}) {
+    const method = options.method || "GET";
+    const headers = { ...(options.headers || {}) };
+    headers.Host = targetUrl.host;
+
+    let body = options.body;
+    if (body !== undefined && body !== null) {
+      if (!Buffer.isBuffer(body) && typeof body !== "string" && !(body instanceof Uint8Array)) {
+        throw new Error("request body must be a string, Buffer, or Uint8Array; use postJson for objects");
+      }
+      if (!headers["Content-Length"] && !headers["content-length"]) {
+        headers["Content-Length"] = Buffer.byteLength(body);
+      }
+    }
+
+    const client = proxyUrl.protocol === "https:" ? require("node:https") : require("node:http");
+
+    return new Promise((resolve, reject) => {
+      const req = client.request(
+        {
+          host: proxyUrl.hostname,
+          port: proxyUrl.port || (proxyUrl.protocol === "https:" ? 443 : 80),
+          method,
+          path: targetUrl.href,
+          headers
+        },
+        (res) => {
+          const chunks = [];
+          res.on("data", (chunk) => chunks.push(chunk));
+          res.on("end", () => {
+            const raw = Buffer.concat(chunks).toString("utf8");
+            const contentTypeHeader = res.headers["content-type"];
+            const contentType = Array.isArray(contentTypeHeader) ? (contentTypeHeader[0] || "") : (contentTypeHeader || "");
+            const isJSON = contentType.includes("application/json");
+            let parsedBody = raw;
+            if (raw && isJSON) {
+              try {
+                parsedBody = JSON.parse(raw);
+              } catch (err) {
+                reject(new Error(`proxy response JSON parse failed: ${err.message}`));
+                return;
+              }
+            }
+            if (!raw) {
+              parsedBody = null;
+            }
+            const response = {
+              status: res.statusCode || 0,
+              headers: res.headers,
+              body: parsedBody
+            };
+
+            if ((res.statusCode || 0) >= 400) {
+              const err = new Error(`proxy request failed: ${res.statusCode}`);
+              err.status = res.statusCode;
+              err.body = parsedBody;
+              err.headers = res.headers;
+              reject(err);
+              return;
+            }
+            resolve(response);
+          });
+        }
+      );
+
+      if (this.harness.timeoutMs > 0) {
+        req.setTimeout(this.harness.timeoutMs, () => {
+          req.destroy(new Error("proxy request timed out"));
+        });
+      }
+
+      req.on("error", reject);
+      if (body !== undefined && body !== null) {
+        req.write(body);
+      }
+      req.end();
+    });
+  }
+}
+
 function createHarness(config) {
   return new Harness(config);
 }
 
+async function setupSuite(config = {}) {
+  if (typeof config !== "object" || Array.isArray(config)) {
+    throw new Error("setupSuite config must be an object");
+  }
+
+  const {
+    baseUrl,
+    timeoutMs,
+    proxy,
+    mockServer,
+    grpcProxy,
+    grpcMockServer
+  } = config;
+
+  const harness = createHarness({ baseUrl, timeoutMs });
+  return harness.setupSuite({ proxy, mockServer, grpcProxy, grpcMockServer });
+}
+
 module.exports = {
   Harness,
-  createHarness
+  createHarness,
+  setupSuite
 };

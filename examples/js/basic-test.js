@@ -1,230 +1,114 @@
-const { createHarness } = require("../../sdk/js/src/index");
-const http = require("node:http");
-const { spawn } = require("node:child_process");
+const { test, before, after, beforeEach, afterEach } = require("node:test");
+const assert = require("node:assert/strict");
+const { setupSuite } = require("../../sdk/js/src/index");
+const { startSut } = require("./sut");
 
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function waitForHealth(url, retries = 20) {
-  for (let i = 0; i < retries; i += 1) {
-    try {
-      const res = await fetch(url);
-      if (res.ok) {
-        return true;
-      }
-    } catch (_) {
-      // ignore
-    }
-    await sleep(200);
+const SCHEMAS = [
+  {
+    id: "sut-openapi",
+    role: "sut",
+    type: "openapi",
+    source: { type: "file", path: "examples/system/sut-openapi.yaml" }
+  },
+  {
+    id: "mock-openapi",
+    role: "fake",
+    type: "openapi",
+    source: { type: "file", path: "examples/system/mock-openapi.yaml" }
   }
-  return false;
-}
+];
 
-function requestViaProxy(proxyUrl, targetUrl, { method = "GET", body = null, headers = {} } = {}) {
-  return new Promise((resolve, reject) => {
-    const proxy = new URL(proxyUrl);
-    const target = new URL(targetUrl);
+let suite;
+let sut;
+let caseSession;
+let caseCounter = 0;
 
-    const reqHeaders = { Host: target.host, ...headers };
-    if (body !== null && body !== undefined) {
-      reqHeaders["Content-Length"] = Buffer.byteLength(body);
-      if (!reqHeaders["Content-Type"]) {
-        reqHeaders["Content-Type"] = "application/json";
-      }
-    }
+before(async () => {
+  const baseUrl =
+    process.env.PHROND_BASE_URL ||
+    (process.env.PHROND_HTTP_LISTEN ? `http://${process.env.PHROND_HTTP_LISTEN}` : "http://127.0.0.1:18000");
+  const sutListen = process.env.SUT_LISTEN || "127.0.0.1:18090";
 
-    const req = http.request(
-      {
-        host: proxy.hostname,
-        port: proxy.port,
-        method,
-        path: target.href,
-        headers: reqHeaders
-      },
-      (res) => {
-        let data = "";
-        res.on("data", (chunk) => (data += chunk));
-        res.on("end", () => resolve({ status: res.statusCode, body: data }));
-      }
-    );
-    req.on("error", reject);
-    if (body !== null && body !== undefined) {
-      req.write(body);
-    }
-    req.end();
+  suite = await setupSuite({ baseUrl, proxy: true, mockServer: true });
+  const proxyListen = suite.runtime.proxy?.listen_addr || suite.runtime.proxy?.ListenAddr;
+  const mockAddr = suite.runtime.mockServer?.addr;
+
+  assert.ok(proxyListen, "proxy listener address must be returned");
+  assert.ok(mockAddr, "mock server address must be returned");
+
+  sut = await startSut({
+    listen: sutListen,
+    dependencyBaseUrl: `http://${mockAddr}`
   });
-}
+});
 
-function postViaProxy(proxyUrl, targetUrl, body) {
-  return requestViaProxy(proxyUrl, targetUrl, { method: "POST", body });
-}
+after(async () => {
+  await sut?.stop();
+  await suite?.teardown();
+});
 
-function stopProcess(proc, timeoutMs = 2000) {
-  return new Promise((resolve) => {
-    if (!proc) {
-      resolve();
-      return;
-    }
-    if (proc.exitCode !== null) {
-      resolve();
-      return;
-    }
-
-    let finished = false;
-    const finish = () => {
-      if (finished) return;
-      finished = true;
-      resolve();
-    };
-
-    const timer = setTimeout(() => {
-      if (proc.exitCode === null) {
-        proc.kill("SIGKILL");
-        const killTimer = setTimeout(finish, 1000);
-        proc.once("exit", () => {
-          clearTimeout(killTimer);
-          finish();
-        });
-      } else {
-        finish();
-      }
-    }, timeoutMs);
-
-    proc.once("exit", () => {
-      clearTimeout(timer);
-      finish();
-    });
-
-    proc.kill("SIGTERM");
+beforeEach(async () => {
+  caseCounter += 1;
+  caseSession = await suite.setupTest({
+    name: `basic-${caseCounter}`,
+    meta: { suite: "examples" },
+    sutBaseUrl: `http://${sut.listen}`,
+    schemas: SCHEMAS
   });
-}
+});
 
-async function runCase(harness, { name, payload, alphaResult, betaResult }) {
-  await harness.startTestCase(name, { suite: "examples" }, {
-    schemas: [
-      {
-        id: "sut-openapi",
-        role: "sut",
-        type: "openapi",
-        source: { type: "file", path: "examples/system/sut-openapi.yaml" }
-      },
-      {
-        id: "mock-openapi",
-        role: "fake",
-        type: "openapi",
-        source: { type: "file", path: "examples/system/mock-openapi.yaml" }
-      }
-    ]
-  });
+afterEach(async () => {
+  if (!caseSession) return;
+  const finish = await caseSession.teardown({ status: "pass" });
+  caseSession = null;
 
-  const proxyInfo = await harness.startProxy({});
-  const mockInfo = await harness.startMockServer({});
+  assert.ok(typeof finish.path === "string" && finish.path.length > 0, "artifact path should be returned");
+  if (finish.schemaValidation) {
+    assert.equal(finish.schemaValidation.status, "pass");
+  }
+});
 
-  await harness.registerStub({
-    id: `alpha-${name}`,
+test("basic SUT flow through proxy + mocks", async () => {
+  const payload = JSON.stringify({ id: "123", action: "process" });
+  await caseSession.mockHttp({
+    id: "alpha-basic",
     match: { method: "POST", path: "/alpha", body: payload },
     response: {
       status: 200,
-      body: JSON.stringify({ result: alphaResult }),
+      body: JSON.stringify({ result: "alpha-ok" }),
       headers: { "Content-Type": "application/json" }
     }
   });
-
-  await harness.registerStub({
-    id: `beta-${name}`,
+  await caseSession.mockHttp({
+    id: "beta-basic",
     match: { method: "POST", path: "/beta", body: payload },
     response: {
       status: 200,
-      body: JSON.stringify({ result: betaResult }),
+      body: JSON.stringify({ result: "beta-ok" }),
       headers: { "Content-Type": "application/json" }
     }
   });
 
-  const sutListen = process.env.SUT_LISTEN || "127.0.0.1:18090";
-  const sutProcessUrl = `http://${sutListen}/process`;
-  const sutBinary = process.env.SUT_BINARY;
-  const sutCommand = sutBinary || "go";
-  const sutArgs = sutBinary ? [] : ["run", "./examples/system/sut"];
+  await caseSession.get("/status");
+  const result = await caseSession.postJson("/process", { id: "123", action: "process" });
+  assert.equal(result.status, 200);
 
-  const sut = spawn(sutCommand, sutArgs, {
-    stdio: "inherit",
-    env: {
-      ...process.env,
-      SUT_LISTEN: sutListen,
-      DEPENDENCY_BASE_URL: `http://${mockInfo.addr}`
-    }
+  await caseSession.assertField({
+    flow_id: "alpha-basic",
+    channel: "sut_to_mock",
+    phase: "response",
+    path_lang: "json",
+    field: "result",
+    operator: "equals",
+    expected: "alpha-ok"
   });
-
-  try {
-    const healthy = await waitForHealth(`http://${sutListen}/healthz`);
-    if (!healthy) {
-      throw new Error("SUT failed to start");
-    }
-
-    const proxyListen = proxyInfo.listen_addr || proxyInfo.ListenAddr;
-    if (!proxyListen) {
-      throw new Error("Proxy listen address not returned");
-    }
-    const sutStatusUrl = `http://${sutListen}/status`;
-    await requestViaProxy(`http://${proxyListen}`, sutStatusUrl, { method: "GET" });
-    const result = await postViaProxy(`http://${proxyListen}`, sutProcessUrl, payload);
-    console.log("SUT response:", result.status, result.body);
-
-    await harness.assertField({
-      flow_id: `alpha-${name}`,
-      channel: "sut_to_mock",
-      phase: "response",
-      path_lang: "json",
-      field: "result",
-      operator: "equals",
-      expected: alphaResult
-    });
-
-    await harness.assertField({
-      flow_id: `beta-${name}`,
-      channel: "sut_to_mock",
-      phase: "response",
-      path_lang: "json",
-      field: "result",
-      operator: "equals",
-      expected: betaResult
-    });
-
-    const finish = await harness.finishTestCase("pass");
-    if (finish.schemaValidation) {
-      console.log("schema validation:", finish.schemaValidation.status, "errors:", finish.schemaValidation.errors?.length || 0);
-    }
-    console.log("artifact:", finish.path);
-  } finally {
-    await stopProcess(sut);
-  }
-}
-
-async function main() {
-  const baseUrl =
-    process.env.PHROND_BASE_URL ||
-    (process.env.PHROND_HTTP_LISTEN
-      ? `http://${process.env.PHROND_HTTP_LISTEN}`
-      : "http://127.0.0.1:18000");
-  const harness = createHarness({ baseUrl });
-
-  await runCase(harness, {
-    name: "basic",
-    payload: JSON.stringify({ id: "123", action: "process" }),
-    alphaResult: "alpha-ok",
-    betaResult: "beta-ok"
+  await caseSession.assertField({
+    flow_id: "beta-basic",
+    channel: "sut_to_mock",
+    phase: "response",
+    path_lang: "json",
+    field: "result",
+    operator: "equals",
+    expected: "beta-ok"
   });
-
-  await runCase(harness, {
-    name: "alternate",
-    payload: JSON.stringify({ id: "456", action: "review" }),
-    alphaResult: "alpha-alt",
-    betaResult: "beta-alt"
-  });
-}
-
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
 });

@@ -1,6 +1,14 @@
 # JavaScript Example
 
-This example spins up a simple SUT that calls two downstream endpoints and exercises the proxy + mock server.
+This example uses the high-level JS SDK API and follows the phased flow:
+- suite setup (`setupSuite`)
+- test setup (`suite.setupTest`)
+- mocking (`test.mockHttp`)
+- SUT requests (`test.get` / `test.postJson`)
+- test teardown (`test.teardown`)
+- suite teardown (`suite.teardown`)
+
+It spins up a simple SUT that calls two downstream endpoints and exercises the proxy + mock server.
 
 ## Run
 1. Start the core service:
@@ -12,7 +20,7 @@ go run ./cmd/phrond
 2. Run the example:
 
 ```sh
-node examples/js/basic-test.js
+node --test examples/js/basic-test.js
 ```
 
 ## One-Command Run
@@ -23,10 +31,13 @@ You can run the full flow with:
 ```
 
 The script will:
-- Start a test case and the proxy/mock servers
+- Set up suite lifecycle and start proxy/mock servers
+- Set up one test case with schemas
 - Launch the SUT in `examples/system/sut`
+- Register HTTP mocks
 - Send a POST through the proxy
-- Write an artifact to `./artifacts`
+- Teardown the test case
+- Teardown the suite lifecycle
 
 ### Environment Overrides
 You can override ports and artifact output with:
@@ -52,5 +63,5 @@ curl -L http://127.0.0.1:18000/v1/artifact -o artifact.yaml
 Or via the JS SDK:
 
 ```js
-await harness.downloadArtifact("./artifact.yaml");
+await test.teardown({ status: "pass", downloadArtifactTo: "./artifact.yaml" });
 ```
