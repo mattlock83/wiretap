@@ -157,6 +157,28 @@ func writeHTMLReport(w io.Writer, report *Report) error {
 		"join": func(values []string) string {
 			return strings.Join(values, ", ")
 		},
+		"assertionsForOp": func(items []OperationAssertions, op string) []AssertedField {
+			for _, item := range items {
+				if item.Operation == op {
+					return item.Fields
+				}
+			}
+			return nil
+		},
+		"assertionSummary": func(field AssertedField) string {
+			label := field.Field
+			if strings.TrimSpace(label) == "" {
+				if field.PathLang != "" {
+					label = field.PathLang
+				} else {
+					label = "body"
+				}
+			}
+			if field.Operator != "" {
+				return fmt.Sprintf("%s (%s)", label, field.Operator)
+			}
+			return label
+		},
 		"formatTime": func(t time.Time) string {
 			if t.IsZero() {
 				return ""
@@ -247,15 +269,48 @@ const reportHTMLTemplate = `<!DOCTYPE html>
     .summary-card strong {
       font-size: 20px;
     }
-    .spec {
-      border-top: 1px dashed var(--border);
-      padding-top: 16px;
-      margin-top: 16px;
+    details {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 10px 14px;
+      background: #f8fafc;
+      margin-top: 12px;
     }
-    .spec h3 {
-      margin: 0 0 4px;
-      font-size: 16px;
+    details[open] > summary {
+      margin-bottom: 12px;
+    }
+    summary {
+      cursor: pointer;
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      justify-content: space-between;
+      font-weight: 600;
+      color: var(--text);
+    }
+    summary .meta {
+      font-weight: 500;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .spec {
+      background: #ffffff;
+    }
+    .spec-body {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .op-group h4 {
+      margin: 0 0 8px;
+      font-size: 14px;
       color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .op {
+      background: #f1f5f9;
+      margin-top: 8px;
     }
     .meta {
       color: var(--muted);
@@ -324,103 +379,81 @@ const reportHTMLTemplate = `<!DOCTYPE html>
 
     <section class="panel">
       <h2>Provided API Specs</h2>
-      {{ if .Provided.Exercised }}
-      <p class="meta">Exercised: {{ join .Provided.Exercised }}</p>
-      {{ end }}
-      {{ if .Provided.NotCovered }}
-      <p class="meta">Not Covered: {{ join .Provided.NotCovered }}</p>
-      {{ end }}
       {{ range .Provided.Specs }}
-        <div class="spec">
-          <h3>{{ .SchemaID }}</h3>
-          <div class="meta">Type: {{ .Type }} · Source: {{ .Source }}</div>
-          {{ if .Exercised }}
-            <strong>Exercised</strong>
-            <ul>
-              {{ range .Exercised }}<li>{{ . }}</li>{{ end }}
-            </ul>
-          {{ end }}
-          {{ if .NotCovered }}
-            <strong>Not Covered</strong>
-            <ul>
-              {{ range .NotCovered }}<li>{{ . }}</li>{{ end }}
-            </ul>
-          {{ end }}
-        </div>
+        {{ $spec := . }}
+        <details class="spec" open>
+          <summary>
+            <span>{{ $spec.SchemaID }}</span>
+            <span class="meta">Type: {{ $spec.Type }}</span>
+          </summary>
+          <div class="spec-body">
+            <div class="meta">Source: {{ $spec.Source }}</div>
+            <div class="op-group">
+              <h4>Exercised</h4>
+              {{ if $spec.Exercised }}
+                {{ range $spec.Exercised }}
+                  <details class="op">
+                    <summary>{{ . }}</summary>
+                    <div class="meta">No assertions recorded.</div>
+                  </details>
+                {{ end }}
+              {{ else }}
+                <div class="meta">None recorded.</div>
+              {{ end }}
+            </div>
+            <div class="op-group">
+              <h4>Not Covered</h4>
+              {{ if $spec.NotCovered }}
+                {{ range $spec.NotCovered }}
+                  <details class="op">
+                    <summary>{{ . }}</summary>
+                    <div class="meta">Not exercised by tests.</div>
+                  </details>
+                {{ end }}
+              {{ else }}
+                <div class="meta">All operations exercised.</div>
+              {{ end }}
+            </div>
+          </div>
+        </details>
       {{ end }}
     </section>
 
     <section class="panel">
       <h2>Dependent API Specs</h2>
-      {{ if .Dependent.Faked }}
-      <p class="meta">Faked: {{ join .Dependent.Faked }}</p>
-      {{ end }}
       {{ range .Dependent.Specs }}
-        <div class="spec">
-          <h3>{{ .SchemaID }}</h3>
-          <div class="meta">Type: {{ .Type }} · Source: {{ .Source }}</div>
-          {{ if .Faked }}
-            <strong>Faked</strong>
-            <ul>
-              {{ range .Faked }}<li>{{ . }}</li>{{ end }}
-            </ul>
-          {{ end }}
-          {{ if .AssertedByOperation }}
-            <strong>Asserted Fields by Operation</strong>
-            <table>
-              <thead>
-                <tr>
-                  <th>Operation</th>
-                  <th>Assertions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {{ range .AssertedByOperation }}
-                  <tr>
-                    <td>{{ .Operation }}</td>
-                    <td>
+        {{ $spec := . }}
+        <details class="spec" open>
+          <summary>
+            <span>{{ $spec.SchemaID }}</span>
+            <span class="meta">Type: {{ $spec.Type }}</span>
+          </summary>
+          <div class="spec-body">
+            <div class="meta">Source: {{ $spec.Source }}</div>
+            <div class="op-group">
+              <h4>Faked</h4>
+              {{ if $spec.Faked }}
+                {{ range $spec.Faked }}
+                  {{ $fields := assertionsForOp $spec.AssertedByOperation . }}
+                  <details class="op">
+                    <summary>{{ . }}</summary>
+                    {{ if $fields }}
                       <ul>
-                        {{ range .Fields }}
-                          <li>{{ .Field }} ({{ .Operator }})</li>
+                        {{ range $fields }}
+                          <li>{{ assertionSummary . }}</li>
                         {{ end }}
                       </ul>
-                    </td>
-                  </tr>
+                    {{ else }}
+                      <div class="meta">No assertions recorded.</div>
+                    {{ end }}
+                  </details>
                 {{ end }}
-              </tbody>
-            </table>
-          {{ end }}
-        </div>
-      {{ end }}
-
-      {{ if .Dependent.AssertedFields }}
-      <div class="spec">
-        <h3>Asserted Fields</h3>
-        <table>
-          <thead>
-            <tr>
-              <th>Flow</th>
-              <th>Channel</th>
-              <th>Phase</th>
-              <th>Path Lang</th>
-              <th>Field</th>
-              <th>Operator</th>
-            </tr>
-          </thead>
-          <tbody>
-            {{ range .Dependent.AssertedFields }}
-              <tr>
-                <td>{{ .FlowID }}</td>
-                <td>{{ .Channel }}</td>
-                <td>{{ .Phase }}</td>
-                <td>{{ .PathLang }}</td>
-                <td>{{ .Field }}</td>
-                <td>{{ .Operator }}</td>
-              </tr>
-            {{ end }}
-          </tbody>
-        </table>
-      </div>
+              {{ else }}
+                <div class="meta">No faked operations recorded.</div>
+              {{ end }}
+            </div>
+          </div>
+        </details>
       {{ end }}
     </section>
   </main>

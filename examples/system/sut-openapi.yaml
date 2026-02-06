@@ -11,6 +11,12 @@ paths:
           application/json:
             schema:
               type: object
+              required: [id, action]
+              properties:
+                id:
+                  type: string
+                action:
+                  type: string
       responses:
         "200":
           description: ok
@@ -34,3 +40,25 @@ paths:
                           type: integer
                         body:
                           type: string
+  /healthz:
+    get:
+      responses:
+        "200":
+          description: ok
+          content:
+            text/plain:
+              schema:
+                type: string
+  /status:
+    get:
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status:
+                    type: string

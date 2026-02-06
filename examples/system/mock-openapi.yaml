@@ -11,13 +11,23 @@ paths:
           application/json:
             schema:
               type: object
+              required: [id, action]
+              properties:
+                id:
+                  type: string
+                action:
+                  type: string
       responses:
         "200":
           description: ok
           content:
-            text/plain:
+            application/json:
               schema:
-                type: string
+                type: object
+                required: [result]
+                properties:
+                  result:
+                    type: string
   /beta:
     post:
       requestBody:
@@ -26,10 +36,45 @@ paths:
           application/json:
             schema:
               type: object
+              required: [id, action]
+              properties:
+                id:
+                  type: string
+                action:
+                  type: string
       responses:
         "200":
           description: ok
           content:
-            text/plain:
+            application/json:
               schema:
-                type: string
+                type: object
+                required: [result]
+                properties:
+                  result:
+                    type: string
+  /gamma:
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, action]
+              properties:
+                id:
+                  type: string
+                action:
+                  type: string
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [result]
+                properties:
+                  result:
+                    type: string

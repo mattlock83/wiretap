@@ -51,6 +51,11 @@ func findFlow(flows []artifact.Flow, assertion *artifact.Assertion) *artifact.Fl
 				return &flows[i]
 			}
 		}
+		for i := range flows {
+			if flows[i].MatchedStubID != "" && flows[i].MatchedStubID == assertion.FlowID {
+				return &flows[i]
+			}
+		}
 	}
 	if assertion.Channel != "" {
 		for i := range flows {

@@ -81,13 +81,21 @@ async function main() {
   await harness.registerStub({
     id: "alpha",
     match: { method: "POST", path: "/alpha" },
-    response: { status: 200, body: "alpha-ok", headers: { "Content-Type": "text/plain" } }
+    response: {
+      status: 200,
+      body: JSON.stringify({ result: "alpha-ok" }),
+      headers: { "Content-Type": "application/json" }
+    }
   });
 
   await harness.registerStub({
     id: "beta",
     match: { method: "POST", path: "/beta" },
-    response: { status: 200, body: "beta-ok", headers: { "Content-Type": "text/plain" } }
+    response: {
+      status: 200,
+      body: JSON.stringify({ result: "beta-ok" }),
+      headers: { "Content-Type": "application/json" }
+    }
   });
 
   const sutListen = process.env.SUT_LISTEN || "127.0.0.1:18090";
@@ -115,6 +123,46 @@ async function main() {
   }
   const result = await postViaProxy(`http://${proxyListen}`, sutProcessUrl, payload);
   console.log("SUT response:", result.status, result.body);
+
+  await harness.assertField({
+    flow_id: "alpha",
+    channel: "sut_to_mock",
+    phase: "request",
+    path_lang: "json",
+    field: "id",
+    operator: "equals",
+    expected: "123"
+  });
+
+  await harness.assertField({
+    flow_id: "alpha",
+    channel: "sut_to_mock",
+    phase: "response",
+    path_lang: "json",
+    field: "result",
+    operator: "equals",
+    expected: "alpha-ok"
+  });
+
+  await harness.assertField({
+    flow_id: "beta",
+    channel: "sut_to_mock",
+    phase: "request",
+    path_lang: "json",
+    field: "action",
+    operator: "equals",
+    expected: "process"
+  });
+
+  await harness.assertField({
+    flow_id: "beta",
+    channel: "sut_to_mock",
+    phase: "response",
+    path_lang: "json",
+    field: "result",
+    operator: "equals",
+    expected: "beta-ok"
+  });
 
   const finish = await harness.finishTestCase("pass");
   if (finish.schemaValidation) {
