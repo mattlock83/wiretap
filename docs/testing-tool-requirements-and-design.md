@@ -54,6 +54,26 @@ The system should be extensible to support gRPC/protos later, while implementing
 - Protobuf schemas validate gRPC method existence and message decoding.
 - Proto imports are supported via `source.import_paths` (relative to repo root or absolute paths).
 - Descriptor sets are supported for complex protobufs: set `source.format: descriptor` and provide `source.path` or `source.url`.
+- Validation results are stored in `artifact.schema_validation` with structured error objects.
+
+Example (inline OpenAPI):
+
+```json
+{
+  "name": "basic",
+  "schemas": [
+    {
+      "id": "sut-openapi",
+      "role": "sut",
+      "type": "openapi",
+      "source": {
+        "type": "inline",
+        "content": "openapi: 3.0.0\ninfo:\n  title: SUT\n  version: 1.0.0\npaths:\n  /process:\n    post:\n      responses:\n        \"200\": { \"description\": \"ok\" }\n"
+      }
+    }
+  ]
+}
+```
 
 ### 4.2 HTTPS Support
 1. Proxy must support HTTPS via explicit proxy configuration.

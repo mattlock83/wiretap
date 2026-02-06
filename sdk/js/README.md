@@ -34,7 +34,7 @@ await harness.startTestCase("basic", { suite: "examples" }, {
 - `harness.startLifecycle()`
 - `harness.stopLifecycle()`
 - `harness.startTestCase(name, meta, { tags, sutBaseUrl, schemas })` (schemas required)
-- `harness.finishTestCase(status)`
+- `harness.finishTestCase(status)` (response includes `schemaValidation` summary)
 - `harness.getArtifact()`
 - `harness.downloadArtifact(filePath)`
 - `harness.waitForStatus({ intervalMs, timeoutMs })`

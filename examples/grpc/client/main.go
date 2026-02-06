@@ -35,29 +35,11 @@ func main() {
 
 	h := &harness{baseURL: baseURL, client: &http.Client{Timeout: 10 * time.Second}}
 
+	schemas := grpcSchemas()
 	if _, err := h.postJSON("/v1/testcases/start", map[string]any{
-		"name": "grpc-basic",
-		"meta": map[string]any{"suite": "examples"},
-		"schemas": []map[string]any{
-			{
-				"id":   "grpc-sut",
-				"role": "sut",
-				"type": "protobuf",
-				"source": map[string]any{
-					"type": "file",
-					"path": "examples/grpc/examplepb/example.proto",
-				},
-			},
-			{
-				"id":   "grpc-fake",
-				"role": "fake",
-				"type": "protobuf",
-				"source": map[string]any{
-					"type": "file",
-					"path": "examples/grpc/examplepb/example.proto",
-				},
-			},
-		},
+		"name":    "grpc-basic",
+		"meta":    map[string]any{"suite": "examples"},
+		"schemas": schemas,
 	}); err != nil {
 		log.Fatalf("start testcase: %v", err)
 	}
@@ -146,6 +128,11 @@ func main() {
 	if err != nil {
 		log.Fatalf("finish testcase: %v", err)
 	}
+	if validation, ok := finishResp["schema_validation"].(map[string]any); ok {
+		status, _ := validation["status"].(string)
+		errors, _ := validation["errors"].([]any)
+		fmt.Printf("schema validation: %s (errors: %d)\n", status, len(errors))
+	}
 	fmt.Printf("artifact: %s\n", getString(finishResp, "path"))
 }
 
@@ -206,6 +193,50 @@ func getenv(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func grpcSchemas() []map[string]any {
+	descriptor := getenv("PROTO_DESCRIPTOR", "")
+	importPaths := getenv("PROTO_IMPORT_PATHS", "")
+	source := map[string]any{
+		"type": "file",
+		"path": "examples/grpc/examplepb/example.proto",
+	}
+	if descriptor != "" {
+		source = map[string]any{
+			"type":   "file",
+			"path":   descriptor,
+			"format": "descriptor",
+		}
+	} else if importPaths != "" {
+		source["import_paths"] = splitCSV(importPaths)
+	}
+	return []map[string]any{
+		{
+			"id":     "grpc-sut",
+			"role":   "sut",
+			"type":   "protobuf",
+			"source": source,
+		},
+		{
+			"id":     "grpc-fake",
+			"role":   "fake",
+			"type":   "protobuf",
+			"source": source,
+		},
+	}
+}
+
+func splitCSV(raw string) []string {
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
 }
 
 func startSUT(listen, dependency string) (*exec.Cmd, error) {

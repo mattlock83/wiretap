@@ -25,15 +25,6 @@ import (
 	"google.golang.org/protobuf/types/descriptorpb"
 )
 
-type schemaValidationIssue struct {
-	FlowID   string `json:"flow_id"`
-	Channel  string `json:"channel"`
-	Protocol string `json:"protocol"`
-	Phase    string `json:"phase"`
-	SchemaID string `json:"schema_id,omitempty"`
-	Message  string `json:"message"`
-}
-
 type openapiSpec struct {
 	ref    artifact.SchemaRef
 	doc    *openapi3.T
@@ -50,19 +41,19 @@ func applySchemaValidation(art *artifact.Artifact) {
 		return
 	}
 	issues := validateSchemas(art)
-	meta := map[string]any{
-		"enabled": true,
-		"errors":  issues,
-	}
-	if len(issues) == 0 {
-		meta["status"] = "pass"
-	} else {
-		meta["status"] = "fail"
+	result := &artifact.SchemaValidation{Status: "pass"}
+	if len(issues) > 0 {
+		result.Status = "fail"
+		result.Errors = issues
 	}
 	if art.Meta == nil {
 		art.Meta = map[string]any{}
 	}
-	art.Meta["schema_validation"] = meta
+	art.Meta["schema_validation"] = map[string]any{
+		"status": result.Status,
+		"errors": result.Errors,
+	}
+	art.SchemaValidation = result
 
 	if len(issues) > 0 {
 		for i, issue := range issues {
@@ -87,7 +78,7 @@ func applySchemaValidation(art *artifact.Artifact) {
 	}
 }
 
-func validateSchemas(art *artifact.Artifact) []schemaValidationIssue {
+func validateSchemas(art *artifact.Artifact) []artifact.SchemaValidationError {
 	if art == nil {
 		return nil
 	}
@@ -102,7 +93,7 @@ func validateSchemas(art *artifact.Artifact) []schemaValidationIssue {
 
 	openapiByRole := map[string][]openapiSpec{}
 	protoByRole := map[string][]protoSpec{}
-	var issues []schemaValidationIssue
+	var issues []artifact.SchemaValidationError
 
 	for role, schemas := range roleSchemas {
 		for _, schema := range schemas {
@@ -110,14 +101,14 @@ func validateSchemas(art *artifact.Artifact) []schemaValidationIssue {
 			case "openapi":
 				spec, err := loadOpenAPISpec(schema)
 				if err != nil {
-					issues = append(issues, schemaValidationIssue{Protocol: "http", Channel: roleToChannel(role), Phase: "schema", SchemaID: schema.ID, Message: err.Error()})
+					issues = append(issues, artifact.SchemaValidationError{Protocol: "http", Channel: roleToChannel(role), Phase: "schema", SchemaID: schema.ID, Message: err.Error()})
 					continue
 				}
 				openapiByRole[role] = append(openapiByRole[role], spec)
 			case "protobuf":
 				spec, err := loadProtoSpec(schema)
 				if err != nil {
-					issues = append(issues, schemaValidationIssue{Protocol: "grpc", Channel: roleToChannel(role), Phase: "schema", SchemaID: schema.ID, Message: err.Error()})
+					issues = append(issues, artifact.SchemaValidationError{Protocol: "grpc", Channel: roleToChannel(role), Phase: "schema", SchemaID: schema.ID, Message: err.Error()})
 					continue
 				}
 				protoByRole[role] = append(protoByRole[role], spec)
@@ -134,7 +125,7 @@ func validateSchemas(art *artifact.Artifact) []schemaValidationIssue {
 			}
 			candidates := openapiByRole[role]
 			if len(candidates) == 0 {
-				issues = append(issues, schemaValidationIssue{FlowID: flow.ID, Channel: flow.Channel, Protocol: "http", Phase: "schema", Message: fmt.Sprintf("no openapi schema registered for role %s", role)})
+				issues = append(issues, artifact.SchemaValidationError{FlowID: flow.ID, Channel: flow.Channel, Protocol: "http", Phase: "schema", Message: fmt.Sprintf("no openapi schema registered for role %s", role)})
 				continue
 			}
 			issues = append(issues, validateHTTPFlow(flow, candidates)...)
@@ -144,7 +135,7 @@ func validateSchemas(art *artifact.Artifact) []schemaValidationIssue {
 			}
 			candidates := protoByRole[role]
 			if len(candidates) == 0 {
-				issues = append(issues, schemaValidationIssue{FlowID: flow.ID, Channel: flow.Channel, Protocol: "grpc", Phase: "schema", Message: fmt.Sprintf("no protobuf schema registered for role %s", role)})
+				issues = append(issues, artifact.SchemaValidationError{FlowID: flow.ID, Channel: flow.Channel, Protocol: "grpc", Phase: "schema", Message: fmt.Sprintf("no protobuf schema registered for role %s", role)})
 				continue
 			}
 			issues = append(issues, validateGRPCFlow(flow, candidates)...)
@@ -154,8 +145,8 @@ func validateSchemas(art *artifact.Artifact) []schemaValidationIssue {
 	return issues
 }
 
-func validateHTTPFlow(flow artifact.Flow, specs []openapiSpec) []schemaValidationIssue {
-	var issues []schemaValidationIssue
+func validateHTTPFlow(flow artifact.Flow, specs []openapiSpec) []artifact.SchemaValidationError {
+	var issues []artifact.SchemaValidationError
 	var reqErrs []string
 	var respErrs []string
 	for _, spec := range specs {
@@ -171,10 +162,10 @@ func validateHTTPFlow(flow artifact.Flow, specs []openapiSpec) []schemaValidatio
 		}
 	}
 	if len(reqErrs) > 0 {
-		issues = append(issues, schemaValidationIssue{FlowID: flow.ID, Channel: flow.Channel, Protocol: "http", Phase: "request", Message: strings.Join(reqErrs, "; ")})
+		issues = append(issues, artifact.SchemaValidationError{FlowID: flow.ID, Channel: flow.Channel, Protocol: "http", Phase: "request", Message: strings.Join(reqErrs, "; ")})
 	}
 	if len(respErrs) > 0 {
-		issues = append(issues, schemaValidationIssue{FlowID: flow.ID, Channel: flow.Channel, Protocol: "http", Phase: "response", Message: strings.Join(respErrs, "; ")})
+		issues = append(issues, artifact.SchemaValidationError{FlowID: flow.ID, Channel: flow.Channel, Protocol: "http", Phase: "response", Message: strings.Join(respErrs, "; ")})
 	}
 	return issues
 }
@@ -245,8 +236,8 @@ func validateHTTPAgainstSpec(flow artifact.Flow, spec openapiSpec) (error, error
 	return nil, nil
 }
 
-func validateGRPCFlow(flow artifact.Flow, specs []protoSpec) []schemaValidationIssue {
-	var issues []schemaValidationIssue
+func validateGRPCFlow(flow artifact.Flow, specs []protoSpec) []artifact.SchemaValidationError {
+	var issues []artifact.SchemaValidationError
 	var errs []string
 	for _, spec := range specs {
 		if err := validateGRPCAgainstSpec(flow, spec); err == nil {
@@ -259,8 +250,8 @@ func validateGRPCFlow(flow artifact.Flow, specs []protoSpec) []schemaValidationI
 		return nil
 	}
 	message := strings.Join(errs, "; ")
-	issues = append(issues, schemaValidationIssue{FlowID: flow.ID, Channel: flow.Channel, Protocol: "grpc", Phase: "request", Message: message})
-	issues = append(issues, schemaValidationIssue{FlowID: flow.ID, Channel: flow.Channel, Protocol: "grpc", Phase: "response", Message: message})
+	issues = append(issues, artifact.SchemaValidationError{FlowID: flow.ID, Channel: flow.Channel, Protocol: "grpc", Phase: "request", Message: message})
+	issues = append(issues, artifact.SchemaValidationError{FlowID: flow.ID, Channel: flow.Channel, Protocol: "grpc", Phase: "response", Message: message})
 	return issues
 }
 

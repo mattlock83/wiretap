@@ -81,13 +81,13 @@ async function main() {
   await harness.registerStub({
     id: "alpha",
     match: { method: "POST", path: "/alpha" },
-    response: { status: 200, body: "alpha-ok" }
+    response: { status: 200, body: "alpha-ok", headers: { "Content-Type": "text/plain" } }
   });
 
   await harness.registerStub({
     id: "beta",
     match: { method: "POST", path: "/beta" },
-    response: { status: 200, body: "beta-ok" }
+    response: { status: 200, body: "beta-ok", headers: { "Content-Type": "text/plain" } }
   });
 
   const sutListen = process.env.SUT_LISTEN || "127.0.0.1:18090";
@@ -117,6 +117,9 @@ async function main() {
   console.log("SUT response:", result.status, result.body);
 
   const finish = await harness.finishTestCase("pass");
+  if (finish.schemaValidation) {
+    console.log("schema validation:", finish.schemaValidation.status, "errors:", finish.schemaValidation.errors?.length || 0);
+  }
   console.log("artifact:", finish.path);
 
   sut.kill();

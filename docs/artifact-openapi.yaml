@@ -46,6 +46,8 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Assertion"
+        schema_validation:
+          $ref: "#/components/schemas/SchemaValidation"
         redactions:
           type: array
           items:
@@ -320,6 +322,35 @@ components:
         result:
           type: string
           enum: [pass, fail, error, recorded]
+        message:
+          type: string
+      additionalProperties: false
+
+    SchemaValidation:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [pass, fail]
+        errors:
+          type: array
+          items:
+            $ref: "#/components/schemas/SchemaValidationError"
+      additionalProperties: false
+
+    SchemaValidationError:
+      type: object
+      properties:
+        flow_id:
+          type: string
+        channel:
+          type: string
+        protocol:
+          type: string
+        phase:
+          type: string
+        schema_id:
+          type: string
         message:
           type: string
       additionalProperties: false

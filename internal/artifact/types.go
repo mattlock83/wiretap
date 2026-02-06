@@ -7,14 +7,15 @@ import (
 
 // Artifact is the top-level test artifact written per test case.
 type Artifact struct {
-	Version    int            `yaml:"version" json:"version"`
-	TestCase   TestCase       `yaml:"testcase" json:"testcase"`
-	Env        *Environment   `yaml:"environment,omitempty" json:"environment,omitempty"`
-	Schemas    []SchemaRef    `yaml:"schemas,omitempty" json:"schemas,omitempty"`
-	Traffic    []Flow         `yaml:"traffic" json:"traffic"`
-	Assertions []Assertion    `yaml:"assertions,omitempty" json:"assertions,omitempty"`
-	Redactions []Redaction    `yaml:"redactions,omitempty" json:"redactions,omitempty"`
-	Meta       map[string]any `yaml:"meta,omitempty" json:"meta,omitempty"`
+	Version          int               `yaml:"version" json:"version"`
+	TestCase         TestCase          `yaml:"testcase" json:"testcase"`
+	Env              *Environment      `yaml:"environment,omitempty" json:"environment,omitempty"`
+	Schemas          []SchemaRef       `yaml:"schemas,omitempty" json:"schemas,omitempty"`
+	Traffic          []Flow            `yaml:"traffic" json:"traffic"`
+	Assertions       []Assertion       `yaml:"assertions,omitempty" json:"assertions,omitempty"`
+	SchemaValidation *SchemaValidation `yaml:"schema_validation,omitempty" json:"schema_validation,omitempty"`
+	Redactions       []Redaction       `yaml:"redactions,omitempty" json:"redactions,omitempty"`
+	Meta             map[string]any    `yaml:"meta,omitempty" json:"meta,omitempty"`
 }
 
 // Normalize ensures deterministic ordering for slices.
@@ -163,6 +164,22 @@ type Assertion struct {
 	Expected any    `yaml:"expected,omitempty" json:"expected,omitempty"`
 	Actual   any    `yaml:"actual,omitempty" json:"actual,omitempty"`
 	Result   string `yaml:"result" json:"result"`
+	Message  string `yaml:"message,omitempty" json:"message,omitempty"`
+}
+
+// SchemaValidation captures schema validation results.
+type SchemaValidation struct {
+	Status string                  `yaml:"status,omitempty" json:"status,omitempty"`
+	Errors []SchemaValidationError `yaml:"errors,omitempty" json:"errors,omitempty"`
+}
+
+// SchemaValidationError describes a single schema validation failure.
+type SchemaValidationError struct {
+	FlowID   string `yaml:"flow_id,omitempty" json:"flow_id,omitempty"`
+	Channel  string `yaml:"channel,omitempty" json:"channel,omitempty"`
+	Protocol string `yaml:"protocol,omitempty" json:"protocol,omitempty"`
+	Phase    string `yaml:"phase,omitempty" json:"phase,omitempty"`
+	SchemaID string `yaml:"schema_id,omitempty" json:"schema_id,omitempty"`
 	Message  string `yaml:"message,omitempty" json:"message,omitempty"`
 }
 

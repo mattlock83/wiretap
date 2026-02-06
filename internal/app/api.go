@@ -140,14 +140,29 @@ func (a *App) handleTestCaseFinish(w http.ResponseWriter, r *http.Request) {
 		_ = a.grpcProxyComponent.Stop(r.Context())
 	}
 
+	if a.logger != nil && artifactDoc != nil {
+		schemaStatus := ""
+		schemaErrors := 0
+		if artifactDoc.SchemaValidation != nil {
+			schemaStatus = artifactDoc.SchemaValidation.Status
+			schemaErrors = len(artifactDoc.SchemaValidation.Errors)
+		}
+		a.logger.Info("testcase finished",
+			"id", artifactDoc.TestCase.ID,
+			"name", artifactDoc.TestCase.Name,
+			"status", artifactDoc.TestCase.Status,
+			"schema_status", schemaStatus,
+			"schema_errors", schemaErrors,
+			"path", path,
+		)
+	}
+
 	resp := map[string]any{
 		"artifact": artifactDoc,
 		"path":     path,
 	}
-	if artifactDoc != nil && artifactDoc.Meta != nil {
-		if validation, ok := artifactDoc.Meta["schema_validation"]; ok {
-			resp["schema_validation"] = validation
-		}
+	if artifactDoc != nil && artifactDoc.SchemaValidation != nil {
+		resp["schema_validation"] = artifactDoc.SchemaValidation
 	}
 	writeJSON(w, http.StatusOK, resp)
 }

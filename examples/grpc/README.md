@@ -4,6 +4,19 @@ This example drives a gRPC-only SUT through the recorder core and captures gRPC 
 Proto definition lives in `examples/grpc/examplepb/example.proto`.
 For complex proto imports, pass `source.import_paths` or use a descriptor set (set `source.format = "descriptor"` and point `source.path` or `source.url` at the `.desc` file).
 
+## Descriptor set helper
+If you have `protoc` installed, you can generate a descriptor set for this example:
+
+```bash
+./examples/grpc/gen-descriptor.sh
+```
+
+Then set `PROTO_DESCRIPTOR` when running the example to use the `.desc` file:
+
+```bash
+PROTO_DESCRIPTOR=examples/grpc/examplepb/example.desc ./examples/run-grpc-e2e.sh
+```
+
 ## What it does
 - Starts the recorder core (Go)
 - Starts a gRPC mock server (via SDK)
