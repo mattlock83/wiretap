@@ -28,13 +28,14 @@ import (
 )
 
 type Report struct {
-	GeneratedAt   time.Time         `json:"generated_at" yaml:"generated_at"`
-	SUTName       string            `json:"sut_name" yaml:"sut_name"`
-	ArtifactCount int               `json:"artifact_count" yaml:"artifact_count"`
-	Artifacts     []string          `json:"artifacts,omitempty" yaml:"artifacts,omitempty"`
-	Provided      SpecCoverageGroup `json:"provided" yaml:"provided"`
-	Dependent     SpecCoverageGroup `json:"dependent" yaml:"dependent"`
-	Notes         []string          `json:"notes,omitempty" yaml:"notes,omitempty"`
+	GeneratedAt   time.Time          `json:"generated_at" yaml:"generated_at"`
+	SUTName       string             `json:"sut_name" yaml:"sut_name"`
+	ArtifactCount int                `json:"artifact_count" yaml:"artifact_count"`
+	Artifacts     []string           `json:"artifacts,omitempty" yaml:"artifacts,omitempty"`
+	Provided      SpecCoverageGroup  `json:"provided" yaml:"provided"`
+	Dependent     SpecCoverageGroup  `json:"dependent" yaml:"dependent"`
+	TestCases     []TestCaseCoverage `json:"testcases,omitempty" yaml:"testcases,omitempty"`
+	Notes         []string           `json:"notes,omitempty" yaml:"notes,omitempty"`
 }
 
 type SpecCoverageGroup struct {
@@ -68,6 +69,19 @@ type OperationAssertions struct {
 type OperationSamples struct {
 	Operation string       `json:"operation" yaml:"operation"`
 	Samples   []FlowSample `json:"samples,omitempty" yaml:"samples,omitempty"`
+}
+
+type TestCaseCoverage struct {
+	Name      string                 `json:"name" yaml:"name"`
+	Provided  []SpecOperationSamples `json:"provided,omitempty" yaml:"provided,omitempty"`
+	Dependent []SpecOperationSamples `json:"dependent,omitempty" yaml:"dependent,omitempty"`
+}
+
+type SpecOperationSamples struct {
+	SchemaID   string             `json:"schema_id" yaml:"schema_id"`
+	Type       string             `json:"type" yaml:"type"`
+	Source     string             `json:"source" yaml:"source"`
+	Operations []OperationSamples `json:"operations,omitempty" yaml:"operations,omitempty"`
 }
 
 type FlowSample struct {
@@ -139,7 +153,7 @@ func Generate(ctx context.Context, artifactsDir, sutName string, includeArtifact
 		sutName = inferSUTName(entries)
 	}
 
-	provided, dependent, notes := buildCoverage(entries)
+	provided, dependent, testcases, notes := buildCoverage(entries)
 
 	report := &Report{
 		GeneratedAt:   time.Now().UTC(),
@@ -147,6 +161,7 @@ func Generate(ctx context.Context, artifactsDir, sutName string, includeArtifact
 		ArtifactCount: len(entries),
 		Provided:      provided,
 		Dependent:     dependent,
+		TestCases:     testcases,
 		Notes:         notes,
 	}
 	if includeArtifacts {
@@ -282,6 +297,32 @@ const reportHTMLTemplate = `<!DOCTYPE html>
     .summary-card strong {
       font-size: 20px;
     }
+    .tabs {
+      display: flex;
+      gap: 8px;
+    }
+    .tab-button {
+      border: 1px solid var(--border);
+      background: #f1f5f9;
+      color: var(--text);
+      padding: 8px 14px;
+      border-radius: 999px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    .tab-button.active {
+      background: var(--accent);
+      color: #ffffff;
+      border-color: var(--accent);
+    }
+    .tab-panel {
+      display: none;
+      gap: 24px;
+      flex-direction: column;
+    }
+    .tab-panel.active {
+      display: flex;
+    }
     details {
       border: 1px solid var(--border);
       border-radius: 12px;
@@ -394,7 +435,13 @@ const reportHTMLTemplate = `<!DOCTYPE html>
     <p>Generated {{ formatTime .GeneratedAt }} · SUT: {{ .SUTName }}</p>
   </header>
   <main>
-    <section class="panel">
+    <div class="tabs">
+      <button class="tab-button active" data-tab="tab-specs">By API Spec</button>
+      <button class="tab-button" data-tab="tab-tests">By Test Case</button>
+    </div>
+
+    <div id="tab-specs" class="tab-panel active">
+      <section class="panel">
       <h2>Summary</h2>
       <div class="summary-grid">
         <div class="summary-card">
@@ -532,7 +579,124 @@ const reportHTMLTemplate = `<!DOCTYPE html>
         </details>
       {{ end }}
     </section>
+    </div>
+
+    <div id="tab-tests" class="tab-panel">
+      {{ range .TestCases }}
+        <section class="panel">
+          <h2>Test Case: {{ .Name }}</h2>
+          <div class="op-group">
+            <h4>Provided Specs</h4>
+            {{ if .Provided }}
+              {{ range .Provided }}
+                {{ $spec := . }}
+                <details class="spec" open>
+                  <summary>
+                    <span>{{ $spec.SchemaID }}</span>
+                    <span class="meta">Type: {{ $spec.Type }}</span>
+                  </summary>
+                  <div class="spec-body">
+                    <div class="meta">Source: {{ $spec.Source }}</div>
+                    {{ range $spec.Operations }}
+                      <details class="op">
+                        <summary>{{ .Operation }}</summary>
+                        {{ if .Samples }}
+                          {{ range .Samples }}
+                            <div class="sample">
+                              <div class="sample-title">Test Case: {{ .TestCase }}</div>
+                              <div class="sample-body">
+                                {{ if eq .Protocol "grpc" }}
+                                  <div><strong>Request:</strong> {{ .Request.GRPCService }}/{{ .Request.GRPCMethod }}</div>
+                                  {{ if .Request.Body }}<pre class="code-block">{{ .Request.Body }}</pre>{{ end }}
+                                  <div><strong>Response:</strong> status {{ .Response.GRPCStatus }}</div>
+                                  {{ if .Response.Body }}<pre class="code-block">{{ .Response.Body }}</pre>{{ end }}
+                                {{ else }}
+                                  <div><strong>Request:</strong> {{ .Request.Method }} {{ .Request.URL }}</div>
+                                  {{ if .Request.Body }}<pre class="code-block">{{ .Request.Body }}</pre>{{ end }}
+                                  <div><strong>Response:</strong> {{ .Response.Status }}</div>
+                                  {{ if .Response.Body }}<pre class="code-block">{{ .Response.Body }}</pre>{{ end }}
+                                {{ end }}
+                              </div>
+                            </div>
+                          {{ end }}
+                        {{ else }}
+                          <div class="meta">No captured samples.</div>
+                        {{ end }}
+                      </details>
+                    {{ end }}
+                  </div>
+                </details>
+              {{ end }}
+            {{ else }}
+              <div class="meta">No provided interactions.</div>
+            {{ end }}
+          </div>
+
+          <div class="op-group">
+            <h4>Dependent Specs</h4>
+            {{ if .Dependent }}
+              {{ range .Dependent }}
+                {{ $spec := . }}
+                <details class="spec" open>
+                  <summary>
+                    <span>{{ $spec.SchemaID }}</span>
+                    <span class="meta">Type: {{ $spec.Type }}</span>
+                  </summary>
+                  <div class="spec-body">
+                    <div class="meta">Source: {{ $spec.Source }}</div>
+                    {{ range $spec.Operations }}
+                      <details class="op">
+                        <summary>{{ .Operation }}</summary>
+                        {{ if .Samples }}
+                          {{ range .Samples }}
+                            <div class="sample">
+                              <div class="sample-title">Test Case: {{ .TestCase }}</div>
+                              <div class="sample-body">
+                                {{ if eq .Protocol "grpc" }}
+                                  <div><strong>Request:</strong> {{ .Request.GRPCService }}/{{ .Request.GRPCMethod }}</div>
+                                  {{ if .Request.Body }}<pre class="code-block">{{ .Request.Body }}</pre>{{ end }}
+                                  <div><strong>Response:</strong> status {{ .Response.GRPCStatus }}</div>
+                                  {{ if .Response.Body }}<pre class="code-block">{{ .Response.Body }}</pre>{{ end }}
+                                {{ else }}
+                                  <div><strong>Request:</strong> {{ .Request.Method }} {{ .Request.URL }}</div>
+                                  {{ if .Request.Body }}<pre class="code-block">{{ .Request.Body }}</pre>{{ end }}
+                                  <div><strong>Response:</strong> {{ .Response.Status }}</div>
+                                  {{ if .Response.Body }}<pre class="code-block">{{ .Response.Body }}</pre>{{ end }}
+                                {{ end }}
+                              </div>
+                            </div>
+                          {{ end }}
+                        {{ else }}
+                          <div class="meta">No captured samples.</div>
+                        {{ end }}
+                      </details>
+                    {{ end }}
+                  </div>
+                </details>
+              {{ end }}
+            {{ else }}
+              <div class="meta">No dependent interactions.</div>
+            {{ end }}
+          </div>
+        </section>
+      {{ end }}
+    </div>
   </main>
+  <script>
+    const tabs = document.querySelectorAll('.tab-button');
+    const panels = document.querySelectorAll('.tab-panel');
+    tabs.forEach((tab) => {
+      tab.addEventListener('click', () => {
+        tabs.forEach((btn) => btn.classList.remove('active'));
+        panels.forEach((panel) => panel.classList.remove('active'));
+        tab.classList.add('active');
+        const panel = document.getElementById(tab.dataset.tab);
+        if (panel) {
+          panel.classList.add('active');
+        }
+      });
+    });
+  </script>
 </body>
 </html>`
 
@@ -617,7 +781,7 @@ func inferSUTName(entries []artifactEntry) string {
 	return "SUT"
 }
 
-func buildCoverage(entries []artifactEntry) (SpecCoverageGroup, SpecCoverageGroup, []string) {
+func buildCoverage(entries []artifactEntry) (SpecCoverageGroup, SpecCoverageGroup, []TestCaseCoverage, []string) {
 	var notes []string
 	flows := []artifact.Flow{}
 	flowEntries := []flowEntry{}
@@ -651,8 +815,9 @@ func buildCoverage(entries []artifactEntry) (SpecCoverageGroup, SpecCoverageGrou
 
 	providedGroup := SpecCoverageGroup{Specs: exportSpecs(providedSchemas, true, providedSamples, false)}
 	dependentGroup := SpecCoverageGroup{Specs: exportSpecs(dependentSchemas, false, dependentSamples, true)}
+	testcases := buildTestCaseCoverage(flowEntries, providedSchemas, dependentSchemas)
 
-	return providedGroup, dependentGroup, notes
+	return providedGroup, dependentGroup, testcases, notes
 }
 
 func filterSchemas(schemas []artifact.SchemaRef, role string) []artifact.SchemaRef {
@@ -850,6 +1015,106 @@ func addSample(target map[string]map[string][]FlowSample, schemaID, operation st
 	}
 	target[schemaID][operation] = append(target[schemaID][operation], sample)
 	return target
+}
+
+func buildTestCaseCoverage(entries []flowEntry, providedSchemas, dependentSchemas []*loadedSchema) []TestCaseCoverage {
+	buckets := map[string]*TestCaseCoverage{}
+	for _, entry := range entries {
+		flow := entry.Flow
+		tcName := strings.TrimSpace(entry.TestCase)
+		if tcName == "" {
+			tcName = "unknown"
+		}
+		tc := buckets[tcName]
+		if tc == nil {
+			tc = &TestCaseCoverage{Name: tcName}
+			buckets[tcName] = tc
+		}
+
+		var schemas []*loadedSchema
+		var target *[]SpecOperationSamples
+		switch flow.Channel {
+		case "test_to_sut":
+			schemas = providedSchemas
+			target = &tc.Provided
+		case "sut_to_mock":
+			schemas = dependentSchemas
+			target = &tc.Dependent
+		default:
+			continue
+		}
+
+		for _, schema := range schemas {
+			op := ""
+			if schema.OpenAPI != nil && flow.Protocol == "http" {
+				if matched, ok := openapiOperationFromFlow(flow, schema.OpenAPI); ok {
+					op = matched
+				}
+			}
+			if schema.Proto != nil && flow.Protocol == "grpc" {
+				op = grpcOperationFromFlow(flow)
+				if op != "" && !containsOp(schema.Operations, op) {
+					op = ""
+				}
+			}
+			if op == "" {
+				continue
+			}
+
+			spec := findOrCreateSpec(target, schema)
+			spec.Operations = appendOperationSample(spec.Operations, op, flowSampleFromFlow(entry))
+		}
+	}
+
+	var out []TestCaseCoverage
+	for _, tc := range buckets {
+		sort.Slice(tc.Provided, func(i, j int) bool { return tc.Provided[i].SchemaID < tc.Provided[j].SchemaID })
+		sort.Slice(tc.Dependent, func(i, j int) bool { return tc.Dependent[i].SchemaID < tc.Dependent[j].SchemaID })
+		for i := range tc.Provided {
+			sortOperationSamples(tc.Provided[i].Operations)
+		}
+		for i := range tc.Dependent {
+			sortOperationSamples(tc.Dependent[i].Operations)
+		}
+		out = append(out, *tc)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
+}
+
+func findOrCreateSpec(target *[]SpecOperationSamples, schema *loadedSchema) *SpecOperationSamples {
+	for i := range *target {
+		if (*target)[i].SchemaID == schema.Ref.ID {
+			return &(*target)[i]
+		}
+	}
+	entry := SpecOperationSamples{
+		SchemaID: schema.Ref.ID,
+		Type:     schema.Ref.Type,
+		Source:   schema.Source,
+	}
+	*target = append(*target, entry)
+	return &(*target)[len(*target)-1]
+}
+
+func appendOperationSample(ops []OperationSamples, operation string, sample FlowSample) []OperationSamples {
+	for i := range ops {
+		if ops[i].Operation == operation {
+			ops[i].Samples = append(ops[i].Samples, sample)
+			return ops
+		}
+	}
+	ops = append(ops, OperationSamples{Operation: operation, Samples: []FlowSample{sample}})
+	return ops
+}
+
+func sortOperationSamples(ops []OperationSamples) {
+	sort.Slice(ops, func(i, j int) bool { return ops[i].Operation < ops[j].Operation })
+	for i := range ops {
+		if len(ops[i].Samples) > 1 {
+			sortSamples(ops[i].Samples)
+		}
+	}
 }
 
 func flowSampleFromFlow(entry flowEntry) FlowSample {
