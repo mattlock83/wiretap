@@ -75,6 +75,13 @@ Example (inline OpenAPI):
 }
 ```
 
+### 4.5 Coverage Reporting (v1)
+1. Provide a CLI helper that reads YAML/JSON artifacts after tests complete.
+2. Report coverage from an API spec perspective:
+   - Provided API specs: paths/services exercised and not covered.
+   - Dependent API specs: paths/services faked and fields asserted.
+3. Output should be machine-ingestable (YAML or JSON) for central reporting.
+
 ### 4.2 HTTPS Support
 1. Proxy must support HTTPS via explicit proxy configuration.
 2. Proxy must support HTTP CONNECT to establish tunnels.
@@ -109,6 +116,10 @@ Example (inline OpenAPI):
 3. **Artifact Builder**
    - Aggregates traffic + assertions + metadata.
    - Writes per-test YAML to output directory.
+
+4. **Coverage Reporter (CLI)**
+   - Reads artifacts and attached schemas.
+   - Produces a spec-coverage summary for provided and dependent APIs.
 
 ### 6.2 Key Decisions
 - **Core language**: Go (recommended) for reliable HTTP/1.1 + HTTP/2 plumbing, MITM, and future gRPC capture.

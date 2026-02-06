@@ -64,6 +64,18 @@ PROTO_DESCRIPTOR=examples/grpc/examplepb/example.desc ./examples/run-grpc-e2e.sh
 
 See `sdk/js/README.md` for API details. The SDK enforces schemas on `startTestCase` and returns `schemaValidation` in `finishTestCase` responses.
 
+## Coverage Report CLI
+
+Generate a spec coverage report from the YAML artifacts:
+
+```bash
+go run ./cmd/phrond-coverage --artifacts ./artifacts --sut-name "Example SUT" --format yaml --output coverage.yaml
+```
+
+The report includes:
+- Provided API specs: exercised + not covered paths/services
+- Dependent API specs: faked paths/services + asserted fields
+
 ## Docs
 
 - Requirements and design: `docs/testing-tool-requirements-and-design.md`
