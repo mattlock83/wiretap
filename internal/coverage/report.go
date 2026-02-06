@@ -46,13 +46,14 @@ type SpecCoverageGroup struct {
 }
 
 type SpecCoverage struct {
-	SchemaID   string   `json:"schema_id" yaml:"schema_id"`
-	Role       string   `json:"role" yaml:"role"`
-	Type       string   `json:"type" yaml:"type"`
-	Source     string   `json:"source" yaml:"source"`
-	Exercised  []string `json:"exercised,omitempty" yaml:"exercised,omitempty"`
-	NotCovered []string `json:"not_covered,omitempty" yaml:"not_covered,omitempty"`
-	Faked      []string `json:"faked,omitempty" yaml:"faked,omitempty"`
+	SchemaID            string                `json:"schema_id" yaml:"schema_id"`
+	Role                string                `json:"role" yaml:"role"`
+	Type                string                `json:"type" yaml:"type"`
+	Source              string                `json:"source" yaml:"source"`
+	Exercised           []string              `json:"exercised,omitempty" yaml:"exercised,omitempty"`
+	NotCovered          []string              `json:"not_covered,omitempty" yaml:"not_covered,omitempty"`
+	Faked               []string              `json:"faked,omitempty" yaml:"faked,omitempty"`
+	AssertedByOperation []OperationAssertions `json:"asserted_by_operation,omitempty" yaml:"asserted_by_operation,omitempty"`
 }
 
 type AssertedField struct {
@@ -62,6 +63,11 @@ type AssertedField struct {
 	PathLang string `json:"path_lang,omitempty" yaml:"path_lang,omitempty"`
 	Field    string `json:"field,omitempty" yaml:"field,omitempty"`
 	Operator string `json:"operator,omitempty" yaml:"operator,omitempty"`
+}
+
+type OperationAssertions struct {
+	Operation string          `json:"operation" yaml:"operation"`
+	Fields    []AssertedField `json:"fields,omitempty" yaml:"fields,omitempty"`
 }
 
 type loadedSchema struct {
@@ -359,6 +365,31 @@ const reportHTMLTemplate = `<!DOCTYPE html>
               {{ range .Faked }}<li>{{ . }}</li>{{ end }}
             </ul>
           {{ end }}
+          {{ if .AssertedByOperation }}
+            <strong>Asserted Fields by Operation</strong>
+            <table>
+              <thead>
+                <tr>
+                  <th>Operation</th>
+                  <th>Assertions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {{ range .AssertedByOperation }}
+                  <tr>
+                    <td>{{ .Operation }}</td>
+                    <td>
+                      <ul>
+                        {{ range .Fields }}
+                          <li>{{ .Field }} ({{ .Operator }})</li>
+                        {{ end }}
+                      </ul>
+                    </td>
+                  </tr>
+                {{ end }}
+              </tbody>
+            </table>
+          {{ end }}
         </div>
       {{ end }}
 
@@ -482,6 +513,7 @@ func buildCoverage(entries []artifactEntry) (SpecCoverageGroup, SpecCoverageGrou
 	flows := []artifact.Flow{}
 	assertions := []artifact.Assertion{}
 	schemas := []artifact.SchemaRef{}
+	flowIndex := map[string]artifact.Flow{}
 
 	for _, entry := range entries {
 		if entry.Doc == nil {
@@ -490,6 +522,11 @@ func buildCoverage(entries []artifactEntry) (SpecCoverageGroup, SpecCoverageGrou
 		flows = append(flows, entry.Doc.Traffic...)
 		assertions = append(assertions, entry.Doc.Assertions...)
 		schemas = append(schemas, entry.Doc.Schemas...)
+	}
+	for _, flow := range flows {
+		if flow.ID != "" {
+			flowIndex[flow.ID] = flow
+		}
 	}
 
 	providedSchemas, providedNotes := loadSchemas(filterSchemas(schemas, "sut"))
@@ -508,6 +545,16 @@ func buildCoverage(entries []artifactEntry) (SpecCoverageGroup, SpecCoverageGrou
 
 	dependentGroup.Faked = uniqueSorted(collectOps(dependentSchemas, "faked"))
 	dependentGroup.AssertedFields = buildAssertedFields(assertions, "sut_to_mock")
+	assertedBySpec, assertedNotes := buildAssertedFieldsBySpec(assertions, flowIndex, dependentSchemas, "sut_to_mock")
+	notes = append(notes, assertedNotes...)
+	if len(assertedBySpec) > 0 {
+		for i := range dependentGroup.Specs {
+			specID := dependentGroup.Specs[i].SchemaID
+			if ops, ok := assertedBySpec[specID]; ok {
+				dependentGroup.Specs[i].AssertedByOperation = ops
+			}
+		}
+	}
 
 	if len(dependentGroup.AssertedFields) == 0 {
 		notes = append(notes, "No field-level assertions were recorded for sut_to_mock traffic.")
@@ -649,6 +696,83 @@ func buildAssertedFields(assertions []artifact.Assertion, channel string) []Asse
 		})
 	}
 	return fields
+}
+
+func buildAssertedFieldsBySpec(assertions []artifact.Assertion, flows map[string]artifact.Flow, schemas []*loadedSchema, channel string) (map[string][]OperationAssertions, []string) {
+	out := map[string]map[string][]AssertedField{}
+	var notes []string
+	if len(assertions) == 0 || len(schemas) == 0 {
+		return map[string][]OperationAssertions{}, notes
+	}
+	for _, assertion := range assertions {
+		if assertion.Channel != channel {
+			continue
+		}
+		if assertion.FlowID == "" {
+			notes = append(notes, fmt.Sprintf("Assertion %q missing flow_id; cannot map to operation.", assertion.ID))
+			continue
+		}
+		flow, ok := flows[assertion.FlowID]
+		if !ok {
+			notes = append(notes, fmt.Sprintf("Assertion %q references unknown flow %q.", assertion.ID, assertion.FlowID))
+			continue
+		}
+		for _, schema := range schemas {
+			switch {
+			case schema.OpenAPI != nil && flow.Protocol == "http":
+				if op, ok := openapiOperationFromFlow(flow, schema.OpenAPI); ok {
+					if !containsOp(schema.Operations, op) {
+						continue
+					}
+					out = addOperationAssertion(out, schema.Ref.ID, op, assertion)
+				}
+			case schema.Proto != nil && flow.Protocol == "grpc":
+				op := grpcOperationFromFlow(flow)
+				if op == "" {
+					continue
+				}
+				if !containsOp(schema.Operations, op) {
+					continue
+				}
+				out = addOperationAssertion(out, schema.Ref.ID, op, assertion)
+			}
+		}
+	}
+	return normalizeOperationAssertions(out), notes
+}
+
+func addOperationAssertion(target map[string]map[string][]AssertedField, schemaID, operation string, assertion artifact.Assertion) map[string]map[string][]AssertedField {
+	if _, ok := target[schemaID]; !ok {
+		target[schemaID] = map[string][]AssertedField{}
+	}
+	target[schemaID][operation] = append(target[schemaID][operation], AssertedField{
+		FlowID:   assertion.FlowID,
+		Channel:  assertion.Channel,
+		Phase:    assertion.Phase,
+		PathLang: assertion.PathLang,
+		Field:    assertion.Field,
+		Operator: assertion.Operator,
+	})
+	return target
+}
+
+func normalizeOperationAssertions(raw map[string]map[string][]AssertedField) map[string][]OperationAssertions {
+	out := map[string][]OperationAssertions{}
+	for schemaID, opMap := range raw {
+		var ops []OperationAssertions
+		for op, fields := range opMap {
+			sort.Slice(fields, func(i, j int) bool {
+				if fields[i].Field == fields[j].Field {
+					return fields[i].FlowID < fields[j].FlowID
+				}
+				return fields[i].Field < fields[j].Field
+			})
+			ops = append(ops, OperationAssertions{Operation: op, Fields: fields})
+		}
+		sort.Slice(ops, func(i, j int) bool { return ops[i].Operation < ops[j].Operation })
+		out[schemaID] = ops
+	}
+	return out
 }
 
 func schemaKey(schema artifact.SchemaRef) string {
