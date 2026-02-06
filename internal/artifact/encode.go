@@ -7,6 +7,8 @@ import (
 	"io"
 	"sort"
 	"strings"
+
+	"gopkg.in/yaml.v3"
 )
 
 // MarshalJSON ensures the message is encoded as HTTP or gRPC payload.
@@ -18,6 +20,73 @@ func (m Message) MarshalJSON() ([]byte, error) {
 		return json.Marshal(m.GRPC)
 	}
 	return []byte("null"), nil
+}
+
+// UnmarshalJSON decodes either HTTP or gRPC message payloads.
+func (m *Message) UnmarshalJSON(data []byte) error {
+	if m == nil {
+		return nil
+	}
+	*m = Message{}
+	trimmed := bytes.TrimSpace(data)
+	if bytes.Equal(trimmed, []byte("null")) || len(trimmed) == 0 {
+		return nil
+	}
+
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+
+	if _, ok := raw["method"]; ok || raw["url"] != nil || raw["status"] != nil {
+		var msg HttpMessage
+		if err := json.Unmarshal(data, &msg); err == nil {
+			m.HTTP = &msg
+			return nil
+		}
+	}
+
+	if _, ok := raw["content_type"]; ok || raw["trailers"] != nil {
+		var msg GrpcMessage
+		if err := json.Unmarshal(data, &msg); err == nil {
+			m.GRPC = &msg
+			return nil
+		}
+	}
+
+	var httpMsg HttpMessage
+	if err := json.Unmarshal(data, &httpMsg); err == nil {
+		if httpMsg.Method != "" || httpMsg.URL != "" || httpMsg.Status != 0 || httpMsg.Headers != nil || httpMsg.Body != nil {
+			m.HTTP = &httpMsg
+			return nil
+		}
+	}
+
+	var grpcMsg GrpcMessage
+	if err := json.Unmarshal(data, &grpcMsg); err == nil {
+		if grpcMsg.ContentType != "" || grpcMsg.Headers != nil || grpcMsg.Body != nil || grpcMsg.Trailers != nil {
+			m.GRPC = &grpcMsg
+			return nil
+		}
+	}
+
+	return nil
+}
+
+// UnmarshalYAML ensures YAML (including JSON-as-YAML) decodes into HTTP/GRPC messages.
+func (m *Message) UnmarshalYAML(value *yaml.Node) error {
+	if m == nil {
+		return nil
+	}
+	var raw any
+	if err := value.Decode(&raw); err != nil {
+		return err
+	}
+	data, err := json.Marshal(raw)
+	if err != nil {
+		return err
+	}
+	return m.UnmarshalJSON(data)
 }
 
 // MarshalJSON ensures header keys are encoded in a deterministic order.

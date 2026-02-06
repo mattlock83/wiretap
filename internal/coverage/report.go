@@ -560,6 +560,9 @@ func buildCoverage(entries []artifactEntry) (SpecCoverageGroup, SpecCoverageGrou
 		if flow.ID != "" {
 			flowIndex[flow.ID] = flow
 		}
+		if flow.MatchedStubID != "" {
+			flowIndex[flow.MatchedStubID] = flow
+		}
 	}
 
 	providedSchemas, providedNotes := loadSchemas(filterSchemas(schemas, "sut"))

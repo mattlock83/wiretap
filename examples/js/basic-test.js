@@ -21,22 +21,26 @@ async function waitForHealth(url, retries = 20) {
   return false;
 }
 
-function postViaProxy(proxyUrl, targetUrl, body) {
+function requestViaProxy(proxyUrl, targetUrl, { method = "GET", body = null, headers = {} } = {}) {
   return new Promise((resolve, reject) => {
     const proxy = new URL(proxyUrl);
     const target = new URL(targetUrl);
+
+    const reqHeaders = { Host: target.host, ...headers };
+    if (body !== null && body !== undefined) {
+      reqHeaders["Content-Length"] = Buffer.byteLength(body);
+      if (!reqHeaders["Content-Type"]) {
+        reqHeaders["Content-Type"] = "application/json";
+      }
+    }
 
     const req = http.request(
       {
         host: proxy.hostname,
         port: proxy.port,
-        method: "POST",
+        method,
         path: target.href,
-        headers: {
-          Host: target.host,
-          "Content-Type": "application/json",
-          "Content-Length": Buffer.byteLength(body)
-        }
+        headers: reqHeaders
       },
       (res) => {
         let data = "";
@@ -45,9 +49,15 @@ function postViaProxy(proxyUrl, targetUrl, body) {
       }
     );
     req.on("error", reject);
-    req.write(body);
+    if (body !== null && body !== undefined) {
+      req.write(body);
+    }
     req.end();
   });
+}
+
+function postViaProxy(proxyUrl, targetUrl, body) {
+  return requestViaProxy(proxyUrl, targetUrl, { method: "POST", body });
 }
 
 async function main() {
@@ -121,6 +131,8 @@ async function main() {
   if (!proxyListen) {
     throw new Error("Proxy listen address not returned");
   }
+  const sutStatusUrl = `http://${sutListen}/status`;
+  await requestViaProxy(`http://${proxyListen}`, sutStatusUrl, { method: "GET" });
   const result = await postViaProxy(`http://${proxyListen}`, sutProcessUrl, payload);
   console.log("SUT response:", result.status, result.body);
 

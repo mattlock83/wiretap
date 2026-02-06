@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-ARTIFACT_DIR="${ARTIFACT_DIR:-$ROOT_DIR/artifacts}"
+ARTIFACT_DIR="${ARTIFACT_DIR:-$ROOT_DIR/artifacts/run-$(date +%s)-$RANDOM}"
 
 pick_port() {
   local base=20000
