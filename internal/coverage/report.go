@@ -213,12 +213,54 @@ func writeHTMLReport(w io.Writer, report *Report) error {
 			}
 			return t.Format(time.RFC3339)
 		},
+		"prettyJSON":    prettyJSON,
+		"formatHeaders": formatHeaders,
 	})
 	parsed, err := tpl.Parse(reportHTMLTemplate)
 	if err != nil {
 		return err
 	}
 	return parsed.Execute(w, report)
+}
+
+func prettyJSON(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return ""
+	}
+	var payload any
+	if err := json.Unmarshal([]byte(trimmed), &payload); err != nil {
+		return raw
+	}
+	pretty, err := json.MarshalIndent(payload, "", "  ")
+	if err != nil {
+		return raw
+	}
+	return string(pretty)
+}
+
+func formatHeaders(headers artifact.Headers) string {
+	if len(headers) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(headers))
+	for key := range headers {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	lines := make([]string, 0, len(headers))
+	for _, key := range keys {
+		values := headers[key]
+		if len(values) == 0 {
+			lines = append(lines, key+":")
+			continue
+		}
+		for _, value := range values {
+			lines = append(lines, fmt.Sprintf("%s: %s", key, value))
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 const reportHTMLTemplate = `<!DOCTYPE html>
@@ -491,14 +533,18 @@ const reportHTMLTemplate = `<!DOCTYPE html>
                           <div class="sample-body">
                             {{ if eq .Protocol "grpc" }}
                               <div><strong>Request:</strong> {{ .Request.GRPCService }}/{{ .Request.GRPCMethod }}</div>
-                              {{ if .Request.Body }}<pre class="code-block">{{ .Request.Body }}</pre>{{ end }}
+                              {{ if .Request.Headers }}<div><strong>Request Headers:</strong></div><pre class="code-block">{{ formatHeaders .Request.Headers }}</pre>{{ end }}
+                              {{ if .Request.Body }}<pre class="code-block">{{ prettyJSON .Request.Body }}</pre>{{ end }}
                               <div><strong>Response:</strong> status {{ .Response.GRPCStatus }}</div>
-                              {{ if .Response.Body }}<pre class="code-block">{{ .Response.Body }}</pre>{{ end }}
+                              {{ if .Response.Headers }}<div><strong>Response Headers:</strong></div><pre class="code-block">{{ formatHeaders .Response.Headers }}</pre>{{ end }}
+                              {{ if .Response.Body }}<pre class="code-block">{{ prettyJSON .Response.Body }}</pre>{{ end }}
                             {{ else }}
                               <div><strong>Request:</strong> {{ .Request.Method }} {{ .Request.URL }}</div>
-                              {{ if .Request.Body }}<pre class="code-block">{{ .Request.Body }}</pre>{{ end }}
+                              {{ if .Request.Headers }}<div><strong>Request Headers:</strong></div><pre class="code-block">{{ formatHeaders .Request.Headers }}</pre>{{ end }}
+                              {{ if .Request.Body }}<pre class="code-block">{{ prettyJSON .Request.Body }}</pre>{{ end }}
                               <div><strong>Response:</strong> {{ .Response.Status }}</div>
-                              {{ if .Response.Body }}<pre class="code-block">{{ .Response.Body }}</pre>{{ end }}
+                              {{ if .Response.Headers }}<div><strong>Response Headers:</strong></div><pre class="code-block">{{ formatHeaders .Response.Headers }}</pre>{{ end }}
+                              {{ if .Response.Body }}<pre class="code-block">{{ prettyJSON .Response.Body }}</pre>{{ end }}
                             {{ end }}
                           </div>
                         </div>
@@ -554,14 +600,18 @@ const reportHTMLTemplate = `<!DOCTYPE html>
                           <div class="sample-body">
                             {{ if eq .Protocol "grpc" }}
                               <div><strong>Request:</strong> {{ .Request.GRPCService }}/{{ .Request.GRPCMethod }}</div>
-                              {{ if .Request.Body }}<pre class="code-block">{{ .Request.Body }}</pre>{{ end }}
+                              {{ if .Request.Headers }}<div><strong>Request Headers:</strong></div><pre class="code-block">{{ formatHeaders .Request.Headers }}</pre>{{ end }}
+                              {{ if .Request.Body }}<pre class="code-block">{{ prettyJSON .Request.Body }}</pre>{{ end }}
                               <div><strong>Response:</strong> status {{ .Response.GRPCStatus }}</div>
-                              {{ if .Response.Body }}<pre class="code-block">{{ .Response.Body }}</pre>{{ end }}
+                              {{ if .Response.Headers }}<div><strong>Response Headers:</strong></div><pre class="code-block">{{ formatHeaders .Response.Headers }}</pre>{{ end }}
+                              {{ if .Response.Body }}<pre class="code-block">{{ prettyJSON .Response.Body }}</pre>{{ end }}
                             {{ else }}
                               <div><strong>Request:</strong> {{ .Request.Method }} {{ .Request.URL }}</div>
-                              {{ if .Request.Body }}<pre class="code-block">{{ .Request.Body }}</pre>{{ end }}
+                              {{ if .Request.Headers }}<div><strong>Request Headers:</strong></div><pre class="code-block">{{ formatHeaders .Request.Headers }}</pre>{{ end }}
+                              {{ if .Request.Body }}<pre class="code-block">{{ prettyJSON .Request.Body }}</pre>{{ end }}
                               <div><strong>Response:</strong> {{ .Response.Status }}</div>
-                              {{ if .Response.Body }}<pre class="code-block">{{ .Response.Body }}</pre>{{ end }}
+                              {{ if .Response.Headers }}<div><strong>Response Headers:</strong></div><pre class="code-block">{{ formatHeaders .Response.Headers }}</pre>{{ end }}
+                              {{ if .Response.Body }}<pre class="code-block">{{ prettyJSON .Response.Body }}</pre>{{ end }}
                             {{ end }}
                           </div>
                         </div>
@@ -607,14 +657,18 @@ const reportHTMLTemplate = `<!DOCTYPE html>
                               <div class="sample-body">
                                 {{ if eq .Protocol "grpc" }}
                                   <div><strong>Request:</strong> {{ .Request.GRPCService }}/{{ .Request.GRPCMethod }}</div>
-                                  {{ if .Request.Body }}<pre class="code-block">{{ .Request.Body }}</pre>{{ end }}
+                                  {{ if .Request.Headers }}<div><strong>Request Headers:</strong></div><pre class="code-block">{{ formatHeaders .Request.Headers }}</pre>{{ end }}
+                                  {{ if .Request.Body }}<pre class="code-block">{{ prettyJSON .Request.Body }}</pre>{{ end }}
                                   <div><strong>Response:</strong> status {{ .Response.GRPCStatus }}</div>
-                                  {{ if .Response.Body }}<pre class="code-block">{{ .Response.Body }}</pre>{{ end }}
+                                  {{ if .Response.Headers }}<div><strong>Response Headers:</strong></div><pre class="code-block">{{ formatHeaders .Response.Headers }}</pre>{{ end }}
+                                  {{ if .Response.Body }}<pre class="code-block">{{ prettyJSON .Response.Body }}</pre>{{ end }}
                                 {{ else }}
                                   <div><strong>Request:</strong> {{ .Request.Method }} {{ .Request.URL }}</div>
-                                  {{ if .Request.Body }}<pre class="code-block">{{ .Request.Body }}</pre>{{ end }}
+                                  {{ if .Request.Headers }}<div><strong>Request Headers:</strong></div><pre class="code-block">{{ formatHeaders .Request.Headers }}</pre>{{ end }}
+                                  {{ if .Request.Body }}<pre class="code-block">{{ prettyJSON .Request.Body }}</pre>{{ end }}
                                   <div><strong>Response:</strong> {{ .Response.Status }}</div>
-                                  {{ if .Response.Body }}<pre class="code-block">{{ .Response.Body }}</pre>{{ end }}
+                                  {{ if .Response.Headers }}<div><strong>Response Headers:</strong></div><pre class="code-block">{{ formatHeaders .Response.Headers }}</pre>{{ end }}
+                                  {{ if .Response.Body }}<pre class="code-block">{{ prettyJSON .Response.Body }}</pre>{{ end }}
                                 {{ end }}
                               </div>
                             </div>
@@ -654,14 +708,18 @@ const reportHTMLTemplate = `<!DOCTYPE html>
                               <div class="sample-body">
                                 {{ if eq .Protocol "grpc" }}
                                   <div><strong>Request:</strong> {{ .Request.GRPCService }}/{{ .Request.GRPCMethod }}</div>
-                                  {{ if .Request.Body }}<pre class="code-block">{{ .Request.Body }}</pre>{{ end }}
+                                  {{ if .Request.Headers }}<div><strong>Request Headers:</strong></div><pre class="code-block">{{ formatHeaders .Request.Headers }}</pre>{{ end }}
+                                  {{ if .Request.Body }}<pre class="code-block">{{ prettyJSON .Request.Body }}</pre>{{ end }}
                                   <div><strong>Response:</strong> status {{ .Response.GRPCStatus }}</div>
-                                  {{ if .Response.Body }}<pre class="code-block">{{ .Response.Body }}</pre>{{ end }}
+                                  {{ if .Response.Headers }}<div><strong>Response Headers:</strong></div><pre class="code-block">{{ formatHeaders .Response.Headers }}</pre>{{ end }}
+                                  {{ if .Response.Body }}<pre class="code-block">{{ prettyJSON .Response.Body }}</pre>{{ end }}
                                 {{ else }}
                                   <div><strong>Request:</strong> {{ .Request.Method }} {{ .Request.URL }}</div>
-                                  {{ if .Request.Body }}<pre class="code-block">{{ .Request.Body }}</pre>{{ end }}
+                                  {{ if .Request.Headers }}<div><strong>Request Headers:</strong></div><pre class="code-block">{{ formatHeaders .Request.Headers }}</pre>{{ end }}
+                                  {{ if .Request.Body }}<pre class="code-block">{{ prettyJSON .Request.Body }}</pre>{{ end }}
                                   <div><strong>Response:</strong> {{ .Response.Status }}</div>
-                                  {{ if .Response.Body }}<pre class="code-block">{{ .Response.Body }}</pre>{{ end }}
+                                  {{ if .Response.Headers }}<div><strong>Response Headers:</strong></div><pre class="code-block">{{ formatHeaders .Response.Headers }}</pre>{{ end }}
+                                  {{ if .Response.Body }}<pre class="code-block">{{ prettyJSON .Response.Body }}</pre>{{ end }}
                                 {{ end }}
                               </div>
                             </div>
