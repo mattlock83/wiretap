@@ -13,6 +13,9 @@ Phrond is a test harness that captures SUT traffic and mock traffic and writes a
 
 # gRPC example (proto-based)
 ./examples/run-grpc-e2e.sh
+
+# Mixed protocol payment example (gRPC + REST)
+./examples/run-payment-grpc-mixed-e2e.sh
 ```
 
 Artifacts are written to `./artifacts` by default.
