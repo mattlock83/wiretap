@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/phrond/evermock/examples/paymentgrpc/accountpb"
+	"github.com/phrond/evermock/examples/complex-mixed/accountpb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 )

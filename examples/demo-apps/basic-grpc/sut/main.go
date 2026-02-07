@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/phrond/evermock/examples/grpc/examplepb"
+	"github.com/phrond/evermock/examples/basic-grpc/examplepb"
 	tlsmgr "github.com/phrond/evermock/internal/tls"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"

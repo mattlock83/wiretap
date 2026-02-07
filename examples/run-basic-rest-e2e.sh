@@ -38,9 +38,7 @@ PROXY_PORT="${PROXY_PORT:-$(pick_unique_port "${USED_PORTS}")}"
 USED_PORTS="${USED_PORTS} ${PROXY_PORT}"
 MOCK_PORT="${MOCK_PORT:-$(pick_unique_port "${USED_PORTS}")}"
 USED_PORTS="${USED_PORTS} ${MOCK_PORT}"
-PAYMENT_SUT_PORT="${PAYMENT_SUT_PORT:-$(pick_unique_port "${USED_PORTS}")}"
-USED_PORTS="${USED_PORTS} ${PAYMENT_SUT_PORT}"
-TRANSACTION_SERVICE_PORT="${TRANSACTION_SERVICE_PORT:-$(pick_unique_port "${USED_PORTS}")}"
+SUT_PORT="${SUT_PORT:-$(pick_unique_port "${USED_PORTS}")}"
 
 BUILD_DIR="${BUILD_DIR:-$(mktemp -d)}"
 
@@ -62,26 +60,21 @@ export PHROND_MOCK_LISTEN="127.0.0.1:${MOCK_PORT}"
 export PHROND_ARTIFACT_DIR="$ARTIFACT_DIR"
 export PHROND_BASE_URL="http://127.0.0.1:${PHROND_PORT}"
 
-export PAYMENT_SUT_LISTEN="127.0.0.1:${PAYMENT_SUT_PORT}"
-export TRANSACTION_SERVICE_LISTEN="127.0.0.1:${TRANSACTION_SERVICE_PORT}"
+export SUT_LISTEN="127.0.0.1:${SUT_PORT}"
 
 pushd "$ROOT_DIR" >/dev/null
 
-# Build binaries
 GOFLAGS=${GOFLAGS:-}
 go build ${GOFLAGS} -o "${BUILD_DIR}/phrond-core" ./cmd/phrond
 GOFLAGS=${GOFLAGS:-}
-go build ${GOFLAGS} -o "${BUILD_DIR}/payment-sut" ./examples/payment/payment-sut
-GOFLAGS=${GOFLAGS:-}
-go build ${GOFLAGS} -o "${BUILD_DIR}/transaction-service" ./examples/payment/transaction-service
+go build ${GOFLAGS} -o "${BUILD_DIR}/basic-rest-sut" ./examples/demo-apps/basic-rest/sut
 
-# Start recorder core
 nohup "${BUILD_DIR}/phrond-core" > /tmp/phrond-core.log 2>&1 &
 PHROND_PID=$!
 
 wait_for() {
   local url="$1"
-  for i in {1..40}; do
+  for _ in {1..40}; do
     if curl -fsS "$url" >/dev/null 2>&1; then
       return 0
     fi
@@ -96,20 +89,18 @@ if ! wait_for "http://127.0.0.1:${PHROND_PORT}/healthz"; then
   exit 1
 fi
 
-export PAYMENT_SUT_BINARY="${BUILD_DIR}/payment-sut"
-export TRANSACTION_SERVICE_BINARY="${BUILD_DIR}/transaction-service"
-node --test ./examples/js/payment-test.js
+export SUT_BINARY="${BUILD_DIR}/basic-rest-sut"
+node --test ./examples/basic-rest/basic-test.js
 
-# Generate coverage reports
 go run ./cmd/phrond-coverage \
   --artifacts "${ARTIFACT_DIR}" \
-  --sut-name "Payment Services" \
+  --sut-name "Basic REST SUT" \
   --format yaml \
   --output "${ARTIFACT_DIR}/coverage.yaml"
 
 go run ./cmd/phrond-coverage \
   --artifacts "${ARTIFACT_DIR}" \
-  --sut-name "Payment Services" \
+  --sut-name "Basic REST SUT" \
   --format html \
   --output "${ARTIFACT_DIR}/coverage.html"
 

@@ -5,18 +5,27 @@ Phrond is a test harness that captures SUT traffic and mock traffic and writes a
 ## Quick Start
 
 ```bash
-# HTTP example
-./examples/run-e2e.sh
+# Basic REST example
+./examples/run-basic-rest-e2e.sh
 
-# HTTP payment example (multi-service)
-./examples/run-payment-e2e.sh
+# Basic gRPC example
+./examples/run-basic-grpc-e2e.sh
 
-# gRPC example (proto-based)
-./examples/run-grpc-e2e.sh
+# Complex REST example
+./examples/run-complex-rest-e2e.sh
 
-# Mixed protocol payment example (gRPC + REST)
-./examples/run-payment-grpc-mixed-e2e.sh
+# Complex mixed example (gRPC + REST)
+./examples/run-complex-mixed-e2e.sh
 ```
+
+Example tests now live under:
+- `examples/basic-rest`
+- `examples/basic-grpc`
+- `examples/complex-rest`
+- `examples/complex-mixed`
+
+Demo application binaries for the examples live under:
+- `examples/demo-apps`
 
 Artifacts are written to `./artifacts` by default.
 
@@ -50,7 +59,7 @@ Proto example (file):
   "id": "grpc-sut",
   "role": "sut",
   "type": "protobuf",
-  "source": { "type": "file", "path": "examples/grpc/examplepb/example.proto" }
+  "source": { "type": "file", "path": "examples/basic-grpc/examplepb/example.proto" }
 }
 ```
 
@@ -62,8 +71,8 @@ Proto example (file):
 Descriptor helper:
 
 ```bash
-./examples/grpc/gen-descriptor.sh
-PROTO_DESCRIPTOR=examples/grpc/examplepb/example.desc ./examples/run-grpc-e2e.sh
+./examples/basic-grpc/gen-descriptor.sh
+PROTO_DESCRIPTOR=examples/basic-grpc/examplepb/example.desc ./examples/run-basic-grpc-e2e.sh
 ```
 
 ## JS SDK

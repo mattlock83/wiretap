@@ -16,8 +16,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/phrond/evermock/examples/paymentgrpc/accountpb"
-	"github.com/phrond/evermock/examples/paymentgrpc/paymentpb"
+	"github.com/phrond/evermock/examples/complex-mixed/accountpb"
+	"github.com/phrond/evermock/examples/complex-mixed/paymentpb"
 	tlsmgr "github.com/phrond/evermock/internal/tls"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"

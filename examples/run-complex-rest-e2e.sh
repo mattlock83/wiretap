@@ -38,12 +38,8 @@ PROXY_PORT="${PROXY_PORT:-$(pick_unique_port "${USED_PORTS}")}"
 USED_PORTS="${USED_PORTS} ${PROXY_PORT}"
 MOCK_PORT="${MOCK_PORT:-$(pick_unique_port "${USED_PORTS}")}"
 USED_PORTS="${USED_PORTS} ${MOCK_PORT}"
-GRPC_PROXY_PORT="${GRPC_PROXY_PORT:-$(pick_unique_port "${USED_PORTS}")}"
-USED_PORTS="${USED_PORTS} ${GRPC_PROXY_PORT}"
-GRPC_MOCK_PORT="${GRPC_MOCK_PORT:-$(pick_unique_port "${USED_PORTS}")}"
-USED_PORTS="${USED_PORTS} ${GRPC_MOCK_PORT}"
-PAYMENT_GRPC_SUT_PORT="${PAYMENT_GRPC_SUT_PORT:-$(pick_unique_port "${USED_PORTS}")}"
-USED_PORTS="${USED_PORTS} ${PAYMENT_GRPC_SUT_PORT}"
+PAYMENT_SUT_PORT="${PAYMENT_SUT_PORT:-$(pick_unique_port "${USED_PORTS}")}"
+USED_PORTS="${USED_PORTS} ${PAYMENT_SUT_PORT}"
 TRANSACTION_SERVICE_PORT="${TRANSACTION_SERVICE_PORT:-$(pick_unique_port "${USED_PORTS}")}"
 
 BUILD_DIR="${BUILD_DIR:-$(mktemp -d)}"
@@ -63,24 +59,20 @@ mkdir -p "$ARTIFACT_DIR"
 export PHROND_HTTP_LISTEN="127.0.0.1:${PHROND_PORT}"
 export PHROND_PROXY_LISTEN="127.0.0.1:${PROXY_PORT}"
 export PHROND_MOCK_LISTEN="127.0.0.1:${MOCK_PORT}"
-export PHROND_GRPC_PROXY_LISTEN="127.0.0.1:${GRPC_PROXY_PORT}"
-export PHROND_GRPC_PROXY_INSECURE="true"
-export PHROND_GRPC_MOCK_LISTEN="127.0.0.1:${GRPC_MOCK_PORT}"
 export PHROND_ARTIFACT_DIR="$ARTIFACT_DIR"
 export PHROND_BASE_URL="http://127.0.0.1:${PHROND_PORT}"
 
-export PAYMENT_GRPC_SUT_LISTEN="127.0.0.1:${PAYMENT_GRPC_SUT_PORT}"
+export PAYMENT_SUT_LISTEN="127.0.0.1:${PAYMENT_SUT_PORT}"
 export TRANSACTION_SERVICE_LISTEN="127.0.0.1:${TRANSACTION_SERVICE_PORT}"
-export PHROND_GRPC_PROXY_TARGET="${PAYMENT_GRPC_SUT_LISTEN}"
 
 pushd "$ROOT_DIR" >/dev/null
 
 GOFLAGS=${GOFLAGS:-}
 go build ${GOFLAGS} -o "${BUILD_DIR}/phrond-core" ./cmd/phrond
 GOFLAGS=${GOFLAGS:-}
-go build ${GOFLAGS} -o "${BUILD_DIR}/paymentgrpc-sut" ./examples/paymentgrpc/sut
+go build ${GOFLAGS} -o "${BUILD_DIR}/complex-rest-payment-sut" ./examples/demo-apps/complex-rest/payment-sut
 GOFLAGS=${GOFLAGS:-}
-go build ${GOFLAGS} -o "${BUILD_DIR}/paymentgrpc-transaction-service" ./examples/paymentgrpc/transaction-service
+go build ${GOFLAGS} -o "${BUILD_DIR}/complex-rest-transaction-service" ./examples/demo-apps/complex-rest/transaction-service
 
 nohup "${BUILD_DIR}/phrond-core" > /tmp/phrond-core.log 2>&1 &
 PHROND_PID=$!
@@ -102,19 +94,19 @@ if ! wait_for "http://127.0.0.1:${PHROND_PORT}/healthz"; then
   exit 1
 fi
 
-export PAYMENT_GRPC_SUT_BINARY="${BUILD_DIR}/paymentgrpc-sut"
-export PAYMENT_GRPC_TRANSACTION_BINARY="${BUILD_DIR}/paymentgrpc-transaction-service"
-go run ./examples/paymentgrpc/client
+export PAYMENT_SUT_BINARY="${BUILD_DIR}/complex-rest-payment-sut"
+export TRANSACTION_SERVICE_BINARY="${BUILD_DIR}/complex-rest-transaction-service"
+node --test ./examples/complex-rest/payment-test.js
 
 go run ./cmd/phrond-coverage \
   --artifacts "${ARTIFACT_DIR}" \
-  --sut-name "Payment gRPC + REST Services" \
+  --sut-name "Complex REST Services" \
   --format yaml \
   --output "${ARTIFACT_DIR}/coverage.yaml"
 
 go run ./cmd/phrond-coverage \
   --artifacts "${ARTIFACT_DIR}" \
-  --sut-name "Payment gRPC + REST Services" \
+  --sut-name "Complex REST Services" \
   --format html \
   --output "${ARTIFACT_DIR}/coverage.html"
 
