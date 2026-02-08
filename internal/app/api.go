@@ -240,7 +240,33 @@ func (a *App) handleStubsClear(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "cleared"})
 }
 
+func (a *App) handleMockExchanges(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+	if a.mockComponent == nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "mock server not configured"})
+		return
+	}
+	recorder := a.mockComponent.Recorder()
+	if recorder == nil {
+		writeJSON(w, http.StatusOK, []mock.Exchange{})
+		return
+	}
+	writeJSON(w, http.StatusOK, recorder.Exchanges())
+}
+
+type proxyStartRequest struct {
+	ListenAddr string `json:"listen_addr,omitempty"`
+}
+
+type mockStartRequest struct {
+	ListenAddr string `json:"listen_addr,omitempty"`
+}
+
 type grpcProxyStartRequest struct {
+	ListenAddr         string `json:"listen_addr,omitempty"`
 	Target             string `json:"target"`
 	InsecureSkipVerify *bool  `json:"insecure_skip_verify,omitempty"`
 }
@@ -258,6 +284,12 @@ func (a *App) handleGrpcProxyStart(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil && !errors.Is(err, io.EOF) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
 		return
+	}
+	if payload.ListenAddr != "" {
+		if err := a.grpcProxyComponent.SetListenAddr(payload.ListenAddr); err != nil {
+			writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+			return
+		}
 	}
 	if payload.Target != "" {
 		if err := a.grpcProxyComponent.SetTarget(payload.Target); err != nil {
@@ -279,6 +311,10 @@ func (a *App) handleGrpcProxyStart(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, mergeGrpcProxyInfo(a.grpcProxyComponent))
 }
 
+type grpcMockStartRequest struct {
+	ListenAddr string `json:"listen_addr,omitempty"`
+}
+
 func (a *App) handleGrpcMockStart(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
@@ -287,6 +323,17 @@ func (a *App) handleGrpcMockStart(w http.ResponseWriter, r *http.Request) {
 	if a.grpcMockComponent == nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "grpc mock not configured"})
 		return
+	}
+	var payload grpcMockStartRequest
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil && !errors.Is(err, io.EOF) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
+		return
+	}
+	if payload.ListenAddr != "" {
+		if err := a.grpcMockComponent.SetListenAddr(payload.ListenAddr); err != nil {
+			writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+			return
+		}
 	}
 	if err := a.grpcMockComponent.Start(r.Context()); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
@@ -393,6 +440,17 @@ func (a *App) handleProxyStart(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "proxy not configured"})
 		return
 	}
+	var payload proxyStartRequest
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil && !errors.Is(err, io.EOF) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
+		return
+	}
+	if payload.ListenAddr != "" {
+		if err := a.proxyComponent.SetListenAddr(payload.ListenAddr); err != nil {
+			writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+			return
+		}
+	}
 	if err := a.proxyComponent.Start(r.Context()); err != nil {
 		if errors.Is(err, proxy.ErrAlreadyStarted) {
 			writeJSON(w, http.StatusOK, mergeProxyInfo(a.proxyComponent))
@@ -412,6 +470,17 @@ func (a *App) handleMockStart(w http.ResponseWriter, r *http.Request) {
 	if a.mockComponent == nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "mock not configured"})
 		return
+	}
+	var payload mockStartRequest
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil && !errors.Is(err, io.EOF) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
+		return
+	}
+	if payload.ListenAddr != "" {
+		if err := a.mockComponent.SetListenAddr(payload.ListenAddr); err != nil {
+			writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+			return
+		}
 	}
 	if err := a.mockComponent.Start(r.Context()); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})

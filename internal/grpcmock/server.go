@@ -95,6 +95,13 @@ func (s *Server) Stop(ctx context.Context) error {
 	return nil
 }
 
+// Running reports whether the mock server is currently serving traffic.
+func (s *Server) Running() bool {
+	s.mu.mu.Lock()
+	defer s.mu.mu.Unlock()
+	return s.mu.running
+}
+
 func (s *Server) RegisterStub(stub Stub) {
 	s.registry.Register(stub)
 }

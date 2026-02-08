@@ -28,6 +28,7 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("/v1/artifact", a.handleArtifact)
 	mux.HandleFunc("/v1/stubs", a.handleStubs)
 	mux.HandleFunc("/v1/stubs/clear", a.handleStubsClear)
+	mux.HandleFunc("/v1/mock/exchanges", a.handleMockExchanges)
 	mux.HandleFunc("/v1/grpc/stubs", a.handleGrpcStubs)
 	mux.HandleFunc("/v1/grpc/stubs/clear", a.handleGrpcStubsClear)
 	mux.HandleFunc("/v1/expectations", a.handleExpectations)

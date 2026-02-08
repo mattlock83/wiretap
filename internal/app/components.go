@@ -2,10 +2,12 @@ package app
 
 import (
 	"context"
+	"errors"
 	"log"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/phrond/evermock/core"
 	"github.com/phrond/evermock/internal/mock"
@@ -82,6 +84,13 @@ func (p *ProxyComponent) ListenAddr() string {
 	return p.server.ListenAddr()
 }
 
+func (p *ProxyComponent) SetListenAddr(addr string) error {
+	if p == nil || p.server == nil {
+		return nil
+	}
+	return p.server.SetListenAddr(addr)
+}
+
 func (p *ProxyComponent) SetMode(mode proxy.Mode) error {
 	if p == nil || p.server == nil {
 		return nil
@@ -133,6 +142,21 @@ func (m *MockComponent) Addr() string {
 		return ""
 	}
 	return m.addr
+}
+
+func (m *MockComponent) SetListenAddr(addr string) error {
+	if m == nil || m.server == nil {
+		return nil
+	}
+	if m.server.Running() {
+		return errors.New("mock server already started")
+	}
+	trimmed := strings.TrimSpace(addr)
+	if trimmed == "" {
+		return errors.New("listen_addr is required")
+	}
+	m.listenAddr = trimmed
+	return nil
 }
 
 func (m *MockComponent) RegisterStub(stub mock.Stub) {

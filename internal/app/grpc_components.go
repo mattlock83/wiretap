@@ -2,9 +2,11 @@ package app
 
 import (
 	"context"
+	"errors"
 	"log"
 	"log/slog"
 	"os"
+	"strings"
 
 	"github.com/phrond/evermock/core"
 	"github.com/phrond/evermock/internal/grpcmock"
@@ -74,6 +76,13 @@ func (p *GrpcProxyComponent) ListenAddr() string {
 	return p.server.ListenAddr()
 }
 
+func (p *GrpcProxyComponent) SetListenAddr(addr string) error {
+	if p == nil || p.server == nil {
+		return nil
+	}
+	return p.server.SetListenAddr(addr)
+}
+
 func (p *GrpcProxyComponent) SetTarget(target string) error {
 	if p == nil || p.server == nil {
 		return nil
@@ -132,6 +141,21 @@ func (m *GrpcMockComponent) Addr() string {
 		return ""
 	}
 	return m.addr
+}
+
+func (m *GrpcMockComponent) SetListenAddr(addr string) error {
+	if m == nil || m.server == nil {
+		return nil
+	}
+	if m.server.Running() {
+		return errors.New("grpc mock server already started")
+	}
+	trimmed := strings.TrimSpace(addr)
+	if trimmed == "" {
+		return errors.New("listen_addr is required")
+	}
+	m.listenAddr = trimmed
+	return nil
 }
 
 func (m *GrpcMockComponent) RegisterStub(stub grpcmock.Stub) {

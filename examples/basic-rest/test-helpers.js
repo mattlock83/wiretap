@@ -1,6 +1,6 @@
 const { spawn } = require("node:child_process");
 const assert = require("node:assert/strict");
-const { setupSuite } = require("../../sdk/js/src/index");
+const { start } = require("../../sdk/js/src/index");
 
 const SCHEMAS = [
   {
@@ -76,30 +76,22 @@ async function startBasicRestSUT(options = {}) {
   };
 }
 
-function caseConfig(name, sutListen) {
-  return {
-    name,
-    meta: { suite: "basic-rest" },
-    sutBaseUrl: `http://${sutListen}`,
-    schemas: SCHEMAS
-  };
-}
-
-function assertFinishPass(finish) {
-  assert.ok(typeof finish.path === "string" && finish.path.length > 0, "artifact path should be returned");
-  if (finish.schemaValidation) {
-    assert.equal(finish.schemaValidation.status, "pass");
-  }
-}
-
 async function createRuntime() {
   const baseUrl =
     process.env.PHROND_BASE_URL ||
     (process.env.PHROND_HTTP_LISTEN ? `http://${process.env.PHROND_HTTP_LISTEN}` : "http://127.0.0.1:18000");
   const sutListen = process.env.SUT_LISTEN || "127.0.0.1:18090";
 
-  const suite = await setupSuite({ baseUrl, proxy: true, mockServer: true });
-  const mockAddr = suite.runtime.mockServer?.addr;
+  const session = await start({
+    baseUrl,
+    proxy: true,
+    mockServer: true,
+    schemas: SCHEMAS,
+    sutBaseUrl: `http://${sutListen}`,
+    strictSchema: true
+  });
+
+  const mockAddr = session.runtime.mockServer?.addr;
   assert.ok(mockAddr, "mock server address must be returned");
 
   const sut = await startBasicRestSUT({
@@ -107,11 +99,18 @@ async function createRuntime() {
     dependencyBaseUrl: `http://${mockAddr}`
   });
 
-  return { suite, sut };
+  return {
+    runtime: session.runtime,
+    mock: session.mock,
+    http: session.http,
+    scenarioName: session.scenarioName.bind(session),
+    expectCall: session.expectCall.bind(session),
+    reset: session.reset.bind(session),
+    stop: session.stop.bind(session),
+    sut
+  };
 }
 
 module.exports = {
-  createRuntime,
-  caseConfig,
-  assertFinishPass
+  createRuntime
 };

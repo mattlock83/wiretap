@@ -1,111 +1,84 @@
 # Phrond JS SDK
 
-This package provides a thin JavaScript client for the Phrond recorder core.
+The SDK now exposes a single high-level entry point with scenario lifecycle built in.
 
-## Recommended Usage (Phased API)
+## Quick start
 
 ```js
-const { setupSuite } = require("@phrond/sdk");
+const { start } = require("@phrond/sdk");
 
-// 1) Suite setup
-const suite = await setupSuite({
-  baseUrl: "http://127.0.0.1:18000",
-  proxy: true,
-  mockServer: true
+let runtime;
+
+beforeEach(async () => {
+  runtime = await start({
+    baseUrl: "http://127.0.0.1:18000",
+    sutBaseUrl: "http://127.0.0.1:18090",
+    proxy: true,
+    mockServer: true,
+    schemas: [
+      {
+        id: "sut-openapi",
+        role: "sut",
+        type: "openapi",
+        source: { type: "file", path: "specs/sut-openapi.yaml" }
+      },
+      {
+        id: "fake-openapi",
+        role: "fake",
+        type: "openapi",
+        source: { type: "file", path: "specs/fake-openapi.yaml" }
+      }
+    ]
+  });
 });
 
-// 2) Test setup
-const test = await suite.setupTest({
-  name: "basic",
-  meta: { suite: "examples" },
-  sutBaseUrl: "http://127.0.0.1:18090",
-  schemas: [
-    {
-      id: "sut-openapi",
-      role: "sut",
-      type: "openapi",
-      source: { type: "file", path: "specs/sut-openapi.yaml" }
-    },
-    {
-      id: "mock-openapi",
-      role: "fake",
-      type: "openapi",
-      source: { type: "file", path: "specs/mock-openapi.yaml" }
-    }
-  ]
+afterEach(async () => {
+  await runtime.stop();
 });
 
-// 3) Mocking
-await test.mockHttp({
-  id: "alpha",
-  match: { method: "POST", path: "/alpha" },
-  response: { status: 200, body: "{\"result\":\"ok\"}" }
+test("submit payment", async () => {
+  await runtime.scenarioName("submit-payment");
+
+  await runtime.mock.http({
+    id: "account-1",
+    match: { method: "GET", path: "/accounts/acct-100" },
+    response: { status: 200, body: "{\"id\":\"acct-100\"}" }
+  });
+
+  const submit = await runtime.http.postJson("/payments/submit", {
+    from_account: "acct-100",
+    to_account: "acct-200",
+    amount: 120,
+    currency: "USD"
+  });
+
+  const outbound = await runtime.expectCall({ method: "GET", path: "/accounts/acct-100" });
+  console.log(submit.status, outbound.path);
 });
-
-// Send traffic to the SUT through the suite proxy.
-const response = await test.postJson("/process", { id: "123", action: "process" });
-console.log(response.status, response.body);
-
-// 4) Test teardown
-await test.teardown({
-  status: "pass",
-  downloadArtifactTo: "artifacts/basic.yaml"
-});
-
-// 5) Suite teardown
-await suite.teardown();
 ```
 
-## High-level API
-- `setupSuite({ baseUrl, timeoutMs, proxy, mockServer, grpcProxy, grpcMockServer })`
-- `harness.setupSuite({ proxy, mockServer, grpcProxy, grpcMockServer })`
+## API
 
-Component startup options can be:
-- `true` to start with default config
-- `false` or omitted to skip startup
-- object to pass startup config
+- `start({ baseUrl, timeoutMs, sutBaseUrl, schemas, proxy, mockServer, grpcProxy, grpcMockServer, tags, meta, strictSchema, scenarioPrefix })`
+- `runtime.scenarioName(name)`
+- `runtime.reset({ status, strictSchema, clearMocks, nextScenarioName })`
+- `runtime.stop({ status, strictSchema, writeArtifact })`
+- `runtime.mock.http(stub)`
+- `runtime.mock.grpc(stub)`
+- `runtime.mock.clear({ http, grpc })`
+- `runtime.http.request({ method, path, headers, body, sutBaseUrl, proxyBaseUrl })`
+- `runtime.http.get(path, options)`
+- `runtime.http.post(path, body, options)`
+- `runtime.http.postJson(path, payload, options)`
+- `runtime.expectCall(pathOrExpectation)`
 
-If a component fails to start during suite setup, lifecycle is automatically stopped.
+## Notes
 
-Returned suite session:
-- `suite.runtime` (startup responses keyed by component name)
-- `suite.setupTest({ name, meta, tags, sutBaseUrl, schemas })` (schemas required)
-- `suite.withTest(config, async (test) => { ... }, { teardown })` (auto setup + teardown; status defaults to pass/fail by callback result)
-- `suite.teardown()`
-
-Returned test session:
-- `test.mockHttp(stub)`
-- `test.mockGrpc(stub)`
-- `test.clearMocks({ http, grpc })` (defaults to clearing both)
-- `test.expectCall(expectation)`
-- `test.request({ method, path, headers, body, sutBaseUrl })`
-- `test.get(path, { headers, sutBaseUrl })`
-- `test.post(path, body, { headers, sutBaseUrl })`
-- `test.postJson(path, payload, { headers, sutBaseUrl })`
-- `test.teardown({ status, downloadArtifactTo })` (`status` defaults to `"pass"`)
-
-For request helpers, start the suite with `proxy: true` and pass `sutBaseUrl` in `setupTest` (or per-request).
-
-## Low-level API
-- `createHarness({ baseUrl, timeoutMs })`
-- `harness.healthz()`
-- `harness.startLifecycle()`
-- `harness.stopLifecycle()`
-- `harness.startTestCase(name, meta, { tags, sutBaseUrl, schemas })` (schemas required)
-- `harness.finishTestCase(status)` (response includes `schemaValidation` summary)
-- `harness.getArtifact()`
-- `harness.downloadArtifact(filePath)`
-- `harness.waitForStatus({ intervalMs, timeoutMs })`
-- `harness.startProxy(config)`
-- `harness.startMockServer(config)`
-- `harness.startGrpcProxy(config)`
-- `harness.startGrpcMockServer(config)`
-- `harness.registerStub(stub)`
-- `harness.clearStubs()`
-- `harness.registerGrpcStub(stub)`
-- `harness.clearGrpcStubs()`
-- `harness.expectCall(expectation)`
-- `harness.setSchema(schema)`
-- `harness.addRedaction(rule)`
-- `harness.setProxyMode(mode)`
-- `harness.getCaCertificate()`
+- `schemas` are required and attached to each scenario artifact.
+- If `scenarioName(...)` is not called, a unique scenario ID is generated automatically.
+- By default, `stop()` and `reset()` throw when schema validation fails.
+- `expectCall(...)` returns the matching outbound SUT request:
+  - `{ method, path, url, headers, query, body, matchedStubId, startedAt, finishedAt }`
+- You can pass explicit listen addresses in startup config objects, for example:
+  - `proxy: { listen_addr: "127.0.0.1:19000" }`
+  - `mockServer: { listen_addr: "127.0.0.1:19001" }`

@@ -155,6 +155,15 @@ func (s *Server) ListenAddr() string {
 	return s.listener.Addr().String()
 }
 
+// SetListenAddr updates the bind address before the server starts.
+func (s *Server) SetListenAddr(addr string) error {
+	if s.server != nil {
+		return ErrAlreadyStarted
+	}
+	s.cfg.ListenAddr = strings.TrimSpace(addr)
+	return nil
+}
+
 // SetMode updates the proxy mode before the server starts.
 func (s *Server) SetMode(mode Mode) error {
 	if s.server != nil {

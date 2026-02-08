@@ -1,6 +1,6 @@
 const { spawn } = require("node:child_process");
 const assert = require("node:assert/strict");
-const { setupSuite } = require("../../sdk/js/src/index");
+const { start } = require("../../sdk/js/src/index");
 
 const SCHEMAS = [
   {
@@ -86,26 +86,9 @@ async function startService(options = {}) {
   };
 }
 
-function caseConfig(name, paymentListen) {
-  return {
-    name,
-    meta: { suite: "complex-rest" },
-    sutBaseUrl: `http://${paymentListen}`,
-    schemas: SCHEMAS
-  };
-}
-
-function assertFinishPass(finish) {
-  assert.ok(typeof finish.path === "string" && finish.path.length > 0, "artifact path should be returned");
-  if (finish.schemaValidation) {
-    assert.equal(finish.schemaValidation.status, "pass");
-  }
-}
-
-async function registerAccounts(testCase, accounts) {
-  await testCase.clearMocks();
+async function registerAccounts(phrond, accounts) {
   for (const account of accounts) {
-    await testCase.mockHttp({
+    await phrond.mock.http({
       id: `account-${account.id}`,
       match: { method: "GET", path: `/accounts/${account.id}` },
       response: {
@@ -124,8 +107,17 @@ async function createRuntime() {
   const paymentListen = process.env.PAYMENT_SUT_LISTEN || "127.0.0.1:18110";
   const transactionListen = process.env.TRANSACTION_SERVICE_LISTEN || "127.0.0.1:18111";
 
-  const suite = await setupSuite({ baseUrl, proxy: true, mockServer: true });
-  const mockAddr = suite.runtime.mockServer?.addr;
+  const session = await start({
+    baseUrl,
+    proxy: true,
+    mockServer: true,
+    schemas: SCHEMAS,
+    sutBaseUrl: `http://${paymentListen}`,
+    strictSchema: true,
+    meta: { suite: "complex-rest" }
+  });
+
+  const mockAddr = session.runtime.mockServer?.addr;
   assert.ok(mockAddr, "mock server address must be returned");
 
   const transactionService = await startService({
@@ -149,12 +141,20 @@ async function createRuntime() {
     }
   });
 
-  return { suite, paymentSut, transactionService };
+  return {
+    runtime: session.runtime,
+    mock: session.mock,
+    http: session.http,
+    scenarioName: session.scenarioName.bind(session),
+    expectCall: session.expectCall.bind(session),
+    reset: session.reset.bind(session),
+    stop: session.stop.bind(session),
+    paymentSut,
+    transactionService
+  };
 }
 
 module.exports = {
   createRuntime,
-  caseConfig,
-  registerAccounts,
-  assertFinishPass
+  registerAccounts
 };

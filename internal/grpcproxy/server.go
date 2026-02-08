@@ -163,6 +163,15 @@ func (s *Server) ListenAddr() string {
 	return s.listener.Addr().String()
 }
 
+// SetListenAddr updates the bind address before the server starts.
+func (s *Server) SetListenAddr(addr string) error {
+	if s.server != nil {
+		return ErrAlreadyStarted
+	}
+	s.cfg.ListenAddr = strings.TrimSpace(addr)
+	return nil
+}
+
 // Info returns current proxy configuration.
 func (s *Server) Info() Info {
 	s.mu.RLock()
