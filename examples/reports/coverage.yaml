@@ -1,0 +1,229 @@
+generated_at: 2026-02-08T09:20:06.837876Z
+sut_name: Basic REST SUT
+artifact_count: 1
+provided:
+    specs:
+        - schema_id: basic-rest-sut-openapi
+          role: sut
+          type: openapi
+          source: examples/basic-rest/schemas/sut-openapi.yaml
+          exercised:
+            - operation: GET /status
+              samples:
+                - testcase: basic-rest
+                  flow_id: flow-1
+                  protocol: http
+                  channel: test_to_sut
+                  request:
+                    method: GET
+                    url: http://127.0.0.1:31103/status
+                    headers:
+                        Connection:
+                            - keep-alive
+                  response:
+                    status: 200
+                    headers:
+                        Content-Length:
+                            - "16"
+                        Content-Type:
+                            - application/json
+                        Date:
+                            - Sun, 08 Feb 2026 09:20:04 GMT
+                    body: '{"status":"ok"}'
+            - operation: POST /process
+              samples:
+                - testcase: basic-rest
+                  flow_id: flow-2
+                  protocol: http
+                  channel: test_to_sut
+                  request:
+                    method: POST
+                    url: http://127.0.0.1:31103/process
+                    headers:
+                        Connection:
+                            - keep-alive
+                        Content-Length:
+                            - "31"
+                        Content-Type:
+                            - application/json
+                    body: '{"id":"123","action":"process"}'
+                  response:
+                    status: 200
+                    headers:
+                        Content-Length:
+                            - "169"
+                        Content-Type:
+                            - application/json
+                        Date:
+                            - Sun, 08 Feb 2026 09:20:04 GMT
+                    body: '{"message":"processed","downstream":[{"path":"/alpha","status":200,"body":"{\"result\":\"alpha-ok\"}"},{"path":"/beta","status":200,"body":"{\"result\":\"beta-ok\"}"}]}'
+          not_covered:
+            - operation: GET /healthz
+dependent:
+    specs:
+        - schema_id: basic-rest-fake-openapi
+          role: fake
+          type: openapi
+          source: examples/basic-rest/schemas/fake-openapi.yaml
+          faked:
+            - operation: POST /alpha
+              samples:
+                - testcase: basic-rest
+                  flow_id: flow-3
+                  protocol: http
+                  channel: sut_to_mock
+                  request:
+                    method: POST
+                    url: /alpha
+                    headers:
+                        Accept-Encoding:
+                            - gzip
+                        Content-Length:
+                            - "31"
+                        Content-Type:
+                            - application/json
+                        User-Agent:
+                            - Go-http-client/1.1
+                    body: '{"id":"123","action":"process"}'
+                  response:
+                    status: 200
+                    headers:
+                        Content-Type:
+                            - application/json
+                    body: '{"result":"alpha-ok"}'
+            - operation: POST /beta
+              samples:
+                - testcase: basic-rest
+                  flow_id: flow-4
+                  protocol: http
+                  channel: sut_to_mock
+                  request:
+                    method: POST
+                    url: /beta
+                    headers:
+                        Accept-Encoding:
+                            - gzip
+                        Content-Length:
+                            - "31"
+                        Content-Type:
+                            - application/json
+                        User-Agent:
+                            - Go-http-client/1.1
+                    body: '{"id":"123","action":"process"}'
+                  response:
+                    status: 200
+                    headers:
+                        Content-Type:
+                            - application/json
+                    body: '{"result":"beta-ok"}'
+testcases:
+    - name: basic-rest
+      provided:
+        - schema_id: basic-rest-sut-openapi
+          type: openapi
+          source: examples/basic-rest/schemas/sut-openapi.yaml
+          operations:
+            - operation: GET /status
+              samples:
+                - testcase: basic-rest
+                  flow_id: flow-1
+                  protocol: http
+                  channel: test_to_sut
+                  request:
+                    method: GET
+                    url: http://127.0.0.1:31103/status
+                    headers:
+                        Connection:
+                            - keep-alive
+                  response:
+                    status: 200
+                    headers:
+                        Content-Length:
+                            - "16"
+                        Content-Type:
+                            - application/json
+                        Date:
+                            - Sun, 08 Feb 2026 09:20:04 GMT
+                    body: '{"status":"ok"}'
+            - operation: POST /process
+              samples:
+                - testcase: basic-rest
+                  flow_id: flow-2
+                  protocol: http
+                  channel: test_to_sut
+                  request:
+                    method: POST
+                    url: http://127.0.0.1:31103/process
+                    headers:
+                        Connection:
+                            - keep-alive
+                        Content-Length:
+                            - "31"
+                        Content-Type:
+                            - application/json
+                    body: '{"id":"123","action":"process"}'
+                  response:
+                    status: 200
+                    headers:
+                        Content-Length:
+                            - "169"
+                        Content-Type:
+                            - application/json
+                        Date:
+                            - Sun, 08 Feb 2026 09:20:04 GMT
+                    body: '{"message":"processed","downstream":[{"path":"/alpha","status":200,"body":"{\"result\":\"alpha-ok\"}"},{"path":"/beta","status":200,"body":"{\"result\":\"beta-ok\"}"}]}'
+      dependent:
+        - schema_id: basic-rest-fake-openapi
+          type: openapi
+          source: examples/basic-rest/schemas/fake-openapi.yaml
+          operations:
+            - operation: POST /alpha
+              samples:
+                - testcase: basic-rest
+                  flow_id: flow-3
+                  protocol: http
+                  channel: sut_to_mock
+                  request:
+                    method: POST
+                    url: /alpha
+                    headers:
+                        Accept-Encoding:
+                            - gzip
+                        Content-Length:
+                            - "31"
+                        Content-Type:
+                            - application/json
+                        User-Agent:
+                            - Go-http-client/1.1
+                    body: '{"id":"123","action":"process"}'
+                  response:
+                    status: 200
+                    headers:
+                        Content-Type:
+                            - application/json
+                    body: '{"result":"alpha-ok"}'
+            - operation: POST /beta
+              samples:
+                - testcase: basic-rest
+                  flow_id: flow-4
+                  protocol: http
+                  channel: sut_to_mock
+                  request:
+                    method: POST
+                    url: /beta
+                    headers:
+                        Accept-Encoding:
+                            - gzip
+                        Content-Length:
+                            - "31"
+                        Content-Type:
+                            - application/json
+                        User-Agent:
+                            - Go-http-client/1.1
+                    body: '{"id":"123","action":"process"}'
+                  response:
+                    status: 200
+                    headers:
+                        Content-Type:
+                            - application/json
+                    body: '{"result":"beta-ok"}'

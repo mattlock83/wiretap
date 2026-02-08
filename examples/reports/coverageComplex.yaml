@@ -1,0 +1,507 @@
+generated_at: 2026-02-08T09:37:37.147623Z
+sut_name: Complex REST Services
+artifact_count: 4
+provided:
+    specs:
+        - schema_id: complex-rest-payment-openapi
+          role: sut
+          type: openapi
+          source: examples/complex-rest/schemas/payment-sut-openapi.yaml
+          exercised:
+            - operation: POST /payments/submit
+              samples:
+                - testcase: rejects amount too high (15000)
+                  flow_id: flow-1
+                  protocol: http
+                  channel: test_to_sut
+                  request:
+                    method: POST
+                    url: http://127.0.0.1:24594/payments/submit
+                    headers:
+                        Connection:
+                            - keep-alive
+                        Content-Length:
+                            - "83"
+                        Content-Type:
+                            - application/json
+                    body: '{"from_account":"acct-100","to_account":"acct-200","amount":15000,"currency":"USD"}'
+                  response:
+                    status: 422
+                    headers:
+                        Content-Length:
+                            - "99"
+                        Content-Type:
+                            - application/json
+                        Date:
+                            - Sun, 08 Feb 2026 09:37:35 GMT
+                    body: '{"error_code":"amount_too_high","message":"amount exceeds max payment limit 5000.00","limit":5000}'
+                - testcase: rejects amount too high (6000)
+                  flow_id: flow-1
+                  protocol: http
+                  channel: test_to_sut
+                  request:
+                    method: POST
+                    url: http://127.0.0.1:24594/payments/submit
+                    headers:
+                        Connection:
+                            - keep-alive
+                        Content-Length:
+                            - "82"
+                        Content-Type:
+                            - application/json
+                    body: '{"from_account":"acct-100","to_account":"acct-200","amount":6000,"currency":"USD"}'
+                  response:
+                    status: 422
+                    headers:
+                        Content-Length:
+                            - "99"
+                        Content-Type:
+                            - application/json
+                        Date:
+                            - Sun, 08 Feb 2026 09:37:34 GMT
+                    body: '{"error_code":"amount_too_high","message":"amount exceeds max payment limit 5000.00","limit":5000}'
+                - testcase: rejects insufficient balance
+                  flow_id: flow-1
+                  protocol: http
+                  channel: test_to_sut
+                  request:
+                    method: POST
+                    url: http://127.0.0.1:24594/payments/submit
+                    headers:
+                        Connection:
+                            - keep-alive
+                        Content-Length:
+                            - "80"
+                        Content-Type:
+                            - application/json
+                    body: '{"from_account":"acct-100","to_account":"acct-200","amount":75,"currency":"USD"}'
+                  response:
+                    status: 422
+                    headers:
+                        Content-Length:
+                            - "125"
+                        Content-Type:
+                            - application/json
+                        Date:
+                            - Sun, 08 Feb 2026 09:37:35 GMT
+                    body: '{"error_code":"insufficient_balance","message":"from account balance is not enough for this payment","available_balance":40}'
+                - testcase: submits payment and lists transactions
+                  flow_id: flow-1
+                  protocol: http
+                  channel: test_to_sut
+                  request:
+                    method: POST
+                    url: http://127.0.0.1:24594/payments/submit
+                    headers:
+                        Connection:
+                            - keep-alive
+                        Content-Length:
+                            - "81"
+                        Content-Type:
+                            - application/json
+                    body: '{"from_account":"acct-100","to_account":"acct-200","amount":120,"currency":"USD"}'
+                  response:
+                    status: 201
+                    headers:
+                        Content-Length:
+                            - "261"
+                        Content-Type:
+                            - application/json
+                        Date:
+                            - Sun, 08 Feb 2026 09:37:34 GMT
+                    body: '{"payment_id":"pay-1770543454983707000","status":"submitted","transaction_id":"txn-1770543454983610000","from_account":"acct-100","to_account":"acct-200","from_account_name":"Alice","to_account_name":"Bob","amount":120,"currency":"USD","remaining_balance":880}'
+          not_covered:
+            - operation: GET /healthz
+            - operation: GET /status
+        - schema_id: complex-rest-transaction-openapi
+          role: sut
+          type: openapi
+          source: examples/complex-rest/schemas/transaction-openapi.yaml
+          exercised:
+            - operation: GET /transactions
+              samples:
+                - testcase: submits payment and lists transactions
+                  flow_id: flow-2
+                  protocol: http
+                  channel: test_to_sut
+                  request:
+                    method: GET
+                    url: http://127.0.0.1:28228/transactions?account_id=acct-100
+                    headers:
+                        Connection:
+                            - keep-alive
+                  response:
+                    status: 200
+                    headers:
+                        Content-Length:
+                            - "301"
+                        Content-Type:
+                            - application/json
+                        Date:
+                            - Sun, 08 Feb 2026 09:37:34 GMT
+                    body: '{"account":{"id":"acct-100","name":"Alice","balance":1000,"currency":"USD","status":"active"},"transactions":[{"transaction_id":"txn-1770543454983610000","direction":"debit","account_id":"acct-100","counterparty_account":"acct-200","amount":120,"currency":"USD","created_at":"2026-02-08T09:37:34Z"}]}'
+          not_covered:
+            - operation: GET /healthz
+            - operation: POST /transactions
+dependent:
+    specs:
+        - schema_id: complex-rest-account-openapi
+          role: fake
+          type: openapi
+          source: examples/complex-rest/schemas/account-openapi.yaml
+          faked:
+            - operation: GET /accounts/{account_id}
+              samples:
+                - testcase: rejects insufficient balance
+                  flow_id: flow-2
+                  protocol: http
+                  channel: sut_to_mock
+                  request:
+                    method: GET
+                    url: /accounts/acct-100
+                    headers:
+                        Accept-Encoding:
+                            - gzip
+                        User-Agent:
+                            - Go-http-client/1.1
+                  response:
+                    status: 200
+                    headers:
+                        Content-Type:
+                            - application/json
+                    body: '{"id":"acct-100","name":"Alice","balance":40,"currency":"USD","status":"active"}'
+                - testcase: rejects insufficient balance
+                  flow_id: flow-3
+                  protocol: http
+                  channel: sut_to_mock
+                  request:
+                    method: GET
+                    url: /accounts/acct-200
+                    headers:
+                        Accept-Encoding:
+                            - gzip
+                        User-Agent:
+                            - Go-http-client/1.1
+                  response:
+                    status: 200
+                    headers:
+                        Content-Type:
+                            - application/json
+                    body: '{"id":"acct-200","name":"Bob","balance":500,"currency":"USD","status":"active"}'
+                - testcase: submits payment and lists transactions
+                  flow_id: flow-3
+                  protocol: http
+                  channel: sut_to_mock
+                  request:
+                    method: GET
+                    url: /accounts/acct-100
+                    headers:
+                        Accept-Encoding:
+                            - gzip
+                        User-Agent:
+                            - Go-http-client/1.1
+                  response:
+                    status: 200
+                    headers:
+                        Content-Type:
+                            - application/json
+                    body: '{"id":"acct-100","name":"Alice","balance":1000,"currency":"USD","status":"active"}'
+                - testcase: submits payment and lists transactions
+                  flow_id: flow-4
+                  protocol: http
+                  channel: sut_to_mock
+                  request:
+                    method: GET
+                    url: /accounts/acct-200
+                    headers:
+                        Accept-Encoding:
+                            - gzip
+                        User-Agent:
+                            - Go-http-client/1.1
+                  response:
+                    status: 200
+                    headers:
+                        Content-Type:
+                            - application/json
+                    body: '{"id":"acct-200","name":"Bob","balance":500,"currency":"USD","status":"active"}'
+                - testcase: submits payment and lists transactions
+                  flow_id: flow-5
+                  protocol: http
+                  channel: sut_to_mock
+                  request:
+                    method: GET
+                    url: /accounts/acct-100
+                    headers:
+                        Accept-Encoding:
+                            - gzip
+                        User-Agent:
+                            - Go-http-client/1.1
+                  response:
+                    status: 200
+                    headers:
+                        Content-Type:
+                            - application/json
+                    body: '{"id":"acct-100","name":"Alice","balance":1000,"currency":"USD","status":"active"}'
+testcases:
+    - name: rejects amount too high (15000)
+      provided:
+        - schema_id: complex-rest-payment-openapi
+          type: openapi
+          source: examples/complex-rest/schemas/payment-sut-openapi.yaml
+          operations:
+            - operation: POST /payments/submit
+              samples:
+                - testcase: rejects amount too high (15000)
+                  flow_id: flow-1
+                  protocol: http
+                  channel: test_to_sut
+                  request:
+                    method: POST
+                    url: http://127.0.0.1:24594/payments/submit
+                    headers:
+                        Connection:
+                            - keep-alive
+                        Content-Length:
+                            - "83"
+                        Content-Type:
+                            - application/json
+                    body: '{"from_account":"acct-100","to_account":"acct-200","amount":15000,"currency":"USD"}'
+                  response:
+                    status: 422
+                    headers:
+                        Content-Length:
+                            - "99"
+                        Content-Type:
+                            - application/json
+                        Date:
+                            - Sun, 08 Feb 2026 09:37:35 GMT
+                    body: '{"error_code":"amount_too_high","message":"amount exceeds max payment limit 5000.00","limit":5000}'
+    - name: rejects amount too high (6000)
+      provided:
+        - schema_id: complex-rest-payment-openapi
+          type: openapi
+          source: examples/complex-rest/schemas/payment-sut-openapi.yaml
+          operations:
+            - operation: POST /payments/submit
+              samples:
+                - testcase: rejects amount too high (6000)
+                  flow_id: flow-1
+                  protocol: http
+                  channel: test_to_sut
+                  request:
+                    method: POST
+                    url: http://127.0.0.1:24594/payments/submit
+                    headers:
+                        Connection:
+                            - keep-alive
+                        Content-Length:
+                            - "82"
+                        Content-Type:
+                            - application/json
+                    body: '{"from_account":"acct-100","to_account":"acct-200","amount":6000,"currency":"USD"}'
+                  response:
+                    status: 422
+                    headers:
+                        Content-Length:
+                            - "99"
+                        Content-Type:
+                            - application/json
+                        Date:
+                            - Sun, 08 Feb 2026 09:37:34 GMT
+                    body: '{"error_code":"amount_too_high","message":"amount exceeds max payment limit 5000.00","limit":5000}'
+    - name: rejects insufficient balance
+      provided:
+        - schema_id: complex-rest-payment-openapi
+          type: openapi
+          source: examples/complex-rest/schemas/payment-sut-openapi.yaml
+          operations:
+            - operation: POST /payments/submit
+              samples:
+                - testcase: rejects insufficient balance
+                  flow_id: flow-1
+                  protocol: http
+                  channel: test_to_sut
+                  request:
+                    method: POST
+                    url: http://127.0.0.1:24594/payments/submit
+                    headers:
+                        Connection:
+                            - keep-alive
+                        Content-Length:
+                            - "80"
+                        Content-Type:
+                            - application/json
+                    body: '{"from_account":"acct-100","to_account":"acct-200","amount":75,"currency":"USD"}'
+                  response:
+                    status: 422
+                    headers:
+                        Content-Length:
+                            - "125"
+                        Content-Type:
+                            - application/json
+                        Date:
+                            - Sun, 08 Feb 2026 09:37:35 GMT
+                    body: '{"error_code":"insufficient_balance","message":"from account balance is not enough for this payment","available_balance":40}'
+      dependent:
+        - schema_id: complex-rest-account-openapi
+          type: openapi
+          source: examples/complex-rest/schemas/account-openapi.yaml
+          operations:
+            - operation: GET /accounts/{account_id}
+              samples:
+                - testcase: rejects insufficient balance
+                  flow_id: flow-2
+                  protocol: http
+                  channel: sut_to_mock
+                  request:
+                    method: GET
+                    url: /accounts/acct-100
+                    headers:
+                        Accept-Encoding:
+                            - gzip
+                        User-Agent:
+                            - Go-http-client/1.1
+                  response:
+                    status: 200
+                    headers:
+                        Content-Type:
+                            - application/json
+                    body: '{"id":"acct-100","name":"Alice","balance":40,"currency":"USD","status":"active"}'
+                - testcase: rejects insufficient balance
+                  flow_id: flow-3
+                  protocol: http
+                  channel: sut_to_mock
+                  request:
+                    method: GET
+                    url: /accounts/acct-200
+                    headers:
+                        Accept-Encoding:
+                            - gzip
+                        User-Agent:
+                            - Go-http-client/1.1
+                  response:
+                    status: 200
+                    headers:
+                        Content-Type:
+                            - application/json
+                    body: '{"id":"acct-200","name":"Bob","balance":500,"currency":"USD","status":"active"}'
+    - name: submits payment and lists transactions
+      provided:
+        - schema_id: complex-rest-payment-openapi
+          type: openapi
+          source: examples/complex-rest/schemas/payment-sut-openapi.yaml
+          operations:
+            - operation: POST /payments/submit
+              samples:
+                - testcase: submits payment and lists transactions
+                  flow_id: flow-1
+                  protocol: http
+                  channel: test_to_sut
+                  request:
+                    method: POST
+                    url: http://127.0.0.1:24594/payments/submit
+                    headers:
+                        Connection:
+                            - keep-alive
+                        Content-Length:
+                            - "81"
+                        Content-Type:
+                            - application/json
+                    body: '{"from_account":"acct-100","to_account":"acct-200","amount":120,"currency":"USD"}'
+                  response:
+                    status: 201
+                    headers:
+                        Content-Length:
+                            - "261"
+                        Content-Type:
+                            - application/json
+                        Date:
+                            - Sun, 08 Feb 2026 09:37:34 GMT
+                    body: '{"payment_id":"pay-1770543454983707000","status":"submitted","transaction_id":"txn-1770543454983610000","from_account":"acct-100","to_account":"acct-200","from_account_name":"Alice","to_account_name":"Bob","amount":120,"currency":"USD","remaining_balance":880}'
+        - schema_id: complex-rest-transaction-openapi
+          type: openapi
+          source: examples/complex-rest/schemas/transaction-openapi.yaml
+          operations:
+            - operation: GET /transactions
+              samples:
+                - testcase: submits payment and lists transactions
+                  flow_id: flow-2
+                  protocol: http
+                  channel: test_to_sut
+                  request:
+                    method: GET
+                    url: http://127.0.0.1:28228/transactions?account_id=acct-100
+                    headers:
+                        Connection:
+                            - keep-alive
+                  response:
+                    status: 200
+                    headers:
+                        Content-Length:
+                            - "301"
+                        Content-Type:
+                            - application/json
+                        Date:
+                            - Sun, 08 Feb 2026 09:37:34 GMT
+                    body: '{"account":{"id":"acct-100","name":"Alice","balance":1000,"currency":"USD","status":"active"},"transactions":[{"transaction_id":"txn-1770543454983610000","direction":"debit","account_id":"acct-100","counterparty_account":"acct-200","amount":120,"currency":"USD","created_at":"2026-02-08T09:37:34Z"}]}'
+      dependent:
+        - schema_id: complex-rest-account-openapi
+          type: openapi
+          source: examples/complex-rest/schemas/account-openapi.yaml
+          operations:
+            - operation: GET /accounts/{account_id}
+              samples:
+                - testcase: submits payment and lists transactions
+                  flow_id: flow-3
+                  protocol: http
+                  channel: sut_to_mock
+                  request:
+                    method: GET
+                    url: /accounts/acct-100
+                    headers:
+                        Accept-Encoding:
+                            - gzip
+                        User-Agent:
+                            - Go-http-client/1.1
+                  response:
+                    status: 200
+                    headers:
+                        Content-Type:
+                            - application/json
+                    body: '{"id":"acct-100","name":"Alice","balance":1000,"currency":"USD","status":"active"}'
+                - testcase: submits payment and lists transactions
+                  flow_id: flow-4
+                  protocol: http
+                  channel: sut_to_mock
+                  request:
+                    method: GET
+                    url: /accounts/acct-200
+                    headers:
+                        Accept-Encoding:
+                            - gzip
+                        User-Agent:
+                            - Go-http-client/1.1
+                  response:
+                    status: 200
+                    headers:
+                        Content-Type:
+                            - application/json
+                    body: '{"id":"acct-200","name":"Bob","balance":500,"currency":"USD","status":"active"}'
+                - testcase: submits payment and lists transactions
+                  flow_id: flow-5
+                  protocol: http
+                  channel: sut_to_mock
+                  request:
+                    method: GET
+                    url: /accounts/acct-100
+                    headers:
+                        Accept-Encoding:
+                            - gzip
+                        User-Agent:
+                            - Go-http-client/1.1
+                  response:
+                    status: 200
+                    headers:
+                        Content-Type:
+                            - application/json
+                    body: '{"id":"acct-100","name":"Alice","balance":1000,"currency":"USD","status":"active"}'

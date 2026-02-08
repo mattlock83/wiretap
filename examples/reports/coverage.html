@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Phrond Coverage Report</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f7f8fb;
+      --panel: #ffffff;
+      --text: #0f172a;
+      --muted: #64748b;
+      --border: #e2e8f0;
+      --accent: #0f766e;
+      --warn: #b45309;
+    }
+    body {
+      margin: 0;
+      font-family: "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+    header {
+      padding: 32px 48px 16px;
+      background: linear-gradient(120deg, #0f766e, #0ea5e9);
+      color: #fff;
+    }
+    header h1 {
+      margin: 0 0 8px;
+      font-size: 28px;
+    }
+    header p {
+      margin: 0;
+      font-size: 14px;
+      opacity: 0.85;
+    }
+    main {
+      padding: 24px 48px 48px;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px 24px;
+      box-shadow: 0 10px 20px rgba(15, 23, 42, 0.05);
+    }
+    .panel h2 {
+      margin: 0 0 12px;
+      font-size: 18px;
+    }
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+    }
+    .summary-card {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 16px;
+      background: #f8fafc;
+    }
+    .summary-card span {
+      display: block;
+      font-size: 12px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 6px;
+    }
+    .summary-card strong {
+      font-size: 20px;
+    }
+    .tabs {
+      display: flex;
+      gap: 8px;
+    }
+    .tab-button {
+      border: 1px solid var(--border);
+      background: #f1f5f9;
+      color: var(--text);
+      padding: 8px 14px;
+      border-radius: 999px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    .tab-button.active {
+      background: var(--accent);
+      color: #ffffff;
+      border-color: var(--accent);
+    }
+    .tab-panel {
+      display: none;
+      gap: 24px;
+      flex-direction: column;
+    }
+    .tab-panel.active {
+      display: flex;
+    }
+    details {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 10px 14px;
+      background: #f8fafc;
+      margin-top: 12px;
+    }
+    details[open] > summary {
+      margin-bottom: 12px;
+    }
+    summary {
+      cursor: pointer;
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      justify-content: space-between;
+      font-weight: 600;
+      color: var(--text);
+    }
+    summary .meta {
+      font-weight: 500;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .spec {
+      background: #ffffff;
+    }
+    .spec-body {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .op-group h4 {
+      margin: 0 0 8px;
+      font-size: 14px;
+      color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .op {
+      background: #f1f5f9;
+      margin-top: 8px;
+    }
+    .sample {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px;
+      margin-top: 10px;
+      background: #ffffff;
+    }
+    .sample-title {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+    }
+    .sample-body {
+      margin-top: 8px;
+      display: grid;
+      gap: 6px;
+      font-size: 13px;
+    }
+    .code-block {
+      margin: 0;
+      padding: 8px 10px;
+      background: #0f172a;
+      color: #e2e8f0;
+      border-radius: 8px;
+      font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      font-size: 12px;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .meta {
+      color: var(--muted);
+      font-size: 13px;
+      margin-bottom: 8px;
+    }
+    ul {
+      margin: 8px 0 0 18px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    th, td {
+      border: 1px solid var(--border);
+      padding: 8px 10px;
+      text-align: left;
+    }
+    th {
+      background: #f1f5f9;
+    }
+    .notes {
+      color: var(--warn);
+      font-size: 13px;
+    }
+    @media (max-width: 700px) {
+      header, main {
+        padding-left: 20px;
+        padding-right: 20px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Phrond Coverage Report</h1>
+    <p>Generated 2026-02-08T09:20:06Z · SUT: Basic REST SUT</p>
+  </header>
+  <main>
+    <div class="tabs">
+      <button class="tab-button active" data-tab="tab-specs">By API Spec</button>
+      <button class="tab-button" data-tab="tab-tests">By Test Case</button>
+    </div>
+
+    <div id="tab-specs" class="tab-panel active">
+      <section class="panel">
+      <h2>Summary</h2>
+      <div class="summary-grid">
+        <div class="summary-card">
+          <span>Artifacts</span>
+          <strong>2</strong>
+        </div>
+        <div class="summary-card">
+          <span>Provided Specs</span>
+          <strong>1</strong>
+        </div>
+        <div class="summary-card">
+          <span>Dependent Specs</span>
+          <strong>1</strong>
+        </div>
+      </div>
+      
+    </section>
+
+    <section class="panel">
+      <h2>Provided API Specs</h2>
+      
+        
+        <details class="spec" open>
+          <summary>
+            <span>basic-rest-sut-openapi</span>
+            <span class="meta">Type: openapi</span>
+          </summary>
+          <div class="spec-body">
+            <div class="meta">Source: examples/basic-rest/schemas/sut-openapi.yaml</div>
+            <div class="op-group">
+              <h4>Exercised</h4>
+              
+                
+                  <details class="op">
+                    <summary>GET /status</summary>
+                    
+                      
+                        <div class="sample">
+                          <div class="sample-title">Test Case: basic-rest</div>
+                          <div class="sample-body">
+                            
+                              <div><strong>Request:</strong> GET http://127.0.0.1:31103/status</div>
+                              <div><strong>Request Headers:</strong></div><pre class="code-block">Connection: keep-alive</pre>
+                              
+                              <div><strong>Response:</strong> 200</div>
+                              <div><strong>Response Headers:</strong></div><pre class="code-block">Content-Length: 16
+Content-Type: application/json
+Date: Sun, 08 Feb 2026 09:20:04 GMT</pre>
+                              <pre class="code-block">{
+  &#34;status&#34;: &#34;ok&#34;
+}</pre>
+                            
+                          </div>
+                        </div>
+                      
+                    
+                  </details>
+                
+                  <details class="op">
+                    <summary>POST /process</summary>
+                    
+                      
+                        <div class="sample">
+                          <div class="sample-title">Test Case: basic-rest</div>
+                          <div class="sample-body">
+                            
+                              <div><strong>Request:</strong> POST http://127.0.0.1:31103/process</div>
+                              <div><strong>Request Headers:</strong></div><pre class="code-block">Connection: keep-alive
+Content-Length: 31
+Content-Type: application/json</pre>
+                              <pre class="code-block">{
+  &#34;action&#34;: &#34;process&#34;,
+  &#34;id&#34;: &#34;123&#34;
+}</pre>
+                              <div><strong>Response:</strong> 200</div>
+                              <div><strong>Response Headers:</strong></div><pre class="code-block">Content-Length: 169
+Content-Type: application/json
+Date: Sun, 08 Feb 2026 09:20:04 GMT</pre>
+                              <pre class="code-block">{
+  &#34;downstream&#34;: [
+    {
+      &#34;body&#34;: &#34;{\&#34;result\&#34;:\&#34;alpha-ok\&#34;}&#34;,
+      &#34;path&#34;: &#34;/alpha&#34;,
+      &#34;status&#34;: 200
+    },
+    {
+      &#34;body&#34;: &#34;{\&#34;result\&#34;:\&#34;beta-ok\&#34;}&#34;,
+      &#34;path&#34;: &#34;/beta&#34;,
+      &#34;status&#34;: 200
+    }
+  ],
+  &#34;message&#34;: &#34;processed&#34;
+}</pre>
+                            
+                          </div>
+                        </div>
+                      
+                    
+                  </details>
+                
+              
+            </div>
+            <div class="op-group">
+              <h4>Not Covered</h4>
+              
+                
+                  <details class="op">
+                    <summary>GET /healthz</summary>
+                    <div class="meta">Not exercised by tests.</div>
+                  </details>
+                
+              
+            </div>
+          </div>
+        </details>
+      
+    </section>
+
+    <section class="panel">
+      <h2>Dependent API Specs</h2>
+      
+        
+        <details class="spec" open>
+          <summary>
+            <span>basic-rest-fake-openapi</span>
+            <span class="meta">Type: openapi</span>
+          </summary>
+          <div class="spec-body">
+            <div class="meta">Source: examples/basic-rest/schemas/fake-openapi.yaml</div>
+            <div class="op-group">
+              <h4>Faked</h4>
+              
+                
+                  <details class="op">
+                    <summary>POST /alpha</summary>
+                    
+                      
+                        <div class="sample">
+                          <div class="sample-title">Test Case: basic-rest</div>
+                          <div class="sample-body">
+                            
+                              <div><strong>Request:</strong> POST /alpha</div>
+                              <div><strong>Request Headers:</strong></div><pre class="code-block">Accept-Encoding: gzip
+Content-Length: 31
+Content-Type: application/json
+User-Agent: Go-http-client/1.1</pre>
+                              <pre class="code-block">{
+  &#34;action&#34;: &#34;process&#34;,
+  &#34;id&#34;: &#34;123&#34;
+}</pre>
+                              <div><strong>Response:</strong> 200</div>
+                              <div><strong>Response Headers:</strong></div><pre class="code-block">Content-Type: application/json</pre>
+                              <pre class="code-block">{
+  &#34;result&#34;: &#34;alpha-ok&#34;
+}</pre>
+                            
+                          </div>
+                        </div>
+                      
+                    
+                  </details>
+                
+                  <details class="op">
+                    <summary>POST /beta</summary>
+                    
+                      
+                        <div class="sample">
+                          <div class="sample-title">Test Case: basic-rest</div>
+                          <div class="sample-body">
+                            
+                              <div><strong>Request:</strong> POST /beta</div>
+                              <div><strong>Request Headers:</strong></div><pre class="code-block">Accept-Encoding: gzip
+Content-Length: 31
+Content-Type: application/json
+User-Agent: Go-http-client/1.1</pre>
+                              <pre class="code-block">{
+  &#34;action&#34;: &#34;process&#34;,
+  &#34;id&#34;: &#34;123&#34;
+}</pre>
+                              <div><strong>Response:</strong> 200</div>
+                              <div><strong>Response Headers:</strong></div><pre class="code-block">Content-Type: application/json</pre>
+                              <pre class="code-block">{
+  &#34;result&#34;: &#34;beta-ok&#34;
+}</pre>
+                            
+                          </div>
+                        </div>
+                      
+                    
+                  </details>
+                
+              
+            </div>
+          </div>
+        </details>
+      
+    </section>
+    </div>
+
+    <div id="tab-tests" class="tab-panel">
+      
+        <section class="panel">
+          <h2>Test Case: basic-rest</h2>
+          <div class="op-group">
+            <h4>Provided Specs</h4>
+            
+              
+                
+                <details class="spec" open>
+                  <summary>
+                    <span>basic-rest-sut-openapi</span>
+                    <span class="meta">Type: openapi</span>
+                  </summary>
+                  <div class="spec-body">
+                    <div class="meta">Source: examples/basic-rest/schemas/sut-openapi.yaml</div>
+                    
+                      <details class="op">
+                        <summary>GET /status</summary>
+                        
+                          
+                            <div class="sample">
+                              <div class="sample-title">Test Case: basic-rest</div>
+                              <div class="sample-body">
+                                
+                                  <div><strong>Request:</strong> GET http://127.0.0.1:31103/status</div>
+                                  <div><strong>Request Headers:</strong></div><pre class="code-block">Connection: keep-alive</pre>
+                                  
+                                  <div><strong>Response:</strong> 200</div>
+                                  <div><strong>Response Headers:</strong></div><pre class="code-block">Content-Length: 16
+Content-Type: application/json
+Date: Sun, 08 Feb 2026 09:20:04 GMT</pre>
+                                  <pre class="code-block">{
+  &#34;status&#34;: &#34;ok&#34;
+}</pre>
+                                
+                              </div>
+                            </div>
+                          
+                        
+                      </details>
+                    
+                      <details class="op">
+                        <summary>POST /process</summary>
+                        
+                          
+                            <div class="sample">
+                              <div class="sample-title">Test Case: basic-rest</div>
+                              <div class="sample-body">
+                                
+                                  <div><strong>Request:</strong> POST http://127.0.0.1:31103/process</div>
+                                  <div><strong>Request Headers:</strong></div><pre class="code-block">Connection: keep-alive
+Content-Length: 31
+Content-Type: application/json</pre>
+                                  <pre class="code-block">{
+  &#34;action&#34;: &#34;process&#34;,
+  &#34;id&#34;: &#34;123&#34;
+}</pre>
+                                  <div><strong>Response:</strong> 200</div>
+                                  <div><strong>Response Headers:</strong></div><pre class="code-block">Content-Length: 169
+Content-Type: application/json
+Date: Sun, 08 Feb 2026 09:20:04 GMT</pre>
+                                  <pre class="code-block">{
+  &#34;downstream&#34;: [
+    {
+      &#34;body&#34;: &#34;{\&#34;result\&#34;:\&#34;alpha-ok\&#34;}&#34;,
+      &#34;path&#34;: &#34;/alpha&#34;,
+      &#34;status&#34;: 200
+    },
+    {
+      &#34;body&#34;: &#34;{\&#34;result\&#34;:\&#34;beta-ok\&#34;}&#34;,
+      &#34;path&#34;: &#34;/beta&#34;,
+      &#34;status&#34;: 200
+    }
+  ],
+  &#34;message&#34;: &#34;processed&#34;
+}</pre>
+                                
+                              </div>
+                            </div>
+                          
+                        
+                      </details>
+                    
+                  </div>
+                </details>
+              
+            
+          </div>
+
+          <div class="op-group">
+            <h4>Dependent Specs</h4>
+            
+              
+                
+                <details class="spec" open>
+                  <summary>
+                    <span>basic-rest-fake-openapi</span>
+                    <span class="meta">Type: openapi</span>
+                  </summary>
+                  <div class="spec-body">
+                    <div class="meta">Source: examples/basic-rest/schemas/fake-openapi.yaml</div>
+                    
+                      <details class="op">
+                        <summary>POST /alpha</summary>
+                        
+                          
+                            <div class="sample">
+                              <div class="sample-title">Test Case: basic-rest</div>
+                              <div class="sample-body">
+                                
+                                  <div><strong>Request:</strong> POST /alpha</div>
+                                  <div><strong>Request Headers:</strong></div><pre class="code-block">Accept-Encoding: gzip
+Content-Length: 31
+Content-Type: application/json
+User-Agent: Go-http-client/1.1</pre>
+                                  <pre class="code-block">{
+  &#34;action&#34;: &#34;process&#34;,
+  &#34;id&#34;: &#34;123&#34;
+}</pre>
+                                  <div><strong>Response:</strong> 200</div>
+                                  <div><strong>Response Headers:</strong></div><pre class="code-block">Content-Type: application/json</pre>
+                                  <pre class="code-block">{
+  &#34;result&#34;: &#34;alpha-ok&#34;
+}</pre>
+                                
+                              </div>
+                            </div>
+                          
+                        
+                      </details>
+                    
+                      <details class="op">
+                        <summary>POST /beta</summary>
+                        
+                          
+                            <div class="sample">
+                              <div class="sample-title">Test Case: basic-rest</div>
+                              <div class="sample-body">
+                                
+                                  <div><strong>Request:</strong> POST /beta</div>
+                                  <div><strong>Request Headers:</strong></div><pre class="code-block">Accept-Encoding: gzip
+Content-Length: 31
+Content-Type: application/json
+User-Agent: Go-http-client/1.1</pre>
+                                  <pre class="code-block">{
+  &#34;action&#34;: &#34;process&#34;,
+  &#34;id&#34;: &#34;123&#34;
+}</pre>
+                                  <div><strong>Response:</strong> 200</div>
+                                  <div><strong>Response Headers:</strong></div><pre class="code-block">Content-Type: application/json</pre>
+                                  <pre class="code-block">{
+  &#34;result&#34;: &#34;beta-ok&#34;
+}</pre>
+                                
+                              </div>
+                            </div>
+                          
+                        
+                      </details>
+                    
+                  </div>
+                </details>
+              
+            
+          </div>
+        </section>
+      
+    </div>
+  </main>
+  <script>
+    const tabs = document.querySelectorAll('.tab-button');
+    const panels = document.querySelectorAll('.tab-panel');
+    tabs.forEach((tab) => {
+      tab.addEventListener('click', () => {
+        tabs.forEach((btn) => btn.classList.remove('active'));
+        panels.forEach((panel) => panel.classList.remove('active'));
+        tab.classList.add('active');
+        const panel = document.getElementById(tab.dataset.tab);
+        if (panel) {
+          panel.classList.add('active');
+        }
+      });
+    });
+  </script>
+</body>
+</html>
