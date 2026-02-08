@@ -42,26 +42,6 @@ test("basic REST flow through proxy and fake", async () => {
       await testCase.get("/status");
       const result = await testCase.postJson("/process", { id: "123", action: "process" });
       assert.equal(result.status, 200);
-
-      await testCase.assertField({
-        flow_id: "alpha-basic-rest",
-        channel: "sut_to_mock",
-        phase: "response",
-        path_lang: "json",
-        field: "result",
-        operator: "equals",
-        expected: "alpha-ok"
-      });
-
-      await testCase.assertField({
-        flow_id: "beta-basic-rest",
-        channel: "sut_to_mock",
-        phase: "response",
-        path_lang: "json",
-        field: "result",
-        operator: "equals",
-        expected: "beta-ok"
-      });
     }
   );
 

@@ -23,7 +23,6 @@ type TestCaseStore struct {
 	active    *testCaseState
 	last      *artifact.Artifact
 	flowSeq   int
-	assertSeq int
 	schemaSeq int
 	expectSeq int
 }
@@ -38,7 +37,6 @@ type testCaseState struct {
 	meta        map[string]any
 	sutBaseURL  string
 	flows       []artifact.Flow
-	assertions  []artifact.Assertion
 	schemas     []artifact.SchemaRef
 	expectation []Expectation
 	redactions  []artifact.Redaction
@@ -77,7 +75,6 @@ func (s *TestCaseStore) StartCase(name string, tags []string, meta map[string]an
 	}
 	s.last = nil
 	s.flowSeq = 0
-	s.assertSeq = 0
 	s.schemaSeq = 0
 	s.expectSeq = 0
 
@@ -131,7 +128,6 @@ func (s *TestCaseStore) FinishCase(status string, env *artifact.Environment, moc
 		Env:        env,
 		Schemas:    append([]artifact.SchemaRef{}, state.schemas...),
 		Traffic:    flows,
-		Assertions: append([]artifact.Assertion{}, state.assertions...),
 		Redactions: append([]artifact.Redaction{}, state.redactions...),
 		Meta:       map[string]any{},
 	}
@@ -140,7 +136,6 @@ func (s *TestCaseStore) FinishCase(status string, env *artifact.Environment, moc
 		art.Meta["expectations"] = state.expectation
 	}
 
-	evaluateAssertions(art)
 	applySchemaValidation(art)
 
 	if len(art.Redactions) > 0 {
@@ -203,23 +198,6 @@ func (s *TestCaseStore) AddSchema(ref artifact.SchemaRef) artifact.SchemaRef {
 	}
 	s.active.schemas = append(s.active.schemas, ref)
 	return ref
-}
-
-func (s *TestCaseStore) AddAssertion(assertion artifact.Assertion) artifact.Assertion {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.active == nil {
-		return assertion
-	}
-	if assertion.ID == "" {
-		s.assertSeq++
-		assertion.ID = fmt.Sprintf("assertion-%d", s.assertSeq)
-	}
-	if assertion.Result == "" {
-		assertion.Result = "recorded"
-	}
-	s.active.assertions = append(s.active.assertions, assertion)
-	return assertion
 }
 
 func (s *TestCaseStore) AddExpectation(expectation Expectation) {

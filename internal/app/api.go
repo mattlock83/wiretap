@@ -330,24 +330,6 @@ func (a *App) handleGrpcStubsClear(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "cleared"})
 }
 
-func (a *App) handleAssertions(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
-		return
-	}
-	if a.store == nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "store not configured"})
-		return
-	}
-	var assertion artifact.Assertion
-	if err := json.NewDecoder(r.Body).Decode(&assertion); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
-		return
-	}
-	stored := a.store.AddAssertion(assertion)
-	writeJSON(w, http.StatusOK, stored)
-}
-
 func (a *App) handleExpectations(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})

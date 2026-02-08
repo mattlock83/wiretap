@@ -206,10 +206,6 @@ class Harness {
     return this._post("/v1/grpc/stubs/clear", {});
   }
 
-  async assertField(assertion) {
-    return this._post("/v1/assertions", assertion);
-  }
-
   async expectCall(expectation) {
     return this._post("/v1/expectations", expectation);
   }
@@ -380,10 +376,6 @@ class TestSession {
 
   async expectCall(expectation) {
     return this.harness.expectCall(expectation);
-  }
-
-  async assertField(assertion) {
-    return this.harness.assertField(assertion);
   }
 
   async request(options = {}) {

@@ -30,7 +30,6 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("/v1/stubs/clear", a.handleStubsClear)
 	mux.HandleFunc("/v1/grpc/stubs", a.handleGrpcStubs)
 	mux.HandleFunc("/v1/grpc/stubs/clear", a.handleGrpcStubsClear)
-	mux.HandleFunc("/v1/assertions", a.handleAssertions)
 	mux.HandleFunc("/v1/expectations", a.handleExpectations)
 	mux.HandleFunc("/v1/schemas", a.handleSchemas)
 	mux.HandleFunc("/v1/redactions", a.handleRedactions)

@@ -78,7 +78,6 @@ Returned test session:
 - `test.mockGrpc(stub)`
 - `test.clearMocks({ http, grpc })` (defaults to clearing both)
 - `test.expectCall(expectation)`
-- `test.assertField(assertion)`
 - `test.request({ method, path, headers, body, sutBaseUrl })`
 - `test.get(path, { headers, sutBaseUrl })`
 - `test.post(path, body, { headers, sutBaseUrl })`
@@ -105,7 +104,6 @@ For request helpers, start the suite with `proxy: true` and pass `sutBaseUrl` in
 - `harness.clearStubs()`
 - `harness.registerGrpcStub(stub)`
 - `harness.clearGrpcStubs()`
-- `harness.assertField(assertion)`
 - `harness.expectCall(expectation)`
 - `harness.setSchema(schema)`
 - `harness.addRedaction(rule)`

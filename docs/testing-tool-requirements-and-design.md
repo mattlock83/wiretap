@@ -21,7 +21,7 @@ The system should be extensible to support gRPC/protos later, while implementing
 - Capture HTTP/HTTPS traffic for two channels:
   - `test_to_sut`
   - `sut_to_mock`
-- Support explicit, field-level assertions and link them to captured traffic.
+- Support explicit traffic expectations and link them to captured traffic.
 - Attach schema references (OpenAPI now, Protobuf later) for contract comparison.
 - Provide a JavaScript SDK that test code uses to orchestrate test cases and record assertions.
 - Minimal provider burden (consumer-driven), similar intent to Pact but without provider-side setup.
@@ -39,7 +39,7 @@ The system should be extensible to support gRPC/protos later, while implementing
 2. Start and stop a mock server per test case.
 3. Register HTTP stubs with matching rules and responses.
 4. Capture HTTP and gRPC request/response pairs for both channels.
-5. Record and evaluate field-level assertions in tests.
+5. Record and evaluate traffic expectations in tests.
 6. Export a YAML artifact per test case.
 7. Attach OpenAPI or Protobuf spec references to test cases (required).
 8. Register gRPC stubs with matching rules and responses (raw bytes).
@@ -251,9 +251,8 @@ type ArtifactWriter interface {
 - `registerStub({ id, match, response, tags, schemaRef, operationId })`
 - `clearStubs()`
 
-### 9.3 Schemas and Assertions
+### 9.3 Schemas and Expectations
 - `setSchema({ role, type, source })`
-- `assertField({ channel, phase, field, operator, expected })`
 - `expectCall({ channel, match, times })`
 
 ### 9.4 HTTPS Utilities

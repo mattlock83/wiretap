@@ -169,7 +169,6 @@ test("suite session API follows setup/test/mock/teardown phases", async () => {
   await testCase.mockHttp({ id: "http-1" });
   await testCase.mockGrpc({ id: "grpc-1" });
   await testCase.expectCall({ id: "exp-1" });
-  await testCase.assertField({ id: "assert-1" });
   await testCase.clearMocks();
   const finish = await testCase.teardown({ status: "pass" });
   await suite.teardown();
@@ -185,7 +184,6 @@ test("suite session API follows setup/test/mock/teardown phases", async () => {
       "/v1/stubs",
       "/v1/grpc/stubs",
       "/v1/expectations",
-      "/v1/assertions",
       "/v1/stubs/clear",
       "/v1/grpc/stubs/clear",
       "/v1/testcases/finish",
