@@ -2,7 +2,7 @@ const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const http = require("node:http");
 
-const { start } = require("../src/index.js");
+const { startServer } = require("../src/index.js");
 
 const INLINE_OPENAPI = [
   {
@@ -16,7 +16,7 @@ const INLINE_OPENAPI = [
   }
 ];
 
-async function startServer(handler) {
+async function startHarnessServer(handler) {
   const server = http.createServer(handler);
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   const { port } = server.address();
@@ -34,14 +34,14 @@ function readBody(req) {
   });
 }
 
-test("start initializes runtime with configured listen addresses", async (t) => {
+test("startServer initializes runtime with configured listen addresses", async (t) => {
   const requests = [];
-  const server = await startServer(async (req, res) => {
+  const server = await startHarnessServer(async (req, res) => {
     const body = await readBody(req);
     requests.push({ method: req.method, path: req.url, body });
 
     res.setHeader("content-type", "application/json");
-    if (req.url === "/v1/start") {
+    if (req.url === "/v1/startServer") {
       res.end(
         JSON.stringify({
           proxy: { listen_addr: "127.0.0.1:19100" },
@@ -55,14 +55,14 @@ test("start initializes runtime with configured listen addresses", async (t) => 
   });
   t.after(() => server.close());
 
-  const runtime = await start({
+  const runtime = await startServer({
     baseUrl: server.url,
     proxy: { listen_addr: "127.0.0.1:20010" },
     mockServer: { listenAddr: "127.0.0.1:20011" }
   });
-  await runtime.kill();
+  await runtime.killServer();
 
-  assert.equal(requests[0].path, "/v1/start");
+  assert.equal(requests[0].path, "/v1/startServer");
   assert.deepEqual(JSON.parse(requests[0].body), {
     proxy: { listen_addr: "127.0.0.1:20010" },
     mock: { listen_addr: "127.0.0.1:20011" }
@@ -71,12 +71,12 @@ test("start initializes runtime with configured listen addresses", async (t) => 
 
 test("scenarioName is applied when setup is auto-started by queueResponse", async (t) => {
   const requests = [];
-  const server = await startServer(async (req, res) => {
+  const server = await startHarnessServer(async (req, res) => {
     const body = await readBody(req);
     requests.push({ method: req.method, path: req.url, body });
 
     res.setHeader("content-type", "application/json");
-    if (req.url === "/v1/start") {
+    if (req.url === "/v1/startServer") {
       res.end(
         JSON.stringify({
           proxy: { listen_addr: "127.0.0.1:19100" },
@@ -85,7 +85,7 @@ test("scenarioName is applied when setup is auto-started by queueResponse", asyn
       );
       return;
     }
-    if (req.url === "/v1/setup") {
+    if (req.url === "/v1/setupTest") {
       const payload = JSON.parse(body || "{}");
       res.end(
         JSON.stringify({
@@ -101,7 +101,7 @@ test("scenarioName is applied when setup is auto-started by queueResponse", asyn
       res.end(JSON.stringify({ status: "queued", id: "stub-1", session_id: "session-1" }));
       return;
     }
-    if (req.url === "/v1/teardown") {
+    if (req.url === "/v1/teardownTest") {
       res.end(
         JSON.stringify({
           path: "artifacts/case.yaml",
@@ -115,7 +115,7 @@ test("scenarioName is applied when setup is auto-started by queueResponse", asyn
   });
   t.after(() => server.close());
 
-  const runtime = await start({
+  const runtime = await startServer({
     baseUrl: server.url,
     schemas: INLINE_OPENAPI,
     sutBaseUrl: "http://sut.local:18090",
@@ -129,16 +129,16 @@ test("scenarioName is applied when setup is auto-started by queueResponse", asyn
     match: { method: "GET", path: "/accounts/acct-100" },
     response: { status: 200, body: "{\"id\":\"acct-100\"}" }
   });
-  await runtime.reset();
-  await runtime.kill();
+  await runtime.teardownTest();
+  await runtime.killServer();
 
-  const setupReq = requests.find((entry) => entry.path === "/v1/setup");
+  const setupReq = requests.find((entry) => entry.path === "/v1/setupTest");
   assert.equal(JSON.parse(setupReq.body).name, "submit-payment");
 });
 
 test("http helper sends traffic through proxy and tags session header", async (t) => {
   const proxyRequests = [];
-  const proxyServer = await startServer(async (req, res) => {
+  const proxyServer = await startHarnessServer(async (req, res) => {
     const body = await readBody(req);
     proxyRequests.push({
       method: req.method,
@@ -152,11 +152,11 @@ test("http helper sends traffic through proxy and tags session header", async (t
   });
   t.after(() => proxyServer.close());
 
-  const server = await startServer(async (req, res) => {
+  const server = await startHarnessServer(async (req, res) => {
     const body = await readBody(req);
     void body;
     res.setHeader("content-type", "application/json");
-    if (req.url === "/v1/start") {
+    if (req.url === "/v1/startServer") {
       res.end(
         JSON.stringify({
           proxy: { listen_addr: proxyServer.url.replace("http://", "") },
@@ -165,7 +165,7 @@ test("http helper sends traffic through proxy and tags session header", async (t
       );
       return;
     }
-    if (req.url === "/v1/setup") {
+    if (req.url === "/v1/setupTest") {
       res.end(
         JSON.stringify({
           session_id: "session-2",
@@ -176,7 +176,7 @@ test("http helper sends traffic through proxy and tags session header", async (t
       );
       return;
     }
-    if (req.url === "/v1/teardown") {
+    if (req.url === "/v1/teardownTest") {
       res.end(
         JSON.stringify({
           path: "artifacts/case.yaml",
@@ -190,7 +190,7 @@ test("http helper sends traffic through proxy and tags session header", async (t
   });
   t.after(() => server.close());
 
-  const runtime = await start({
+  const runtime = await startServer({
     baseUrl: server.url,
     schemas: INLINE_OPENAPI,
     sutBaseUrl: "http://sut.local:18090",
@@ -198,13 +198,13 @@ test("http helper sends traffic through proxy and tags session header", async (t
     mockServer: true
   });
 
-  await runtime.setup({ name: "proxy-flow" });
+  await runtime.setupTest({ name: "proxy-flow" });
   const resp = await runtime.http.postJson("/process?mode=test", { id: "123" });
   assert.equal(resp.status, 200);
   assert.deepEqual(resp.body, { ok: true });
 
-  await runtime.reset();
-  await runtime.kill();
+  await runtime.teardownTest();
+  await runtime.killServer();
 
   assert.equal(proxyRequests.length, 1);
   assert.equal(proxyRequests[0].path, "http://sut.local:18090/process?mode=test");
@@ -212,12 +212,12 @@ test("http helper sends traffic through proxy and tags session header", async (t
   assert.equal(proxyRequests[0].session, "session-2");
 });
 
-test("reset throws when schema validation fails", async (t) => {
-  const server = await startServer(async (req, res) => {
+test("teardownTest throws when schema validation fails", async (t) => {
+  const server = await startHarnessServer(async (req, res) => {
     const body = await readBody(req);
     void body;
     res.setHeader("content-type", "application/json");
-    if (req.url === "/v1/start") {
+    if (req.url === "/v1/startServer") {
       res.end(
         JSON.stringify({
           proxy: { listen_addr: "127.0.0.1:19100" },
@@ -226,7 +226,7 @@ test("reset throws when schema validation fails", async (t) => {
       );
       return;
     }
-    if (req.url === "/v1/setup") {
+    if (req.url === "/v1/setupTest") {
       res.end(
         JSON.stringify({
           session_id: "session-3",
@@ -237,7 +237,7 @@ test("reset throws when schema validation fails", async (t) => {
       );
       return;
     }
-    if (req.url === "/v1/teardown") {
+    if (req.url === "/v1/teardownTest") {
       res.end(
         JSON.stringify({
           path: "artifacts/case.yaml",
@@ -254,7 +254,7 @@ test("reset throws when schema validation fails", async (t) => {
   });
   t.after(() => server.close());
 
-  const runtime = await start({
+  const runtime = await startServer({
     baseUrl: server.url,
     schemas: INLINE_OPENAPI,
     sutBaseUrl: "http://sut.local:18090",
@@ -262,20 +262,20 @@ test("reset throws when schema validation fails", async (t) => {
     mockServer: true
   });
 
-  await runtime.setup({ name: "validation-fail" });
-  await assert.rejects(() => runtime.reset(), /unknown route/);
-  await runtime.kill();
+  await runtime.setupTest({ name: "validation-fail" });
+  await assert.rejects(() => runtime.teardownTest(), /unknown route/);
+  await runtime.killServer();
 });
 
-test("reset finalizes current scenario and does not create a new one", async (t) => {
+test("teardownTest finalizes current scenario and does not create a new one", async (t) => {
   const requests = [];
   let sessionCounter = 0;
-  const server = await startServer(async (req, res) => {
+  const server = await startHarnessServer(async (req, res) => {
     const body = await readBody(req);
     requests.push({ method: req.method, path: req.url, body });
 
     res.setHeader("content-type", "application/json");
-    if (req.url === "/v1/start") {
+    if (req.url === "/v1/startServer") {
       res.end(
         JSON.stringify({
           proxy: { listen_addr: "127.0.0.1:19100" },
@@ -284,7 +284,7 @@ test("reset finalizes current scenario and does not create a new one", async (t)
       );
       return;
     }
-    if (req.url === "/v1/setup") {
+    if (req.url === "/v1/setupTest") {
       sessionCounter += 1;
       const payload = JSON.parse(body || "{}");
       const id = `session-${sessionCounter}`;
@@ -298,7 +298,7 @@ test("reset finalizes current scenario and does not create a new one", async (t)
       );
       return;
     }
-    if (req.url === "/v1/teardown") {
+    if (req.url === "/v1/teardownTest") {
       res.end(
         JSON.stringify({
           path: `artifacts/case-${sessionCounter}.yaml`,
@@ -312,7 +312,7 @@ test("reset finalizes current scenario and does not create a new one", async (t)
   });
   t.after(() => server.close());
 
-  const runtime = await start({
+  const runtime = await startServer({
     baseUrl: server.url,
     schemas: INLINE_OPENAPI,
     sutBaseUrl: "http://sut.local:18090",
@@ -320,23 +320,23 @@ test("reset finalizes current scenario and does not create a new one", async (t)
     mockServer: true
   });
 
-  await runtime.setup({ name: "first" });
-  const resetResult = await runtime.reset();
-  assert.equal(resetResult.path, "artifacts/case-1.yaml");
-  await runtime.kill();
+  await runtime.setupTest({ name: "first" });
+  const teardownResult = await runtime.teardownTest();
+  assert.equal(teardownResult.path, "artifacts/case-1.yaml");
+  await runtime.killServer();
 
-  const setupCalls = requests.filter((entry) => entry.path === "/v1/setup");
-  const teardownCalls = requests.filter((entry) => entry.path === "/v1/teardown");
+  const setupCalls = requests.filter((entry) => entry.path === "/v1/setupTest");
+  const teardownCalls = requests.filter((entry) => entry.path === "/v1/teardownTest");
   assert.equal(setupCalls.length, 1);
   assert.equal(teardownCalls.length, 1);
 });
 
 test("list and inspect helpers read queued and responded responses", async (t) => {
-  const server = await startServer(async (req, res) => {
+  const server = await startHarnessServer(async (req, res) => {
     const body = await readBody(req);
     void body;
     res.setHeader("content-type", "application/json");
-    if (req.url === "/v1/start") {
+    if (req.url === "/v1/startServer") {
       res.end(
         JSON.stringify({
           proxy: { listen_addr: "127.0.0.1:19100" },
@@ -345,7 +345,7 @@ test("list and inspect helpers read queued and responded responses", async (t) =
       );
       return;
     }
-    if (req.url === "/v1/setup") {
+    if (req.url === "/v1/setupTest") {
       res.end(
         JSON.stringify({
           session_id: "session-5",
@@ -374,7 +374,7 @@ test("list and inspect helpers read queued and responded responses", async (t) =
       );
       return;
     }
-    if (req.url === "/v1/inspectResponse?session_id=session-5&id=response-2") {
+    if (req.url === "/v1/getResponse?session_id=session-5&id=response-2") {
       res.end(
         JSON.stringify({
           session_id: "session-5",
@@ -390,7 +390,7 @@ test("list and inspect helpers read queued and responded responses", async (t) =
   });
   t.after(() => server.close());
 
-  const runtime = await start({
+  const runtime = await startServer({
     baseUrl: server.url,
     schemas: INLINE_OPENAPI,
     sutBaseUrl: "http://sut.local:18090",
@@ -398,23 +398,23 @@ test("list and inspect helpers read queued and responded responses", async (t) =
     mockServer: true
   });
 
-  await runtime.setup({ name: "list-inspect" });
+  await runtime.setupTest({ name: "list-inspect" });
   const queued = await runtime.listQueued();
   const responded = await runtime.listResponded();
-  const inspected = await runtime.inspectResponse("response-2");
+  const inspected = await runtime.getResponse("response-2");
 
   assert.equal(queued.items[0].id, "response-1");
   assert.equal(responded.items[0].id, "response-2");
   assert.equal(inspected.state, "responded");
-  await runtime.kill();
+  await runtime.killServer();
 });
 
-test("inspectResponse returns exchange details for assertions", async (t) => {
-  const server = await startServer(async (req, res) => {
+test("getResponse returns exchange details for assertions", async (t) => {
+  const server = await startHarnessServer(async (req, res) => {
     const body = await readBody(req);
     void body;
     res.setHeader("content-type", "application/json");
-    if (req.url === "/v1/start") {
+    if (req.url === "/v1/startServer") {
       res.end(
         JSON.stringify({
           proxy: { listen_addr: "127.0.0.1:19100" },
@@ -423,7 +423,7 @@ test("inspectResponse returns exchange details for assertions", async (t) => {
       );
       return;
     }
-    if (req.url === "/v1/setup") {
+    if (req.url === "/v1/setupTest") {
       res.end(
         JSON.stringify({
           session_id: "session-4",
@@ -434,7 +434,7 @@ test("inspectResponse returns exchange details for assertions", async (t) => {
       );
       return;
     }
-    if (req.url === "/v1/inspectResponse?session_id=session-4&id=account-acct-100") {
+    if (req.url === "/v1/getResponse?session_id=session-4&id=account-acct-100") {
       res.end(
         JSON.stringify({
           session_id: "session-4",
@@ -467,7 +467,7 @@ test("inspectResponse returns exchange details for assertions", async (t) => {
   });
   t.after(() => server.close());
 
-  const runtime = await start({
+  const runtime = await startServer({
     baseUrl: server.url,
     schemas: INLINE_OPENAPI,
     sutBaseUrl: "http://sut.local:18090",
@@ -475,11 +475,11 @@ test("inspectResponse returns exchange details for assertions", async (t) => {
     mockServer: true
   });
 
-  await runtime.setup({ name: "expectation-test" });
-  const match = await runtime.inspectResponse("account-acct-100");
+  await runtime.setupTest({ name: "expectation-test" });
+  const match = await runtime.getResponse("account-acct-100");
   assert.equal(match.state, "responded");
   assert.equal(match.exchange.Request.Method, "GET");
   assert.equal(match.exchange.Request.Path, "/accounts/acct-100");
   assert.equal(match.exchange.MatchedStubID, "account-acct-100");
-  await runtime.kill();
+  await runtime.killServer();
 });

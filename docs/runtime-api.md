@@ -3,15 +3,15 @@
 This page documents the session-based runtime API used by the SDK.
 
 Recommended flow:
-1. `POST /v1/start` once per test suite (or worker)
-2. `POST /v1/setup` once per test case
+1. `POST /v1/startServer` once per test suite (or worker)
+2. `POST /v1/setupTest` once per test case
 3. `POST /v1/queue-response` zero or more times
 4. Run test traffic through the proxy
-5. `POST /v1/teardown` once per test case (SDK method: `reset()`)
+5. `POST /v1/teardownTest` once per test case (SDK method: `teardownTest()`)
 6. `POST /v1/report` once after all tests
-7. `POST /v1/kill` once when done
+7. `POST /v1/killServer` once when done
 
-## `POST /v1/start`
+## `POST /v1/startServer`
 
 Starts proxy and mock components if not already running.
 
@@ -48,7 +48,7 @@ Response:
 }
 ```
 
-## `POST /v1/setup`
+## `POST /v1/setupTest`
 
 Creates one isolated test session.
 
@@ -173,13 +173,13 @@ Lists responses already consumed by the SUT.
 
 Response shape includes `exchange` payload when available.
 
-## `GET /v1/inspectResponse?session_id=...&id=...`
+## `GET /v1/getResponse?session_id=...&id=...`
 
 Returns one queued or responded item in detail.
 
 Useful for test assertions (request URL/body/headers, matched ID, response details).
 
-## `POST /v1/teardown`
+## `POST /v1/teardownTest`
 
 Finalizes one session, writes testcase artifact, and clears remaining queued responses.
 
@@ -206,7 +206,7 @@ Response:
 }
 ```
 
-Note: SDK `reset()` maps to this endpoint.
+Note: SDK `teardownTest()` maps to this endpoint.
 
 ## `POST /v1/report`
 
@@ -234,7 +234,7 @@ Response:
 }
 ```
 
-## `POST /v1/kill`
+## `POST /v1/killServer`
 
 Stops runtime components, clears queued state, and terminates all sessions.
 

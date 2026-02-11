@@ -397,7 +397,7 @@ func (a *App) handleProxyCA(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(pemBytes)
 }
 
-type runtimeStartRequest struct {
+type startServerRequest struct {
 	Proxy struct {
 		ListenAddr string `json:"listen_addr,omitempty"`
 		TargetURL  string `json:"target_url,omitempty"`
@@ -411,7 +411,7 @@ type runtimeStartRequest struct {
 	} `json:"record_responses,omitempty"`
 }
 
-func (a *App) handleRuntimeStart(w http.ResponseWriter, r *http.Request) {
+func (a *App) handleStartServer(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 		return
@@ -421,7 +421,7 @@ func (a *App) handleRuntimeStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var payload runtimeStartRequest
+	var payload startServerRequest
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil && !errors.Is(err, io.EOF) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
 		return
@@ -476,7 +476,7 @@ func (a *App) handleRuntimeStart(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-type runtimeSetupRequest struct {
+type setupTestRequest struct {
 	Name        string               `json:"name,omitempty"`
 	Tags        []string             `json:"tags,omitempty"`
 	Meta        map[string]any       `json:"meta,omitempty"`
@@ -485,7 +485,7 @@ type runtimeSetupRequest struct {
 	FakeSchemas []artifact.SchemaRef `json:"fake_schemas,omitempty"`
 }
 
-func (a *App) handleRuntimeSetup(w http.ResponseWriter, r *http.Request) {
+func (a *App) handleSetupTest(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 		return
@@ -495,11 +495,11 @@ func (a *App) handleRuntimeSetup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if a.mockComponent.Addr() == "" || a.proxyComponent.ListenAddr() == "" {
-		writeJSON(w, http.StatusConflict, map[string]string{"error": "runtime is not started; call start() first"})
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "runtime is not started; call startServer() first"})
 		return
 	}
 
-	var payload runtimeSetupRequest
+	var payload setupTestRequest
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil && !errors.Is(err, io.EOF) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
 		return
@@ -696,12 +696,12 @@ func (a *App) handleQueueResponse(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-type runtimeTeardownRequest struct {
+type teardownTestRequest struct {
 	SessionID string `json:"session_id"`
 	Status    string `json:"status,omitempty"`
 }
 
-func (a *App) handleRuntimeTeardown(w http.ResponseWriter, r *http.Request) {
+func (a *App) handleTeardownTest(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 		return
@@ -711,7 +711,7 @@ func (a *App) handleRuntimeTeardown(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var payload runtimeTeardownRequest
+	var payload teardownTestRequest
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
 		return
@@ -843,7 +843,7 @@ func writeCoverageReport(path string, report *coverage.Report, format string) er
 	return coverage.WriteReport(file, report, format)
 }
 
-func (a *App) handleRuntimeKill(w http.ResponseWriter, r *http.Request) {
+func (a *App) handleKillServer(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 		return
@@ -996,7 +996,7 @@ func (a *App) handleListResponded(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (a *App) handleInspectResponse(w http.ResponseWriter, r *http.Request) {
+func (a *App) handleGetResponse(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 		return

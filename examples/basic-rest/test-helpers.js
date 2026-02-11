@@ -1,20 +1,4 @@
 const { spawn } = require("node:child_process");
-const { start } = require("../../sdk/js/src/index");
-
-const SCHEMAS = [
-  {
-    id: "basic-rest-sut-openapi",
-    role: "sut",
-    type: "openapi",
-    source: { type: "file", path: "examples/basic-rest/schemas/sut-openapi.yaml" }
-  },
-  {
-    id: "basic-rest-fake-openapi",
-    role: "fake",
-    type: "openapi",
-    source: { type: "file", path: "examples/basic-rest/schemas/fake-openapi.yaml" }
-  }
-];
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -75,61 +59,6 @@ async function startBasicRestSUT(options = {}) {
   };
 }
 
-function resolveBaseUrl() {
-  return (
-    process.env.PHROND_BASE_URL ||
-    (process.env.PHROND_HTTP_LISTEN ? `http://${process.env.PHROND_HTTP_LISTEN}` : "http://127.0.0.1:18000")
-  );
-}
-
-async function startRuntime() {
-  const baseUrl = resolveBaseUrl();
-  const sutListen = process.env.SUT_LISTEN || "127.0.0.1:18090";
-
-  return start({
-    baseUrl,
-    proxy: process.env.PHROND_PROXY_LISTEN ? { listenAddr: process.env.PHROND_PROXY_LISTEN } : true,
-    mockServer: process.env.PHROND_MOCK_LISTEN ? { listenAddr: process.env.PHROND_MOCK_LISTEN } : true,
-    schemas: SCHEMAS,
-    sutBaseUrl: `http://${sutListen}`,
-    strictSchema: true
-  });
-}
-
-async function setupBasicCase(runtime, options = {}) {
-  const sutListen = options.sutListen || process.env.SUT_LISTEN || "127.0.0.1:18090";
-  const session = await runtime.setup({ name: options.name });
-
-  const sut = await startBasicRestSUT({
-    listen: sutListen,
-    dependencyBaseUrl: session.mockBaseUrl
-  });
-
-  return {
-    session,
-    sut
-  };
-}
-
-async function resetBasicCase(runtime, sut, options = {}) {
-  const errors = [];
-  try {
-    await runtime.reset({ status: options.status || "pass" });
-  } catch (err) {
-    errors.push(err);
-  }
-  try {
-    await sut?.stop?.();
-  } catch (err) {
-    errors.push(err);
-  }
-  if (errors.length > 0) {
-    throw errors[0];
-  }
-}
-
 module.exports = {
-  startRuntime,
-  setupBasicCase,
-  resetBasicCase
+  startBasicRestSUT
 };

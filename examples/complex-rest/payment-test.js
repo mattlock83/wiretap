@@ -27,7 +27,7 @@ if (!RUN_E2E) {
   });
 
   after(async () => {
-    await runtime?.kill();
+    await runtime?.killServer();
   });
 
   test("submits payment and lists transactions", async () => {
@@ -50,8 +50,8 @@ if (!RUN_E2E) {
     assert.equal(list.status, 200);
     assert.ok(list.body.transactions.some((tx) => tx.transaction_id === submit.body.transaction_id));
 
-    const paymentLookup = await runtime.inspectResponse(`account-${from.id}-3`);
-    const transactionLookup = await runtime.inspectResponse(`account-${from.id}-1`);
+    const paymentLookup = await runtime.getResponse(`account-${from.id}-3`);
+    const transactionLookup = await runtime.getResponse(`account-${from.id}-1`);
     assert.equal(paymentLookup.state, "responded");
     assert.equal(transactionLookup.state, "responded");
     assert.equal(paymentLookup.exchange.Request.Method, "GET");

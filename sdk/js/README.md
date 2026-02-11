@@ -5,12 +5,12 @@ The JS SDK is session-based and stack-based.
 ## Quick start
 
 ```js
-const { start } = require("@phrond/sdk");
+const { startServer } = require("@phrond/sdk");
 
 let runtime;
 
 before(async () => {
-  runtime = await start({
+  runtime = await startServer({
     baseUrl: "http://127.0.0.1:18000",
     proxy: true,
     mockServer: true,
@@ -33,16 +33,16 @@ before(async () => {
 });
 
 beforeEach(async (t) => {
-  const session = await runtime.setup({ name: t.name });
+  const session = await runtime.setupTest({ name: t.name });
   // session.mockBaseUrl is the dependency URL to inject into your SUT process.
 });
 
 afterEach(async () => {
-  await runtime.reset();
+  await runtime.teardownTest();
 });
 
 after(async () => {
-  await runtime.kill();
+  await runtime.killServer();
 });
 
 test("submit payment", async () => {
@@ -59,26 +59,26 @@ test("submit payment", async () => {
     currency: "USD"
   });
 
-  const outbound = await runtime.inspectResponse("account-lookup");
+  const outbound = await runtime.getResponse("account-lookup");
   console.log(outbound.exchange.Request.Method, outbound.exchange.Request.Path);
 });
 ```
 
 ## API
 
-- `start({ baseUrl, timeoutMs, proxy, mockServer, stackSize, recordResponses, schemas, sutBaseUrl, strictSchema })`
-- `runtime.setup({ name, tags, meta, schemas, sutSchemas, fakeSchemas, sutBaseUrl })`
+- `startServer({ baseUrl, timeoutMs, proxy, mockServer, stackSize, recordResponses, schemas, sutBaseUrl, strictSchema })`
+- `runtime.setupTest({ name, tags, meta, schemas, sutSchemas, fakeSchemas, sutBaseUrl })`
 - `runtime.queueResponse({ id, match, response })`
 - `runtime.listQueued()`
 - `runtime.listResponded()`
-- `runtime.inspectResponse(id)`
-- `runtime.reset({ status })`
+- `runtime.getResponse(id)`
+- `runtime.teardownTest({ status })`
 - `runtime.report({ artifactsDir, sutName, includeArtifacts, yamlPath, htmlPath })`
-- `runtime.kill()`
+- `runtime.killServer()`
 
 ## Convenience methods
 
-- `runtime.scenarioName(name)` sets the next setup name.
+- `runtime.scenarioName(name)` sets the next test name (optional if `setupTest({ name })` is used).
 - `runtime.stop({ status })` tears down active session (if any) and kills runtime.
 - `runtime.http.get/post/postJson/request(...)` sends test traffic through the proxy and tags it with the active session id.
 

@@ -101,28 +101,28 @@ class CoreClient {
     this.timeoutMs = config.timeoutMs || 0;
   }
 
-  async startRuntime(payload) {
-    return this._post("/v1/start", payload || {});
+  async startServer(payload) {
+    return this._post("/v1/startServer", payload || {});
   }
 
-  async setup(payload) {
-    return this._post("/v1/setup", payload || {});
+  async setupTest(payload) {
+    return this._post("/v1/setupTest", payload || {});
   }
 
   async queueResponse(payload) {
     return this._post("/v1/queue-response", payload || {});
   }
 
-  async teardown(payload) {
-    return this._post("/v1/teardown", payload || {});
+  async teardownTest(payload) {
+    return this._post("/v1/teardownTest", payload || {});
   }
 
   async report(payload) {
     return this._post("/v1/report", payload || {});
   }
 
-  async kill() {
-    return this._post("/v1/kill", {});
+  async killServer() {
+    return this._post("/v1/killServer", {});
   }
 
   async listQueued(sessionId) {
@@ -133,8 +133,8 @@ class CoreClient {
     return this._get(`/v1/listResponded?session_id=${encodeURIComponent(sessionId)}`);
   }
 
-  async inspectResponse(sessionId, id) {
-    return this._get(`/v1/inspectResponse?session_id=${encodeURIComponent(sessionId)}&id=${encodeURIComponent(id)}`);
+  async getResponse(sessionId, id) {
+    return this._get(`/v1/getResponse?session_id=${encodeURIComponent(sessionId)}&id=${encodeURIComponent(id)}`);
   }
 
   async _get(path) {
@@ -210,7 +210,7 @@ class Runtime {
   _requireSession(sessionId) {
     const id = sessionId || this.activeSession?.sessionId;
     if (!id) {
-      throw new Error("no active session; call setup() first");
+      throw new Error("no active session; call setupTest() first");
     }
     return id;
   }
@@ -223,7 +223,7 @@ class Runtime {
     if (this.activeSession?.sessionId) {
       return this.activeSession;
     }
-    return this.setup(options);
+    return this.setupTest(options);
   }
 
   scenarioName(name) {
@@ -234,7 +234,7 @@ class Runtime {
     return this.pendingScenarioName;
   }
 
-  async setup(options = {}) {
+  async setupTest(options = {}) {
     const schemas = Array.isArray(options.schemas) ? options.schemas : this.defaultSchemas;
     const split = splitSchemasByRole(schemas);
     const sutSchemas = Array.isArray(options.sutSchemas) ? options.sutSchemas : split.sutSchemas;
@@ -250,7 +250,7 @@ class Runtime {
       fake_schemas: fakeSchemas
     };
 
-    const session = await this.client.setup(payload);
+    const session = await this.client.setupTest(payload);
     this.activeSession = {
       sessionId: session.session_id,
       name: session.name,
@@ -269,13 +269,13 @@ class Runtime {
     return this.client.queueResponse(request);
   }
 
-  async reset(options = {}) {
+  async teardownTest(options = {}) {
     const sessionId = options.sessionId || options.session_id || this.activeSession?.sessionId;
     if (!sessionId) {
       return { status: "idle" };
     }
 
-    const response = await this.client.teardown({
+    const response = await this.client.teardownTest({
       session_id: sessionId,
       status: options.status || "pass"
     });
@@ -309,9 +309,9 @@ class Runtime {
     });
   }
 
-  async kill() {
+  async killServer() {
     this.activeSession = null;
-    return this.client.kill();
+    return this.client.killServer();
   }
 
   async listQueued(options = {}) {
@@ -324,12 +324,12 @@ class Runtime {
     return this.client.listResponded(sessionId);
   }
 
-  async inspectResponse(id, options = {}) {
+  async getResponse(id, options = {}) {
     if (!id || typeof id !== "string") {
       throw new Error("response id is required");
     }
     const sessionId = this._requireSession(options.sessionId || options.session_id);
-    return this.client.inspectResponse(sessionId, id);
+    return this.client.getResponse(sessionId, id);
   }
 
   async request(options = {}) {
@@ -346,7 +346,7 @@ class Runtime {
 
     const proxyBaseUrl = options.proxyBaseUrl || options.proxy_base_url || session.proxyListen;
     if (!proxyBaseUrl) {
-      throw new Error("proxy listen address is not available; check start() response");
+      throw new Error("proxy listen address is not available; check startServer() response");
     }
 
     const targetUrl = toURL(options.path, sutBaseUrl);
@@ -466,18 +466,18 @@ class Runtime {
   // Compatibility helper that mirrors old stop semantics.
   async stop(options = {}) {
     if (this.activeSession?.sessionId) {
-      await this.reset({ status: options.status || "pass" });
+      await this.teardownTest({ status: options.status || "pass" });
     }
     if (options.kill === false) {
       return { status: "stopped" };
     }
-    return this.kill();
+    return this.killServer();
   }
 }
 
-async function start(config = {}) {
+async function startServer(config = {}) {
   if (!config || typeof config !== "object" || Array.isArray(config)) {
-    throw new Error("start config must be an object");
+    throw new Error("startServer config must be an object");
   }
 
   const client = new CoreClient({
@@ -499,10 +499,10 @@ async function start(config = {}) {
       : undefined
   };
 
-  const runtimeInfo = await client.startRuntime(payload);
+  const runtimeInfo = await client.startServer(payload);
   return new Runtime(client, config, runtimeInfo);
 }
 
 module.exports = {
-  start
+  startServer
 };

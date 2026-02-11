@@ -85,4 +85,4 @@ Template files included in this repo:
 
 - Templates are rendered per matched request.
 - Queue matching is stack-based (latest queued response is consumed first).
-- Use deterministic IDs in tests so `inspectResponse(id)` can be used for assertions.
+- Use deterministic IDs in tests so `getResponse(id)` can be used for assertions.

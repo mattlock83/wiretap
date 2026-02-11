@@ -1,5 +1,5 @@
 const { spawn } = require("node:child_process");
-const { start } = require("../../sdk/js/src/index");
+const { startServer } = require("../../sdk/js/src/index");
 
 const SCHEMAS = [
   {
@@ -109,7 +109,7 @@ function resolveBaseUrl() {
 async function startRuntime() {
   const baseUrl = resolveBaseUrl();
   const paymentListen = process.env.PAYMENT_SUT_LISTEN || "127.0.0.1:18110";
-  return start({
+  return startServer({
     baseUrl,
     proxy: process.env.PHROND_PROXY_LISTEN ? { listenAddr: process.env.PHROND_PROXY_LISTEN } : true,
     mockServer: process.env.PHROND_MOCK_LISTEN ? { listenAddr: process.env.PHROND_MOCK_LISTEN } : true,
@@ -123,7 +123,7 @@ async function startRuntime() {
 async function setupComplexCase(runtime, options = {}) {
   const paymentListen = options.paymentListen || process.env.PAYMENT_SUT_LISTEN || "127.0.0.1:18110";
   const transactionListen = options.transactionListen || process.env.TRANSACTION_SERVICE_LISTEN || "127.0.0.1:18111";
-  const session = await runtime.setup({ name: options.name });
+  const session = await runtime.setupTest({ name: options.name });
 
   const transactionService = await startService({
     listen: transactionListen,
@@ -156,7 +156,7 @@ async function setupComplexCase(runtime, options = {}) {
 async function resetComplexCase(runtime, services, options = {}) {
   const errors = [];
   try {
-    await runtime.reset({ status: options.status || "pass" });
+    await runtime.teardownTest({ status: options.status || "pass" });
   } catch (err) {
     errors.push(err);
   }
