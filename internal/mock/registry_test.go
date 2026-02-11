@@ -68,7 +68,15 @@ func TestRegistryOrder(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected match")
 	}
+	if stub.ID != "b" {
+		t.Fatalf("expected newest stub to match first, got %q", stub.ID)
+	}
+
+	stub, ok = registry.Match(req, nil)
+	if !ok {
+		t.Fatalf("expected second match")
+	}
 	if stub.ID != "a" {
-		t.Fatalf("expected first stub to match, got %q", stub.ID)
+		t.Fatalf("expected older stub to match second, got %q", stub.ID)
 	}
 }

@@ -1,5 +1,4 @@
 const { spawn } = require("node:child_process");
-const assert = require("node:assert/strict");
 const { start } = require("../../sdk/js/src/index");
 
 const SCHEMAS = [
@@ -87,9 +86,9 @@ async function startService(options = {}) {
 }
 
 async function registerAccounts(phrond, accounts) {
-  for (const account of accounts) {
-    await phrond.mock.http({
-      id: `account-${account.id}`,
+  for (const [index, account] of accounts.entries()) {
+    await phrond.queueResponse({
+      id: `account-${account.id}-${index + 1}`,
       match: { method: "GET", path: `/accounts/${account.id}` },
       response: {
         status: 200,
@@ -100,25 +99,31 @@ async function registerAccounts(phrond, accounts) {
   }
 }
 
-async function createRuntime() {
-  const baseUrl =
+function resolveBaseUrl() {
+  return (
     process.env.PHROND_BASE_URL ||
-    (process.env.PHROND_HTTP_LISTEN ? `http://${process.env.PHROND_HTTP_LISTEN}` : "http://127.0.0.1:18000");
-  const paymentListen = process.env.PAYMENT_SUT_LISTEN || "127.0.0.1:18110";
-  const transactionListen = process.env.TRANSACTION_SERVICE_LISTEN || "127.0.0.1:18111";
+    (process.env.PHROND_HTTP_LISTEN ? `http://${process.env.PHROND_HTTP_LISTEN}` : "http://127.0.0.1:18000")
+  );
+}
 
-  const session = await start({
+async function startRuntime() {
+  const baseUrl = resolveBaseUrl();
+  const paymentListen = process.env.PAYMENT_SUT_LISTEN || "127.0.0.1:18110";
+  return start({
     baseUrl,
-    proxy: true,
-    mockServer: true,
+    proxy: process.env.PHROND_PROXY_LISTEN ? { listenAddr: process.env.PHROND_PROXY_LISTEN } : true,
+    mockServer: process.env.PHROND_MOCK_LISTEN ? { listenAddr: process.env.PHROND_MOCK_LISTEN } : true,
     schemas: SCHEMAS,
     sutBaseUrl: `http://${paymentListen}`,
     strictSchema: true,
     meta: { suite: "complex-rest" }
   });
+}
 
-  const mockAddr = session.runtime.mockServer?.addr;
-  assert.ok(mockAddr, "mock server address must be returned");
+async function setupComplexCase(runtime, options = {}) {
+  const paymentListen = options.paymentListen || process.env.PAYMENT_SUT_LISTEN || "127.0.0.1:18110";
+  const transactionListen = options.transactionListen || process.env.TRANSACTION_SERVICE_LISTEN || "127.0.0.1:18111";
+  const session = await runtime.setup({ name: options.name });
 
   const transactionService = await startService({
     listen: transactionListen,
@@ -126,7 +131,7 @@ async function createRuntime() {
     command: ["go", "run", "./examples/demo-apps/complex-rest/transaction-service"],
     env: {
       TRANSACTION_SERVICE_LISTEN: transactionListen,
-      ACCOUNT_BASE_URL: `http://${mockAddr}`
+      ACCOUNT_BASE_URL: session.mockBaseUrl
     }
   });
 
@@ -136,25 +141,43 @@ async function createRuntime() {
     command: ["go", "run", "./examples/demo-apps/complex-rest/payment-sut"],
     env: {
       PAYMENT_SUT_LISTEN: paymentListen,
-      ACCOUNT_BASE_URL: `http://${mockAddr}`,
+      ACCOUNT_BASE_URL: session.mockBaseUrl,
       TRANSACTION_BASE_URL: `http://${transactionService.listen}`
     }
   });
 
   return {
-    runtime: session.runtime,
-    mock: session.mock,
-    http: session.http,
-    scenarioName: session.scenarioName.bind(session),
-    expectCall: session.expectCall.bind(session),
-    reset: session.reset.bind(session),
-    stop: session.stop.bind(session),
+    session,
     paymentSut,
     transactionService
   };
 }
 
+async function resetComplexCase(runtime, services, options = {}) {
+  const errors = [];
+  try {
+    await runtime.reset({ status: options.status || "pass" });
+  } catch (err) {
+    errors.push(err);
+  }
+  try {
+    await services?.paymentSut?.stop?.();
+  } catch (err) {
+    errors.push(err);
+  }
+  try {
+    await services?.transactionService?.stop?.();
+  } catch (err) {
+    errors.push(err);
+  }
+  if (errors.length > 0) {
+    throw errors[0];
+  }
+}
+
 module.exports = {
-  createRuntime,
+  startRuntime,
+  setupComplexCase,
+  resetComplexCase,
   registerAccounts
 };

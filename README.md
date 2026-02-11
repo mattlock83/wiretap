@@ -46,7 +46,7 @@ OpenAPI example (inline):
 
 ## JS SDK
 
-See `sdk/js/README.md` for API details. The SDK enforces schemas on `startTestCase` and returns `schemaValidation` in `finishTestCase` responses.
+See `sdk/js/README.md` for SDK API details.
 
 ## Coverage Report CLI
 
@@ -66,3 +66,5 @@ The report includes:
 - Requirements and design: `docs/testing-tool-requirements-and-design.md`
 - Artifact OpenAPI schema: `docs/artifact-openapi.yaml`
 - HTTPS trust: `docs/https-trust.md`
+- Runtime HTTP API: `docs/runtime-api.md`
+- Mock template format: `docs/mock-template-format.md`

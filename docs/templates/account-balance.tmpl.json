@@ -1,0 +1,10 @@
+{
+  "id": "{{cel \"query['account_id']\"}}",
+  "name": "Template User",
+  "status": "active",
+  "currency": "USD",
+  "balance": {{cel \"1200\"}},
+  "generated_at": "{{cel \"now\"}}",
+  "expires_at": "{{cel \"now + duration('24h')\"}}",
+  "request": {{celJSON "{'method': method, 'path': path, 'query': query}"}}
+}

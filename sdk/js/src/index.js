@@ -1,11 +1,14 @@
 const DEFAULT_BASE_URL = "http://127.0.0.1:18000";
 
 function normalizeComponentConfig(value, name) {
-  if (value === undefined || value === null || value === false) {
-    return null;
+  if (value === undefined || value === null) {
+    return {};
   }
   if (value === true) {
     return {};
+  }
+  if (value === false) {
+    return null;
   }
   if (typeof value !== "object" || Array.isArray(value)) {
     throw new Error(`${name} config must be an object, true, or false`);
@@ -25,20 +28,6 @@ function normalizeStartPayload(config) {
   return payload;
 }
 
-function resolveProxyBaseUrl(proxyInfo) {
-  if (!proxyInfo || typeof proxyInfo !== "object") {
-    return null;
-  }
-  const listenAddr = proxyInfo.listen_addr || proxyInfo.ListenAddr || proxyInfo.listenAddr;
-  if (!listenAddr || typeof listenAddr !== "string") {
-    return null;
-  }
-  if (listenAddr.startsWith("http://") || listenAddr.startsWith("https://")) {
-    return listenAddr;
-  }
-  return `http://${listenAddr}`;
-}
-
 function toURL(value, baseUrl) {
   if (!value || typeof value !== "string") {
     throw new Error("request path is required");
@@ -56,84 +45,96 @@ function toURL(value, baseUrl) {
   return new URL(value, baseUrl);
 }
 
+function pickFirstString(...values) {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim() !== "") {
+      return value;
+    }
+  }
+  return "";
+}
+
+function toSnakeCaseQueuePayload(payload, sessionId) {
+  const match = payload?.match || {};
+  const response = payload?.response || {};
+
+  return {
+    session_id: payload?.sessionId || payload?.session_id || sessionId,
+    id: payload?.id,
+    match: {
+      method: match.method,
+      path: match.path,
+      headers: match.headers,
+      query: match.query,
+      body: match.body,
+      body_contains: match.bodyContains || match.body_contains
+    },
+    response: {
+      status: response.status,
+      delay_ms: response.delayMs ?? response.delay_ms,
+      headers: response.headers,
+      body: response.body,
+      body_file: response.bodyFile || response.body_file,
+      connection_error: Boolean(response.connectionError || response.connection_error),
+      ssl_error: Boolean(response.sslError || response.ssl_error)
+    }
+  };
+}
+
+function splitSchemasByRole(schemas = []) {
+  const sutSchemas = [];
+  const fakeSchemas = [];
+  for (const schema of schemas) {
+    const role = String(schema?.role || "sut").toLowerCase();
+    if (role === "fake") {
+      fakeSchemas.push(schema);
+    } else {
+      sutSchemas.push(schema);
+    }
+  }
+  return { sutSchemas, fakeSchemas };
+}
+
 class CoreClient {
   constructor(config = {}) {
     this.baseUrl = config.baseUrl || DEFAULT_BASE_URL;
     this.timeoutMs = config.timeoutMs || 0;
   }
 
-  async startLifecycle() {
-    return this._post("/v1/lifecycle/start", {});
+  async startRuntime(payload) {
+    return this._post("/v1/start", payload || {});
   }
 
-  async stopLifecycle() {
-    return this._post("/v1/lifecycle/stop", {});
+  async setup(payload) {
+    return this._post("/v1/setup", payload || {});
   }
 
-  async startProxy(config) {
-    return this._post("/v1/proxy/start", config || {});
+  async queueResponse(payload) {
+    return this._post("/v1/queue-response", payload || {});
   }
 
-  async startMockServer(config) {
-    return this._post("/v1/mock/start", config || {});
+  async teardown(payload) {
+    return this._post("/v1/teardown", payload || {});
   }
 
-  async startTestCase(name, options = {}) {
-    const payload = {
-      name,
-      meta: options.meta || {},
-      tags: options.tags,
-      sut_base_url: options.sutBaseUrl,
-      schemas: options.schemas
-    };
-    return this._post("/v1/testcases/start", payload);
+  async report(payload) {
+    return this._post("/v1/report", payload || {});
   }
 
-  async finishTestCase(status) {
-    const resp = await this._post("/v1/testcases/finish", { status });
-    if (resp && resp.schema_validation && !resp.schemaValidation) {
-      resp.schemaValidation = resp.schema_validation;
-    }
-    if (resp && resp.artifact && resp.artifact.meta && resp.artifact.meta.schema_validation && !resp.schemaValidation) {
-      resp.schemaValidation = resp.artifact.meta.schema_validation;
-    }
-    return resp;
+  async kill() {
+    return this._post("/v1/kill", {});
   }
 
-  async registerStub(stub) {
-    return this._post("/v1/stubs", stub);
+  async listQueued(sessionId) {
+    return this._get(`/v1/listQueued?session_id=${encodeURIComponent(sessionId)}`);
   }
 
-  async clearStubs() {
-    return this._post("/v1/stubs/clear", {});
+  async listResponded(sessionId) {
+    return this._get(`/v1/listResponded?session_id=${encodeURIComponent(sessionId)}`);
   }
 
-  async getMockExchanges() {
-    return this._get("/v1/mock/exchanges");
-  }
-
-  async downloadArtifact(filePath) {
-    if (!filePath) {
-      throw new Error("filePath is required");
-    }
-    if (typeof fetch !== "function") {
-      throw new Error("global fetch is not available; require Node.js >= 18");
-    }
-
-    const url = new URL("/v1/artifact", this.baseUrl);
-    const res = await fetch(url);
-    if (!res.ok) {
-      const text = await res.text();
-      const err = new Error(`artifact download failed: ${res.status}`);
-      err.status = res.status;
-      err.body = text;
-      throw err;
-    }
-
-    const { writeFile } = require("node:fs/promises");
-    const buffer = Buffer.from(await res.arrayBuffer());
-    await writeFile(filePath, buffer);
-    return { path: filePath };
+  async inspectResponse(sessionId, id) {
+    return this._get(`/v1/inspectResponse?session_id=${encodeURIComponent(sessionId)}&id=${encodeURIComponent(id)}`);
   }
 
   async _get(path) {
@@ -185,30 +186,18 @@ class CoreClient {
   }
 }
 
-class PhrondSession {
-  constructor(client, options = {}, runtime = {}) {
+class Runtime {
+  constructor(client, config = {}, runtimeInfo = {}) {
     this.client = client;
-    this.runtime = runtime;
+    this.config = config;
+    this.runtimeInfo = runtimeInfo;
 
-    this.schemas = Array.isArray(options.schemas) ? [...options.schemas] : [];
-    this.sutBaseUrl = options.sutBaseUrl || null;
-    this.tags = Array.isArray(options.tags) ? [...options.tags] : undefined;
-    this.meta = options.meta && typeof options.meta === "object" && !Array.isArray(options.meta) ? { ...options.meta } : {};
-    this.strictSchema = options.strictSchema !== false;
-    this.scenarioPrefix = options.scenarioPrefix || "scenario";
+    this.defaultSutBaseUrl = config.sutBaseUrl || null;
+    this.defaultSchemas = Array.isArray(config.schemas) ? [...config.schemas] : [];
+    this.strictSchema = config.strictSchema !== false;
+    this.pendingScenarioName = "";
 
-    this.scenarioCounter = 0;
-    this.pendingScenarioName = null;
-    this.caseActive = false;
-    this.currentScenarioName = "";
-    this.lastFinish = null;
-    this.caseHistory = [];
-    this.stopped = false;
-
-    this.mock = {
-      http: (stub) => this.mockHttp(stub),
-      clear: (options) => this.clearMocks(options)
-    };
+    this.activeSession = null;
 
     this.http = {
       request: (options) => this.request(options),
@@ -218,150 +207,157 @@ class PhrondSession {
     };
   }
 
-  async scenarioName(name, run) {
-    this._assertNotStopped();
-    if (typeof name !== "string" || name.trim() === "") {
-      throw new Error("scenarioName must be a non-empty string");
+  _requireSession(sessionId) {
+    const id = sessionId || this.activeSession?.sessionId;
+    if (!id) {
+      throw new Error("no active session; call setup() first");
     }
-    if (this.caseActive) {
-      throw new Error("scenarioName must be set before the first mock or request in a scenario");
+    return id;
+  }
+
+  async _ensureSession(options = {}) {
+    const explicitSessionID = options.sessionId || options.session_id;
+    if (explicitSessionID) {
+      return { sessionId: explicitSessionID };
+    }
+    if (this.activeSession?.sessionId) {
+      return this.activeSession;
+    }
+    return this.setup(options);
+  }
+
+  scenarioName(name) {
+    if (typeof name !== "string" || name.trim() === "") {
+      throw new Error("scenario name is required");
     }
     this.pendingScenarioName = name.trim();
+    return this.pendingScenarioName;
+  }
 
-    if (typeof run === "function") {
-      return run(this);
-    }
-    return this;
+  async setup(options = {}) {
+    const schemas = Array.isArray(options.schemas) ? options.schemas : this.defaultSchemas;
+    const split = splitSchemasByRole(schemas);
+    const sutSchemas = Array.isArray(options.sutSchemas) ? options.sutSchemas : split.sutSchemas;
+    const fakeSchemas = Array.isArray(options.fakeSchemas) ? options.fakeSchemas : split.fakeSchemas;
+    const scenarioName = pickFirstString(options.name, options.scenarioName, this.pendingScenarioName);
+
+    const payload = {
+      name: scenarioName || undefined,
+      tags: options.tags,
+      meta: options.meta,
+      sut_base_url: options.sutBaseUrl || options.sut_base_url || this.defaultSutBaseUrl,
+      sut_schemas: sutSchemas,
+      fake_schemas: fakeSchemas
+    };
+
+    const session = await this.client.setup(payload);
+    this.activeSession = {
+      sessionId: session.session_id,
+      name: session.name,
+      sutBaseUrl: payload.sut_base_url,
+      proxyListen: session.proxy_listen || this.runtimeInfo?.proxy?.listen_addr,
+      mockBaseUrl: session.mock_base_url
+    };
+    this.pendingScenarioName = "";
+    return this.activeSession;
+  }
+
+  async queueResponse(payload, options = {}) {
+    await this._ensureSession(options);
+    const sessionId = this._requireSession(options.sessionId || options.session_id || payload?.sessionId || payload?.session_id);
+    const request = toSnakeCaseQueuePayload(payload || {}, sessionId);
+    return this.client.queueResponse(request);
   }
 
   async reset(options = {}) {
-    this._assertNotStopped();
-    let finish = null;
-
-    if (this.caseActive) {
-      finish = await this._finishActiveCase({
-        status: options.status || "pass",
-        strictSchema: options.strictSchema
-      });
+    const sessionId = options.sessionId || options.session_id || this.activeSession?.sessionId;
+    if (!sessionId) {
+      return { status: "idle" };
     }
 
-    if (options.clearMocks !== false) {
-      await this.clearMocks();
+    const response = await this.client.teardown({
+      session_id: sessionId,
+      status: options.status || "pass"
+    });
+
+    if (this.activeSession?.sessionId === sessionId) {
+      this.activeSession = null;
     }
 
-    if (typeof options.nextScenarioName === "string" && options.nextScenarioName.trim() !== "") {
-      this.pendingScenarioName = options.nextScenarioName.trim();
-    } else {
-      this.pendingScenarioName = null;
-    }
-
-    return finish;
-  }
-
-  async stop(options = {}) {
-    if (this.stopped) {
-      return { finish: this.lastFinish, runtime: this.runtime, finishedCases: [...this.caseHistory] };
-    }
-
-    let finish = null;
-    let finishErr = null;
-
-    const writeArtifact = options.writeArtifact !== false;
-    if (writeArtifact) {
-      try {
-        if (!this.caseActive) {
-          await this._ensureCase();
-        }
-        finish = await this._finishActiveCase({
-          status: options.status || "pass",
-          strictSchema: options.strictSchema
-        });
-      } catch (err) {
-        finishErr = err;
+    if (this.strictSchema) {
+      const schemaValidation = response?.schema_validation;
+      if (schemaValidation?.status && schemaValidation.status !== "pass") {
+        const errors = Array.isArray(schemaValidation.errors) ? schemaValidation.errors : [];
+        const summary = errors.length > 0 ? errors.map((entry) => entry.message || "schema violation").join("; ") : "schema validation failed";
+        const err = new Error(summary);
+        err.schemaValidation = schemaValidation;
+        err.response = response;
+        throw err;
       }
     }
 
-    let stopErr = null;
-    try {
-      await this.client.stopLifecycle();
-    } catch (err) {
-      stopErr = err;
-    }
-
-    this.stopped = true;
-
-    if (finishErr) {
-      if (stopErr) {
-        finishErr.stopError = stopErr;
-      }
-      throw finishErr;
-    }
-    if (stopErr) {
-      throw stopErr;
-    }
-
-    return { finish, runtime: this.runtime, finishedCases: [...this.caseHistory] };
+    return response;
   }
 
-  async mockHttp(stub) {
-    this._assertNotStopped();
-    await this._ensureCase();
-    return this.client.registerStub(stub);
+  async report(options = {}) {
+    return this.client.report({
+      artifacts_dir: options.artifactsDir || options.artifacts_dir,
+      sut_name: options.sutName || options.sut_name,
+      include_artifacts: options.includeArtifacts || options.include_artifacts || false,
+      yaml_path: options.yamlPath || options.yaml_path,
+      html_path: options.htmlPath || options.html_path
+    });
   }
 
-  async clearMocks(options = {}) {
-    this._assertNotStopped();
-    const clearHttp = options.http !== false;
-    const result = {};
-
-    if (clearHttp && this.runtime.mockServer) {
-      result.http = await this.client.clearStubs();
-    }
-
-    return result;
+  async kill() {
+    this.activeSession = null;
+    return this.client.kill();
   }
 
-  async expectCall(expectation) {
-    this._assertNotStopped();
-    await this._ensureCase();
+  async listQueued(options = {}) {
+    const sessionId = this._requireSession(options.sessionId || options.session_id);
+    return this.client.listQueued(sessionId);
+  }
 
-    const query = normalizeExpectation(expectation);
-    const exchanges = await this.client.getMockExchanges();
-    const matches = Array.isArray(exchanges) ? exchanges.filter((exchange) => matchExchange(exchange, query)) : [];
+  async listResponded(options = {}) {
+    const sessionId = this._requireSession(options.sessionId || options.session_id);
+    return this.client.listResponded(sessionId);
+  }
 
-    if (matches.length < query.times) {
-      throw new Error(`expected ${query.times} call(s) matching ${query.method || "*"} ${query.path}, found ${matches.length}`);
+  async inspectResponse(id, options = {}) {
+    if (!id || typeof id !== "string") {
+      throw new Error("response id is required");
     }
-
-    const latest = matches[matches.length - 1];
-    return normalizeOutboundRequest(latest);
+    const sessionId = this._requireSession(options.sessionId || options.session_id);
+    return this.client.inspectResponse(sessionId, id);
   }
 
   async request(options = {}) {
-    this._assertNotStopped();
     if (!options || typeof options !== "object" || Array.isArray(options)) {
       throw new Error("request options must be an object");
     }
-
-    await this._ensureCase();
+    const session = await this._ensureSession(options);
 
     const method = (options.method || "GET").toUpperCase();
-    const sutBaseUrl = options.sutBaseUrl || this.sutBaseUrl;
+    const sutBaseUrl = options.sutBaseUrl || options.sut_base_url || session.sutBaseUrl || this.defaultSutBaseUrl;
     if (!sutBaseUrl) {
-      throw new Error("sutBaseUrl is required; pass it to start({ sutBaseUrl }) or runtime.http.request({ sutBaseUrl })");
+      throw new Error("sutBaseUrl is required");
     }
 
-    const proxyBaseUrl = options.proxyBaseUrl || resolveProxyBaseUrl(this.runtime.proxy);
+    const proxyBaseUrl = options.proxyBaseUrl || options.proxy_base_url || session.proxyListen;
     if (!proxyBaseUrl) {
-      throw new Error("proxy is not configured; start with proxy: true to use runtime.http helpers");
+      throw new Error("proxy listen address is not available; check start() response");
     }
 
     const targetUrl = toURL(options.path, sutBaseUrl);
-    const proxyUrl = toURL(proxyBaseUrl);
+    const proxyUrl = toURL(proxyBaseUrl.startsWith("http") ? proxyBaseUrl : `http://${proxyBaseUrl}`);
+
+    const headers = { ...(options.headers || {}) };
+    headers["X-Phrond-Session-Id"] = session.sessionId;
 
     return this._requestViaProxy(proxyUrl, targetUrl, {
       method,
-      headers: options.headers,
+      headers,
       body: options.body
     });
   }
@@ -383,80 +379,6 @@ class PhrondSession {
       ...options,
       headers
     });
-  }
-
-  async _ensureCase() {
-    if (this.caseActive) {
-      return;
-    }
-
-    const name = this.pendingScenarioName || this._nextScenarioName();
-    this.pendingScenarioName = null;
-
-    await this.client.startTestCase(name, {
-      meta: this.meta,
-      tags: this.tags,
-      sutBaseUrl: this.sutBaseUrl,
-      schemas: this.schemas
-    });
-
-    this.caseActive = true;
-    this.currentScenarioName = name;
-  }
-
-  _nextScenarioName() {
-    this.scenarioCounter += 1;
-    return `${this.scenarioPrefix}-${Date.now()}-${this.scenarioCounter}`;
-  }
-
-  async _finishActiveCase(options = {}) {
-    if (!this.caseActive) {
-      return null;
-    }
-
-    const status = options.status || "pass";
-    const finish = await this.client.finishTestCase(status);
-
-    this.caseActive = false;
-    this.currentScenarioName = "";
-    this.lastFinish = finish;
-    this.caseHistory.push(finish);
-
-    const strictSchema = options.strictSchema !== undefined ? options.strictSchema : this.strictSchema;
-    this._throwOnSchemaFailure(finish, strictSchema, status);
-
-    return finish;
-  }
-
-  _throwOnSchemaFailure(finish, strictSchema, requestedStatus) {
-    if (!strictSchema || !finish) {
-      return;
-    }
-
-    const schema = finish.schemaValidation || finish.schema_validation || finish.artifact?.schema_validation || finish.artifact?.meta?.schema_validation;
-    const schemaStatus = schema?.status;
-
-    if (schemaStatus && schemaStatus !== "pass") {
-      const errors = Array.isArray(schema.errors) ? schema.errors : [];
-      const summary = errors.length > 0 ? errors.map((entry) => entry.message || "schema violation").join("; ") : "schema validation failed";
-      const err = new Error(summary);
-      err.schemaValidation = schema;
-      err.finish = finish;
-      throw err;
-    }
-
-    const testcaseStatus = finish.artifact?.testcase?.status;
-    if (requestedStatus === "pass" && testcaseStatus && testcaseStatus !== "pass") {
-      const err = new Error(`testcase finished with status ${testcaseStatus}`);
-      err.finish = finish;
-      throw err;
-    }
-  }
-
-  _assertNotStopped() {
-    if (this.stopped) {
-      throw new Error("runtime session already stopped");
-    }
   }
 
   async _requestViaProxy(proxyUrl, targetUrl, options = {}) {
@@ -540,87 +462,22 @@ class PhrondSession {
       req.end();
     });
   }
-}
 
-function normalizeExpectation(expectation) {
-  if (typeof expectation === "string") {
-    return {
-      path: expectation,
-      method: "",
-      times: 1
-    };
+  // Compatibility helper that mirrors old stop semantics.
+  async stop(options = {}) {
+    if (this.activeSession?.sessionId) {
+      await this.reset({ status: options.status || "pass" });
+    }
+    if (options.kill === false) {
+      return { status: "stopped" };
+    }
+    return this.kill();
   }
-
-  if (!expectation || typeof expectation !== "object" || Array.isArray(expectation)) {
-    throw new Error("expectCall expects a path string or an expectation object");
-  }
-
-  const path = expectation.path || expectation.url || "";
-  if (!path || typeof path !== "string") {
-    throw new Error("expectCall requires expectation.path");
-  }
-
-  return {
-    path,
-    method: expectation.method ? String(expectation.method).toUpperCase() : "",
-    times: Number.isInteger(expectation.times) && expectation.times > 0 ? expectation.times : 1,
-    bodyContains: typeof expectation.bodyContains === "string" ? expectation.bodyContains : "",
-    stubId: expectation.stubId || expectation.stub_id || ""
-  };
-}
-
-function matchExchange(exchange, expectation) {
-  if (!exchange || typeof exchange !== "object") {
-    return false;
-  }
-
-  const req = exchange.Request || {};
-
-  if (expectation.method && String(req.Method || "").toUpperCase() !== expectation.method) {
-    return false;
-  }
-
-  const reqPath = String(req.Path || "");
-  const reqURL = String(req.URL || "");
-  if (reqPath !== expectation.path && reqURL !== expectation.path) {
-    return false;
-  }
-
-  if (expectation.bodyContains && !String(req.Body || "").includes(expectation.bodyContains)) {
-    return false;
-  }
-
-  if (expectation.stubId && String(exchange.MatchedStubID || "") !== expectation.stubId) {
-    return false;
-  }
-
-  return true;
-}
-
-function normalizeOutboundRequest(exchange) {
-  if (!exchange || typeof exchange !== "object") {
-    return null;
-  }
-  return {
-    method: exchange.Request?.Method || "",
-    path: exchange.Request?.Path || "",
-    url: exchange.Request?.URL || "",
-    headers: exchange.Request?.Headers || {},
-    query: exchange.Request?.Query || {},
-    body: exchange.Request?.Body || "",
-    matchedStubId: exchange.MatchedStubID || "",
-    startedAt: exchange.StartedAt,
-    finishedAt: exchange.FinishedAt
-  };
 }
 
 async function start(config = {}) {
   if (!config || typeof config !== "object" || Array.isArray(config)) {
     throw new Error("start config must be an object");
-  }
-
-  if (!Array.isArray(config.schemas) || config.schemas.length === 0) {
-    throw new Error("schemas are required; pass start({ schemas: [...] })");
   }
 
   const client = new CoreClient({
@@ -631,26 +488,19 @@ async function start(config = {}) {
   const proxyConfig = normalizeComponentConfig(config.proxy, "proxy");
   const mockServerConfig = normalizeComponentConfig(config.mockServer, "mockServer");
 
-  await client.startLifecycle();
+  const payload = {
+    proxy: proxyConfig === null ? undefined : normalizeStartPayload(proxyConfig),
+    mock: mockServerConfig === null ? undefined : normalizeStartPayload(mockServerConfig),
+    stack_size: config.stackSize || config.stack_size,
+    record_responses: config.recordResponses
+      ? {
+          dependency_url: config.recordResponses.dependencyUrl || config.recordResponses.dependency_url || ""
+        }
+      : undefined
+  };
 
-  const runtime = {};
-  try {
-    if (proxyConfig) {
-      runtime.proxy = await client.startProxy(normalizeStartPayload(proxyConfig));
-    }
-    if (mockServerConfig) {
-      runtime.mockServer = await client.startMockServer(normalizeStartPayload(mockServerConfig));
-    }
-
-    return new PhrondSession(client, config, runtime);
-  } catch (err) {
-    try {
-      await client.stopLifecycle();
-    } catch (_) {
-      // keep original startup error
-    }
-    throw err;
-  }
+  const runtimeInfo = await client.startRuntime(payload);
+  return new Runtime(client, config, runtimeInfo);
 }
 
 module.exports = {

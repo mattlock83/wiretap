@@ -61,6 +61,7 @@ type Recorder interface {
 
 // HTTPExchange captures a proxied request/response pair.
 type HTTPExchange struct {
+	SessionID       string
 	Method          string
 	URL             string
 	RequestHeaders  map[string][]string
@@ -205,6 +206,8 @@ func (s *Server) handleHTTP(w http.ResponseWriter, r *http.Request) {
 	r.Body = io.NopCloser(bytes.NewReader(reqBody))
 
 	req := r.Clone(r.Context())
+	sessionID := req.Header.Get("X-Phrond-Session-Id")
+	req.Header.Del("X-Phrond-Session-Id")
 	if req.URL.Scheme == "" {
 		req.URL.Scheme = "http"
 	}
@@ -217,6 +220,7 @@ func (s *Server) handleHTTP(w http.ResponseWriter, r *http.Request) {
 	resp, err := transport.RoundTrip(req)
 	if err != nil {
 		s.recordHTTP(HTTPExchange{
+			SessionID:      sessionID,
 			Method:         req.Method,
 			URL:            req.URL.String(),
 			RequestHeaders: cloneHeader(req.Header),
@@ -235,6 +239,7 @@ func (s *Server) handleHTTP(w http.ResponseWriter, r *http.Request) {
 	resp.Body = io.NopCloser(bytes.NewReader(respBody))
 
 	s.recordHTTP(HTTPExchange{
+		SessionID:       sessionID,
 		Method:          req.Method,
 		URL:             req.URL.String(),
 		RequestHeaders:  cloneHeader(req.Header),
@@ -332,6 +337,8 @@ func (s *Server) proxyTLSRequests(clientTLS net.Conn) {
 		_ = req.Body.Close()
 		req.Body = io.NopCloser(bytes.NewReader(reqBody))
 
+		sessionID := req.Header.Get("X-Phrond-Session-Id")
+		req.Header.Del("X-Phrond-Session-Id")
 		req.URL.Scheme = "https"
 		if req.URL.Host == "" {
 			req.URL.Host = req.Host
@@ -342,6 +349,7 @@ func (s *Server) proxyTLSRequests(clientTLS net.Conn) {
 		resp, err := s.httpTransport(s.upstreamTLSConfig(req.URL.Host)).RoundTrip(req)
 		if err != nil {
 			s.recordHTTP(HTTPExchange{
+				SessionID:      sessionID,
 				Method:         req.Method,
 				URL:            req.URL.String(),
 				RequestHeaders: cloneHeader(req.Header),
@@ -358,6 +366,7 @@ func (s *Server) proxyTLSRequests(clientTLS net.Conn) {
 		resp.Body = io.NopCloser(bytes.NewReader(respBody))
 
 		s.recordHTTP(HTTPExchange{
+			SessionID:       sessionID,
 			Method:          req.Method,
 			URL:             req.URL.String(),
 			RequestHeaders:  cloneHeader(req.Header),

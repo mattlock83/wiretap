@@ -34,273 +34,413 @@ function readBody(req) {
   });
 }
 
-test("start initializes lifecycle and startup components with listen addresses", async () => {
+test("start initializes runtime with configured listen addresses", async (t) => {
   const requests = [];
   const server = await startServer(async (req, res) => {
     const body = await readBody(req);
     requests.push({ method: req.method, path: req.url, body });
 
     res.setHeader("content-type", "application/json");
-    if (req.url === "/v1/proxy/start") {
-      res.end(JSON.stringify({ listen_addr: "127.0.0.1:19100" }));
-      return;
-    }
-    if (req.url === "/v1/mock/start") {
-      res.end(JSON.stringify({ addr: "127.0.0.1:19101" }));
+    if (req.url === "/v1/start") {
+      res.end(
+        JSON.stringify({
+          proxy: { listen_addr: "127.0.0.1:19100" },
+          mock: { listen_addr: "127.0.0.1:19101" },
+          stack_size: 100
+        })
+      );
       return;
     }
     res.end(JSON.stringify({ status: "ok" }));
   });
+  t.after(() => server.close());
 
-  const phrond = await start({
+  const runtime = await start({
     baseUrl: server.url,
-    schemas: INLINE_OPENAPI,
     proxy: { listen_addr: "127.0.0.1:20010" },
     mockServer: { listenAddr: "127.0.0.1:20011" }
   });
-  await phrond.stop({ writeArtifact: false });
+  await runtime.kill();
 
-  assert.equal(requests[0].path, "/v1/lifecycle/start");
-  const proxyReq = requests.find((entry) => entry.path === "/v1/proxy/start");
-  const mockReq = requests.find((entry) => entry.path === "/v1/mock/start");
-  assert.deepEqual(JSON.parse(proxyReq.body), { listen_addr: "127.0.0.1:20010" });
-  assert.deepEqual(JSON.parse(mockReq.body), { listen_addr: "127.0.0.1:20011" });
-  assert.equal(requests.at(-1).path, "/v1/lifecycle/stop");
-
-  await server.close();
+  assert.equal(requests[0].path, "/v1/start");
+  assert.deepEqual(JSON.parse(requests[0].body), {
+    proxy: { listen_addr: "127.0.0.1:20010" },
+    mock: { listen_addr: "127.0.0.1:20011" }
+  });
 });
 
-test("mocking lazily starts a scenario and auto-generates a scenario name", async () => {
+test("scenarioName is applied when setup is auto-started by queueResponse", async (t) => {
   const requests = [];
   const server = await startServer(async (req, res) => {
     const body = await readBody(req);
     requests.push({ method: req.method, path: req.url, body });
 
     res.setHeader("content-type", "application/json");
-    if (req.url === "/v1/mock/start") {
-      res.end(JSON.stringify({ addr: "127.0.0.1:19101" }));
+    if (req.url === "/v1/start") {
+      res.end(
+        JSON.stringify({
+          proxy: { listen_addr: "127.0.0.1:19100" },
+          mock: { listen_addr: "127.0.0.1:19101" }
+        })
+      );
       return;
     }
-    if (req.url === "/v1/testcases/finish") {
-      res.end(JSON.stringify({
-        path: "artifacts/case.yaml",
-        schema_validation: { status: "pass", errors: null },
-        artifact: { testcase: { status: "pass" } }
-      }));
+    if (req.url === "/v1/setup") {
+      const payload = JSON.parse(body || "{}");
+      res.end(
+        JSON.stringify({
+          session_id: "session-1",
+          name: payload.name || "scenario-1",
+          proxy_listen: "http://127.0.0.1:19100",
+          mock_base_url: "http://127.0.0.1:19101/__phrond/session/session-1"
+        })
+      );
       return;
     }
-    res.end(JSON.stringify({ status: "ok" }));
-  });
-
-  const phrond = await start({
-    baseUrl: server.url,
-    schemas: INLINE_OPENAPI,
-    mockServer: true
-  });
-
-  await phrond.mock.http({ id: "stub-1" });
-  await phrond.stop();
-
-  const startReq = requests.find((entry) => entry.path === "/v1/testcases/start");
-  const payload = JSON.parse(startReq.body);
-  assert.ok(/^scenario-/.test(payload.name));
-  assert.equal(payload.schemas.length, 1);
-
-  await server.close();
-});
-
-test("scenarioName overrides generated scenario id", async () => {
-  const requests = [];
-  const server = await startServer(async (req, res) => {
-    const body = await readBody(req);
-    requests.push({ method: req.method, path: req.url, body });
-
-    res.setHeader("content-type", "application/json");
-    if (req.url === "/v1/mock/start") {
-      res.end(JSON.stringify({ addr: "127.0.0.1:19101" }));
+    if (req.url === "/v1/queue-response") {
+      res.end(JSON.stringify({ status: "queued", id: "stub-1", session_id: "session-1" }));
       return;
     }
-    if (req.url === "/v1/testcases/finish") {
-      res.end(JSON.stringify({
-        path: "artifacts/case.yaml",
-        schema_validation: { status: "pass", errors: null },
-        artifact: { testcase: { status: "pass" } }
-      }));
+    if (req.url === "/v1/teardown") {
+      res.end(
+        JSON.stringify({
+          path: "artifacts/case.yaml",
+          schema_validation: { status: "pass", errors: null },
+          artifact: { testcase: { status: "pass" } }
+        })
+      );
       return;
     }
     res.end(JSON.stringify({ status: "ok" }));
   });
+  t.after(() => server.close());
 
-  const phrond = await start({
+  const runtime = await start({
     baseUrl: server.url,
     schemas: INLINE_OPENAPI,
+    sutBaseUrl: "http://sut.local:18090",
+    proxy: true,
     mockServer: true
   });
 
-  await phrond.scenarioName("submit-payment");
-  await phrond.mock.http({ id: "stub-1" });
-  await phrond.stop();
+  runtime.scenarioName("submit-payment");
+  await runtime.queueResponse({
+    id: "stub-1",
+    match: { method: "GET", path: "/accounts/acct-100" },
+    response: { status: 200, body: "{\"id\":\"acct-100\"}" }
+  });
+  await runtime.reset();
+  await runtime.kill();
 
-  const startReq = requests.find((entry) => entry.path === "/v1/testcases/start");
-  const payload = JSON.parse(startReq.body);
-  assert.equal(payload.name, "submit-payment");
-
-  await server.close();
+  const setupReq = requests.find((entry) => entry.path === "/v1/setup");
+  assert.equal(JSON.parse(setupReq.body).name, "submit-payment");
 });
 
-test("http helper sends traffic through proxy", async () => {
+test("http helper sends traffic through proxy and tags session header", async (t) => {
   const proxyRequests = [];
   const proxyServer = await startServer(async (req, res) => {
     const body = await readBody(req);
-    proxyRequests.push({ method: req.method, path: req.url, host: req.headers.host, body });
-
+    proxyRequests.push({
+      method: req.method,
+      path: req.url,
+      host: req.headers.host,
+      session: req.headers["x-phrond-session-id"],
+      body
+    });
     res.setHeader("content-type", "application/json");
     res.end(JSON.stringify({ ok: true }));
   });
+  t.after(() => proxyServer.close());
 
-  const requests = [];
-  const server = await startServer(async (req, res) => {
-    const body = await readBody(req);
-    requests.push({ method: req.method, path: req.url, body });
-
-    res.setHeader("content-type", "application/json");
-    if (req.url === "/v1/proxy/start") {
-      res.end(JSON.stringify({ listen_addr: proxyServer.url.replace("http://", "") }));
-      return;
-    }
-    if (req.url === "/v1/testcases/finish") {
-      res.end(JSON.stringify({
-        path: "artifacts/case.yaml",
-        schema_validation: { status: "pass", errors: null },
-        artifact: { testcase: { status: "pass" } }
-      }));
-      return;
-    }
-    res.end(JSON.stringify({ status: "ok" }));
-  });
-
-  const phrond = await start({
-    baseUrl: server.url,
-    sutBaseUrl: "http://sut.local:18090",
-    schemas: INLINE_OPENAPI,
-    proxy: true
-  });
-
-  const resp = await phrond.http.postJson("/process?mode=test", { id: "123" });
-  assert.equal(resp.status, 200);
-  assert.deepEqual(resp.body, { ok: true });
-
-  await phrond.stop();
-
-  assert.deepEqual(proxyRequests.map((entry) => entry.path), ["http://sut.local:18090/process?mode=test"]);
-  assert.equal(proxyRequests[0].host, "sut.local:18090");
-
-  await proxyServer.close();
-  await server.close();
-});
-
-test("stop throws when schema validation fails", async () => {
-  const requests = [];
-  const server = await startServer(async (req, res) => {
-    const body = await readBody(req);
-    requests.push({ method: req.method, path: req.url, body });
-
-    res.setHeader("content-type", "application/json");
-    if (req.url === "/v1/mock/start") {
-      res.end(JSON.stringify({ addr: "127.0.0.1:19101" }));
-      return;
-    }
-    if (req.url === "/v1/testcases/finish") {
-      res.end(JSON.stringify({
-        path: "artifacts/case.yaml",
-        schema_validation: {
-          status: "fail",
-          errors: [{ message: "unknown route" }]
-        },
-        artifact: { testcase: { status: "fail" } }
-      }));
-      return;
-    }
-    res.end(JSON.stringify({ status: "ok" }));
-  });
-
-  const phrond = await start({
-    baseUrl: server.url,
-    schemas: INLINE_OPENAPI,
-    mockServer: true
-  });
-
-  await phrond.mock.http({ id: "stub-1" });
-
-  await assert.rejects(() => phrond.stop(), /unknown route/);
-  assert.equal(requests.at(-1).path, "/v1/lifecycle/stop");
-
-  await server.close();
-});
-
-test("reset finalizes current scenario, writes artifact, and clears mocks", async () => {
-  const requests = [];
-  const server = await startServer(async (req, res) => {
-    const body = await readBody(req);
-    requests.push({ method: req.method, path: req.url, body });
-
-    res.setHeader("content-type", "application/json");
-    if (req.url === "/v1/mock/start") {
-      res.end(JSON.stringify({ addr: "127.0.0.1:19101" }));
-      return;
-    }
-    if (req.url === "/v1/testcases/finish") {
-      res.end(JSON.stringify({
-        path: "artifacts/case.yaml",
-        schema_validation: { status: "pass", errors: null },
-        artifact: { testcase: { status: "pass" } }
-      }));
-      return;
-    }
-    res.end(JSON.stringify({ status: "ok" }));
-  });
-
-  const phrond = await start({
-    baseUrl: server.url,
-    schemas: INLINE_OPENAPI,
-    mockServer: true
-  });
-
-  await phrond.scenarioName("first");
-  await phrond.mock.http({ id: "stub-1" });
-
-  const resetFinish = await phrond.reset();
-  assert.equal(resetFinish.path, "artifacts/case.yaml");
-
-  await phrond.scenarioName("second");
-  await phrond.mock.http({ id: "stub-2" });
-  await phrond.stop();
-
-  const testcaseStarts = requests.filter((entry) => entry.path === "/v1/testcases/start");
-  const testcaseFinishes = requests.filter((entry) => entry.path === "/v1/testcases/finish");
-  const clears = requests.filter((entry) => entry.path === "/v1/stubs/clear");
-
-  assert.equal(testcaseStarts.length, 2);
-  assert.equal(testcaseFinishes.length, 2);
-  assert.equal(clears.length, 1);
-
-  await server.close();
-});
-
-test("expectCall returns matching outbound SUT request", async () => {
   const server = await startServer(async (req, res) => {
     const body = await readBody(req);
     void body;
-
     res.setHeader("content-type", "application/json");
-    if (req.url === "/v1/mock/start") {
-      res.end(JSON.stringify({ addr: "127.0.0.1:19101" }));
+    if (req.url === "/v1/start") {
+      res.end(
+        JSON.stringify({
+          proxy: { listen_addr: proxyServer.url.replace("http://", "") },
+          mock: { listen_addr: "127.0.0.1:19101" }
+        })
+      );
       return;
     }
-    if (req.url === "/v1/mock/exchanges") {
+    if (req.url === "/v1/setup") {
       res.end(
-        JSON.stringify([
-          {
+        JSON.stringify({
+          session_id: "session-2",
+          name: "scenario-2",
+          proxy_listen: proxyServer.url,
+          mock_base_url: "http://127.0.0.1:19101/__phrond/session/session-2"
+        })
+      );
+      return;
+    }
+    if (req.url === "/v1/teardown") {
+      res.end(
+        JSON.stringify({
+          path: "artifacts/case.yaml",
+          schema_validation: { status: "pass", errors: null },
+          artifact: { testcase: { status: "pass" } }
+        })
+      );
+      return;
+    }
+    res.end(JSON.stringify({ status: "ok" }));
+  });
+  t.after(() => server.close());
+
+  const runtime = await start({
+    baseUrl: server.url,
+    schemas: INLINE_OPENAPI,
+    sutBaseUrl: "http://sut.local:18090",
+    proxy: true,
+    mockServer: true
+  });
+
+  await runtime.setup({ name: "proxy-flow" });
+  const resp = await runtime.http.postJson("/process?mode=test", { id: "123" });
+  assert.equal(resp.status, 200);
+  assert.deepEqual(resp.body, { ok: true });
+
+  await runtime.reset();
+  await runtime.kill();
+
+  assert.equal(proxyRequests.length, 1);
+  assert.equal(proxyRequests[0].path, "http://sut.local:18090/process?mode=test");
+  assert.equal(proxyRequests[0].host, "sut.local:18090");
+  assert.equal(proxyRequests[0].session, "session-2");
+});
+
+test("reset throws when schema validation fails", async (t) => {
+  const server = await startServer(async (req, res) => {
+    const body = await readBody(req);
+    void body;
+    res.setHeader("content-type", "application/json");
+    if (req.url === "/v1/start") {
+      res.end(
+        JSON.stringify({
+          proxy: { listen_addr: "127.0.0.1:19100" },
+          mock: { listen_addr: "127.0.0.1:19101" }
+        })
+      );
+      return;
+    }
+    if (req.url === "/v1/setup") {
+      res.end(
+        JSON.stringify({
+          session_id: "session-3",
+          name: "scenario-3",
+          proxy_listen: "http://127.0.0.1:19100",
+          mock_base_url: "http://127.0.0.1:19101/__phrond/session/session-3"
+        })
+      );
+      return;
+    }
+    if (req.url === "/v1/teardown") {
+      res.end(
+        JSON.stringify({
+          path: "artifacts/case.yaml",
+          schema_validation: {
+            status: "fail",
+            errors: [{ message: "unknown route" }]
+          },
+          artifact: { testcase: { status: "fail" } }
+        })
+      );
+      return;
+    }
+    res.end(JSON.stringify({ status: "ok" }));
+  });
+  t.after(() => server.close());
+
+  const runtime = await start({
+    baseUrl: server.url,
+    schemas: INLINE_OPENAPI,
+    sutBaseUrl: "http://sut.local:18090",
+    proxy: true,
+    mockServer: true
+  });
+
+  await runtime.setup({ name: "validation-fail" });
+  await assert.rejects(() => runtime.reset(), /unknown route/);
+  await runtime.kill();
+});
+
+test("reset finalizes current scenario and does not create a new one", async (t) => {
+  const requests = [];
+  let sessionCounter = 0;
+  const server = await startServer(async (req, res) => {
+    const body = await readBody(req);
+    requests.push({ method: req.method, path: req.url, body });
+
+    res.setHeader("content-type", "application/json");
+    if (req.url === "/v1/start") {
+      res.end(
+        JSON.stringify({
+          proxy: { listen_addr: "127.0.0.1:19100" },
+          mock: { listen_addr: "127.0.0.1:19101" }
+        })
+      );
+      return;
+    }
+    if (req.url === "/v1/setup") {
+      sessionCounter += 1;
+      const payload = JSON.parse(body || "{}");
+      const id = `session-${sessionCounter}`;
+      res.end(
+        JSON.stringify({
+          session_id: id,
+          name: payload.name || `scenario-${sessionCounter}`,
+          proxy_listen: "http://127.0.0.1:19100",
+          mock_base_url: `http://127.0.0.1:19101/__phrond/session/${id}`
+        })
+      );
+      return;
+    }
+    if (req.url === "/v1/teardown") {
+      res.end(
+        JSON.stringify({
+          path: `artifacts/case-${sessionCounter}.yaml`,
+          schema_validation: { status: "pass", errors: null },
+          artifact: { testcase: { status: "pass" } }
+        })
+      );
+      return;
+    }
+    res.end(JSON.stringify({ status: "ok" }));
+  });
+  t.after(() => server.close());
+
+  const runtime = await start({
+    baseUrl: server.url,
+    schemas: INLINE_OPENAPI,
+    sutBaseUrl: "http://sut.local:18090",
+    proxy: true,
+    mockServer: true
+  });
+
+  await runtime.setup({ name: "first" });
+  const resetResult = await runtime.reset();
+  assert.equal(resetResult.path, "artifacts/case-1.yaml");
+  await runtime.kill();
+
+  const setupCalls = requests.filter((entry) => entry.path === "/v1/setup");
+  const teardownCalls = requests.filter((entry) => entry.path === "/v1/teardown");
+  assert.equal(setupCalls.length, 1);
+  assert.equal(teardownCalls.length, 1);
+});
+
+test("list and inspect helpers read queued and responded responses", async (t) => {
+  const server = await startServer(async (req, res) => {
+    const body = await readBody(req);
+    void body;
+    res.setHeader("content-type", "application/json");
+    if (req.url === "/v1/start") {
+      res.end(
+        JSON.stringify({
+          proxy: { listen_addr: "127.0.0.1:19100" },
+          mock: { listen_addr: "127.0.0.1:19101" }
+        })
+      );
+      return;
+    }
+    if (req.url === "/v1/setup") {
+      res.end(
+        JSON.stringify({
+          session_id: "session-5",
+          name: "scenario-5",
+          proxy_listen: "http://127.0.0.1:19100",
+          mock_base_url: "http://127.0.0.1:19101/__phrond/session/session-5"
+        })
+      );
+      return;
+    }
+    if (req.url === "/v1/listQueued?session_id=session-5") {
+      res.end(
+        JSON.stringify({
+          session_id: "session-5",
+          items: [{ id: "response-1", match: { method: "GET", path: "/alpha" }, response: { status: 200 } }]
+        })
+      );
+      return;
+    }
+    if (req.url === "/v1/listResponded?session_id=session-5") {
+      res.end(
+        JSON.stringify({
+          session_id: "session-5",
+          items: [{ id: "response-2", match: { method: "GET", path: "/beta" }, response: { status: 200 } }]
+        })
+      );
+      return;
+    }
+    if (req.url === "/v1/inspectResponse?session_id=session-5&id=response-2") {
+      res.end(
+        JSON.stringify({
+          session_id: "session-5",
+          id: "response-2",
+          state: "responded",
+          match: { method: "GET", path: "/beta" },
+          response: { status: 200 }
+        })
+      );
+      return;
+    }
+    res.end(JSON.stringify({ status: "ok" }));
+  });
+  t.after(() => server.close());
+
+  const runtime = await start({
+    baseUrl: server.url,
+    schemas: INLINE_OPENAPI,
+    sutBaseUrl: "http://sut.local:18090",
+    proxy: true,
+    mockServer: true
+  });
+
+  await runtime.setup({ name: "list-inspect" });
+  const queued = await runtime.listQueued();
+  const responded = await runtime.listResponded();
+  const inspected = await runtime.inspectResponse("response-2");
+
+  assert.equal(queued.items[0].id, "response-1");
+  assert.equal(responded.items[0].id, "response-2");
+  assert.equal(inspected.state, "responded");
+  await runtime.kill();
+});
+
+test("inspectResponse returns exchange details for assertions", async (t) => {
+  const server = await startServer(async (req, res) => {
+    const body = await readBody(req);
+    void body;
+    res.setHeader("content-type", "application/json");
+    if (req.url === "/v1/start") {
+      res.end(
+        JSON.stringify({
+          proxy: { listen_addr: "127.0.0.1:19100" },
+          mock: { listen_addr: "127.0.0.1:19101" }
+        })
+      );
+      return;
+    }
+    if (req.url === "/v1/setup") {
+      res.end(
+        JSON.stringify({
+          session_id: "session-4",
+          name: "scenario-4",
+          proxy_listen: "http://127.0.0.1:19100",
+          mock_base_url: "http://127.0.0.1:19101/__phrond/session/session-4"
+        })
+      );
+      return;
+    }
+    if (req.url === "/v1/inspectResponse?session_id=session-4&id=account-acct-100") {
+      res.end(
+        JSON.stringify({
+          session_id: "session-4",
+          id: "account-acct-100",
+          state: "responded",
+          exchange: {
             Request: {
               Method: "GET",
               Path: "/accounts/acct-100",
@@ -312,42 +452,34 @@ test("expectCall returns matching outbound SUT request", async () => {
             Response: {
               Status: 200,
               Headers: { "Content-Type": ["application/json"] },
-              Body: '{"id":"acct-100"}'
+              Body: "{\"id\":\"acct-100\"}"
             },
             MatchedStubID: "account-acct-100",
             Matched: true,
             StartedAt: "2026-02-08T19:00:00Z",
             FinishedAt: "2026-02-08T19:00:00Z"
           }
-        ])
+        })
       );
-      return;
-    }
-    if (req.url === "/v1/testcases/finish") {
-      res.end(JSON.stringify({
-        path: "artifacts/case.yaml",
-        schema_validation: { status: "pass", errors: null },
-        artifact: { testcase: { status: "pass" } }
-      }));
       return;
     }
     res.end(JSON.stringify({ status: "ok" }));
   });
+  t.after(() => server.close());
 
-  const phrond = await start({
+  const runtime = await start({
     baseUrl: server.url,
     schemas: INLINE_OPENAPI,
+    sutBaseUrl: "http://sut.local:18090",
+    proxy: true,
     mockServer: true
   });
 
-  await phrond.mock.http({ id: "stub-1" });
-  const match = await phrond.expectCall({ method: "GET", path: "/accounts/acct-100" });
-
-  assert.equal(match.method, "GET");
-  assert.equal(match.path, "/accounts/acct-100");
-  assert.equal(match.matchedStubId, "account-acct-100");
-  assert.equal(match.body, "");
-
-  await phrond.stop();
-  await server.close();
+  await runtime.setup({ name: "expectation-test" });
+  const match = await runtime.inspectResponse("account-acct-100");
+  assert.equal(match.state, "responded");
+  assert.equal(match.exchange.Request.Method, "GET");
+  assert.equal(match.exchange.Request.Path, "/accounts/acct-100");
+  assert.equal(match.exchange.MatchedStubID, "account-acct-100");
+  await runtime.kill();
 });

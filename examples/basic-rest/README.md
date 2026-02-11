@@ -13,3 +13,6 @@ Or use the e2e runner:
 ```bash
 ./examples/run-basic-rest-e2e.sh
 ```
+
+Template example used by this test:
+- `examples/basic-rest/templates/alpha-response.tmpl.json`

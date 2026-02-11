@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"sync"
 
 	"github.com/phrond/evermock/core"
 )
@@ -25,6 +26,12 @@ type App struct {
 
 	proxyComponent *ProxyComponent
 	mockComponent  *MockComponent
+
+	sessionRecorder *SessionProxyRecorder
+	sessionsMu      sync.Mutex
+	sessions        map[string]*runtimeSession
+	sessionSeq      uint64
+	stackSize       int
 }
 
 func New(deps Deps) (*App, error) {
@@ -42,10 +49,15 @@ func New(deps Deps) (*App, error) {
 	}
 
 	store := NewTestCaseStore(cfg.Artifact.OutputDir)
+	sessionRecorder := NewSessionProxyRecorder()
+	proxyRecorder := &ProxyFanoutRecorder{recorders: []proxyRecorder{
+		store,
+		sessionRecorder,
+	}}
 
 	proxy := deps.Proxy
 	if proxy == nil {
-		component, err := NewProxyComponent(cfg.Proxy, logger, store)
+		component, err := NewProxyComponent(cfg.Proxy, logger, proxyRecorder)
 		if err != nil {
 			return nil, err
 		}
@@ -63,11 +75,15 @@ func New(deps Deps) (*App, error) {
 	}
 
 	app := &App{
-		cfg:       cfg,
-		logger:    logger,
-		lifecycle: lifecycle,
-		store:     store,
+		cfg:             cfg,
+		logger:          logger,
+		lifecycle:       lifecycle,
+		store:           store,
+		sessionRecorder: sessionRecorder,
+		sessions:        map[string]*runtimeSession{},
+		stackSize:       100,
 	}
+	sessionRecorder.SetApp(app)
 
 	if component, ok := proxy.(*ProxyComponent); ok {
 		app.proxyComponent = component

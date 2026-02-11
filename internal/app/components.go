@@ -173,6 +173,27 @@ func (m *MockComponent) ClearStubs() {
 	m.server.ClearStubs()
 }
 
+func (m *MockComponent) RemoveStubsByID(ids []string) int {
+	if m == nil || m.server == nil {
+		return 0
+	}
+	return m.server.RemoveStubsByID(ids)
+}
+
+func (m *MockComponent) ListStubs() []mock.Stub {
+	if m == nil || m.server == nil {
+		return nil
+	}
+	return m.server.ListStubs()
+}
+
+func (m *MockComponent) SetFallbackUpstream(baseURL string) error {
+	if m == nil || m.server == nil {
+		return nil
+	}
+	return m.server.SetFallbackUpstream(baseURL)
+}
+
 func (m *MockComponent) Recorder() *mock.Recorder {
 	if m == nil || m.server == nil {
 		return nil

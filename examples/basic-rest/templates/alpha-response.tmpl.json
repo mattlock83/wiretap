@@ -1,0 +1,5 @@
+{
+  "result": "alpha-ok",
+  "served_at": "{{cel \"now\"}}",
+  "request_path": "{{.Request.Path}}"
+}
