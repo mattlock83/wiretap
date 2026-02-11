@@ -98,10 +98,6 @@ components:
         proxy_mode:
           type: string
           enum: [mitm, passthrough]
-        grpc_proxy_listen:
-          type: string
-        grpc_mock_base_url:
-          type: string
       additionalProperties: false
 
     SchemaRef:
@@ -119,14 +115,10 @@ components:
           enum: [sut, fake]
         type:
           type: string
-          enum: [openapi, protobuf]
+          enum: [openapi]
         source:
           $ref: "#/components/schemas/SchemaSource"
         openapi_version:
-          type: string
-        protobuf_package:
-          type: string
-        protobuf_service:
           type: string
       additionalProperties: false
 
@@ -148,7 +140,6 @@ components:
           type: string
         format:
           type: string
-          description: "For protobuf schemas: proto or descriptor."
         import_paths:
           type: array
           items:
@@ -168,7 +159,7 @@ components:
           type: string
         protocol:
           type: string
-          enum: [http, grpc]
+          enum: [http]
         channel:
           type: string
           enum: [test_to_sut, sut_to_mock]
@@ -179,15 +170,9 @@ components:
           type: integer
           minimum: 0
         request:
-          oneOf:
-            - $ref: "#/components/schemas/HttpRequest"
-            - $ref: "#/components/schemas/GrpcMessage"
+          $ref: "#/components/schemas/HttpRequest"
         response:
-          oneOf:
-            - $ref: "#/components/schemas/HttpResponse"
-            - $ref: "#/components/schemas/GrpcMessage"
-        grpc:
-          $ref: "#/components/schemas/GrpcMeta"
+          $ref: "#/components/schemas/HttpResponse"
         assertion_ids:
           type: array
           items:
@@ -227,34 +212,6 @@ components:
           $ref: "#/components/schemas/Body"
       additionalProperties: false
 
-    GrpcMeta:
-      type: object
-      properties:
-        service:
-          type: string
-        method:
-          type: string
-        authority:
-          type: string
-        status:
-          type: integer
-        status_message:
-          type: string
-      additionalProperties: false
-
-    GrpcMessage:
-      type: object
-      properties:
-        content_type:
-          type: string
-        headers:
-          $ref: "#/components/schemas/Headers"
-        body:
-          $ref: "#/components/schemas/Body"
-        trailers:
-          $ref: "#/components/schemas/Headers"
-      additionalProperties: false
-
     Headers:
       type: object
       additionalProperties:
@@ -282,7 +239,7 @@ components:
       properties:
         encoding:
           type: string
-          enum: [json, protojson, text]
+          enum: [json, text]
         text:
           type: string
         schema_ref:
@@ -312,7 +269,7 @@ components:
           type: string
         path_lang:
           type: string
-          enum: [jsonpath, protoPath, header, status]
+          enum: [jsonpath, header, status]
         operator:
           type: string
         expected:

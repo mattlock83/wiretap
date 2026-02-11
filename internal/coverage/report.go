@@ -2,7 +2,6 @@ package coverage
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -19,11 +18,7 @@ import (
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/getkin/kin-openapi/routers"
 	"github.com/getkin/kin-openapi/routers/legacy"
-	"github.com/jhump/protoreflect/desc"
-	"github.com/jhump/protoreflect/desc/protoparse"
 	"github.com/phrond/evermock/internal/artifact"
-	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/types/descriptorpb"
 	"gopkg.in/yaml.v3"
 )
 
@@ -94,16 +89,11 @@ type FlowSample struct {
 }
 
 type InteractionMessage struct {
-	Method      string           `json:"method,omitempty" yaml:"method,omitempty"`
-	URL         string           `json:"url,omitempty" yaml:"url,omitempty"`
-	Status      int              `json:"status,omitempty" yaml:"status,omitempty"`
-	Headers     artifact.Headers `json:"headers,omitempty" yaml:"headers,omitempty"`
-	Body        string           `json:"body,omitempty" yaml:"body,omitempty"`
-	ContentType string           `json:"content_type,omitempty" yaml:"content_type,omitempty"`
-	GRPCService string           `json:"grpc_service,omitempty" yaml:"grpc_service,omitempty"`
-	GRPCMethod  string           `json:"grpc_method,omitempty" yaml:"grpc_method,omitempty"`
-	GRPCStatus  int              `json:"grpc_status,omitempty" yaml:"grpc_status,omitempty"`
-	GRPCMessage string           `json:"grpc_message,omitempty" yaml:"grpc_message,omitempty"`
+	Method  string           `json:"method,omitempty" yaml:"method,omitempty"`
+	URL     string           `json:"url,omitempty" yaml:"url,omitempty"`
+	Status  int              `json:"status,omitempty" yaml:"status,omitempty"`
+	Headers artifact.Headers `json:"headers,omitempty" yaml:"headers,omitempty"`
+	Body    string           `json:"body,omitempty" yaml:"body,omitempty"`
 }
 
 type loadedSchema struct {
@@ -111,7 +101,6 @@ type loadedSchema struct {
 	Source     string
 	Operations []string
 	OpenAPI    *openapiSpec
-	Proto      *protoSpec
 	Exercised  map[string]struct{}
 	Faked      map[string]struct{}
 }
@@ -119,10 +108,6 @@ type loadedSchema struct {
 type openapiSpec struct {
 	Doc    *openapi3.T
 	Router routers.Router
-}
-
-type protoSpec struct {
-	Services map[string]*desc.ServiceDescriptor
 }
 
 type flowEntry struct {
@@ -531,21 +516,12 @@ const reportHTMLTemplate = `<!DOCTYPE html>
                         <div class="sample">
                           <div class="sample-title">Test Case: {{ .TestCase }}</div>
                           <div class="sample-body">
-                            {{ if eq .Protocol "grpc" }}
-                              <div><strong>Request:</strong> {{ .Request.GRPCService }}/{{ .Request.GRPCMethod }}</div>
-                              {{ if .Request.Headers }}<div><strong>Request Headers:</strong></div><pre class="code-block">{{ formatHeaders .Request.Headers }}</pre>{{ end }}
-                              {{ if .Request.Body }}<pre class="code-block">{{ prettyJSON .Request.Body }}</pre>{{ end }}
-                              <div><strong>Response:</strong> status {{ .Response.GRPCStatus }}</div>
-                              {{ if .Response.Headers }}<div><strong>Response Headers:</strong></div><pre class="code-block">{{ formatHeaders .Response.Headers }}</pre>{{ end }}
-                              {{ if .Response.Body }}<pre class="code-block">{{ prettyJSON .Response.Body }}</pre>{{ end }}
-                            {{ else }}
-                              <div><strong>Request:</strong> {{ .Request.Method }} {{ .Request.URL }}</div>
-                              {{ if .Request.Headers }}<div><strong>Request Headers:</strong></div><pre class="code-block">{{ formatHeaders .Request.Headers }}</pre>{{ end }}
-                              {{ if .Request.Body }}<pre class="code-block">{{ prettyJSON .Request.Body }}</pre>{{ end }}
-                              <div><strong>Response:</strong> {{ .Response.Status }}</div>
-                              {{ if .Response.Headers }}<div><strong>Response Headers:</strong></div><pre class="code-block">{{ formatHeaders .Response.Headers }}</pre>{{ end }}
-                              {{ if .Response.Body }}<pre class="code-block">{{ prettyJSON .Response.Body }}</pre>{{ end }}
-                            {{ end }}
+                            <div><strong>Request:</strong> {{ .Request.Method }} {{ .Request.URL }}</div>
+                            {{ if .Request.Headers }}<div><strong>Request Headers:</strong></div><pre class="code-block">{{ formatHeaders .Request.Headers }}</pre>{{ end }}
+                            {{ if .Request.Body }}<pre class="code-block">{{ prettyJSON .Request.Body }}</pre>{{ end }}
+                            <div><strong>Response:</strong> {{ .Response.Status }}</div>
+                            {{ if .Response.Headers }}<div><strong>Response Headers:</strong></div><pre class="code-block">{{ formatHeaders .Response.Headers }}</pre>{{ end }}
+                            {{ if .Response.Body }}<pre class="code-block">{{ prettyJSON .Response.Body }}</pre>{{ end }}
                           </div>
                         </div>
                       {{ end }}
@@ -598,21 +574,12 @@ const reportHTMLTemplate = `<!DOCTYPE html>
                         <div class="sample">
                           <div class="sample-title">Test Case: {{ .TestCase }}</div>
                           <div class="sample-body">
-                            {{ if eq .Protocol "grpc" }}
-                              <div><strong>Request:</strong> {{ .Request.GRPCService }}/{{ .Request.GRPCMethod }}</div>
-                              {{ if .Request.Headers }}<div><strong>Request Headers:</strong></div><pre class="code-block">{{ formatHeaders .Request.Headers }}</pre>{{ end }}
-                              {{ if .Request.Body }}<pre class="code-block">{{ prettyJSON .Request.Body }}</pre>{{ end }}
-                              <div><strong>Response:</strong> status {{ .Response.GRPCStatus }}</div>
-                              {{ if .Response.Headers }}<div><strong>Response Headers:</strong></div><pre class="code-block">{{ formatHeaders .Response.Headers }}</pre>{{ end }}
-                              {{ if .Response.Body }}<pre class="code-block">{{ prettyJSON .Response.Body }}</pre>{{ end }}
-                            {{ else }}
-                              <div><strong>Request:</strong> {{ .Request.Method }} {{ .Request.URL }}</div>
-                              {{ if .Request.Headers }}<div><strong>Request Headers:</strong></div><pre class="code-block">{{ formatHeaders .Request.Headers }}</pre>{{ end }}
-                              {{ if .Request.Body }}<pre class="code-block">{{ prettyJSON .Request.Body }}</pre>{{ end }}
-                              <div><strong>Response:</strong> {{ .Response.Status }}</div>
-                              {{ if .Response.Headers }}<div><strong>Response Headers:</strong></div><pre class="code-block">{{ formatHeaders .Response.Headers }}</pre>{{ end }}
-                              {{ if .Response.Body }}<pre class="code-block">{{ prettyJSON .Response.Body }}</pre>{{ end }}
-                            {{ end }}
+                            <div><strong>Request:</strong> {{ .Request.Method }} {{ .Request.URL }}</div>
+                            {{ if .Request.Headers }}<div><strong>Request Headers:</strong></div><pre class="code-block">{{ formatHeaders .Request.Headers }}</pre>{{ end }}
+                            {{ if .Request.Body }}<pre class="code-block">{{ prettyJSON .Request.Body }}</pre>{{ end }}
+                            <div><strong>Response:</strong> {{ .Response.Status }}</div>
+                            {{ if .Response.Headers }}<div><strong>Response Headers:</strong></div><pre class="code-block">{{ formatHeaders .Response.Headers }}</pre>{{ end }}
+                            {{ if .Response.Body }}<pre class="code-block">{{ prettyJSON .Response.Body }}</pre>{{ end }}
                           </div>
                         </div>
                       {{ end }}
@@ -655,21 +622,12 @@ const reportHTMLTemplate = `<!DOCTYPE html>
                             <div class="sample">
                               <div class="sample-title">Test Case: {{ .TestCase }}</div>
                               <div class="sample-body">
-                                {{ if eq .Protocol "grpc" }}
-                                  <div><strong>Request:</strong> {{ .Request.GRPCService }}/{{ .Request.GRPCMethod }}</div>
-                                  {{ if .Request.Headers }}<div><strong>Request Headers:</strong></div><pre class="code-block">{{ formatHeaders .Request.Headers }}</pre>{{ end }}
-                                  {{ if .Request.Body }}<pre class="code-block">{{ prettyJSON .Request.Body }}</pre>{{ end }}
-                                  <div><strong>Response:</strong> status {{ .Response.GRPCStatus }}</div>
-                                  {{ if .Response.Headers }}<div><strong>Response Headers:</strong></div><pre class="code-block">{{ formatHeaders .Response.Headers }}</pre>{{ end }}
-                                  {{ if .Response.Body }}<pre class="code-block">{{ prettyJSON .Response.Body }}</pre>{{ end }}
-                                {{ else }}
-                                  <div><strong>Request:</strong> {{ .Request.Method }} {{ .Request.URL }}</div>
-                                  {{ if .Request.Headers }}<div><strong>Request Headers:</strong></div><pre class="code-block">{{ formatHeaders .Request.Headers }}</pre>{{ end }}
-                                  {{ if .Request.Body }}<pre class="code-block">{{ prettyJSON .Request.Body }}</pre>{{ end }}
-                                  <div><strong>Response:</strong> {{ .Response.Status }}</div>
-                                  {{ if .Response.Headers }}<div><strong>Response Headers:</strong></div><pre class="code-block">{{ formatHeaders .Response.Headers }}</pre>{{ end }}
-                                  {{ if .Response.Body }}<pre class="code-block">{{ prettyJSON .Response.Body }}</pre>{{ end }}
-                                {{ end }}
+                                <div><strong>Request:</strong> {{ .Request.Method }} {{ .Request.URL }}</div>
+                                {{ if .Request.Headers }}<div><strong>Request Headers:</strong></div><pre class="code-block">{{ formatHeaders .Request.Headers }}</pre>{{ end }}
+                                {{ if .Request.Body }}<pre class="code-block">{{ prettyJSON .Request.Body }}</pre>{{ end }}
+                                <div><strong>Response:</strong> {{ .Response.Status }}</div>
+                                {{ if .Response.Headers }}<div><strong>Response Headers:</strong></div><pre class="code-block">{{ formatHeaders .Response.Headers }}</pre>{{ end }}
+                                {{ if .Response.Body }}<pre class="code-block">{{ prettyJSON .Response.Body }}</pre>{{ end }}
                               </div>
                             </div>
                           {{ end }}
@@ -706,21 +664,12 @@ const reportHTMLTemplate = `<!DOCTYPE html>
                             <div class="sample">
                               <div class="sample-title">Test Case: {{ .TestCase }}</div>
                               <div class="sample-body">
-                                {{ if eq .Protocol "grpc" }}
-                                  <div><strong>Request:</strong> {{ .Request.GRPCService }}/{{ .Request.GRPCMethod }}</div>
-                                  {{ if .Request.Headers }}<div><strong>Request Headers:</strong></div><pre class="code-block">{{ formatHeaders .Request.Headers }}</pre>{{ end }}
-                                  {{ if .Request.Body }}<pre class="code-block">{{ prettyJSON .Request.Body }}</pre>{{ end }}
-                                  <div><strong>Response:</strong> status {{ .Response.GRPCStatus }}</div>
-                                  {{ if .Response.Headers }}<div><strong>Response Headers:</strong></div><pre class="code-block">{{ formatHeaders .Response.Headers }}</pre>{{ end }}
-                                  {{ if .Response.Body }}<pre class="code-block">{{ prettyJSON .Response.Body }}</pre>{{ end }}
-                                {{ else }}
-                                  <div><strong>Request:</strong> {{ .Request.Method }} {{ .Request.URL }}</div>
-                                  {{ if .Request.Headers }}<div><strong>Request Headers:</strong></div><pre class="code-block">{{ formatHeaders .Request.Headers }}</pre>{{ end }}
-                                  {{ if .Request.Body }}<pre class="code-block">{{ prettyJSON .Request.Body }}</pre>{{ end }}
-                                  <div><strong>Response:</strong> {{ .Response.Status }}</div>
-                                  {{ if .Response.Headers }}<div><strong>Response Headers:</strong></div><pre class="code-block">{{ formatHeaders .Response.Headers }}</pre>{{ end }}
-                                  {{ if .Response.Body }}<pre class="code-block">{{ prettyJSON .Response.Body }}</pre>{{ end }}
-                                {{ end }}
+                                <div><strong>Request:</strong> {{ .Request.Method }} {{ .Request.URL }}</div>
+                                {{ if .Request.Headers }}<div><strong>Request Headers:</strong></div><pre class="code-block">{{ formatHeaders .Request.Headers }}</pre>{{ end }}
+                                {{ if .Request.Body }}<pre class="code-block">{{ prettyJSON .Request.Body }}</pre>{{ end }}
+                                <div><strong>Response:</strong> {{ .Response.Status }}</div>
+                                {{ if .Response.Headers }}<div><strong>Response Headers:</strong></div><pre class="code-block">{{ formatHeaders .Response.Headers }}</pre>{{ end }}
+                                {{ if .Response.Body }}<pre class="code-block">{{ prettyJSON .Response.Body }}</pre>{{ end }}
                               </div>
                             </div>
                           {{ end }}
@@ -909,14 +858,8 @@ func loadSchemas(schemas []artifact.SchemaRef) ([]*loadedSchema, []string) {
 			} else {
 				notes = append(notes, fmt.Sprintf("OpenAPI schema %q failed to load: %v", schema.ID, err))
 			}
-		}
-		if strings.EqualFold(schema.Type, "protobuf") {
-			if spec, err := loadProtoSpec(schema); err == nil {
-				entry.Proto = spec
-				entry.Operations = protoOperations(spec)
-			} else {
-				notes = append(notes, fmt.Sprintf("Protobuf schema %q failed to load: %v", schema.ID, err))
-			}
+		} else {
+			notes = append(notes, fmt.Sprintf("Schema %q has unsupported type %q (only openapi is supported).", schema.ID, schema.Type))
 		}
 		seen[key] = entry
 	}
@@ -938,18 +881,6 @@ func markCoverage(flows []artifact.Flow, schemas []*loadedSchema, channel string
 		for _, schema := range schemas {
 			if schema.OpenAPI != nil && flow.Protocol == "http" {
 				if op, ok := openapiOperationFromFlow(flow, schema.OpenAPI); ok {
-					if channel == "sut_to_mock" {
-						schema.Faked[op] = struct{}{}
-					} else {
-						schema.Exercised[op] = struct{}{}
-					}
-				}
-			}
-			if schema.Proto != nil && flow.Protocol == "grpc" {
-				if op := grpcOperationFromFlow(flow); op != "" {
-					if !containsOp(schema.Operations, op) {
-						continue
-					}
 					if channel == "sut_to_mock" {
 						schema.Faked[op] = struct{}{}
 					} else {
@@ -1052,15 +983,6 @@ func buildOperationSamples(entries []flowEntry, schemas []*loadedSchema, channel
 					continue
 				}
 				raw = addSample(raw, schema.Ref.ID, op, flowSampleFromFlow(entry))
-			case schema.Proto != nil && flow.Protocol == "grpc":
-				op := grpcOperationFromFlow(flow)
-				if op == "" {
-					continue
-				}
-				if !containsOp(schema.Operations, op) {
-					continue
-				}
-				raw = addSample(raw, schema.Ref.ID, op, flowSampleFromFlow(entry))
 			}
 		}
 	}
@@ -1107,12 +1029,6 @@ func buildTestCaseCoverage(entries []flowEntry, providedSchemas, dependentSchema
 			if schema.OpenAPI != nil && flow.Protocol == "http" {
 				if matched, ok := openapiOperationFromFlow(flow, schema.OpenAPI); ok {
 					op = matched
-				}
-			}
-			if schema.Proto != nil && flow.Protocol == "grpc" {
-				op = grpcOperationFromFlow(flow)
-				if op != "" && !containsOp(schema.Operations, op) {
-					op = ""
 				}
 			}
 			if op == "" {
@@ -1190,19 +1106,6 @@ func flowSampleFromFlow(entry flowEntry) FlowSample {
 		if flow.Response.HTTP != nil {
 			sample.Response = httpMessageSample(flow.Response.HTTP)
 		}
-		return sample
-	}
-	if flow.Protocol == "grpc" {
-		if flow.Request.GRPC != nil {
-			sample.Request = grpcMessageSample(flow.GRPC, flow.Request.GRPC)
-		} else {
-			sample.Request = grpcMessageSample(flow.GRPC, nil)
-		}
-		if flow.Response.GRPC != nil {
-			sample.Response = grpcMessageSample(flow.GRPC, flow.Response.GRPC)
-		} else {
-			sample.Response = grpcMessageSample(flow.GRPC, nil)
-		}
 	}
 	return sample
 }
@@ -1218,22 +1121,6 @@ func httpMessageSample(msg *artifact.HttpMessage) InteractionMessage {
 		Headers: msg.Headers,
 		Body:    bodyPreview(msg.Body),
 	}
-}
-
-func grpcMessageSample(meta *artifact.GrpcMeta, msg *artifact.GrpcMessage) InteractionMessage {
-	out := InteractionMessage{}
-	if meta != nil {
-		out.GRPCService = meta.Service
-		out.GRPCMethod = meta.Method
-		out.GRPCStatus = meta.Status
-		out.GRPCMessage = meta.StatusMessage
-	}
-	if msg != nil {
-		out.ContentType = msg.ContentType
-		out.Headers = msg.Headers
-		out.Body = bodyPreview(msg.Body)
-	}
-	return out
 }
 
 func bodyPreview(body *artifact.Body) string {
@@ -1289,15 +1176,6 @@ func buildAssertedFieldsBySpec(assertions []artifact.Assertion, flows map[string
 					}
 					out = addOperationAssertion(out, schema.Ref.ID, op, assertion)
 				}
-			case schema.Proto != nil && flow.Protocol == "grpc":
-				op := grpcOperationFromFlow(flow)
-				if op == "" {
-					continue
-				}
-				if !containsOp(schema.Operations, op) {
-					continue
-				}
-				out = addOperationAssertion(out, schema.Ref.ID, op, assertion)
 			}
 		}
 	}
@@ -1387,18 +1265,6 @@ func openapiOperationFromFlow(flow artifact.Flow, spec *openapiSpec) (string, bo
 	return strings.ToUpper(route.Method) + " " + route.Path, true
 }
 
-func grpcOperationFromFlow(flow artifact.Flow) string {
-	if flow.GRPC == nil {
-		return ""
-	}
-	service := flow.GRPC.Service
-	method := flow.GRPC.Method
-	if service == "" || method == "" {
-		return ""
-	}
-	return service + "/" + method
-}
-
 func parseRequestURL(raw string) (*url.URL, error) {
 	if raw == "" {
 		return nil, errors.New("empty url")
@@ -1440,19 +1306,6 @@ func openapiOperations(spec *openapiSpec) []string {
 		}
 		if item.Options != nil {
 			ops = append(ops, "OPTIONS "+path)
-		}
-	}
-	return ops
-}
-
-func protoOperations(spec *protoSpec) []string {
-	if spec == nil {
-		return nil
-	}
-	var ops []string
-	for _, service := range spec.Services {
-		for _, method := range service.GetMethods() {
-			ops = append(ops, service.GetFullyQualifiedName()+"/"+method.GetName())
 		}
 	}
 	return ops
@@ -1506,107 +1359,6 @@ func loadOpenAPISpec(ref artifact.SchemaRef) (*openapiSpec, error) {
 	return &openapiSpec{Doc: doc, Router: router}, nil
 }
 
-func loadProtoSpec(ref artifact.SchemaRef) (*protoSpec, error) {
-	path := strings.TrimSpace(ref.Source.Path)
-	urlStr := strings.TrimSpace(ref.Source.URL)
-	content := strings.TrimSpace(ref.Source.Content)
-	format := strings.ToLower(strings.TrimSpace(ref.Source.Format))
-	if format == "" {
-		format = inferProtoFormat(path, urlStr)
-	}
-
-	cleanup := func() {}
-	var err error
-
-	switch strings.ToLower(ref.Source.Type) {
-	case "file":
-		if path == "" {
-			return nil, errors.New("protobuf schema path required")
-		}
-		path = resolvePath(path)
-		if format == "descriptor" {
-			data, readErr := os.ReadFile(path)
-			if readErr != nil {
-				return nil, readErr
-			}
-			return loadProtoDescriptor(data)
-		}
-	case "url":
-		if urlStr == "" {
-			return nil, errors.New("protobuf schema url required")
-		}
-		path, cleanup, err = downloadToTemp(urlStr, "schema-*")
-		if err != nil {
-			return nil, err
-		}
-		if format == "descriptor" {
-			defer cleanup()
-			data, readErr := os.ReadFile(path)
-			if readErr != nil {
-				return nil, readErr
-			}
-			return loadProtoDescriptor(data)
-		}
-	case "inline":
-		if content == "" {
-			return nil, errors.New("protobuf schema content required")
-		}
-		if format == "descriptor" {
-			raw, decodeErr := decodeBase64(content)
-			if decodeErr != nil {
-				return nil, errors.New("descriptor content must be base64")
-			}
-			return loadProtoDescriptor(raw)
-		}
-		path, cleanup, err = writeTempContent([]byte(content), "schema-*.proto")
-		if err != nil {
-			return nil, err
-		}
-	default:
-		return nil, errors.New("unsupported protobuf source type")
-	}
-	defer cleanup()
-
-	importPaths := resolveImportPaths(ref.Source.ImportPaths)
-	importPaths = append([]string{filepath.Dir(path)}, importPaths...)
-	parser := protoparse.Parser{ImportPaths: importPaths}
-	files, err := parser.ParseFiles(filepath.Base(path))
-	if err != nil {
-		return nil, err
-	}
-	services := map[string]*desc.ServiceDescriptor{}
-	for _, file := range files {
-		for _, service := range file.GetServices() {
-			services[service.GetFullyQualifiedName()] = service
-		}
-	}
-	if len(services) == 0 {
-		return nil, errors.New("no services found in proto schema")
-	}
-	return &protoSpec{Services: services}, nil
-}
-
-func loadProtoDescriptor(data []byte) (*protoSpec, error) {
-	set := &descriptorpb.FileDescriptorSet{}
-	if err := proto.Unmarshal(data, set); err != nil {
-		return nil, fmt.Errorf("descriptor set decode failed: %w", err)
-	}
-	files, err := desc.CreateFileDescriptorsFromSet(set)
-	if err != nil {
-		return nil, err
-	}
-	services := map[string]*desc.ServiceDescriptor{}
-	for _, file := range files {
-		for _, service := range file.GetServices() {
-			services[service.GetFullyQualifiedName()] = service
-		}
-	}
-	if len(services) == 0 {
-		return nil, errors.New("no services found in descriptor set")
-	}
-	return &protoSpec{Services: services}, nil
-}
-
 func downloadToTemp(urlStr, pattern string) (string, func(), error) {
 	resp, err := http.Get(urlStr)
 	if err != nil {
@@ -1654,37 +1406,6 @@ func resolvePath(path string) string {
 	return filepath.Join(cwd, path)
 }
 
-func resolveImportPaths(paths []string) []string {
-	if len(paths) == 0 {
-		return nil
-	}
-	out := make([]string, 0, len(paths))
-	for _, path := range paths {
-		path = strings.TrimSpace(path)
-		if path == "" {
-			continue
-		}
-		if filepath.IsAbs(path) {
-			out = append(out, path)
-		} else {
-			out = append(out, resolvePath(path))
-		}
-	}
-	return out
-}
-
-func inferProtoFormat(path, urlStr string) string {
-	candidate := path
-	if candidate == "" {
-		candidate = urlStr
-	}
-	candidate = strings.ToLower(candidate)
-	if strings.HasSuffix(candidate, ".desc") || strings.HasSuffix(candidate, ".pb") || strings.HasSuffix(candidate, ".protoset") || strings.HasSuffix(candidate, ".bin") {
-		return "descriptor"
-	}
-	return "proto"
-}
-
 func uniqueSorted(values []string) []string {
 	set := make(map[string]struct{})
 	for _, value := range values {
@@ -1699,15 +1420,6 @@ func uniqueSorted(values []string) []string {
 	}
 	sort.Strings(out)
 	return out
-}
-
-func decodeBase64(raw string) ([]byte, error) {
-	buf := make([]byte, len(raw))
-	decodedLen, err := base64.StdEncoding.Decode(buf, []byte(raw))
-	if err != nil {
-		return nil, err
-	}
-	return buf[:decodedLen], nil
 }
 
 func setToList(set map[string]struct{}) []string {

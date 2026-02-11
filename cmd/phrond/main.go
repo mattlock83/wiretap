@@ -70,22 +70,6 @@ func applyEnv(cfg *core.Config) {
 	if v := strings.TrimSpace(os.Getenv("PHROND_PROXY_CA_DIR")); v != "" {
 		cfg.Proxy.CABaseDir = v
 	}
-	if v := strings.TrimSpace(os.Getenv("PHROND_GRPC_PROXY_LISTEN")); v != "" {
-		cfg.GRPCProxy.ListenAddr = v
-	}
-	if v := strings.TrimSpace(os.Getenv("PHROND_GRPC_PROXY_TARGET")); v != "" {
-		cfg.GRPCProxy.TargetAddr = v
-	}
-	if v := strings.TrimSpace(os.Getenv("PHROND_GRPC_PROXY_INSECURE")); v != "" {
-		cfg.GRPCProxy.InsecureSkipVerify = parseBool(v)
-	}
-	if v := strings.TrimSpace(os.Getenv("PHROND_GRPC_MOCK_LISTEN")); v != "" {
-		cfg.GRPCMock.ListenAddr = v
-	}
-	if v := strings.TrimSpace(os.Getenv("PHROND_GRPC_CA_DIR")); v != "" {
-		cfg.GRPCProxy.CABaseDir = v
-		cfg.GRPCMock.CABaseDir = v
-	}
 	if v := strings.TrimSpace(os.Getenv("PHROND_ARTIFACT_DIR")); v != "" {
 		cfg.Artifact.OutputDir = v
 	}
@@ -119,13 +103,4 @@ func parseDuration(raw string, fallback time.Duration) time.Duration {
 		return fallback
 	}
 	return d
-}
-
-func parseBool(raw string) bool {
-	switch strings.ToLower(strings.TrimSpace(raw)) {
-	case "1", "true", "yes", "y", "on":
-		return true
-	default:
-		return false
-	}
 }

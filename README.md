@@ -1,6 +1,6 @@
 # Phrond Recorder
 
-Phrond is a test harness that captures SUT traffic and mock traffic and writes a per-test YAML artifact. It supports HTTP/HTTPS and gRPC, a mock server, and a capture proxy, with schema validation against OpenAPI and Protobuf.
+Phrond is a test harness that captures SUT traffic and mock traffic and writes a per-test YAML artifact. It supports HTTP/HTTPS with a mock server and a capture proxy, with schema validation against OpenAPI.
 
 ## Quick Start
 
@@ -8,21 +8,13 @@ Phrond is a test harness that captures SUT traffic and mock traffic and writes a
 # Basic REST example
 ./examples/run-basic-rest-e2e.sh
 
-# Basic gRPC example
-./examples/run-basic-grpc-e2e.sh
-
 # Complex REST example
 ./examples/run-complex-rest-e2e.sh
-
-# Complex mixed example (gRPC + REST)
-./examples/run-complex-mixed-e2e.sh
 ```
 
 Example tests now live under:
 - `examples/basic-rest`
-- `examples/basic-grpc`
 - `examples/complex-rest`
-- `examples/complex-mixed`
 
 Demo application binaries for the examples live under:
 - `examples/demo-apps`
@@ -52,29 +44,6 @@ OpenAPI example (inline):
 }
 ```
 
-Proto example (file):
-
-```json
-{
-  "id": "grpc-sut",
-  "role": "sut",
-  "type": "protobuf",
-  "source": { "type": "file", "path": "examples/basic-grpc/examplepb/example.proto" }
-}
-```
-
-### Proto imports and descriptor sets
-
-- Use `source.import_paths` for proto imports.
-- For descriptor sets, set `source.format` to `descriptor` and point `source.path` or `source.url` to the `.desc` file.
-
-Descriptor helper:
-
-```bash
-./examples/basic-grpc/gen-descriptor.sh
-PROTO_DESCRIPTOR=examples/basic-grpc/examplepb/example.desc ./examples/run-basic-grpc-e2e.sh
-```
-
 ## JS SDK
 
 See `sdk/js/README.md` for API details. The SDK enforces schemas on `startTestCase` and returns `schemaValidation` in `finishTestCase` responses.
@@ -89,8 +58,8 @@ go run ./cmd/phrond-coverage --artifacts ./artifacts --sut-name "Example SUT" --
 ```
 
 The report includes:
-- Provided API specs: exercised + not covered paths/services
-- Dependent API specs: faked paths/services + asserted fields
+- Provided API specs: exercised + not covered paths
+- Dependent API specs: faked paths + asserted fields
 
 ## Docs
 

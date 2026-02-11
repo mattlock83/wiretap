@@ -58,23 +58,19 @@ type TestCase struct {
 
 // Environment describes runtime addresses.
 type Environment struct {
-	SUTBaseURL      string `yaml:"sut_base_url,omitempty" json:"sut_base_url,omitempty"`
-	ProxyListen     string `yaml:"proxy_listen,omitempty" json:"proxy_listen,omitempty"`
-	MockBaseURL     string `yaml:"mock_base_url,omitempty" json:"mock_base_url,omitempty"`
-	ProxyMode       string `yaml:"proxy_mode,omitempty" json:"proxy_mode,omitempty"`
-	GRPCProxyListen string `yaml:"grpc_proxy_listen,omitempty" json:"grpc_proxy_listen,omitempty"`
-	GRPCMockBaseURL string `yaml:"grpc_mock_base_url,omitempty" json:"grpc_mock_base_url,omitempty"`
+	SUTBaseURL  string `yaml:"sut_base_url,omitempty" json:"sut_base_url,omitempty"`
+	ProxyListen string `yaml:"proxy_listen,omitempty" json:"proxy_listen,omitempty"`
+	MockBaseURL string `yaml:"mock_base_url,omitempty" json:"mock_base_url,omitempty"`
+	ProxyMode   string `yaml:"proxy_mode,omitempty" json:"proxy_mode,omitempty"`
 }
 
 // SchemaRef identifies schemas attached to the test case.
 type SchemaRef struct {
-	ID              string       `yaml:"id" json:"id"`
-	Role            string       `yaml:"role" json:"role"`
-	Type            string       `yaml:"type" json:"type"`
-	Source          SchemaSource `yaml:"source" json:"source"`
-	OpenAPIVersion  string       `yaml:"openapi_version,omitempty" json:"openapi_version,omitempty"`
-	ProtobufPackage string       `yaml:"protobuf_package,omitempty" json:"protobuf_package,omitempty"`
-	ProtobufService string       `yaml:"protobuf_service,omitempty" json:"protobuf_service,omitempty"`
+	ID             string       `yaml:"id" json:"id"`
+	Role           string       `yaml:"role" json:"role"`
+	Type           string       `yaml:"type" json:"type"`
+	Source         SchemaSource `yaml:"source" json:"source"`
+	OpenAPIVersion string       `yaml:"openapi_version,omitempty" json:"openapi_version,omitempty"`
 }
 
 // SchemaSource identifies where the schema came from.
@@ -97,15 +93,13 @@ type Flow struct {
 	DurationMS    int64     `yaml:"duration_ms,omitempty" json:"duration_ms,omitempty"`
 	Request       Message   `yaml:"request" json:"request"`
 	Response      Message   `yaml:"response" json:"response"`
-	GRPC          *GrpcMeta `yaml:"grpc,omitempty" json:"grpc,omitempty"`
 	AssertionIDs  []string  `yaml:"assertion_ids,omitempty" json:"assertion_ids,omitempty"`
 	MatchedStubID string    `yaml:"matched_stub_id,omitempty" json:"matched_stub_id,omitempty"`
 }
 
-// Message wraps HTTP or gRPC message payloads.
+// Message wraps HTTP message payloads.
 type Message struct {
 	HTTP *HttpMessage
-	GRPC *GrpcMessage
 }
 
 // HttpMessage represents a request or response payload.
@@ -115,23 +109,6 @@ type HttpMessage struct {
 	Status  int     `yaml:"status,omitempty" json:"status,omitempty"`
 	Headers Headers `yaml:"headers,omitempty" json:"headers,omitempty"`
 	Body    *Body   `yaml:"body,omitempty" json:"body,omitempty"`
-}
-
-// GrpcMeta holds gRPC metadata about the call.
-type GrpcMeta struct {
-	Service       string `yaml:"service,omitempty" json:"service,omitempty"`
-	Method        string `yaml:"method,omitempty" json:"method,omitempty"`
-	Authority     string `yaml:"authority,omitempty" json:"authority,omitempty"`
-	Status        int    `yaml:"status,omitempty" json:"status,omitempty"`
-	StatusMessage string `yaml:"status_message,omitempty" json:"status_message,omitempty"`
-}
-
-// GrpcMessage stores gRPC request or response body and metadata.
-type GrpcMessage struct {
-	ContentType string  `yaml:"content_type,omitempty" json:"content_type,omitempty"`
-	Headers     Headers `yaml:"headers,omitempty" json:"headers,omitempty"`
-	Body        *Body   `yaml:"body,omitempty" json:"body,omitempty"`
-	Trailers    Headers `yaml:"trailers,omitempty" json:"trailers,omitempty"`
 }
 
 // Headers stores multi-valued headers.

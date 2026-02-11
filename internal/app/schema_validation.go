@@ -17,23 +17,13 @@ import (
 	"github.com/getkin/kin-openapi/openapi3filter"
 	"github.com/getkin/kin-openapi/routers"
 	"github.com/getkin/kin-openapi/routers/legacy"
-	"github.com/jhump/protoreflect/desc"
-	"github.com/jhump/protoreflect/desc/protoparse"
-	"github.com/jhump/protoreflect/dynamic"
 	"github.com/phrond/evermock/internal/artifact"
-	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/types/descriptorpb"
 )
 
 type openapiSpec struct {
 	ref    artifact.SchemaRef
 	doc    *openapi3.T
 	router routers.Router
-}
-
-type protoSpec struct {
-	ref      artifact.SchemaRef
-	services map[string]*desc.ServiceDescriptor
 }
 
 func applySchemaValidation(art *artifact.Artifact) {
@@ -92,54 +82,65 @@ func validateSchemas(art *artifact.Artifact) []artifact.SchemaValidationError {
 	}
 
 	openapiByRole := map[string][]openapiSpec{}
-	protoByRole := map[string][]protoSpec{}
 	var issues []artifact.SchemaValidationError
 
 	for role, schemas := range roleSchemas {
 		for _, schema := range schemas {
-			switch strings.ToLower(schema.Type) {
+			typ := strings.ToLower(strings.TrimSpace(schema.Type))
+			switch typ {
 			case "openapi":
 				spec, err := loadOpenAPISpec(schema)
 				if err != nil {
-					issues = append(issues, artifact.SchemaValidationError{Protocol: "http", Channel: roleToChannel(role), Phase: "schema", SchemaID: schema.ID, Message: err.Error()})
+					issues = append(issues, artifact.SchemaValidationError{
+						Protocol: "http",
+						Channel:  roleToChannel(role),
+						Phase:    "schema",
+						SchemaID: schema.ID,
+						Message:  err.Error(),
+					})
 					continue
 				}
 				openapiByRole[role] = append(openapiByRole[role], spec)
-			case "protobuf":
-				spec, err := loadProtoSpec(schema)
-				if err != nil {
-					issues = append(issues, artifact.SchemaValidationError{Protocol: "grpc", Channel: roleToChannel(role), Phase: "schema", SchemaID: schema.ID, Message: err.Error()})
-					continue
-				}
-				protoByRole[role] = append(protoByRole[role], spec)
+			case "":
+				issues = append(issues, artifact.SchemaValidationError{
+					Protocol: typ,
+					Channel:  roleToChannel(role),
+					Phase:    "schema",
+					SchemaID: schema.ID,
+					Message:  fmt.Sprintf("schema type %q is not supported; use openapi", schema.Type),
+				})
+			default:
+				issues = append(issues, artifact.SchemaValidationError{
+					Protocol: typ,
+					Channel:  roleToChannel(role),
+					Phase:    "schema",
+					SchemaID: schema.ID,
+					Message:  fmt.Sprintf("unknown schema type %q", schema.Type),
+				})
 			}
 		}
 	}
 
 	for _, flow := range art.Traffic {
-		role := roleForChannel(flow.Channel)
-		switch strings.ToLower(flow.Protocol) {
-		case "http":
-			if flow.Request.HTTP == nil || flow.Response.HTTP == nil {
-				continue
-			}
-			candidates := openapiByRole[role]
-			if len(candidates) == 0 {
-				issues = append(issues, artifact.SchemaValidationError{FlowID: flow.ID, Channel: flow.Channel, Protocol: "http", Phase: "schema", Message: fmt.Sprintf("no openapi schema registered for role %s", role)})
-				continue
-			}
-			issues = append(issues, validateHTTPFlow(flow, candidates)...)
-		case "grpc":
-			if flow.Request.GRPC == nil || flow.Response.GRPC == nil {
-				continue
-			}
-			candidates := protoByRole[role]
-			if len(candidates) == 0 {
-				issues = append(issues, artifact.SchemaValidationError{FlowID: flow.ID, Channel: flow.Channel, Protocol: "grpc", Phase: "schema", Message: fmt.Sprintf("no protobuf schema registered for role %s", role)})
-				continue
-			}
-			issues = append(issues, validateGRPCFlow(flow, candidates)...)
+		if !strings.EqualFold(flow.Protocol, "http") {
+			continue
 		}
+		if flow.Request.HTTP == nil || flow.Response.HTTP == nil {
+			continue
+		}
+		role := roleForChannel(flow.Channel)
+		candidates := openapiByRole[role]
+		if len(candidates) == 0 {
+			issues = append(issues, artifact.SchemaValidationError{
+				FlowID:   flow.ID,
+				Channel:  flow.Channel,
+				Protocol: "http",
+				Phase:    "schema",
+				Message:  fmt.Sprintf("no openapi schema registered for role %s", role),
+			})
+			continue
+		}
+		issues = append(issues, validateHTTPFlow(flow, candidates)...)
 	}
 
 	return issues
@@ -162,10 +163,22 @@ func validateHTTPFlow(flow artifact.Flow, specs []openapiSpec) []artifact.Schema
 		}
 	}
 	if len(reqErrs) > 0 {
-		issues = append(issues, artifact.SchemaValidationError{FlowID: flow.ID, Channel: flow.Channel, Protocol: "http", Phase: "request", Message: strings.Join(reqErrs, "; ")})
+		issues = append(issues, artifact.SchemaValidationError{
+			FlowID:   flow.ID,
+			Channel:  flow.Channel,
+			Protocol: "http",
+			Phase:    "request",
+			Message:  strings.Join(reqErrs, "; "),
+		})
 	}
 	if len(respErrs) > 0 {
-		issues = append(issues, artifact.SchemaValidationError{FlowID: flow.ID, Channel: flow.Channel, Protocol: "http", Phase: "response", Message: strings.Join(respErrs, "; ")})
+		issues = append(issues, artifact.SchemaValidationError{
+			FlowID:   flow.ID,
+			Channel:  flow.Channel,
+			Protocol: "http",
+			Phase:    "response",
+			Message:  strings.Join(respErrs, "; "),
+		})
 	}
 	return issues
 }
@@ -236,61 +249,6 @@ func validateHTTPAgainstSpec(flow artifact.Flow, spec openapiSpec) (error, error
 	return nil, nil
 }
 
-func validateGRPCFlow(flow artifact.Flow, specs []protoSpec) []artifact.SchemaValidationError {
-	var issues []artifact.SchemaValidationError
-	var errs []string
-	for _, spec := range specs {
-		if err := validateGRPCAgainstSpec(flow, spec); err == nil {
-			return nil
-		} else {
-			errs = append(errs, err.Error())
-		}
-	}
-	if len(errs) == 0 {
-		return nil
-	}
-	message := strings.Join(errs, "; ")
-	issues = append(issues, artifact.SchemaValidationError{FlowID: flow.ID, Channel: flow.Channel, Protocol: "grpc", Phase: "request", Message: message})
-	issues = append(issues, artifact.SchemaValidationError{FlowID: flow.ID, Channel: flow.Channel, Protocol: "grpc", Phase: "response", Message: message})
-	return issues
-}
-
-func validateGRPCAgainstSpec(flow artifact.Flow, spec protoSpec) error {
-	if flow.GRPC == nil {
-		return errors.New("missing grpc metadata")
-	}
-	service := flow.GRPC.Service
-	method := flow.GRPC.Method
-	if service == "" || method == "" {
-		return errors.New("missing grpc service or method")
-	}
-	serviceDesc := spec.services[service]
-	if serviceDesc == nil {
-		return fmt.Errorf("service %s not found", service)
-	}
-	methodDesc := serviceDesc.FindMethodByName(method)
-	if methodDesc == nil {
-		return fmt.Errorf("method %s not found", method)
-	}
-
-	reqMsg := dynamic.NewMessage(methodDesc.GetInputType())
-	reqBytes := bodyBytes(flow.Request.GRPC.Body)
-	if len(reqBytes) > 0 {
-		if err := reqMsg.Unmarshal(reqBytes); err != nil {
-			return fmt.Errorf("request decode failed: %w", err)
-		}
-	}
-
-	respBytes := bodyBytes(flow.Response.GRPC.Body)
-	if flow.GRPC.Status == 0 && len(respBytes) > 0 {
-		respMsg := dynamic.NewMessage(methodDesc.GetOutputType())
-		if err := respMsg.Unmarshal(respBytes); err != nil {
-			return fmt.Errorf("response decode failed: %w", err)
-		}
-	}
-	return nil
-}
-
 func loadOpenAPISpec(ref artifact.SchemaRef) (openapiSpec, error) {
 	loader := openapi3.NewLoader()
 	loader.IsExternalRefsAllowed = true
@@ -339,143 +297,6 @@ func loadOpenAPISpec(ref artifact.SchemaRef) (openapiSpec, error) {
 	return openapiSpec{ref: ref, doc: doc, router: router}, nil
 }
 
-func loadProtoSpec(ref artifact.SchemaRef) (protoSpec, error) {
-	path := strings.TrimSpace(ref.Source.Path)
-	urlStr := strings.TrimSpace(ref.Source.URL)
-	content := strings.TrimSpace(ref.Source.Content)
-	format := strings.ToLower(strings.TrimSpace(ref.Source.Format))
-	if format == "" {
-		format = inferProtoFormat(path, urlStr)
-	}
-
-	cleanup := func() {}
-	var err error
-
-	switch strings.ToLower(ref.Source.Type) {
-	case "file":
-		if path == "" {
-			return protoSpec{}, errors.New("protobuf schema path required")
-		}
-		path = resolvePath(path)
-		if format == "descriptor" {
-			data, readErr := os.ReadFile(path)
-			if readErr != nil {
-				return protoSpec{}, readErr
-			}
-			return loadProtoDescriptor(ref, data)
-		}
-	case "url":
-		if urlStr == "" {
-			return protoSpec{}, errors.New("protobuf schema url required")
-		}
-		path, cleanup, err = downloadToTemp(urlStr, "schema-*")
-		if err != nil {
-			return protoSpec{}, err
-		}
-		if format == "descriptor" {
-			defer cleanup()
-			data, readErr := os.ReadFile(path)
-			if readErr != nil {
-				return protoSpec{}, readErr
-			}
-			return loadProtoDescriptor(ref, data)
-		}
-	case "inline":
-		if content == "" {
-			return protoSpec{}, errors.New("protobuf schema content required")
-		}
-		if format == "descriptor" {
-			raw, decodeErr := base64.StdEncoding.DecodeString(content)
-			if decodeErr != nil {
-				return protoSpec{}, errors.New("descriptor content must be base64")
-			}
-			return loadProtoDescriptor(ref, raw)
-		}
-		path, cleanup, err = writeTempContent([]byte(content), "schema-*.proto")
-		if err != nil {
-			return protoSpec{}, err
-		}
-	default:
-		return protoSpec{}, errors.New("unsupported protobuf source type")
-	}
-	defer cleanup()
-
-	importPaths := resolveImportPaths(ref.Source.ImportPaths)
-	importPaths = append([]string{filepath.Dir(path)}, importPaths...)
-	parser := protoparse.Parser{ImportPaths: importPaths}
-	files, err := parser.ParseFiles(filepath.Base(path))
-	if err != nil {
-		return protoSpec{}, err
-	}
-	services := map[string]*desc.ServiceDescriptor{}
-	for _, file := range files {
-		for _, service := range file.GetServices() {
-			services[service.GetFullyQualifiedName()] = service
-		}
-	}
-	if len(services) == 0 {
-		return protoSpec{}, errors.New("no services found in proto schema")
-	}
-	return protoSpec{ref: ref, services: services}, nil
-}
-
-func loadProtoDescriptor(ref artifact.SchemaRef, data []byte) (protoSpec, error) {
-	set := &descriptorpb.FileDescriptorSet{}
-	if err := proto.Unmarshal(data, set); err != nil {
-		return protoSpec{}, fmt.Errorf("descriptor set decode failed: %w", err)
-	}
-	files, err := desc.CreateFileDescriptorsFromSet(set)
-	if err != nil {
-		return protoSpec{}, err
-	}
-	services := map[string]*desc.ServiceDescriptor{}
-	for _, file := range files {
-		for _, service := range file.GetServices() {
-			services[service.GetFullyQualifiedName()] = service
-		}
-	}
-	if len(services) == 0 {
-		return protoSpec{}, errors.New("no services found in descriptor set")
-	}
-	return protoSpec{ref: ref, services: services}, nil
-}
-
-func downloadToTemp(urlStr, pattern string) (string, func(), error) {
-	resp, err := http.Get(urlStr)
-	if err != nil {
-		return "", func() {}, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 300 {
-		return "", func() {}, fmt.Errorf("download failed: %d", resp.StatusCode)
-	}
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", func() {}, err
-	}
-	return writeTempContent(data, pattern)
-}
-
-func writeTempContent(data []byte, pattern string) (string, func(), error) {
-	file, err := os.CreateTemp("", pattern)
-	if err != nil {
-		return "", func() {}, err
-	}
-	if _, err := file.Write(data); err != nil {
-		_ = file.Close()
-		_ = os.Remove(file.Name())
-		return "", func() {}, err
-	}
-	if err := file.Close(); err != nil {
-		_ = os.Remove(file.Name())
-		return "", func() {}, err
-	}
-	cleanup := func() {
-		_ = os.Remove(file.Name())
-	}
-	return file.Name(), cleanup, nil
-}
-
 func resolvePath(path string) string {
 	if filepath.IsAbs(path) {
 		return path
@@ -485,25 +306,6 @@ func resolvePath(path string) string {
 		return path
 	}
 	return filepath.Join(cwd, path)
-}
-
-func resolveImportPaths(paths []string) []string {
-	if len(paths) == 0 {
-		return nil
-	}
-	out := make([]string, 0, len(paths))
-	for _, path := range paths {
-		path = strings.TrimSpace(path)
-		if path == "" {
-			continue
-		}
-		if filepath.IsAbs(path) {
-			out = append(out, path)
-		} else {
-			out = append(out, resolvePath(path))
-		}
-	}
-	return out
 }
 
 func roleForChannel(channel string) string {
@@ -552,16 +354,4 @@ func toHTTPHeader(headers artifact.Headers) http.Header {
 		}
 	}
 	return out
-}
-
-func inferProtoFormat(path, urlStr string) string {
-	candidate := path
-	if candidate == "" {
-		candidate = urlStr
-	}
-	candidate = strings.ToLower(candidate)
-	if strings.HasSuffix(candidate, ".desc") || strings.HasSuffix(candidate, ".pb") || strings.HasSuffix(candidate, ".protoset") || strings.HasSuffix(candidate, ".bin") {
-		return "descriptor"
-	}
-	return "proto"
 }

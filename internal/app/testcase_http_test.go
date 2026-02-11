@@ -20,10 +20,6 @@ func TestTestCaseLifecycleWritesArtifact(t *testing.T) {
 	cfg.Proxy.ListenAddr = "127.0.0.1:0"
 	cfg.Proxy.CABaseDir = t.TempDir()
 	cfg.Mock.ListenAddr = "127.0.0.1:0"
-	cfg.GRPCProxy.ListenAddr = "127.0.0.1:0"
-	cfg.GRPCMock.ListenAddr = "127.0.0.1:0"
-	cfg.GRPCProxy.CABaseDir = t.TempDir()
-	cfg.GRPCMock.CABaseDir = t.TempDir()
 	cfg.Artifact.OutputDir = outputDir
 
 	store := NewTestCaseStore(cfg.Artifact.OutputDir)

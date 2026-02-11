@@ -12,9 +12,9 @@ We are building a testing tool for microservice isolated black-box tests. The sy
 Primary output is a single YAML artifact per test case that captures:
 - Request/response traffic on both channels
 - Field-level assertions made by the test
-- References to OpenAPI specs and (later) Protobuf schemas
+- References to OpenAPI specs
 
-The system should be extensible to support gRPC/protos later, while implementing HTTP/HTTPS in v1.
+The system should stay focused on HTTP/HTTPS in v1.
 
 ## 2) Goals
 - Produce a YAML artifact per test case that is deterministic, diffable, and merge-safe.
@@ -22,12 +22,11 @@ The system should be extensible to support gRPC/protos later, while implementing
   - `test_to_sut`
   - `sut_to_mock`
 - Support explicit traffic expectations and link them to captured traffic.
-- Attach schema references (OpenAPI now, Protobuf later) for contract comparison.
+- Attach OpenAPI schema references for contract comparison.
 - Provide a JavaScript SDK that test code uses to orchestrate test cases and record assertions.
 - Minimal provider burden (consumer-driven), similar intent to Pact but without provider-side setup.
 
 ## 3) Non-Goals (v1)
-- Protobuf decoding and rich gRPC schema-aware assertions (planned for v2).
 - Full service virtualization beyond deterministic HTTP responses (e.g., streaming SSE or WebSockets).
 - Persistent mock state or complex data stores.
 - UI for viewing artifacts (CLI tooling acceptable in v1).
@@ -38,12 +37,11 @@ The system should be extensible to support gRPC/protos later, while implementing
 1. Start and stop a capture proxy per test case.
 2. Start and stop a mock server per test case.
 3. Register HTTP stubs with matching rules and responses.
-4. Capture HTTP and gRPC request/response pairs for both channels.
+4. Capture HTTP request/response pairs for both channels.
 5. Record and evaluate traffic expectations in tests.
 6. Export a YAML artifact per test case.
-7. Attach OpenAPI or Protobuf spec references to test cases (required).
-8. Register gRPC stubs with matching rules and responses (raw bytes).
-9. Validate captured traffic against the provided specs for both SUT and mock channels.
+7. Attach OpenAPI spec references to test cases (required).
+8. Validate captured traffic against the provided specs for both SUT and mock channels.
 
 ### 4.4 Schema Validation Rules (v1)
 - Tests must provide at least one schema via `schemas` when starting a test case.
@@ -51,9 +49,6 @@ The system should be extensible to support gRPC/protos later, while implementing
   - `role: sut` validates `test_to_sut` traffic
   - `role: fake` validates `sut_to_mock` traffic
 - OpenAPI schemas are validated for request + response bodies and headers.
-- Protobuf schemas validate gRPC method existence and message decoding.
-- Proto imports are supported via `source.import_paths` (relative to repo root or absolute paths).
-- Descriptor sets are supported for complex protobufs: set `source.format: descriptor` and provide `source.path` or `source.url`.
 - Validation results are stored in `artifact.schema_validation` with structured error objects.
 
 Example (inline OpenAPI):
@@ -78,8 +73,8 @@ Example (inline OpenAPI):
 ### 4.5 Coverage Reporting (v1)
 1. Provide a CLI helper that reads YAML/JSON artifacts after tests complete.
 2. Report coverage from an API spec perspective:
-   - Provided API specs: paths/services exercised and not covered.
-   - Dependent API specs: paths/services faked and fields asserted.
+   - Provided API specs: paths exercised and not covered.
+   - Dependent API specs: paths faked and fields asserted.
 3. Output should be machine-ingestable (YAML or JSON) for central reporting.
 
 ### 4.2 HTTPS Support
@@ -89,11 +84,9 @@ Example (inline OpenAPI):
 4. Provide a "pass-through" mode for environments where MITM is not allowed (only metadata capture).
 5. Provide a way to trust the local CA for the test environment (documented steps).
 
-### 4.3 Extensibility for gRPC
-1. Architecture must allow HTTP/2 and TLS MITM without redesign.
-2. Artifact schema must have protocol discriminators (HTTP vs gRPC) and store raw bytes (implemented).
-3. Schema references must include Protobuf descriptors for later decoding.
-4. Assertion paths must be protocol-agnostic with an extensible path language.
+### 4.3 Extensibility
+1. Architecture must allow future protocol expansion without redesign.
+2. Assertion paths should stay protocol-agnostic with an extensible path language.
 
 ## 5) Non-Functional Requirements
 - Deterministic output ordering and stable IDs for diffing.
@@ -122,7 +115,7 @@ Example (inline OpenAPI):
    - Produces a spec-coverage summary for provided and dependent APIs.
 
 ### 6.2 Key Decisions
-- **Core language**: Go (recommended) for reliable HTTP/1.1 + HTTP/2 plumbing, MITM, and future gRPC capture.
+- **Core language**: Go (recommended) for reliable HTTP/1.1 + HTTP/2 plumbing and MITM.
 - **SDK language**: JavaScript (TypeScript recommended for SDK implementation).
 - **Transport**: HTTP API between SDK and core service.
 - **Proxy model**: Explicit forward proxy with CONNECT and MITM for HTTPS.
@@ -152,12 +145,12 @@ flowchart LR
 ```
 
 ### 6.4 Internal Interfaces (Go Sketches)
-These are intentionally minimal and designed to keep HTTP now while allowing gRPC later.
+These are intentionally minimal and designed to keep HTTP-focused behavior.
 
 ```go
-// ProtocolAdapter allows HTTP today and gRPC later without rewriting core logic.
+// ProtocolAdapter allows HTTP handling without rewriting core logic.
 type ProtocolAdapter interface {
-    Protocol() string // "http", "grpc"
+    Protocol() string // "http"
     CanHandle(raw *CapturedExchange) bool
     DecodeRequest(raw *CapturedExchange) (*RecordedMessage, error)
     DecodeResponse(raw *CapturedExchange) (*RecordedMessage, error)
@@ -192,7 +185,7 @@ type AssertionEngine interface {
     Evaluate(artifact *Artifact) ([]AssertionResult, error)
 }
 
-// SchemaRegistry tracks OpenAPI and (future) Protobuf schemas.
+// SchemaRegistry tracks OpenAPI schemas.
 type SchemaRegistry interface {
     Add(ref SchemaRef) error
     Get(id string) (SchemaRef, bool)
@@ -226,16 +219,12 @@ type ArtifactWriter interface {
 - SDK accepts redaction rules (header and JSON field paths).
 - Redaction applied before writing the YAML artifact.
 
-## 8) Schema Strategy (OpenAPI + Protobuf)
+## 8) Schema Strategy (OpenAPI)
 
 ### 8.1 OpenAPI (v1)
 - Store schema references with SHA256 hash.
 - Record OpenAPI version and file path (or inline source).
 - An OpenAPI description of the artifact schema lives in `docs/artifact-openapi.yaml`.
-
-### 8.2 Protobuf (v2)
-- Store `.proto` paths or compiled descriptor set references.
-- Record Protobuf package/service/method references for captured gRPC calls.
 
 ## 9) SDK API Surface (JavaScript)
 
@@ -258,11 +247,6 @@ type ArtifactWriter interface {
 ### 9.4 HTTPS Utilities
 - `getCaCertificate()`
 - `setProxyMode({ mode })`
-
-### 9.5 gRPC-Ready API (no-op in v1)
-- `registerProto({ source, format, packageFilter })`
-- `registerGrpcStub({ id, method, match, response, metadata, schemaRef })`
-- `assertMessage({ channel, phase, field, operator, expected, pathLang })`
 
 ## 10) YAML Artifact Format (Draft)
 
@@ -328,8 +312,7 @@ redactions:
 ```
 
 Notes:
-- For binary or gRPC payloads, use `encoding: "base64"` and store `body.bytes`.
-- Add `protocol: "grpc"` and a `grpc` section for gRPC calls later.
+- For binary payloads, use `encoding: "base64"` and store `body.bytes`.
 - The current encoder writes JSON (valid YAML 1.2) for deterministic output without external YAML dependencies.
 - Assertion results default to `recorded` when the SDK captures a check without evaluation.
 - The core currently evaluates `equals` and `exists` for `jsonpath`, `header`, and `status` assertions at test case finish.
@@ -358,11 +341,11 @@ Notes:
 2. Add docs for HTTPS trust setup (macOS, Linux, CI).
 3. Provide sample test integration (Jest + Mocha).
 
-### Phase 4: gRPC Preparation (no execution)
+### Phase 4: Protocol Expansion (future)
 1. Define protocol adapter interfaces in core service.
-2. Add artifact fields for `protocol: grpc` and raw bytes.
-3. Add schema registry support for Protobuf references.
-4. Add placeholder SDK calls for gRPC stubs and assertions.
+2. Add artifact fields for additional protocol metadata if needed.
+3. Add schema registry support for future schema types.
+4. Add placeholder SDK calls for future protocol-specific stubs and assertions.
 
 ## 12) Risks and Open Questions
 - How will the SUT be configured to trust the local CA in CI?

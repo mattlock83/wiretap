@@ -59,13 +59,12 @@ test("submit payment", async () => {
 
 ## API
 
-- `start({ baseUrl, timeoutMs, sutBaseUrl, schemas, proxy, mockServer, grpcProxy, grpcMockServer, tags, meta, strictSchema, scenarioPrefix })`
+- `start({ baseUrl, timeoutMs, sutBaseUrl, schemas, proxy, mockServer, tags, meta, strictSchema, scenarioPrefix })`
 - `runtime.scenarioName(name)`
 - `runtime.reset({ status, strictSchema, clearMocks, nextScenarioName })`
 - `runtime.stop({ status, strictSchema, writeArtifact })`
 - `runtime.mock.http(stub)`
-- `runtime.mock.grpc(stub)`
-- `runtime.mock.clear({ http, grpc })`
+- `runtime.mock.clear({ http })`
 - `runtime.http.request({ method, path, headers, body, sutBaseUrl, proxyBaseUrl })`
 - `runtime.http.get(path, options)`
 - `runtime.http.post(path, body, options)`

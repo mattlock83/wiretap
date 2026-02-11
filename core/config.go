@@ -8,13 +8,11 @@ import (
 )
 
 type Config struct {
-	HTTP      HTTPConfig
-	Log       LogConfig
-	Proxy     ProxyConfig
-	Mock      MockConfig
-	GRPCProxy GRPCProxyConfig
-	GRPCMock  GRPCMockConfig
-	Artifact  ArtifactConfig
+	HTTP     HTTPConfig
+	Log      LogConfig
+	Proxy    ProxyConfig
+	Mock     MockConfig
+	Artifact ArtifactConfig
 }
 
 type HTTPConfig struct {
@@ -37,18 +35,6 @@ type ProxyConfig struct {
 
 type MockConfig struct {
 	ListenAddr string
-}
-
-type GRPCProxyConfig struct {
-	ListenAddr         string
-	TargetAddr         string
-	InsecureSkipVerify bool
-	CABaseDir          string
-}
-
-type GRPCMockConfig struct {
-	ListenAddr string
-	CABaseDir  string
 }
 
 type ArtifactConfig struct {
@@ -74,12 +60,6 @@ func DefaultConfig() Config {
 		Mock: MockConfig{
 			ListenAddr: "127.0.0.1:19090",
 		},
-		GRPCProxy: GRPCProxyConfig{
-			ListenAddr: "127.0.0.1:0",
-		},
-		GRPCMock: GRPCMockConfig{
-			ListenAddr: "127.0.0.1:0",
-		},
 		Artifact: ArtifactConfig{
 			OutputDir: "artifacts",
 		},
@@ -96,12 +76,6 @@ func (c Config) Validate() error {
 	}
 	if c.Proxy.ListenAddr == "" {
 		errs = append(errs, errors.New("proxy.listen_addr must not be empty"))
-	}
-	if c.GRPCProxy.ListenAddr == "" {
-		errs = append(errs, errors.New("grpc_proxy.listen_addr must not be empty"))
-	}
-	if c.GRPCMock.ListenAddr == "" {
-		errs = append(errs, errors.New("grpc_mock.listen_addr must not be empty"))
 	}
 	if c.Artifact.OutputDir == "" {
 		errs = append(errs, errors.New("artifact.output_dir must not be empty"))

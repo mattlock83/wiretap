@@ -78,14 +78,6 @@ class CoreClient {
     return this._post("/v1/mock/start", config || {});
   }
 
-  async startGrpcProxy(config) {
-    return this._post("/v1/grpc/proxy/start", config || {});
-  }
-
-  async startGrpcMockServer(config) {
-    return this._post("/v1/grpc/mock/start", config || {});
-  }
-
   async startTestCase(name, options = {}) {
     const payload = {
       name,
@@ -114,14 +106,6 @@ class CoreClient {
 
   async clearStubs() {
     return this._post("/v1/stubs/clear", {});
-  }
-
-  async registerGrpcStub(stub) {
-    return this._post("/v1/grpc/stubs", stub);
-  }
-
-  async clearGrpcStubs() {
-    return this._post("/v1/grpc/stubs/clear", {});
   }
 
   async getMockExchanges() {
@@ -223,7 +207,6 @@ class PhrondSession {
 
     this.mock = {
       http: (stub) => this.mockHttp(stub),
-      grpc: (stub) => this.mockGrpc(stub),
       clear: (options) => this.clearMocks(options)
     };
 
@@ -326,23 +309,13 @@ class PhrondSession {
     return this.client.registerStub(stub);
   }
 
-  async mockGrpc(stub) {
-    this._assertNotStopped();
-    await this._ensureCase();
-    return this.client.registerGrpcStub(stub);
-  }
-
   async clearMocks(options = {}) {
     this._assertNotStopped();
     const clearHttp = options.http !== false;
-    const clearGrpc = options.grpc !== false;
     const result = {};
 
     if (clearHttp && this.runtime.mockServer) {
       result.http = await this.client.clearStubs();
-    }
-    if (clearGrpc && this.runtime.grpcMockServer) {
-      result.grpc = await this.client.clearGrpcStubs();
     }
 
     return result;
@@ -657,8 +630,6 @@ async function start(config = {}) {
 
   const proxyConfig = normalizeComponentConfig(config.proxy, "proxy");
   const mockServerConfig = normalizeComponentConfig(config.mockServer, "mockServer");
-  const grpcProxyConfig = normalizeComponentConfig(config.grpcProxy, "grpcProxy");
-  const grpcMockServerConfig = normalizeComponentConfig(config.grpcMockServer, "grpcMockServer");
 
   await client.startLifecycle();
 
@@ -669,12 +640,6 @@ async function start(config = {}) {
     }
     if (mockServerConfig) {
       runtime.mockServer = await client.startMockServer(normalizeStartPayload(mockServerConfig));
-    }
-    if (grpcProxyConfig) {
-      runtime.grpcProxy = await client.startGrpcProxy(normalizeStartPayload(grpcProxyConfig));
-    }
-    if (grpcMockServerConfig) {
-      runtime.grpcMockServer = await client.startGrpcMockServer(normalizeStartPayload(grpcMockServerConfig));
     }
 
     return new PhrondSession(client, config, runtime);

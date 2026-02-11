@@ -10,12 +10,10 @@ import (
 )
 
 type Deps struct {
-	Config    core.Config
-	Logger    *slog.Logger
-	Proxy     core.Component
-	Mock      core.Component
-	GRPCProxy core.Component
-	GRPCMock  core.Component
+	Config core.Config
+	Logger *slog.Logger
+	Proxy  core.Component
+	Mock   core.Component
 }
 
 type App struct {
@@ -25,10 +23,8 @@ type App struct {
 	server    *http.Server
 	store     *TestCaseStore
 
-	proxyComponent     *ProxyComponent
-	mockComponent      *MockComponent
-	grpcProxyComponent *GrpcProxyComponent
-	grpcMockComponent  *GrpcMockComponent
+	proxyComponent *ProxyComponent
+	mockComponent  *MockComponent
 }
 
 func New(deps Deps) (*App, error) {
@@ -60,19 +56,6 @@ func New(deps Deps) (*App, error) {
 		mock = NewMockComponent(cfg.Mock)
 	}
 
-	grpcProxy := deps.GRPCProxy
-	if grpcProxy == nil {
-		component, err := NewGrpcProxyComponent(cfg.GRPCProxy, logger, store)
-		if err != nil {
-			return nil, err
-		}
-		grpcProxy = component
-	}
-	grpcMock := deps.GRPCMock
-	if grpcMock == nil {
-		grpcMock = NewGrpcMockComponent(cfg.GRPCMock, nil)
-	}
-
 	lifecycle := &core.Lifecycle{
 		Proxy:  proxy,
 		Mock:   mock,
@@ -91,12 +74,6 @@ func New(deps Deps) (*App, error) {
 	}
 	if component, ok := mock.(*MockComponent); ok {
 		app.mockComponent = component
-	}
-	if component, ok := grpcProxy.(*GrpcProxyComponent); ok {
-		app.grpcProxyComponent = component
-	}
-	if component, ok := grpcMock.(*GrpcMockComponent); ok {
-		app.grpcMockComponent = component
 	}
 
 	app.server = &http.Server{

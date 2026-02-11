@@ -8,8 +8,6 @@ import (
 	"strings"
 
 	"github.com/phrond/evermock/internal/artifact"
-	"github.com/phrond/evermock/internal/grpcmock"
-	"github.com/phrond/evermock/internal/grpcproxy"
 	"github.com/phrond/evermock/internal/mock"
 	"github.com/phrond/evermock/internal/proxy"
 )
@@ -57,26 +55,9 @@ func (a *App) handleTestCaseStart(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if a.grpcProxyComponent != nil {
-		if err := a.grpcProxyComponent.Start(r.Context()); err != nil && !errors.Is(err, grpcproxy.ErrAlreadyStarted) {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
-			return
-		}
-	}
-	if a.grpcMockComponent != nil {
-		if err := a.grpcMockComponent.Start(r.Context()); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
-			return
-		}
-	}
 
 	if a.mockComponent != nil {
 		if recorder := a.mockComponent.Recorder(); recorder != nil {
-			recorder.Clear()
-		}
-	}
-	if a.grpcMockComponent != nil {
-		if recorder := a.grpcMockComponent.Recorder(); recorder != nil {
 			recorder.Clear()
 		}
 	}
@@ -113,15 +94,9 @@ func (a *App) handleTestCaseFinish(w http.ResponseWriter, r *http.Request) {
 			exchanges = recorder.Exchanges()
 		}
 	}
-	var grpcExchanges []grpcmock.Exchange
-	if a.grpcMockComponent != nil {
-		if recorder := a.grpcMockComponent.Recorder(); recorder != nil {
-			grpcExchanges = recorder.Exchanges()
-		}
-	}
 
 	env := a.environmentSnapshot()
-	artifactDoc, path, err := a.store.FinishCase(req.Status, env, exchanges, grpcExchanges)
+	artifactDoc, path, err := a.store.FinishCase(req.Status, env, exchanges)
 	if err != nil {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 		return
@@ -132,12 +107,6 @@ func (a *App) handleTestCaseFinish(w http.ResponseWriter, r *http.Request) {
 	}
 	if a.proxyComponent != nil {
 		_ = a.proxyComponent.Stop(r.Context())
-	}
-	if a.grpcMockComponent != nil {
-		_ = a.grpcMockComponent.Stop(r.Context())
-	}
-	if a.grpcProxyComponent != nil {
-		_ = a.grpcProxyComponent.Stop(r.Context())
 	}
 
 	if a.logger != nil && artifactDoc != nil {
@@ -263,118 +232,6 @@ type proxyStartRequest struct {
 
 type mockStartRequest struct {
 	ListenAddr string `json:"listen_addr,omitempty"`
-}
-
-type grpcProxyStartRequest struct {
-	ListenAddr         string `json:"listen_addr,omitempty"`
-	Target             string `json:"target"`
-	InsecureSkipVerify *bool  `json:"insecure_skip_verify,omitempty"`
-}
-
-func (a *App) handleGrpcProxyStart(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
-		return
-	}
-	if a.grpcProxyComponent == nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "grpc proxy not configured"})
-		return
-	}
-	var payload grpcProxyStartRequest
-	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil && !errors.Is(err, io.EOF) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
-		return
-	}
-	if payload.ListenAddr != "" {
-		if err := a.grpcProxyComponent.SetListenAddr(payload.ListenAddr); err != nil {
-			writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
-			return
-		}
-	}
-	if payload.Target != "" {
-		if err := a.grpcProxyComponent.SetTarget(payload.Target); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
-			return
-		}
-	}
-	if payload.InsecureSkipVerify != nil {
-		a.grpcProxyComponent.SetInsecureSkipVerify(*payload.InsecureSkipVerify)
-	}
-	if err := a.grpcProxyComponent.Start(r.Context()); err != nil {
-		if errors.Is(err, grpcproxy.ErrAlreadyStarted) {
-			writeJSON(w, http.StatusOK, mergeGrpcProxyInfo(a.grpcProxyComponent))
-			return
-		}
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
-		return
-	}
-	writeJSON(w, http.StatusOK, mergeGrpcProxyInfo(a.grpcProxyComponent))
-}
-
-type grpcMockStartRequest struct {
-	ListenAddr string `json:"listen_addr,omitempty"`
-}
-
-func (a *App) handleGrpcMockStart(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
-		return
-	}
-	if a.grpcMockComponent == nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "grpc mock not configured"})
-		return
-	}
-	var payload grpcMockStartRequest
-	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil && !errors.Is(err, io.EOF) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
-		return
-	}
-	if payload.ListenAddr != "" {
-		if err := a.grpcMockComponent.SetListenAddr(payload.ListenAddr); err != nil {
-			writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
-			return
-		}
-	}
-	if err := a.grpcMockComponent.Start(r.Context()); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]string{"addr": a.grpcMockComponent.Addr()})
-}
-
-func (a *App) handleGrpcStubs(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
-		return
-	}
-	if a.grpcMockComponent == nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "grpc mock server not configured"})
-		return
-	}
-
-	var stub grpcmock.Stub
-	if err := json.NewDecoder(r.Body).Decode(&stub); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
-		return
-	}
-	if strings.TrimSpace(stub.ID) == "" {
-		stub.ID = "grpc-stub"
-	}
-	a.grpcMockComponent.RegisterStub(stub)
-	writeJSON(w, http.StatusOK, map[string]string{"status": "registered", "id": stub.ID})
-}
-
-func (a *App) handleGrpcStubsClear(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
-		return
-	}
-	if a.grpcMockComponent == nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "grpc mock server not configured"})
-		return
-	}
-	a.grpcMockComponent.ClearStubs()
-	writeJSON(w, http.StatusOK, map[string]string{"status": "cleared"})
 }
 
 func (a *App) handleExpectations(w http.ResponseWriter, r *http.Request) {
@@ -549,17 +406,6 @@ func (a *App) environmentSnapshot() *artifact.Environment {
 			env.MockBaseURL = normalizeURL(addr)
 		}
 	}
-	if a.grpcProxyComponent != nil {
-		info := mergeGrpcProxyInfo(a.grpcProxyComponent)
-		if info.ListenAddr != "" {
-			env.GRPCProxyListen = normalizeGRPCURL(info.ListenAddr)
-		}
-	}
-	if a.grpcMockComponent != nil {
-		if addr := a.grpcMockComponent.Addr(); addr != "" {
-			env.GRPCMockBaseURL = normalizeGRPCURL(addr)
-		}
-	}
 	return env
 }
 
@@ -573,32 +419,9 @@ func normalizeURL(raw string) string {
 	return "http://" + raw
 }
 
-func normalizeGRPCURL(raw string) string {
-	if raw == "" {
-		return ""
-	}
-	if strings.HasPrefix(raw, "http://") || strings.HasPrefix(raw, "https://") {
-		return raw
-	}
-	return "https://" + raw
-}
-
 func mergeProxyInfo(component *ProxyComponent) proxy.Info {
 	if component == nil {
 		return proxy.Info{}
-	}
-	info := component.Info()
-	if info.ListenAddr == "" {
-		if addr := component.ListenAddr(); addr != "" {
-			info.ListenAddr = addr
-		}
-	}
-	return info
-}
-
-func mergeGrpcProxyInfo(component *GrpcProxyComponent) grpcproxy.Info {
-	if component == nil {
-		return grpcproxy.Info{}
 	}
 	info := component.Info()
 	if info.ListenAddr == "" {
