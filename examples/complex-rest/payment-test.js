@@ -1,6 +1,6 @@
 const { test, before, beforeEach, afterEach, after } = require("node:test");
 const assert = require("node:assert/strict");
-const { startRuntime, setupComplexCase, resetComplexCase, registerAccounts } = require("./test-helpers");
+const { startRuntime, startComplexServices, stopComplexServices, registerAccounts } = require("./test-helpers");
 
 const RUN_E2E = Boolean(process.env.PHROND_BASE_URL || process.env.PHROND_HTTP_LISTEN);
 
@@ -15,19 +15,35 @@ if (!RUN_E2E) {
 } else {
   before(async () => {
     runtime = await startRuntime();
+    services = await startComplexServices();
   });
 
   beforeEach(async (t) => {
-    services = await setupComplexCase(runtime, { name: t.name });
+    const session = await runtime.setupTest({ name: t.name });
+    services.dependencyRouter.setTargetBaseUrl(session.mockBaseUrl);
   });
 
   afterEach(async () => {
-    await resetComplexCase(runtime, services);
-    services = null;
+    await runtime.teardownTest({ status: "pass" });
   });
 
   after(async () => {
-    await runtime?.killServer();
+    const errors = [];
+    try {
+      await stopComplexServices(services);
+    } catch (err) {
+      errors.push(err);
+    }
+    try {
+      await runtime?.killServer();
+    } catch (err) {
+      errors.push(err);
+    }
+    services = null;
+    runtime = null;
+    if (errors.length > 0) {
+      throw errors[0];
+    }
   });
 
   test("submits payment and lists transactions", async () => {

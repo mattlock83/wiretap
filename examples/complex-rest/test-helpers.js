@@ -1,3 +1,4 @@
+const http = require("node:http");
 const { spawn } = require("node:child_process");
 const { startServer } = require("../../sdk/js/src/index");
 
@@ -32,7 +33,7 @@ async function waitForHealth(url, timeoutMs = 12_000) {
     } catch (_) {
       // retry until deadline
     }
-    await sleep(200);
+    await sleep(25);
   }
   throw new Error(`service did not become healthy: ${url}`);
 }
@@ -47,6 +48,104 @@ async function stopProcess(proc, timeoutMs = 2_000) {
       if (proc.exitCode === null) proc.kill("SIGKILL");
     })
   ]);
+}
+
+function parseListenAddr(listen) {
+  const value = String(listen || "").trim();
+  const splitAt = value.lastIndexOf(":");
+  if (splitAt <= 0 || splitAt >= value.length - 1) {
+    throw new Error(`invalid listen address: ${listen}`);
+  }
+  const host = value.slice(0, splitAt);
+  const port = Number(value.slice(splitAt + 1));
+  if (!Number.isInteger(port) || port < 0 || port > 65535) {
+    throw new Error(`invalid listen port: ${listen}`);
+  }
+  return { host, port };
+}
+
+function joinBaseAndRequestPath(basePath, requestPath) {
+  const prefix = basePath === "/" ? "" : basePath.replace(/\/$/, "");
+  const suffix = requestPath.startsWith("/") ? requestPath : `/${requestPath}`;
+  return prefix + suffix || "/";
+}
+
+function buildForwardURL(baseUrl, incomingPath) {
+  const base = new URL(baseUrl);
+  const incoming = new URL(incomingPath || "/", "http://placeholder.local");
+  base.pathname = joinBaseAndRequestPath(base.pathname || "/", incoming.pathname || "/");
+  base.search = incoming.search;
+  return base;
+}
+
+async function createDependencyRouter(options = {}) {
+  const listen = options.listen || process.env.COMPLEX_DEPENDENCY_ROUTER_LISTEN || "127.0.0.1:0";
+  const { host, port } = parseListenAddr(listen);
+  let targetBaseUrl = "";
+
+  const server = http.createServer(async (req, res) => {
+    if (!targetBaseUrl) {
+      res.statusCode = 503;
+      res.end("dependency target is not set");
+      return;
+    }
+
+    try {
+      const upstreamURL = buildForwardURL(targetBaseUrl, req.url || "/");
+      const chunks = [];
+      for await (const chunk of req) {
+        chunks.push(chunk);
+      }
+      const body = chunks.length > 0 ? Buffer.concat(chunks) : undefined;
+
+      const headers = { ...req.headers };
+      delete headers.host;
+
+      const upstream = await fetch(upstreamURL, {
+        method: req.method || "GET",
+        headers,
+        body
+      });
+
+      res.statusCode = upstream.status;
+      upstream.headers.forEach((value, key) => {
+        if (key.toLowerCase() === "transfer-encoding") {
+          return;
+        }
+        res.setHeader(key, value);
+      });
+      const responseBody = Buffer.from(await upstream.arrayBuffer());
+      res.end(responseBody);
+    } catch (err) {
+      res.statusCode = 502;
+      res.end(`dependency forward error: ${err.message}`);
+    }
+  });
+
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(port, host, resolve);
+  });
+
+  const address = server.address();
+  if (!address || typeof address === "string") {
+    throw new Error("failed to resolve dependency router listen address");
+  }
+
+  const resolvedListen = `${address.address}:${address.port}`;
+  return {
+    listen: resolvedListen,
+    baseUrl: `http://${resolvedListen}`,
+    setTargetBaseUrl(value) {
+      if (typeof value !== "string" || value.trim() === "") {
+        throw new Error("dependency target base URL is required");
+      }
+      targetBaseUrl = value.trim().replace(/\/$/, "");
+    },
+    stop() {
+      return new Promise((resolve) => server.close(resolve));
+    }
+  };
 }
 
 async function startService(options = {}) {
@@ -120,46 +219,53 @@ async function startRuntime() {
   });
 }
 
-async function setupComplexCase(runtime, options = {}) {
+async function startComplexServices(options = {}) {
   const paymentListen = options.paymentListen || process.env.PAYMENT_SUT_LISTEN || "127.0.0.1:18110";
   const transactionListen = options.transactionListen || process.env.TRANSACTION_SERVICE_LISTEN || "127.0.0.1:18111";
-  const session = await runtime.setupTest({ name: options.name });
-
-  const transactionService = await startService({
-    listen: transactionListen,
-    binary: process.env.TRANSACTION_SERVICE_BINARY,
-    command: ["go", "run", "./examples/demo-apps/complex-rest/transaction-service"],
-    env: {
-      TRANSACTION_SERVICE_LISTEN: transactionListen,
-      ACCOUNT_BASE_URL: session.mockBaseUrl
-    }
+  const dependencyRouter = await createDependencyRouter({
+    listen: options.dependencyRouterListen || process.env.COMPLEX_DEPENDENCY_ROUTER_LISTEN || "127.0.0.1:0"
   });
 
-  const paymentSut = await startService({
-    listen: paymentListen,
-    binary: process.env.PAYMENT_SUT_BINARY,
-    command: ["go", "run", "./examples/demo-apps/complex-rest/payment-sut"],
-    env: {
-      PAYMENT_SUT_LISTEN: paymentListen,
-      ACCOUNT_BASE_URL: session.mockBaseUrl,
-      TRANSACTION_BASE_URL: `http://${transactionService.listen}`
-    }
-  });
+  let transactionService;
+  let paymentSut;
+
+  try {
+    transactionService = await startService({
+      listen: transactionListen,
+      binary: process.env.TRANSACTION_SERVICE_BINARY,
+      command: ["go", "run", "./examples/demo-apps/complex-rest/transaction-service"],
+      env: {
+        TRANSACTION_SERVICE_LISTEN: transactionListen,
+        ACCOUNT_BASE_URL: dependencyRouter.baseUrl
+      }
+    });
+
+    paymentSut = await startService({
+      listen: paymentListen,
+      binary: process.env.PAYMENT_SUT_BINARY,
+      command: ["go", "run", "./examples/demo-apps/complex-rest/payment-sut"],
+      env: {
+        PAYMENT_SUT_LISTEN: paymentListen,
+        ACCOUNT_BASE_URL: dependencyRouter.baseUrl,
+        TRANSACTION_BASE_URL: `http://${transactionService.listen}`
+      }
+    });
+  } catch (err) {
+    await paymentSut?.stop?.();
+    await transactionService?.stop?.();
+    await dependencyRouter.stop();
+    throw err;
+  }
 
   return {
-    session,
     paymentSut,
-    transactionService
+    transactionService,
+    dependencyRouter
   };
 }
 
-async function resetComplexCase(runtime, services, options = {}) {
+async function stopComplexServices(services) {
   const errors = [];
-  try {
-    await runtime.teardownTest({ status: options.status || "pass" });
-  } catch (err) {
-    errors.push(err);
-  }
   try {
     await services?.paymentSut?.stop?.();
   } catch (err) {
@@ -170,6 +276,11 @@ async function resetComplexCase(runtime, services, options = {}) {
   } catch (err) {
     errors.push(err);
   }
+  try {
+    await services?.dependencyRouter?.stop?.();
+  } catch (err) {
+    errors.push(err);
+  }
   if (errors.length > 0) {
     throw errors[0];
   }
@@ -177,7 +288,7 @@ async function resetComplexCase(runtime, services, options = {}) {
 
 module.exports = {
   startRuntime,
-  setupComplexCase,
-  resetComplexCase,
+  startComplexServices,
+  stopComplexServices,
   registerAccounts
 };

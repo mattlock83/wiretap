@@ -1,7 +1,7 @@
 const { test, before, beforeEach, afterEach, after } = require("node:test");
 const assert = require("node:assert/strict");
 const { startServer } = require("../../sdk/js/src/index");
-const { startBasicRestSUT } = require("./test-helpers");
+const { startBasicRestSUT, createDependencyRouter } = require("./test-helpers");
 
 const RUN_E2E = Boolean(process.env.PHROND_BASE_URL || process.env.PHROND_HTTP_LISTEN);
 
@@ -22,6 +22,7 @@ const SCHEMAS = [
 
 let runtime;
 let sut;
+let dependencyRouter;
 
 function resolveBaseUrl() {
   return (
@@ -44,37 +45,45 @@ if (!RUN_E2E) {
       sutBaseUrl: `http://${sutListen}`,
       strictSchema: true
     });
-  });
-
-  beforeEach(async (t) => {
-    const sutListen = process.env.SUT_LISTEN || "127.0.0.1:18090";
-    const session = await runtime.setupTest({ name: t.name });
+    dependencyRouter = await createDependencyRouter();
     sut = await startBasicRestSUT({
       listen: sutListen,
-      dependencyBaseUrl: session.mockBaseUrl
+      dependencyBaseUrl: dependencyRouter.baseUrl
     });
   });
 
+  beforeEach(async (t) => {
+    const session = await runtime.setupTest({ name: t.name });
+    dependencyRouter.setTargetBaseUrl(session.mockBaseUrl);
+  });
+
   afterEach(async () => {
+    await runtime.teardownTest({ status: "pass" });
+  });
+
+  after(async () => {
     const errors = [];
-    try {
-      await runtime.teardownTest({ status: "pass" });
-    } catch (err) {
-      errors.push(err);
-    }
     try {
       await sut?.stop?.();
     } catch (err) {
       errors.push(err);
     }
+    try {
+      await dependencyRouter?.stop?.();
+    } catch (err) {
+      errors.push(err);
+    }
+    try {
+      await runtime?.killServer();
+    } catch (err) {
+      errors.push(err);
+    }
     sut = null;
+    dependencyRouter = null;
+    runtime = null;
     if (errors.length > 0) {
       throw errors[0];
     }
-  });
-
-  after(async () => {
-    await runtime?.killServer();
   });
 
   test("basic REST flow through proxy and fake", async () => {
