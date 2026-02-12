@@ -80,7 +80,6 @@ test("submit payment", async () => {
 ## Convenience methods
 
 - `runtime.scenarioName(name)` sets the next test name (optional if `setupTest({ name })` is used).
-- `runtime.stop({ status })` tears down active session (if any) and kills runtime.
 - `runtime.http.get/post/postJson/request(...)` sends test traffic through the proxy and tags it with the active session id.
 - `default: true` responses are fallback stubs: they are matched only if no non-default stub matches and they persist until `teardownTest()`.
 

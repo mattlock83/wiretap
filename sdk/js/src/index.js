@@ -164,9 +164,8 @@ class CoreClient {
       options.body = JSON.stringify(payload);
     }
 
-    let controller;
     if (this.timeoutMs > 0) {
-      controller = new AbortController();
+      const controller = new AbortController();
       options.signal = controller.signal;
       setTimeout(() => controller.abort(), this.timeoutMs).unref?.();
     }
@@ -191,7 +190,6 @@ class CoreClient {
 class Runtime {
   constructor(client, config = {}, runtimeInfo = {}) {
     this.client = client;
-    this.config = config;
     this.runtimeInfo = runtimeInfo;
 
     this.defaultSutBaseUrl = config.sutBaseUrl || null;
@@ -202,10 +200,10 @@ class Runtime {
     this.activeSession = null;
 
     this.http = {
-      request: (options) => this.request(options),
-      get: (path, options) => this.get(path, options),
-      post: (path, body, options) => this.post(path, body, options),
-      postJson: (path, payload, options) => this.postJson(path, payload, options)
+      request: (options) => this._httpRequest(options),
+      get: (path, options) => this._httpGet(path, options),
+      post: (path, body, options) => this._httpPost(path, body, options),
+      postJson: (path, payload, options) => this._httpPostJson(path, payload, options)
     };
   }
 
@@ -338,7 +336,7 @@ class Runtime {
     return this.client.getResponse(sessionId, id);
   }
 
-  async request(options = {}) {
+  async _httpRequest(options = {}) {
     if (!options || typeof options !== "object" || Array.isArray(options)) {
       throw new Error("request options must be an object");
     }
@@ -368,20 +366,20 @@ class Runtime {
     });
   }
 
-  async get(path, options = {}) {
-    return this.request({ ...options, method: "GET", path });
+  async _httpGet(path, options = {}) {
+    return this._httpRequest({ ...options, method: "GET", path });
   }
 
-  async post(path, body, options = {}) {
-    return this.request({ ...options, method: "POST", path, body });
+  async _httpPost(path, body, options = {}) {
+    return this._httpRequest({ ...options, method: "POST", path, body });
   }
 
-  async postJson(path, payload, options = {}) {
+  async _httpPostJson(path, payload, options = {}) {
     const headers = { ...(options.headers || {}) };
     if (!headers["Content-Type"] && !headers["content-type"]) {
       headers["Content-Type"] = "application/json";
     }
-    return this.post(path, JSON.stringify(payload), {
+    return this._httpPost(path, JSON.stringify(payload), {
       ...options,
       headers
     });
@@ -469,16 +467,6 @@ class Runtime {
     });
   }
 
-  // Compatibility helper that mirrors old stop semantics.
-  async stop(options = {}) {
-    if (this.activeSession?.sessionId) {
-      await this.teardownTest({ status: options.status || "pass" });
-    }
-    if (options.kill === false) {
-      return { status: "stopped" };
-    }
-    return this.killServer();
-  }
 }
 
 async function startServer(config = {}) {
