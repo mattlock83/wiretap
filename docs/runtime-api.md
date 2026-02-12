@@ -219,7 +219,7 @@ Request:
   "artifacts_dir": "artifacts/run-1770801838-30876",
   "sut_name": "Complex REST Services",
   "include_artifacts": false,
-  "yaml_path": "artifacts/run-1770801838-30876/coverage.yaml",
+  "collection_path": "artifacts/run-1770801838-30876/coverage.postman_collection.json",
   "html_path": "artifacts/run-1770801838-30876/coverage.html"
 }
 ```
@@ -228,7 +228,7 @@ Response:
 
 ```json
 {
-  "yaml_path": ".../coverage.yaml",
+  "collection_path": ".../coverage.postman_collection.json",
   "html_path": ".../coverage.html",
   "report": {}
 }

@@ -155,12 +155,14 @@ func Generate(ctx context.Context, artifactsDir, sutName string, includeArtifact
 	return report, nil
 }
 
-// WriteReport writes the report to the writer in the requested format (json or yaml).
+// WriteReport writes the report to the writer in the requested format.
 func WriteReport(w io.Writer, report *Report, format string) error {
 	if report == nil {
 		return errors.New("report is nil")
 	}
 	switch strings.ToLower(strings.TrimSpace(format)) {
+	case "postman", "collection":
+		return WritePostmanCollection(w, report)
 	case "yaml", "yml":
 		data, err := yaml.Marshal(report)
 		if err != nil {
@@ -173,7 +175,19 @@ func WriteReport(w io.Writer, report *Report, format string) error {
 		enc.SetIndent("", "  ")
 		return enc.Encode(report)
 	case "html", "htm":
-		return writeHTMLReport(w, report)
+		collection, err := CollectionFromReport(report)
+		if err != nil {
+			return err
+		}
+		payload, err := json.Marshal(collection)
+		if err != nil {
+			return err
+		}
+		parsedReport, err := ReportFromPostmanJSON(payload)
+		if err != nil {
+			return err
+		}
+		return writeHTMLReport(w, parsedReport)
 	default:
 		return fmt.Errorf("unsupported format: %s", format)
 	}

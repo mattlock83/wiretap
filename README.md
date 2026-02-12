@@ -50,10 +50,10 @@ See `sdk/js/README.md` for SDK API details.
 
 ## Coverage Report CLI
 
-Generate a spec coverage report from the artifacts (YAML/JSON):
+Generate a spec coverage report from the artifacts:
 
 ```bash
-go run ./cmd/phrond-coverage --artifacts ./artifacts --sut-name "Example SUT" --format yaml --output coverage.yaml
+go run ./cmd/phrond-coverage --artifacts ./artifacts --sut-name "Example SUT" --format postman --output coverage.postman_collection.json
 go run ./cmd/phrond-coverage --artifacts ./artifacts --sut-name "Example SUT" --format html --output coverage.html
 ```
 

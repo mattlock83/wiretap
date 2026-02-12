@@ -101,8 +101,8 @@ node --test ./examples/complex-rest/payment-test.js
 go run ./cmd/phrond-coverage \
   --artifacts "${ARTIFACT_DIR}" \
   --sut-name "Complex REST Services" \
-  --format yaml \
-  --output "${ARTIFACT_DIR}/coverage.yaml"
+  --format postman \
+  --output "${ARTIFACT_DIR}/coverage.postman_collection.json"
 
 go run ./cmd/phrond-coverage \
   --artifacts "${ARTIFACT_DIR}" \
@@ -113,5 +113,5 @@ go run ./cmd/phrond-coverage \
 popd >/dev/null
 
 echo "Artifacts written to ${ARTIFACT_DIR}"
-echo "Coverage report (YAML): ${ARTIFACT_DIR}/coverage.yaml"
+echo "Coverage report (Postman): ${ARTIFACT_DIR}/coverage.postman_collection.json"
 echo "Coverage report (HTML): ${ARTIFACT_DIR}/coverage.html"

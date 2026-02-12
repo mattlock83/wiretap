@@ -304,7 +304,11 @@ class Runtime {
       artifacts_dir: options.artifactsDir || options.artifacts_dir,
       sut_name: options.sutName || options.sut_name,
       include_artifacts: options.includeArtifacts || options.include_artifacts || false,
-      yaml_path: options.yamlPath || options.yaml_path,
+      collection_path:
+        options.collectionPath ||
+        options.collection_path ||
+        options.yamlPath ||
+        options.yaml_path,
       html_path: options.htmlPath || options.html_path
     });
   }

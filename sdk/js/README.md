@@ -73,7 +73,7 @@ test("submit payment", async () => {
 - `runtime.listResponded()`
 - `runtime.getResponse(id)`
 - `runtime.teardownTest({ status })`
-- `runtime.report({ artifactsDir, sutName, includeArtifacts, yamlPath, htmlPath })`
+- `runtime.report({ artifactsDir, sutName, includeArtifacts, collectionPath, htmlPath })`
 - `runtime.killServer()`
 
 ## Convenience methods

@@ -780,7 +780,8 @@ type runtimeReportRequest struct {
 	ArtifactsDir     string `json:"artifacts_dir,omitempty"`
 	SUTName          string `json:"sut_name,omitempty"`
 	IncludeArtifacts bool   `json:"include_artifacts,omitempty"`
-	YAMLPath         string `json:"yaml_path,omitempty"`
+	CollectionPath   string `json:"collection_path,omitempty"`
+	YAMLPath         string `json:"yaml_path,omitempty"` // Deprecated alias for collection_path.
 	HTMLPath         string `json:"html_path,omitempty"`
 }
 
@@ -806,16 +807,19 @@ func (a *App) handleRuntimeReport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	yamlPath := strings.TrimSpace(payload.YAMLPath)
-	if yamlPath == "" {
-		yamlPath = filepath.Join(artifactsDir, "coverage.yaml")
+	collectionPath := strings.TrimSpace(payload.CollectionPath)
+	if collectionPath == "" {
+		collectionPath = strings.TrimSpace(payload.YAMLPath)
+	}
+	if collectionPath == "" {
+		collectionPath = filepath.Join(artifactsDir, "coverage.postman_collection.json")
 	}
 	htmlPath := strings.TrimSpace(payload.HTMLPath)
 	if htmlPath == "" {
 		htmlPath = filepath.Join(artifactsDir, "coverage.html")
 	}
 
-	if err := writeCoverageReport(yamlPath, report, "yaml"); err != nil {
+	if err := writeCoverageReport(collectionPath, report, "postman"); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
@@ -825,9 +829,9 @@ func (a *App) handleRuntimeReport(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"yaml_path": yamlPath,
-		"html_path": htmlPath,
-		"report":    report,
+		"collection_path": collectionPath,
+		"html_path":       htmlPath,
+		"report":          report,
 	})
 }
 
