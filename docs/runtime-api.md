@@ -110,6 +110,7 @@ Request:
 {
   "session_id": "session-1770801133915885000-1",
   "id": "account-acct-100",
+  "default": false,
   "match": {
     "method": "GET",
     "path": "/accounts/acct-100",
@@ -136,7 +137,8 @@ Response:
 {
   "status": "queued",
   "session_id": "session-1770801133915885000-1",
-  "id": "account-acct-100"
+  "id": "account-acct-100",
+  "default": false
 }
 ```
 
@@ -144,6 +146,11 @@ Rules:
 - `match.method` and `match.path` are required.
 - `connection_error` and `ssl_error` are mutually exclusive.
 - `body_file` is read from disk when queued and rendered per request at runtime.
+- `default: true` marks a fallback response:
+  - it only matches when no non-default queued response matches,
+  - it is not consumed on match,
+  - it stays queued until `teardownTest`,
+  - it still counts toward `stack_size`.
 
 ## `GET /v1/listQueued?session_id=...`
 
@@ -160,6 +167,7 @@ Response shape:
       "session_id": "session-...",
       "created_at": "2026-02-11T09:12:13.915872Z",
       "source": "queued",
+      "default": false,
       "match": {"method":"GET","path":"/accounts/acct-100"},
       "response": {"status":200,"delay_ms":0,"headers":{"Content-Type":"application/json"}}
     }
@@ -171,7 +179,9 @@ Response shape:
 
 Lists responses already consumed by the SUT.
 
-Response shape includes `exchange` payload when available.
+Response shape includes `exchange` payload when available, plus:
+- `default` for fallback responses.
+- `responded_count` (useful for defaults that can match multiple times).
 
 ## `GET /v1/getResponse?session_id=...&id=...`
 

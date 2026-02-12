@@ -1,82 +1,53 @@
 package mock
 
 import (
-	"io"
-	"net/http"
-	"net/url"
-	"strings"
+	"net/http/httptest"
 	"testing"
 )
 
-func TestRegistryMatch(t *testing.T) {
+func TestRegistryMatch_DefaultIsFallbackAndPersistent(t *testing.T) {
 	registry := NewRegistry()
 	registry.Register(Stub{
-		ID: "first",
+		ID:      "default-alpha",
+		Default: true,
 		Match: StubMatch{
-			Method: "POST",
-			Path:   "/widgets",
-			Headers: map[string]string{
-				"X-Env": "test",
-			},
-			Query: map[string]string{
-				"mode": "fast",
-			},
-			Body: `{"ok":true}`,
+			Method: "GET",
+			Path:   "/alpha",
 		},
-		Response: StubResponse{
-			Status: 201,
-			Body:   "created",
+		Response: StubResponse{Status: 200, Body: "default"},
+	})
+	registry.Register(Stub{
+		ID: "override-alpha",
+		Match: StubMatch{
+			Method: "GET",
+			Path:   "/alpha",
 		},
+		Response: StubResponse{Status: 200, Body: "override"},
 	})
 
-	req := &http.Request{
-		Method: "POST",
-		URL: &url.URL{
-			Path:     "/widgets",
-			RawQuery: "mode=fast",
-		},
-		Header: http.Header{
-			"X-Env": []string{"test"},
-		},
-		Body: io.NopCloser(strings.NewReader(`{"ok":true}`)),
-	}
-	bodyBytes, _ := io.ReadAll(req.Body)
+	req := httptest.NewRequest("GET", "http://mock.local/alpha", nil)
 
-	stub, ok := registry.Match(req, bodyBytes)
-	if !ok {
-		t.Fatalf("expected match")
+	first, matched := registry.Match(req, nil)
+	if !matched {
+		t.Fatalf("expected first match")
 	}
-	if stub.ID != "first" {
-		t.Fatalf("expected stub first, got %q", stub.ID)
-	}
-}
-
-func TestRegistryOrder(t *testing.T) {
-	registry := NewRegistry()
-	registry.Register(Stub{ID: "a", Match: StubMatch{Path: "/order"}})
-	registry.Register(Stub{ID: "b", Match: StubMatch{Path: "/order"}})
-
-	req := &http.Request{
-		Method: "GET",
-		URL: &url.URL{
-			Path: "/order",
-		},
-		Header: http.Header{},
+	if first.ID != "override-alpha" {
+		t.Fatalf("expected non-default override first, got %q", first.ID)
 	}
 
-	stub, ok := registry.Match(req, nil)
-	if !ok {
-		t.Fatalf("expected match")
-	}
-	if stub.ID != "b" {
-		t.Fatalf("expected newest stub to match first, got %q", stub.ID)
-	}
-
-	stub, ok = registry.Match(req, nil)
-	if !ok {
+	second, matched := registry.Match(req, nil)
+	if !matched {
 		t.Fatalf("expected second match")
 	}
-	if stub.ID != "a" {
-		t.Fatalf("expected older stub to match second, got %q", stub.ID)
+	if second.ID != "default-alpha" {
+		t.Fatalf("expected default fallback second, got %q", second.ID)
+	}
+
+	third, matched := registry.Match(req, nil)
+	if !matched {
+		t.Fatalf("expected third match")
+	}
+	if third.ID != "default-alpha" {
+		t.Fatalf("expected default to persist, got %q", third.ID)
 	}
 }

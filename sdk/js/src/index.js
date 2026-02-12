@@ -57,10 +57,12 @@ function pickFirstString(...values) {
 function toSnakeCaseQueuePayload(payload, sessionId) {
   const match = payload?.match || {};
   const response = payload?.response || {};
+  const isDefault = payload?.default ?? payload?.isDefault;
 
   return {
     session_id: payload?.sessionId || payload?.session_id || sessionId,
     id: payload?.id,
+    default: Boolean(isDefault),
     match: {
       method: match.method,
       path: match.path,

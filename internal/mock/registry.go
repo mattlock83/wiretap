@@ -72,13 +72,28 @@ func (r *Registry) Match(req *http.Request, body []byte) (Stub, bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	// Stack semantics: newest matching response is consumed first.
+	// Stack semantics: newest non-default matching response is consumed first.
 	for i := len(r.stubs) - 1; i >= 0; i-- {
 		stub := r.stubs[i]
+		if stub.Default {
+			continue
+		}
 		if !matchStub(stub, req, body) {
 			continue
 		}
 		r.stubs = append(r.stubs[:i], r.stubs[i+1:]...)
+		return stub, true
+	}
+
+	// Default responses are a fallback and are not consumed on match.
+	for i := len(r.stubs) - 1; i >= 0; i-- {
+		stub := r.stubs[i]
+		if !stub.Default {
+			continue
+		}
+		if !matchStub(stub, req, body) {
+			continue
+		}
 		return stub, true
 	}
 	return Stub{}, false

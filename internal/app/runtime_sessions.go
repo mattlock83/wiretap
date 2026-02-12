@@ -14,6 +14,7 @@ type queuedResponse struct {
 	Stub         mock.Stub
 	CreatedAt    time.Time
 	RespondedAt  *time.Time
+	RespondedCnt int
 	Source       string
 	LastExchange *mock.Exchange
 }
@@ -29,6 +30,7 @@ type runtimeSession struct {
 	Queued         map[string]*queuedResponse
 	RespondedOrder []string
 	Responded      map[string]*queuedResponse
+	SeenExchanges  map[string]struct{}
 }
 
 func (a *App) nextSessionID() string {
@@ -107,6 +109,9 @@ func (a *App) syncSessionResponsesLocked(session *runtimeSession) {
 	if session == nil || a.mockComponent == nil {
 		return
 	}
+	if session.SeenExchanges == nil {
+		session.SeenExchanges = map[string]struct{}{}
+	}
 	recorder := a.mockComponent.Recorder()
 	if recorder == nil {
 		return
@@ -116,18 +121,25 @@ func (a *App) syncSessionResponsesLocked(session *runtimeSession) {
 		if exchange.SessionID != session.ID {
 			continue
 		}
+		if exchange.ID != "" {
+			if _, seen := session.SeenExchanges[exchange.ID]; seen {
+				continue
+			}
+			session.SeenExchanges[exchange.ID] = struct{}{}
+		}
 		responseID := strings.TrimSpace(exchange.MatchedStubID)
 		if responseID == "" {
-			continue
-		}
-		if _, exists := session.Responded[responseID]; exists {
 			continue
 		}
 
 		item := session.Queued[responseID]
 		if item != nil {
-			delete(session.Queued, responseID)
-			session.QueueOrder = removeID(session.QueueOrder, responseID)
+			if !item.Stub.Default {
+				delete(session.Queued, responseID)
+				session.QueueOrder = removeID(session.QueueOrder, responseID)
+			}
+		} else if existing := session.Responded[responseID]; existing != nil {
+			item = existing
 		} else {
 			item = &queuedResponse{
 				ID:        responseID,
@@ -154,10 +166,13 @@ func (a *App) syncSessionResponsesLocked(session *runtimeSession) {
 
 		finished := exchange.FinishedAt
 		item.RespondedAt = &finished
+		item.RespondedCnt++
 		exCopy := exchange
 		item.LastExchange = &exCopy
+		if _, exists := session.Responded[responseID]; !exists {
+			session.RespondedOrder = append(session.RespondedOrder, responseID)
+		}
 		session.Responded[responseID] = item
-		session.RespondedOrder = append(session.RespondedOrder, responseID)
 	}
 }
 

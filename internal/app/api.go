@@ -542,6 +542,7 @@ func (a *App) handleSetupTest(w http.ResponseWriter, r *http.Request) {
 		Queued:         map[string]*queuedResponse{},
 		RespondedOrder: []string{},
 		Responded:      map[string]*queuedResponse{},
+		SeenExchanges:  map[string]struct{}{},
 	}
 	a.sessions[sessionID] = session
 	a.sessionsMu.Unlock()
@@ -557,6 +558,7 @@ func (a *App) handleSetupTest(w http.ResponseWriter, r *http.Request) {
 type queueResponseRequest struct {
 	SessionID string `json:"session_id"`
 	ID        string `json:"id,omitempty"`
+	Default   bool   `json:"default,omitempty"`
 	Match     struct {
 		Method       string            `json:"method,omitempty"`
 		Path         string            `json:"path,omitempty"`
@@ -663,6 +665,7 @@ func (a *App) handleQueueResponse(w http.ResponseWriter, r *http.Request) {
 	stub := mock.Stub{
 		ID:        responseID,
 		SessionID: sessionID,
+		Default:   payload.Default,
 		Match: mock.StubMatch{
 			Method:       method,
 			Path:         withSessionPath(sessionID, path),
@@ -693,6 +696,7 @@ func (a *App) handleQueueResponse(w http.ResponseWriter, r *http.Request) {
 		"status":     "queued",
 		"session_id": sessionID,
 		"id":         responseID,
+		"default":    payload.Default,
 	})
 }
 
@@ -914,6 +918,7 @@ func (a *App) handleListQueued(w http.ResponseWriter, r *http.Request) {
 			"session_id": sessionID,
 			"created_at": item.CreatedAt,
 			"source":     item.Source,
+			"default":    item.Stub.Default,
 			"match": map[string]any{
 				"method":        item.Stub.Match.Method,
 				"path":          unprefixedPath,
@@ -966,11 +971,13 @@ func (a *App) handleListResponded(w http.ResponseWriter, r *http.Request) {
 		}
 		_, unprefixedPath := stripSessionPath(item.Stub.Match.Path)
 		entry := map[string]any{
-			"id":           item.ID,
-			"session_id":   sessionID,
-			"created_at":   item.CreatedAt,
-			"responded_at": item.RespondedAt,
-			"source":       item.Source,
+			"id":              item.ID,
+			"session_id":      sessionID,
+			"created_at":      item.CreatedAt,
+			"responded_at":    item.RespondedAt,
+			"source":          item.Source,
+			"default":         item.Stub.Default,
+			"responded_count": item.RespondedCnt,
 			"match": map[string]any{
 				"method":        item.Stub.Match.Method,
 				"path":          unprefixedPath,
@@ -1021,10 +1028,12 @@ func (a *App) handleGetResponse(w http.ResponseWriter, r *http.Request) {
 	}
 	a.syncSessionResponsesLocked(session)
 	item := session.Queued[id]
-	state := "queued"
-	if item == nil {
-		item = session.Responded[id]
-		state = "responded"
+	state := "responded"
+	if responded := session.Responded[id]; responded != nil {
+		item = responded
+	} else {
+		item = session.Queued[id]
+		state = "queued"
 	}
 	if item == nil {
 		a.sessionsMu.Unlock()
@@ -1033,12 +1042,14 @@ func (a *App) handleGetResponse(w http.ResponseWriter, r *http.Request) {
 	}
 	_, unprefixedPath := stripSessionPath(item.Stub.Match.Path)
 	resp := map[string]any{
-		"id":           item.ID,
-		"state":        state,
-		"session_id":   sessionID,
-		"created_at":   item.CreatedAt,
-		"responded_at": item.RespondedAt,
-		"source":       item.Source,
+		"id":              item.ID,
+		"state":           state,
+		"session_id":      sessionID,
+		"created_at":      item.CreatedAt,
+		"responded_at":    item.RespondedAt,
+		"source":          item.Source,
+		"default":         item.Stub.Default,
+		"responded_count": item.RespondedCnt,
 		"match": map[string]any{
 			"method":        item.Stub.Match.Method,
 			"path":          unprefixedPath,

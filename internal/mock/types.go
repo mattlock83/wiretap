@@ -6,6 +6,7 @@ import "time"
 type Stub struct {
 	ID        string
 	SessionID string
+	Default   bool
 	Match     StubMatch
 	Response  StubResponse
 }

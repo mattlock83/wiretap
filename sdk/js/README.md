@@ -48,6 +48,7 @@ after(async () => {
 test("submit payment", async () => {
   await runtime.queueResponse({
     id: "account-lookup",
+    default: true,
     match: { method: "GET", path: "/accounts/acct-100" },
     response: { status: 200, body: "{\"id\":\"acct-100\"}" }
   });
@@ -68,7 +69,7 @@ test("submit payment", async () => {
 
 - `startServer({ baseUrl, timeoutMs, proxy, mockServer, stackSize, recordResponses, schemas, sutBaseUrl, strictSchema })`
 - `runtime.setupTest({ name, tags, meta, schemas, sutSchemas, fakeSchemas, sutBaseUrl })`
-- `runtime.queueResponse({ id, match, response })`
+- `runtime.queueResponse({ id, default, match, response })`
 - `runtime.listQueued()`
 - `runtime.listResponded()`
 - `runtime.getResponse(id)`
@@ -81,6 +82,7 @@ test("submit payment", async () => {
 - `runtime.scenarioName(name)` sets the next test name (optional if `setupTest({ name })` is used).
 - `runtime.stop({ status })` tears down active session (if any) and kills runtime.
 - `runtime.http.get/post/postJson/request(...)` sends test traffic through the proxy and tags it with the active session id.
+- `default: true` responses are fallback stubs: they are matched only if no non-default stub matches and they persist until `teardownTest()`.
 
 ## Related Docs
 

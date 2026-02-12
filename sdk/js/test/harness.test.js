@@ -136,6 +136,63 @@ test("scenarioName is applied when setup is auto-started by queueResponse", asyn
   assert.equal(JSON.parse(setupReq.body).name, "submit-payment");
 });
 
+test("queueResponse forwards default response flag", async (t) => {
+  const requests = [];
+  const server = await startHarnessServer(async (req, res) => {
+    const body = await readBody(req);
+    requests.push({ method: req.method, path: req.url, body });
+
+    res.setHeader("content-type", "application/json");
+    if (req.url === "/v1/startServer") {
+      res.end(
+        JSON.stringify({
+          proxy: { listen_addr: "127.0.0.1:19100" },
+          mock: { listen_addr: "127.0.0.1:19101" }
+        })
+      );
+      return;
+    }
+    if (req.url === "/v1/setupTest") {
+      res.end(
+        JSON.stringify({
+          session_id: "session-default-1",
+          name: "default-flow",
+          proxy_listen: "http://127.0.0.1:19100",
+          mock_base_url: "http://127.0.0.1:19101/__phrond/session/session-default-1"
+        })
+      );
+      return;
+    }
+    if (req.url === "/v1/queue-response") {
+      res.end(JSON.stringify({ status: "queued", id: "stub-default", session_id: "session-default-1", default: true }));
+      return;
+    }
+    res.end(JSON.stringify({ status: "ok" }));
+  });
+  t.after(() => server.close());
+
+  const runtime = await startServer({
+    baseUrl: server.url,
+    schemas: INLINE_OPENAPI,
+    sutBaseUrl: "http://sut.local:18090",
+    proxy: true,
+    mockServer: true
+  });
+
+  await runtime.setupTest({ name: "default-flow" });
+  await runtime.queueResponse({
+    id: "stub-default",
+    default: true,
+    match: { method: "GET", path: "/accounts/acct-100" },
+    response: { status: 200, body: "{\"id\":\"acct-100\"}" }
+  });
+  await runtime.killServer();
+
+  const queueReq = requests.find((entry) => entry.path === "/v1/queue-response");
+  const queueBody = JSON.parse(queueReq.body);
+  assert.equal(queueBody.default, true);
+});
+
 test("http helper sends traffic through proxy and tags session header", async (t) => {
   const proxyRequests = [];
   const proxyServer = await startHarnessServer(async (req, res) => {
