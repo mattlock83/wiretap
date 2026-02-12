@@ -1,0 +1,39 @@
+{{- $req := mustFromJSON .Request.Body -}}
+{{- $from := default "acct-unknown" (index $req "from_account") -}}
+{{- $to := default "acct-unknown" (index $req "to_account") -}}
+{{- $currency := upper (default "usd" (index $req "currency")) -}}
+{{- $amount := int (default 0 (index $req "amount")) -}}
+{{- $customer := coalesce (index $req "customer_id") (index .Request.Query "customer_id") "customer-unknown" -}}
+{{- $priority := "normal" -}}
+{{- if ge $amount 1000 }}{{- $priority = "high" -}}{{- end -}}
+{{- $route := trimAll "-" (regexReplaceAll "[^a-z0-9]+" (lower (printf "%v-%v" $from $to)) "-") -}}
+{{- $participants := list
+  (dict "role" "from" "account_id" $from)
+  (dict "role" "to" "account_id" $to)
+-}}
+{
+  "payment_id": "pay-{{ trunc 20 (sha256sum (printf "%v|%v|%d|%s" $from $to $amount $currency)) }}",
+  "status": "submitted",
+  "priority": "{{ $priority }}",
+  "routing_key": "{{ $route }}",
+  "trace_id": "{{ uuid }}",
+  "request_summary": {
+    "method": "{{ .Request.Method }}",
+    "path": "{{ .Request.Path }}",
+    "received_at": "{{ formatTime "2006-01-02T15:04:05Z07:00" (nowUTC) }}",
+    "expires_at": "{{ formatTime "2006-01-02T15:04:05Z07:00" (nowPlus "72h") }}"
+  },
+  "synthetic_customer_contact": {
+    "name": "{{ Name }}",
+    "email": "{{ Email }}",
+    "phone": "{{ phoneFormatted }}"
+  },
+  "payment": {
+    "amount": {{ $amount }},
+    "currency": "{{ $currency }}",
+    "customer_id": "{{ $customer }}"
+  },
+  "participants": {{ mustToJSON $participants }},
+  "request_pretty": {{ mustToJSON (mustToPrettyJSON $req) }},
+  "cel_projection": {{ celJSON "{'query': query, 'path': path, 'body': body}" }}
+}
