@@ -23,8 +23,9 @@ import (
 )
 
 type renderData struct {
-	Request renderRequest
-	Now     time.Time
+	SessionID string
+	Request   renderRequest
+	Now       time.Time
 }
 
 type renderRequest struct {
@@ -42,6 +43,8 @@ type Renderer struct {
 	envErr   error
 	mu       sync.RWMutex
 	programs map[string]cel.Program
+	varsMu   sync.RWMutex
+	vars     map[string]map[string]any
 }
 
 func NewRenderer() *Renderer {
@@ -59,12 +62,14 @@ func NewRenderer() *Renderer {
 		env:      env,
 		envErr:   err,
 		programs: map[string]cel.Program{},
+		vars:     map[string]map[string]any{},
 	}
 }
 
 // RenderResponse returns the rendered response based on stub templates.
 func (r *Renderer) RenderResponse(stub Stub, req RecordedRequest) (RecordedResponse, error) {
 	data := renderData{
+		SessionID: strings.TrimSpace(stub.SessionID),
 		Request: renderRequest{
 			Method:  req.Method,
 			Path:    req.Path,
@@ -125,6 +130,7 @@ func (r *Renderer) renderTemplate(raw string, data renderData) (string, error) {
 func (r *Renderer) templateFuncMap(data renderData) template.FuncMap {
 	funcs := sprig.TxtFuncMap()
 	addGoFakeItFuncs(funcs, gofakeit.New(0))
+	sessionID := strings.TrimSpace(data.SessionID)
 
 	funcs["cel"] = func(expr string) (string, error) {
 		return r.evalCELString(expr, data)
@@ -147,8 +153,112 @@ func (r *Renderer) templateFuncMap(data renderData) template.FuncMap {
 	}
 	funcs["formatTime"] = formatTimeValue
 	funcs["uuid"] = newUUIDv4
+	funcs["setVar"] = func(key string, value any) (string, error) {
+		trimmedKey := strings.TrimSpace(key)
+		if sessionID == "" {
+			return "", fmt.Errorf("setVar: session scope is required")
+		}
+		if trimmedKey == "" {
+			return "", fmt.Errorf("setVar: key is required")
+		}
+		r.setSessionVar(sessionID, trimmedKey, value)
+		return "", nil
+	}
+	funcs["getVar"] = func(key string) (any, error) {
+		trimmedKey := strings.TrimSpace(key)
+		if sessionID == "" {
+			return "", fmt.Errorf("getVar: session scope is required")
+		}
+		if trimmedKey == "" {
+			return "", fmt.Errorf("getVar: key is required")
+		}
+		value, ok := r.getSessionVar(sessionID, trimmedKey)
+		if !ok {
+			return "", nil
+		}
+		return value, nil
+	}
+	funcs["mustGetVar"] = func(key string) (any, error) {
+		trimmedKey := strings.TrimSpace(key)
+		if sessionID == "" {
+			return nil, fmt.Errorf("mustGetVar: session scope is required")
+		}
+		if trimmedKey == "" {
+			return nil, fmt.Errorf("mustGetVar: key is required")
+		}
+		value, ok := r.getSessionVar(sessionID, trimmedKey)
+		if !ok {
+			return nil, fmt.Errorf("mustGetVar: key %q is not set", trimmedKey)
+		}
+		return value, nil
+	}
 
 	return funcs
+}
+
+func (r *Renderer) setSessionVar(sessionID, key string, value any) {
+	if r == nil {
+		return
+	}
+	trimmedSessionID := strings.TrimSpace(sessionID)
+	trimmedKey := strings.TrimSpace(key)
+	if trimmedSessionID == "" || trimmedKey == "" {
+		return
+	}
+	r.varsMu.Lock()
+	defer r.varsMu.Unlock()
+	if r.vars == nil {
+		r.vars = map[string]map[string]any{}
+	}
+	sessionVars := r.vars[trimmedSessionID]
+	if sessionVars == nil {
+		sessionVars = map[string]any{}
+		r.vars[trimmedSessionID] = sessionVars
+	}
+	sessionVars[trimmedKey] = value
+}
+
+func (r *Renderer) getSessionVar(sessionID, key string) (any, bool) {
+	if r == nil {
+		return nil, false
+	}
+	trimmedSessionID := strings.TrimSpace(sessionID)
+	trimmedKey := strings.TrimSpace(key)
+	if trimmedSessionID == "" || trimmedKey == "" {
+		return nil, false
+	}
+	r.varsMu.RLock()
+	defer r.varsMu.RUnlock()
+	sessionVars := r.vars[trimmedSessionID]
+	if sessionVars == nil {
+		return nil, false
+	}
+	value, ok := sessionVars[trimmedKey]
+	return value, ok
+}
+
+// ClearSessionVars removes all template variables for one session.
+func (r *Renderer) ClearSessionVars(sessionID string) {
+	if r == nil {
+		return
+	}
+	trimmedSessionID := strings.TrimSpace(sessionID)
+	if trimmedSessionID == "" {
+		return
+	}
+	r.varsMu.Lock()
+	defer r.varsMu.Unlock()
+	delete(r.vars, trimmedSessionID)
+}
+
+// ClearAllSessionVars removes all session-scoped template variables.
+func (r *Renderer) ClearAllSessionVars() {
+	if r == nil {
+		return
+	}
+	r.varsMu.Lock()
+	defer r.varsMu.Unlock()
+	r.vars = map[string]map[string]any{}
 }
 
 func addGoFakeItFuncs(funcs template.FuncMap, faker *gofakeit.Faker) {

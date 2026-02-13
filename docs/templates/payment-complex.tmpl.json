@@ -1,12 +1,14 @@
 {{- $req := mustFromJSON .Request.Body -}}
-{{- $from := default "acct-unknown" (index $req "from_account") -}}
-{{- $to := default "acct-unknown" (index $req "to_account") -}}
-{{- $currency := upper (default "usd" (index $req "currency")) -}}
+{{- $from := mustGetVar "from_account" -}}
+{{- $to := mustGetVar "to_account" -}}
+{{- $currency := mustGetVar "currency" -}}
 {{- $amount := int (default 0 (index $req "amount")) -}}
-{{- $customer := coalesce (index $req "customer_id") (index .Request.Query "customer_id") "customer-unknown" -}}
+{{- $customer := mustGetVar "customer_id" -}}
+{{- $route := mustGetVar "routing_key" -}}
+{{- $profileName := getVar "profile_name" -}}
+{{- $profileEmail := getVar "profile_email" -}}
 {{- $priority := "normal" -}}
 {{- if ge $amount 1000 }}{{- $priority = "high" -}}{{- end -}}
-{{- $route := trimAll "-" (regexReplaceAll "[^a-z0-9]+" (lower (printf "%v-%v" $from $to)) "-") -}}
 {{- $participants := list
   (dict "role" "from" "account_id" $from)
   (dict "role" "to" "account_id" $to)
@@ -24,8 +26,8 @@
     "expires_at": "{{ formatTime "2006-01-02T15:04:05Z07:00" (nowPlus "72h") }}"
   },
   "synthetic_customer_contact": {
-    "name": "{{ Name }}",
-    "email": "{{ Email }}",
+    "name": "{{ default (Name) $profileName }}",
+    "email": "{{ default (Email) $profileEmail }}",
     "phone": "{{ phoneFormatted }}"
   },
   "payment": {

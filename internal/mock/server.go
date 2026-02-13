@@ -130,6 +130,20 @@ func (s *Server) Recorder() *Recorder {
 	return s.recorder
 }
 
+func (s *Server) ClearSessionVars(sessionID string) {
+	if s == nil || s.renderer == nil {
+		return
+	}
+	s.renderer.ClearSessionVars(sessionID)
+}
+
+func (s *Server) ClearAllSessionVars() {
+	if s == nil || s.renderer == nil {
+		return
+	}
+	s.renderer.ClearAllSessionVars()
+}
+
 func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	started := time.Now()
 	bodyBytes, _ := io.ReadAll(r.Body)

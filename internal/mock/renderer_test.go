@@ -251,3 +251,91 @@ func TestRendererGoFakeItFuncsExposed(t *testing.T) {
 		t.Fatalf("expected IntRange in [10,12], got %v", number)
 	}
 }
+
+func TestRendererSessionVarsAcrossTemplates(t *testing.T) {
+	renderer := NewRenderer()
+	req := RecordedRequest{Method: "GET", Path: "/accounts/current", URL: "/accounts/current"}
+
+	setter := Stub{
+		SessionID: "session-a",
+		Response: StubResponse{
+			Status: 200,
+			Body:   `{{- setVar "account_number" "acct-123" -}}stored`,
+		},
+	}
+	getter := Stub{
+		SessionID: "session-a",
+		Response: StubResponse{
+			Status: 200,
+			Body:   `{{mustGetVar "account_number"}}`,
+		},
+	}
+
+	setResp, err := renderer.RenderResponse(setter, req)
+	if err != nil {
+		t.Fatalf("unexpected set render error: %v", err)
+	}
+	if strings.TrimSpace(setResp.Body) != "stored" {
+		t.Fatalf("unexpected set body: %q", setResp.Body)
+	}
+
+	getResp, err := renderer.RenderResponse(getter, req)
+	if err != nil {
+		t.Fatalf("unexpected get render error: %v", err)
+	}
+	if strings.TrimSpace(getResp.Body) != "acct-123" {
+		t.Fatalf("expected account from session vars, got %q", getResp.Body)
+	}
+}
+
+func TestRendererSessionVarsIsolationAndClear(t *testing.T) {
+	renderer := NewRenderer()
+	req := RecordedRequest{Method: "GET", Path: "/payments", URL: "/payments"}
+
+	_, err := renderer.RenderResponse(Stub{
+		SessionID: "session-a",
+		Response:  StubResponse{Status: 200, Body: `{{- setVar "account_number" "acct-123" -}}ok`},
+	}, req)
+	if err != nil {
+		t.Fatalf("unexpected set render error: %v", err)
+	}
+
+	_, err = renderer.RenderResponse(Stub{
+		SessionID: "session-b",
+		Response:  StubResponse{Status: 200, Body: `{{mustGetVar "account_number"}}`},
+	}, req)
+	if err == nil {
+		t.Fatalf("expected missing var error for different session")
+	}
+	if !strings.Contains(err.Error(), "mustGetVar") {
+		t.Fatalf("expected mustGetVar error, got: %v", err)
+	}
+
+	renderer.ClearSessionVars("session-a")
+
+	_, err = renderer.RenderResponse(Stub{
+		SessionID: "session-a",
+		Response:  StubResponse{Status: 200, Body: `{{mustGetVar "account_number"}}`},
+	}, req)
+	if err == nil {
+		t.Fatalf("expected missing var error after clear session")
+	}
+
+	_, err = renderer.RenderResponse(Stub{
+		SessionID: "session-a",
+		Response:  StubResponse{Status: 200, Body: `{{setVar "account_number" "acct-456"}}`},
+	}, req)
+	if err != nil {
+		t.Fatalf("unexpected set render error after clear: %v", err)
+	}
+
+	renderer.ClearAllSessionVars()
+
+	_, err = renderer.RenderResponse(Stub{
+		SessionID: "session-a",
+		Response:  StubResponse{Status: 200, Body: `{{mustGetVar "account_number"}}`},
+	}, req)
+	if err == nil {
+		t.Fatalf("expected missing var error after clear all sessions")
+	}
+}

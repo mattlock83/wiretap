@@ -750,6 +750,7 @@ func (a *App) handleTeardownTest(w http.ResponseWriter, r *http.Request) {
 	if len(queuedIDs) > 0 {
 		a.mockComponent.RemoveStubsByID(queuedIDs)
 	}
+	a.mockComponent.ClearSessionVars(sessionID)
 
 	var exchanges []mock.Exchange
 	if recorder := a.mockComponent.Recorder(); recorder != nil {
@@ -875,6 +876,7 @@ func (a *App) handleKillServer(w http.ResponseWriter, r *http.Request) {
 
 	if a.mockComponent != nil {
 		a.mockComponent.ClearStubs()
+		a.mockComponent.ClearAllSessionVars()
 		if recorder := a.mockComponent.Recorder(); recorder != nil {
 			recorder.Clear()
 		}

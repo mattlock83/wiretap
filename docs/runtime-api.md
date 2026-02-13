@@ -217,6 +217,7 @@ Response:
 ```
 
 Note: SDK `teardownTest()` maps to this endpoint.
+Also clears any session-scoped template variables set via `setVar`.
 
 ## `POST /v1/report`
 
@@ -247,6 +248,7 @@ Response:
 ## `POST /v1/killServer`
 
 Stops runtime components, clears queued state, and terminates all sessions.
+Also clears all session-scoped template variables.
 
 Response:
 

@@ -51,6 +51,9 @@ CEL variables:
 - `nowPlus "<duration>"`: add duration to render timestamp (e.g. `"24h"`).
 - `formatTime "<layout>" <timeOrString>`: format a time value.
 - `uuid`: generate UUIDv4 string.
+- `setVar "<key>" <value>`: store a session-scoped variable (returns empty string).
+- `getVar "<key>"`: read a session-scoped variable (returns empty string when missing).
+- `mustGetVar "<key>"`: read a session-scoped variable and fail rendering when missing.
 
 Date math example:
 
@@ -96,20 +99,66 @@ Use `response.body_file`:
 Template files included in this repo:
 - `docs/templates/account-balance.tmpl.json`
 - `docs/templates/payment-submit.tmpl.json`
+- `docs/templates/payment-complex-account-context.tmpl.json`
 - `docs/templates/payment-complex.tmpl.json`
 
 ## Complex Template Example
 
-`docs/templates/payment-complex.tmpl.json` demonstrates:
+Complex template flow now uses two files:
+- `docs/templates/payment-complex-account-context.tmpl.json` sets session variables with `setVar`.
+- `docs/templates/payment-complex.tmpl.json` reads those variables with `mustGetVar/getVar`.
+
+Together they demonstrate:
 - Sprig string/regex/hash helpers
 - Sprig object composition (`dict`, `list`)
 - strict JSON helpers (`mustFromJSON`, `mustToJSON`, `mustToPrettyJSON`)
 - time helpers (`nowUTC`, `nowPlus`, `formatTime`)
 - gofakeit usage (`Name`, `Email`, `phoneFormatted`)
 - CEL projection (`celJSON`)
+- cross-template variable sharing (`setVar`, `mustGetVar`)
+
+Queue order example:
+
+```json
+{
+  "session_id": "session-1",
+  "id": "account-context",
+  "match": {"method":"GET","path":"/accounts/context"},
+  "response": {"status":200,"body_file":"docs/templates/payment-complex-account-context.tmpl.json"}
+}
+```
+
+```json
+{
+  "session_id": "session-1",
+  "id": "payment-submit",
+  "match": {"method":"POST","path":"/payments/submit"},
+  "response": {"status":200,"body_file":"docs/templates/payment-complex.tmpl.json"}
+}
+```
 
 ## Notes
 
 - Templates are rendered per matched request.
+- Variables set with `setVar` are shared across templates in the same runtime `session_id`.
+- `setVar/getVar/mustGetVar` require session-scoped requests (runtime `setupTest` + session-prefixed mock URL).
+- `mustGetVar` is useful when call order is required; it fails fast if a prerequisite value was not set.
 - Queue matching is stack-based (latest queued response is consumed first).
 - Use deterministic IDs in tests so `getResponse(id)` can be used for assertions.
+
+## Cross-Template Variable Example
+
+Template A:
+
+```gotemplate
+{{- setVar "account_number" "acct-100" -}}
+{"status":"loaded"}
+```
+
+Template B:
+
+```gotemplate
+{"from_account":"{{mustGetVar "account_number"}}"}
+```
+
+If Template B runs before Template A in the same `session_id`, `mustGetVar` returns a template error.
