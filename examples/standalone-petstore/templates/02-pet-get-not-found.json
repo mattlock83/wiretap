@@ -1,0 +1,15 @@
+{
+  "id": "pet-get-101-not-found",
+  "scenario_id": "pet-not-found",
+  "match": {
+    "method": "GET",
+    "path": "/pet/101"
+  },
+  "response": {
+    "status": 404,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "body_file": "bodies/pet-101-not-found.tmpl"
+  }
+}

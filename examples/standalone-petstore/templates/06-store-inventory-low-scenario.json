@@ -1,0 +1,15 @@
+{
+  "id": "store-inventory-low-scenario",
+  "scenario_id": "inventory-low",
+  "match": {
+    "method": "GET",
+    "path": "/store/inventory"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "body_file": "bodies/store-inventory-low.tmpl"
+  }
+}

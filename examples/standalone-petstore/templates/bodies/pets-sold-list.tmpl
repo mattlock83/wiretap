@@ -1,0 +1,15 @@
+{{- $scenario := default "pet-sold" (index .Request.Headers "X-Phrond-Scenario") -}}
+{{- $seed := trunc 8 (sha256sum (printf "%s|%s" .Request.Path $scenario)) -}}
+{{- $pets := list
+  (dict
+    "id" 203
+    "name" (printf "Adopted-%s" (trunc 4 $seed))
+    "photoUrls" (list "https://example.com/pets/203/front.jpg")
+    "status" "sold")
+  (dict
+    "id" 204
+    "name" (printf "Reserved-%s" (trunc 4 (sha1sum $seed)))
+    "photoUrls" (list "https://example.com/pets/204/front.jpg")
+    "status" "sold")
+-}}
+{{ mustToPrettyJSON $pets }}

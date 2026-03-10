@@ -1,0 +1,17 @@
+{
+  "id": "pet-find-by-status-available",
+  "match": {
+    "method": "GET",
+    "path": "/pet/findByStatus",
+    "query": {
+      "status": "available"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "body_file": "bodies/pets-available-list.tmpl"
+  }
+}

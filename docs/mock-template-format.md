@@ -3,6 +3,7 @@
 `queue-response` supports response templates in `response.body` and `response.headers`.
 
 Templates can be inline strings or loaded via `response.body_file`.
+Standalone mode (`--standalone`) also uses template files with the same response template engine.
 
 ## Engine
 
@@ -145,6 +146,25 @@ Queue order example:
 - `mustGetVar` is useful when call order is required; it fails fast if a prerequisite value was not set.
 - Queue matching is stack-based (latest queued response is consumed first).
 - Use deterministic IDs in tests so `getResponse(id)` can be used for assertions.
+
+## Standalone Template Files
+
+Standalone mode loads JSON template files that include match + response metadata:
+
+```json
+{
+  "id": "account-default",
+  "scenario_id": "insufficient-balance",
+  "match": {"method":"GET","path":"/accounts/acct-100"},
+  "response": {
+    "status": 200,
+    "headers": {"Content-Type":"application/json"},
+    "body_file": "docs/templates/account-balance.tmpl.json"
+  }
+}
+```
+
+`scenario_id` is optional. When present, it matches only when the configured scenario header (default `X-Phrond-Scenario`) has that value.
 
 ## Cross-Template Variable Example
 

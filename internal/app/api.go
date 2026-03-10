@@ -30,6 +30,9 @@ type testCaseFinishRequest struct {
 }
 
 func (a *App) handleTestCaseStart(w http.ResponseWriter, r *http.Request) {
+	if a.rejectIfStandaloneActive(w) {
+		return
+	}
 	if r.Method != http.MethodPost {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 		return
@@ -79,6 +82,9 @@ func (a *App) handleTestCaseStart(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleTestCaseFinish(w http.ResponseWriter, r *http.Request) {
+	if a.rejectIfStandaloneActive(w) {
+		return
+	}
 	if r.Method != http.MethodPost {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 		return
@@ -412,6 +418,9 @@ type startServerRequest struct {
 }
 
 func (a *App) handleStartServer(w http.ResponseWriter, r *http.Request) {
+	if a.rejectIfStandaloneActive(w) {
+		return
+	}
 	if r.Method != http.MethodPost {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 		return
@@ -450,6 +459,7 @@ func (a *App) handleStartServer(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	a.mockComponent.SetRecordingEnabled(true)
 
 	if err := a.proxyComponent.Start(r.Context()); err != nil && !errors.Is(err, proxy.ErrAlreadyStarted) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
@@ -486,6 +496,9 @@ type setupTestRequest struct {
 }
 
 func (a *App) handleSetupTest(w http.ResponseWriter, r *http.Request) {
+	if a.rejectIfStandaloneActive(w) {
+		return
+	}
 	if r.Method != http.MethodPost {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 		return
@@ -579,6 +592,9 @@ type queueResponseRequest struct {
 }
 
 func (a *App) handleQueueResponse(w http.ResponseWriter, r *http.Request) {
+	if a.rejectIfStandaloneActive(w) {
+		return
+	}
 	if r.Method != http.MethodPost {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 		return
@@ -706,6 +722,9 @@ type teardownTestRequest struct {
 }
 
 func (a *App) handleTeardownTest(w http.ResponseWriter, r *http.Request) {
+	if a.rejectIfStandaloneActive(w) {
+		return
+	}
 	if r.Method != http.MethodPost {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 		return
@@ -868,6 +887,7 @@ func (a *App) handleKillServer(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	a.sessions = map[string]*runtimeSession{}
+	a.standalone = nil
 	a.sessionsMu.Unlock()
 
 	if len(staleIDs) > 0 {
@@ -877,6 +897,7 @@ func (a *App) handleKillServer(w http.ResponseWriter, r *http.Request) {
 	if a.mockComponent != nil {
 		a.mockComponent.ClearStubs()
 		a.mockComponent.ClearAllSessionVars()
+		a.mockComponent.SetRecordingEnabled(true)
 		if recorder := a.mockComponent.Recorder(); recorder != nil {
 			recorder.Clear()
 		}
@@ -889,6 +910,9 @@ func (a *App) handleKillServer(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleListQueued(w http.ResponseWriter, r *http.Request) {
+	if a.rejectIfStandaloneActive(w) {
+		return
+	}
 	if r.Method != http.MethodGet {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 		return
@@ -947,6 +971,9 @@ func (a *App) handleListQueued(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleListResponded(w http.ResponseWriter, r *http.Request) {
+	if a.rejectIfStandaloneActive(w) {
+		return
+	}
 	if r.Method != http.MethodGet {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 		return
@@ -1010,6 +1037,9 @@ func (a *App) handleListResponded(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleGetResponse(w http.ResponseWriter, r *http.Request) {
+	if a.rejectIfStandaloneActive(w) {
+		return
+	}
 	if r.Method != http.MethodGet {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 		return

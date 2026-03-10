@@ -1,0 +1,8 @@
+{{- $scenario := default "inventory-low" (index .Request.Headers "X-Phrond-Scenario") -}}
+{{- $seed := trunc 4 (sha1sum $scenario) -}}
+{
+  "available": 2,
+  "pending": 1,
+  "sold": 35,
+  "note": "scenario {{ $scenario }} seed {{ $seed }}"
+}

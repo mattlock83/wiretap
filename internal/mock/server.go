@@ -26,6 +26,7 @@ type Server struct {
 	fallbackUpstream string
 	exchangeSeq      atomic.Uint64
 	recordSeq        atomic.Uint64
+	recordingEnabled atomic.Bool
 }
 
 type syncState struct {
@@ -41,11 +42,20 @@ func NewServer(registry *Registry, recorder *Recorder) *Server {
 	if recorder == nil {
 		recorder = NewRecorder()
 	}
-	return &Server{
+	server := &Server{
 		registry: registry,
 		recorder: recorder,
 		renderer: NewRenderer(),
 	}
+	server.recordingEnabled.Store(true)
+	return server
+}
+
+func (s *Server) SetRecordingEnabled(enabled bool) {
+	if s == nil {
+		return
+	}
+	s.recordingEnabled.Store(enabled)
 }
 
 // Start launches the server on the provided address (":0" for random port).
@@ -233,7 +243,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		if renderErr != nil {
 			exchange.Error = renderErr.Error()
 		}
-		s.recorder.Record(exchange)
+		s.recordExchange(exchange)
 		return
 	}
 	if strings.EqualFold(resp.Fault, "ssl_error") {
@@ -266,7 +276,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	if renderErr != nil {
 		exchange.Error = renderErr.Error()
 	}
-	s.recorder.Record(exchange)
+	s.recordExchange(exchange)
 }
 
 func (s *Server) forwardToUpstream(r *http.Request, trimmedPath string, body []byte) (RecordedResponse, error) {
@@ -371,4 +381,14 @@ func cloneQuery(values map[string][]string) map[string][]string {
 		out[key] = copied
 	}
 	return out
+}
+
+func (s *Server) recordExchange(exchange Exchange) {
+	if s == nil || s.recorder == nil {
+		return
+	}
+	if !s.recordingEnabled.Load() {
+		return
+	}
+	s.recorder.Record(exchange)
 }

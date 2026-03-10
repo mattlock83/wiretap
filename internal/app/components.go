@@ -201,6 +201,13 @@ func (m *MockComponent) Recorder() *mock.Recorder {
 	return m.server.Recorder()
 }
 
+func (m *MockComponent) SetRecordingEnabled(enabled bool) {
+	if m == nil || m.server == nil {
+		return
+	}
+	m.server.SetRecordingEnabled(enabled)
+}
+
 func (m *MockComponent) ClearSessionVars(sessionID string) {
 	if m == nil || m.server == nil {
 		return

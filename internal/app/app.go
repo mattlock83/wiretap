@@ -30,6 +30,7 @@ type App struct {
 	sessionRecorder *SessionProxyRecorder
 	sessionsMu      sync.Mutex
 	sessions        map[string]*runtimeSession
+	standalone      *standaloneState
 	sessionSeq      uint64
 	stackSize       int
 }

@@ -1,0 +1,104 @@
+openapi: 3.0.0
+info:
+  title: Petstore (Standalone Mock Example)
+  version: 1.0.0
+paths:
+  /pet/{petId}:
+    get:
+      summary: Find pet by ID
+      parameters:
+        - in: path
+          name: petId
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        "200":
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Pet"
+        "404":
+          description: pet not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiResponse"
+  /pet/findByStatus:
+    get:
+      summary: Finds pets by status
+      parameters:
+        - in: query
+          name: status
+          required: true
+          schema:
+            type: string
+            enum: [available, pending, sold]
+      responses:
+        "200":
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Pet"
+  /store/inventory:
+    get:
+      summary: Returns pet inventories by status
+      responses:
+        "200":
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: integer
+components:
+  schemas:
+    Pet:
+      type: object
+      required: [id, name, status]
+      properties:
+        id:
+          type: integer
+          format: int64
+        category:
+          type: object
+          properties:
+            id:
+              type: integer
+              format: int64
+            name:
+              type: string
+        name:
+          type: string
+        photoUrls:
+          type: array
+          items:
+            type: string
+        tags:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+                format: int64
+              name:
+                type: string
+        status:
+          type: string
+          enum: [available, pending, sold]
+    ApiResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+        type:
+          type: string
+        message:
+          type: string

@@ -1,0 +1,19 @@
+{{- $updated := formatTime "2006-01-02T15:04:05Z07:00" (nowUTC) -}}
+{{- $nameSuffix := trunc 6 (sha1sum .Request.Path) -}}
+{
+  "id": 101,
+  "category": {
+    "id": 1,
+    "name": "dogs"
+  },
+  "name": "Retriever-{{ $nameSuffix }}",
+  "photoUrls": [
+    "https://example.com/pets/101/front.jpg"
+  ],
+  "tags": [
+    {"id": 11, "name": "friendly"},
+    {"id": 12, "name": "vaccinated"}
+  ],
+  "status": "available",
+  "updatedAt": "{{ $updated }}"
+}

@@ -11,6 +11,11 @@ Recommended flow:
 6. `POST /v1/report` once after all tests
 7. `POST /v1/killServer` once when done
 
+Standalone flow (no test sessions, no artifact writes):
+1. Start process with `--standalone --standalone-templates ...`
+2. Keep SUT running against mock
+3. Stop the process when done
+
 ## `POST /v1/startServer`
 
 Starts proxy and mock components if not already running.
@@ -47,6 +52,28 @@ Response:
   "stack_size": 100
 }
 ```
+
+## Standalone CLI Mode
+
+Standalone mode is CLI-only (no standalone runtime control endpoints).
+
+Example:
+
+```bash
+PHROND_MOCK_LISTEN=127.0.0.1:19001 \
+./phrond \
+  --standalone \
+  --standalone-templates "examples/standalone/default-account.json,examples/standalone/insufficient-balance.json" \
+  --standalone-scenario-header "X-Phrond-Scenario" \
+  --standalone-stack-size 100
+```
+
+Rules:
+- Standalone mode starts the mock server only.
+- Standalone mode uses template files only (no `setupTest`, `queue-response`, `listQueued`, `listResponded`, `getResponse`).
+- Every loaded template is persistent and treated as a default response.
+- If a template has `scenario_id`, it is selected only when the scenario header matches.
+- Scenario-specific templates are preferred over non-scenario defaults for matching requests.
 
 ## `POST /v1/setupTest`
 

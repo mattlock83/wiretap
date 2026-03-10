@@ -27,6 +27,37 @@ func main() {
 		logger.Error("failed to initialize", "error", err)
 		os.Exit(1)
 	}
+	if cli.standalone {
+		if len(cli.standaloneTemplateFiles) == 0 {
+			logger.Error("standalone mode requires --standalone-templates")
+			os.Exit(1)
+		}
+		status, err := appInstance.StartStandalone(context.Background(), app.StandaloneStartOptions{
+			StackSize:      cli.standaloneStackSize,
+			ScenarioHeader: cli.standaloneScenarioHeader,
+			TemplateFiles:  cli.standaloneTemplateFiles,
+		})
+		if err != nil {
+			logger.Error("failed to start standalone mode", "error", err)
+			os.Exit(1)
+		}
+		logger.Info("standalone mode started",
+			"mock_listen", status.Mock.ListenAddr,
+			"scenario_header", status.ScenarioHeader,
+			"templates_loaded", status.TemplatesLoaded,
+		)
+		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer cancel()
+		<-ctx.Done()
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer shutdownCancel()
+		if err := appInstance.StopStandalone(shutdownCtx); err != nil {
+			logger.Error("failed to stop standalone mode", "error", err)
+			os.Exit(1)
+		}
+		logger.Info("standalone mode stopped")
+		return
+	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()

@@ -1,0 +1,18 @@
+{
+  "id": "pet-find-by-status-sold-scenario",
+  "scenario_id": "pet-sold",
+  "match": {
+    "method": "GET",
+    "path": "/pet/findByStatus",
+    "query": {
+      "status": "sold"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "body_file": "bodies/pets-sold-list.tmpl"
+  }
+}
