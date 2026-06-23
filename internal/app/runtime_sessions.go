@@ -25,6 +25,7 @@ type runtimeSession struct {
 	Store          *TestCaseStore
 	SUTBaseURL     string
 	MockBaseURL    string
+	RecordTraffic  bool
 	CreatedAt      time.Time
 	QueueOrder     []string
 	Queued         map[string]*queuedResponse
@@ -52,6 +53,9 @@ func (a *App) recordProxyForSession(exchange proxy.HTTPExchange) {
 	a.sessionsMu.Unlock()
 
 	if session == nil || session.Store == nil {
+		return
+	}
+	if !session.RecordTraffic {
 		return
 	}
 	session.Store.RecordHTTP(exchange)

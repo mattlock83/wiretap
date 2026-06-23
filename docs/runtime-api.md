@@ -11,10 +11,13 @@ Recommended flow:
 6. `POST /v1/report` once after all tests
 7. `POST /v1/killServer` once when done
 
-Standalone flow (no test sessions, no artifact writes):
-1. Start process with `--standalone --standalone-templates ...`
-2. Keep SUT running against mock
-3. Stop the process when done
+Performance/mock-only flow:
+1. `POST /v1/startServer` once
+2. `POST /v1/setupTest` with `record_traffic: false`
+3. Queue default responses with `POST /v1/queue-response`
+4. Point the deployed SUT at `mock_base_url`
+5. Run the load tool against the deployed SUT
+6. `POST /v1/teardownTest` to clear queued responses
 
 ## `POST /v1/startServer`
 
@@ -53,28 +56,6 @@ Response:
 }
 ```
 
-## Standalone CLI Mode
-
-Standalone mode is CLI-only (no standalone runtime control endpoints).
-
-Example:
-
-```bash
-PHROND_MOCK_LISTEN=127.0.0.1:19001 \
-./phrond \
-  --standalone \
-  --standalone-templates "examples/standalone/default-account.json,examples/standalone/insufficient-balance.json" \
-  --standalone-scenario-header "X-Phrond-Scenario" \
-  --standalone-stack-size 100
-```
-
-Rules:
-- Standalone mode starts the mock server only.
-- Standalone mode uses template files only (no `setupTest`, `queue-response`, `listQueued`, `listResponded`, `getResponse`).
-- Every loaded template is persistent and treated as a default response.
-- If a template has `scenario_id`, it is selected only when the scenario header matches.
-- Scenario-specific templates are preferred over non-scenario defaults for matching requests.
-
 ## `POST /v1/setupTest`
 
 Creates one isolated test session.
@@ -87,6 +68,7 @@ Request:
   "tags": ["payments", "critical"],
   "meta": {"suite": "complex-rest"},
   "sut_base_url": "http://127.0.0.1:18110",
+  "record_traffic": true,
   "sut_schemas": [
     {
       "id": "payment-openapi",
@@ -112,19 +94,22 @@ Request:
 }
 ```
 
+Set `record_traffic` to `false` for performance/mock-only sessions. In that mode, Phrond still queues and serves responses, but it does not capture traffic, write a test artifact, or run schema validation. `record_traffic` defaults to `true`.
+
 Response:
 
 ```json
 {
   "session_id": "session-1770801133915885000-1",
   "name": "submit payment",
+  "record_traffic": true,
   "proxy_listen": "http://127.0.0.1:37079",
   "mock_base_url": "http://127.0.0.1:40713/__phrond/session/session-1770801133915885000-1"
 }
 ```
 
 Notes:
-- At least one schema is required across `sut_schemas` + `fake_schemas`.
+- At least one schema is required across `sut_schemas` + `fake_schemas` when `record_traffic` is true.
 - `mock_base_url` should be injected into the SUT as the dependency base URL.
 
 ## `POST /v1/queue-response`
@@ -245,6 +230,7 @@ Response:
 
 Note: SDK `teardownTest()` maps to this endpoint.
 Also clears any session-scoped template variables set via `setVar`.
+When `record_traffic` is false, the response contains `artifact_recorded: false` and omits `artifact`, `path`, and `schema_validation`.
 
 ## `POST /v1/report`
 

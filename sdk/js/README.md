@@ -68,7 +68,7 @@ test("submit payment", async () => {
 ## API
 
 - `startServer({ baseUrl, timeoutMs, proxy, mockServer, stackSize, recordResponses, schemas, sutBaseUrl, strictSchema })`
-- `runtime.setupTest({ name, tags, meta, schemas, sutSchemas, fakeSchemas, sutBaseUrl })`
+- `runtime.setupTest({ name, tags, meta, schemas, sutSchemas, fakeSchemas, sutBaseUrl, recordTraffic })`
 - `runtime.queueResponse({ id, default, match, response })`
 - `runtime.listQueued()`
 - `runtime.listResponded()`
@@ -82,6 +82,7 @@ test("submit payment", async () => {
 - `runtime.scenarioName(name)` sets the next test name (optional if `setupTest({ name })` is used).
 - `runtime.http.get/post/postJson/request(...)` sends test traffic through the proxy and tags it with the active session id.
 - `default: true` responses are fallback stubs: they are matched only if no non-default stub matches and they persist until `teardownTest()`.
+- `recordTraffic: false` disables artifact capture and schema validation for mock-only/performance sessions.
 
 ## Related Docs
 

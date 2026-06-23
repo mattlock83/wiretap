@@ -4,7 +4,6 @@
 
 - `basic-rest` (Node `node:test`)
 - `complex-rest` (Node `node:test`)
-- `standalone-petstore` (standalone template-driven mock API)
 
 Each example folder has its own test and helper files.
 
@@ -19,4 +18,3 @@ Demo SUT/dependency binaries used by tests live in:
 
 - `./examples/run-basic-rest-e2e.sh`
 - `./examples/run-complex-rest-e2e.sh`
-- `./examples/run-standalone-petstore.sh`

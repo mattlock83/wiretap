@@ -221,6 +221,60 @@ func TestRuntimeTemplateVarsAcrossQueuedResponses(t *testing.T) {
 	}, http.StatusOK)
 }
 
+func TestRuntimeRecordTrafficFalseSkipsArtifactAndSchemaRequirement(t *testing.T) {
+	appURL := startRuntimeTestServer(t)
+
+	postJSONExpect(t, appURL+"/v1/startServer", map[string]any{}, http.StatusOK)
+
+	setup := postJSONExpect(t, appURL+"/v1/setupTest", map[string]any{
+		"name":           "performance-session",
+		"record_traffic": false,
+	}, http.StatusOK)
+	sessionID := stringValue(t, setup, "session_id")
+	mockBaseURL := stringValue(t, setup, "mock_base_url")
+	if boolValue(setup, "record_traffic") {
+		t.Fatalf("expected record_traffic=false in setup response")
+	}
+
+	postJSONExpect(t, appURL+"/v1/queue-response", map[string]any{
+		"session_id": sessionID,
+		"id":         "default-alpha",
+		"default":    true,
+		"match": map[string]any{
+			"method": "GET",
+			"path":   "/alpha",
+		},
+		"response": map[string]any{
+			"status": 200,
+			"body":   "default",
+		},
+	}, http.StatusOK)
+
+	status, body := httpGetText(t, mockBaseURL+"/alpha")
+	if status != http.StatusOK || body != "default" {
+		t.Fatalf("expected default response 200, got status=%d body=%q", status, body)
+	}
+
+	responded := getJSONExpect(t, appURL+"/v1/listResponded?session_id="+sessionID, http.StatusOK)
+	if items := sliceValue(t, responded, "items"); len(items) != 0 {
+		t.Fatalf("expected no recorded responses, got %d", len(items))
+	}
+
+	teardown := postJSONExpect(t, appURL+"/v1/teardownTest", map[string]any{
+		"session_id": sessionID,
+		"status":     "pass",
+	}, http.StatusOK)
+	if boolValue(teardown, "artifact_recorded") {
+		t.Fatalf("expected artifact_recorded=false")
+	}
+	if _, exists := teardown["artifact"]; exists {
+		t.Fatalf("expected artifact to be omitted when record_traffic=false")
+	}
+	if _, exists := teardown["schema_validation"]; exists {
+		t.Fatalf("expected schema_validation to be omitted when record_traffic=false")
+	}
+}
+
 func startRuntimeTestServer(t *testing.T) string {
 	t.Helper()
 	cfg := core.DefaultConfig()

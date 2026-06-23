@@ -30,9 +30,6 @@ type testCaseFinishRequest struct {
 }
 
 func (a *App) handleTestCaseStart(w http.ResponseWriter, r *http.Request) {
-	if a.rejectIfStandaloneActive(w) {
-		return
-	}
 	if r.Method != http.MethodPost {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 		return
@@ -82,9 +79,6 @@ func (a *App) handleTestCaseStart(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleTestCaseFinish(w http.ResponseWriter, r *http.Request) {
-	if a.rejectIfStandaloneActive(w) {
-		return
-	}
 	if r.Method != http.MethodPost {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 		return
@@ -418,9 +412,6 @@ type startServerRequest struct {
 }
 
 func (a *App) handleStartServer(w http.ResponseWriter, r *http.Request) {
-	if a.rejectIfStandaloneActive(w) {
-		return
-	}
 	if r.Method != http.MethodPost {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 		return
@@ -487,18 +478,16 @@ func (a *App) handleStartServer(w http.ResponseWriter, r *http.Request) {
 }
 
 type setupTestRequest struct {
-	Name        string               `json:"name,omitempty"`
-	Tags        []string             `json:"tags,omitempty"`
-	Meta        map[string]any       `json:"meta,omitempty"`
-	SUTBaseURL  string               `json:"sut_base_url,omitempty"`
-	SUTSchemas  []artifact.SchemaRef `json:"sut_schemas,omitempty"`
-	FakeSchemas []artifact.SchemaRef `json:"fake_schemas,omitempty"`
+	Name          string               `json:"name,omitempty"`
+	Tags          []string             `json:"tags,omitempty"`
+	Meta          map[string]any       `json:"meta,omitempty"`
+	SUTBaseURL    string               `json:"sut_base_url,omitempty"`
+	RecordTraffic *bool                `json:"record_traffic,omitempty"`
+	SUTSchemas    []artifact.SchemaRef `json:"sut_schemas,omitempty"`
+	FakeSchemas   []artifact.SchemaRef `json:"fake_schemas,omitempty"`
 }
 
 func (a *App) handleSetupTest(w http.ResponseWriter, r *http.Request) {
-	if a.rejectIfStandaloneActive(w) {
-		return
-	}
 	if r.Method != http.MethodPost {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 		return
@@ -518,7 +507,12 @@ func (a *App) handleSetupTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if len(payload.SUTSchemas) == 0 && len(payload.FakeSchemas) == 0 {
+	recordTraffic := true
+	if payload.RecordTraffic != nil {
+		recordTraffic = *payload.RecordTraffic
+	}
+
+	if recordTraffic && len(payload.SUTSchemas) == 0 && len(payload.FakeSchemas) == 0 {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "at least one schema is required"})
 		return
 	}
@@ -551,6 +545,7 @@ func (a *App) handleSetupTest(w http.ResponseWriter, r *http.Request) {
 		SUTBaseURL:     payload.SUTBaseURL,
 		CreatedAt:      time.Now().UTC(),
 		MockBaseURL:    normalizeURL(a.mockComponent.Addr()) + sessionPathPrefix(sessionID),
+		RecordTraffic:  recordTraffic,
 		QueueOrder:     []string{},
 		Queued:         map[string]*queuedResponse{},
 		RespondedOrder: []string{},
@@ -559,12 +554,14 @@ func (a *App) handleSetupTest(w http.ResponseWriter, r *http.Request) {
 	}
 	a.sessions[sessionID] = session
 	a.sessionsMu.Unlock()
+	a.mockComponent.SetSessionRecordingEnabled(sessionID, recordTraffic)
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"session_id":    sessionID,
-		"name":          name,
-		"proxy_listen":  normalizeURL(a.proxyComponent.ListenAddr()),
-		"mock_base_url": session.MockBaseURL,
+		"session_id":     sessionID,
+		"name":           name,
+		"record_traffic": recordTraffic,
+		"proxy_listen":   normalizeURL(a.proxyComponent.ListenAddr()),
+		"mock_base_url":  session.MockBaseURL,
 	})
 }
 
@@ -592,9 +589,6 @@ type queueResponseRequest struct {
 }
 
 func (a *App) handleQueueResponse(w http.ResponseWriter, r *http.Request) {
-	if a.rejectIfStandaloneActive(w) {
-		return
-	}
 	if r.Method != http.MethodPost {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 		return
@@ -722,9 +716,6 @@ type teardownTestRequest struct {
 }
 
 func (a *App) handleTeardownTest(w http.ResponseWriter, r *http.Request) {
-	if a.rejectIfStandaloneActive(w) {
-		return
-	}
 	if r.Method != http.MethodPost {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 		return
@@ -770,6 +761,17 @@ func (a *App) handleTeardownTest(w http.ResponseWriter, r *http.Request) {
 		a.mockComponent.RemoveStubsByID(queuedIDs)
 	}
 	a.mockComponent.ClearSessionVars(sessionID)
+	a.mockComponent.SetSessionRecordingEnabled(sessionID, true)
+
+	if !session.RecordTraffic {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"session_id":        sessionID,
+			"status":            status,
+			"record_traffic":    false,
+			"artifact_recorded": false,
+		})
+		return
+	}
 
 	var exchanges []mock.Exchange
 	if recorder := a.mockComponent.Recorder(); recorder != nil {
@@ -879,7 +881,9 @@ func (a *App) handleKillServer(w http.ResponseWriter, r *http.Request) {
 
 	a.sessionsMu.Lock()
 	var staleIDs []string
+	var staleSessionIDs []string
 	for _, session := range a.sessions {
+		staleSessionIDs = append(staleSessionIDs, session.ID)
 		for _, id := range session.QueueOrder {
 			if _, ok := session.Queued[id]; ok {
 				staleIDs = append(staleIDs, id)
@@ -887,11 +891,13 @@ func (a *App) handleKillServer(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	a.sessions = map[string]*runtimeSession{}
-	a.standalone = nil
 	a.sessionsMu.Unlock()
 
 	if len(staleIDs) > 0 {
 		a.mockComponent.RemoveStubsByID(staleIDs)
+	}
+	for _, sessionID := range staleSessionIDs {
+		a.mockComponent.SetSessionRecordingEnabled(sessionID, true)
 	}
 
 	if a.mockComponent != nil {
@@ -910,9 +916,6 @@ func (a *App) handleKillServer(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleListQueued(w http.ResponseWriter, r *http.Request) {
-	if a.rejectIfStandaloneActive(w) {
-		return
-	}
 	if r.Method != http.MethodGet {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 		return
@@ -971,9 +974,6 @@ func (a *App) handleListQueued(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleListResponded(w http.ResponseWriter, r *http.Request) {
-	if a.rejectIfStandaloneActive(w) {
-		return
-	}
 	if r.Method != http.MethodGet {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 		return
@@ -1037,9 +1037,6 @@ func (a *App) handleListResponded(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleGetResponse(w http.ResponseWriter, r *http.Request) {
-	if a.rejectIfStandaloneActive(w) {
-		return
-	}
 	if r.Method != http.MethodGet {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 		return

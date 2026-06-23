@@ -24,6 +24,8 @@ type Server struct {
 	listener         net.Listener
 	server           *http.Server
 	fallbackUpstream string
+	recordingMu      sync.Mutex
+	skipRecording    map[string]struct{}
 	exchangeSeq      atomic.Uint64
 	recordSeq        atomic.Uint64
 	recordingEnabled atomic.Bool
@@ -43,9 +45,10 @@ func NewServer(registry *Registry, recorder *Recorder) *Server {
 		recorder = NewRecorder()
 	}
 	server := &Server{
-		registry: registry,
-		recorder: recorder,
-		renderer: NewRenderer(),
+		registry:      registry,
+		recorder:      recorder,
+		renderer:      NewRenderer(),
+		skipRecording: map[string]struct{}{},
 	}
 	server.recordingEnabled.Store(true)
 	return server
@@ -56,6 +59,23 @@ func (s *Server) SetRecordingEnabled(enabled bool) {
 		return
 	}
 	s.recordingEnabled.Store(enabled)
+}
+
+func (s *Server) SetSessionRecordingEnabled(sessionID string, enabled bool) {
+	if s == nil {
+		return
+	}
+	trimmed := strings.TrimSpace(sessionID)
+	if trimmed == "" {
+		return
+	}
+	s.recordingMu.Lock()
+	defer s.recordingMu.Unlock()
+	if enabled {
+		delete(s.skipRecording, trimmed)
+		return
+	}
+	s.skipRecording[trimmed] = struct{}{}
 }
 
 // Start launches the server on the provided address (":0" for random port).
@@ -389,6 +409,14 @@ func (s *Server) recordExchange(exchange Exchange) {
 	}
 	if !s.recordingEnabled.Load() {
 		return
+	}
+	if sessionID := strings.TrimSpace(exchange.SessionID); sessionID != "" {
+		s.recordingMu.Lock()
+		_, disabled := s.skipRecording[sessionID]
+		s.recordingMu.Unlock()
+		if disabled {
+			return
+		}
 	}
 	s.recorder.Record(exchange)
 }

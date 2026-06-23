@@ -193,6 +193,53 @@ test("queueResponse forwards default response flag", async (t) => {
   assert.equal(queueBody.default, true);
 });
 
+test("setupTest forwards recordTraffic option", async (t) => {
+  const requests = [];
+  const server = await startHarnessServer(async (req, res) => {
+    const body = await readBody(req);
+    requests.push({ method: req.method, path: req.url, body });
+
+    res.setHeader("content-type", "application/json");
+    if (req.url === "/v1/startServer") {
+      res.end(
+        JSON.stringify({
+          proxy: { listen_addr: "127.0.0.1:19100" },
+          mock: { listen_addr: "127.0.0.1:19101" }
+        })
+      );
+      return;
+    }
+    if (req.url === "/v1/setupTest") {
+      const payload = JSON.parse(body || "{}");
+      res.end(
+        JSON.stringify({
+          session_id: "session-performance-1",
+          name: payload.name,
+          record_traffic: payload.record_traffic,
+          proxy_listen: "http://127.0.0.1:19100",
+          mock_base_url: "http://127.0.0.1:19101/__phrond/session/session-performance-1"
+        })
+      );
+      return;
+    }
+    res.end(JSON.stringify({ status: "ok" }));
+  });
+  t.after(() => server.close());
+
+  const runtime = await startServer({
+    baseUrl: server.url,
+    proxy: true,
+    mockServer: true
+  });
+
+  const session = await runtime.setupTest({ name: "performance-flow", recordTraffic: false });
+  await runtime.killServer();
+
+  const setupReq = requests.find((entry) => entry.path === "/v1/setupTest");
+  assert.equal(JSON.parse(setupReq.body).record_traffic, false);
+  assert.equal(session.recordTraffic, false);
+});
+
 test("http helper sends traffic through proxy and tags session header", async (t) => {
   const proxyRequests = [];
   const proxyServer = await startHarnessServer(async (req, res) => {

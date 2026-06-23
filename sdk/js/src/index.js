@@ -246,6 +246,7 @@ class Runtime {
       tags: options.tags,
       meta: options.meta,
       sut_base_url: options.sutBaseUrl || options.sut_base_url || this.defaultSutBaseUrl,
+      record_traffic: options.recordTraffic ?? options.record_traffic,
       sut_schemas: sutSchemas,
       fake_schemas: fakeSchemas
     };
@@ -255,6 +256,7 @@ class Runtime {
       sessionId: session.session_id,
       name: session.name,
       sutBaseUrl: payload.sut_base_url,
+      recordTraffic: session.record_traffic,
       proxyListen: session.proxy_listen || this.runtimeInfo?.proxy?.listen_addr,
       mockBaseUrl: session.mock_base_url
     };

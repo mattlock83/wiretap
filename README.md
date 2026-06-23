@@ -10,9 +10,6 @@ Phrond is a test harness that captures SUT traffic and mock traffic and writes a
 
 # Complex REST example
 ./examples/run-complex-rest-e2e.sh
-
-# Standalone Petstore-style mock API example
-./examples/run-standalone-petstore.sh
 ```
 
 Example tests now live under:
@@ -24,19 +21,20 @@ Demo application binaries for the examples live under:
 
 Artifacts are written to `./artifacts` by default.
 
-## Standalone Mode (No Test Sessions)
+## Performance Mocking
 
-Run mock-only from template files (no `setupTest` / no artifact recording):
+Use normal runtime sessions with `record_traffic: false` when you want mock behavior without writing traffic artifacts:
 
-```bash
-./phrond --standalone --standalone-templates "examples/standalone/default.json,examples/standalone/scenario.json"
+```json
+{
+  "name": "payment-load-test",
+  "record_traffic": false
+}
 ```
-
-Use header `X-Phrond-Scenario` (or override with `--standalone-scenario-header`) to select scenario-specific templates.
 
 ## Schema Validation (Required)
 
-Every test case must include at least one schema. Validation runs at test finish and is stored under `artifact.schema_validation` and returned in the finish response as `schema_validation`.
+Every recorded test case must include at least one schema. Validation runs at test finish and is stored under `artifact.schema_validation` and returned in the finish response as `schema_validation`.
 
 OpenAPI example (inline):
 
