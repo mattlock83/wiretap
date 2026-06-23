@@ -1,8 +1,0 @@
-{
-  "payment_id": "pay-{{cel \"query['case_id']\"}}",
-  "status": "submitted",
-  "received_path": "{{.Request.Path}}",
-  "processed_at": "{{cel \"now\"}}",
-  "settles_at": "{{cel \"now + duration('72h')\"}}",
-  "echo": {{celJSON "{'method': method, 'body': body, 'headers': headers}"}}
-}

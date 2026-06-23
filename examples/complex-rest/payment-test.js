@@ -4,8 +4,7 @@ const {
   startRuntime,
   startComplexServices,
   stopComplexServices,
-  registerAccounts,
-  registerTemplateLinkedAccounts
+  registerAccounts
 } = require("./test-helpers");
 
 const RUN_E2E = Boolean(process.env.PHROND_BASE_URL || process.env.PHROND_HTTP_LISTEN);
@@ -18,11 +17,6 @@ if (!RUN_E2E) {
   test("rejects amount too high (6000)", { skip: "set PHROND_BASE_URL to run this example" }, async () => {});
   test("rejects amount too high (15000)", { skip: "set PHROND_BASE_URL to run this example" }, async () => {});
   test("rejects insufficient balance", { skip: "set PHROND_BASE_URL to run this example" }, async () => {});
-  test(
-    "submits payment with two complex templates sharing variables",
-    { skip: "set PHROND_BASE_URL to run this example" },
-    async () => {}
-  );
 } else {
   before(async () => {
     runtime = await startRuntime();
@@ -151,38 +145,5 @@ if (!RUN_E2E) {
         return true;
       }
     );
-  });
-
-  test("submits payment with two complex templates sharing variables", async () => {
-    const { fromAccountID, toAccountID } = await registerTemplateLinkedAccounts(runtime, {
-      fromAccountId: "acct-template-from",
-      toAccountId: "acct-template-to"
-    });
-
-    const submit = await runtime.http.postJson("/payments/submit", {
-      from_account: fromAccountID,
-      to_account: toAccountID,
-      amount: 125,
-      currency: "USD"
-    });
-
-    assert.equal(submit.status, 201);
-    assert.equal(submit.body.from_account, fromAccountID);
-    assert.equal(submit.body.to_account, toAccountID);
-    assert.equal(submit.body.currency, "USD");
-    assert.ok(String(submit.body.to_account_name || "").includes(fromAccountID));
-
-    const contextLookup = await runtime.getResponse(`account-template-context-${fromAccountID}`);
-    const dependentLookup = await runtime.getResponse(`account-template-dependent-${toAccountID}`);
-    assert.equal(contextLookup.state, "responded");
-    assert.equal(dependentLookup.state, "responded");
-
-    const contextBody = JSON.parse(contextLookup.exchange.Response.Body);
-    const dependentBody = JSON.parse(dependentLookup.exchange.Response.Body);
-
-    assert.equal(dependentBody.currency, contextBody.currency);
-    assert.ok(String(dependentBody.name || "").includes(fromAccountID));
-    assert.equal(submit.body.from_account_name, contextBody.name);
-    assert.equal(submit.body.to_account_name, dependentBody.name);
   });
 }

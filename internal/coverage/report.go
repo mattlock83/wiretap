@@ -47,20 +47,6 @@ type SpecCoverage struct {
 	Faked      []OperationSamples `json:"faked,omitempty" yaml:"faked,omitempty"`
 }
 
-type AssertedField struct {
-	FlowID   string `json:"flow_id,omitempty" yaml:"flow_id,omitempty"`
-	Channel  string `json:"channel,omitempty" yaml:"channel,omitempty"`
-	Phase    string `json:"phase,omitempty" yaml:"phase,omitempty"`
-	PathLang string `json:"path_lang,omitempty" yaml:"path_lang,omitempty"`
-	Field    string `json:"field,omitempty" yaml:"field,omitempty"`
-	Operator string `json:"operator,omitempty" yaml:"operator,omitempty"`
-}
-
-type OperationAssertions struct {
-	Operation string          `json:"operation" yaml:"operation"`
-	Fields    []AssertedField `json:"fields,omitempty" yaml:"fields,omitempty"`
-}
-
 type OperationSamples struct {
 	Operation string       `json:"operation" yaml:"operation"`
 	Samples   []FlowSample `json:"samples,omitempty" yaml:"samples,omitempty"`
@@ -961,24 +947,6 @@ func sortSamples(samples []FlowSample) {
 	})
 }
 
-func buildAssertedFields(assertions []artifact.Assertion, channel string) []AssertedField {
-	var fields []AssertedField
-	for _, assertion := range assertions {
-		if assertion.Channel != channel {
-			continue
-		}
-		fields = append(fields, AssertedField{
-			FlowID:   assertion.FlowID,
-			Channel:  assertion.Channel,
-			Phase:    assertion.Phase,
-			PathLang: assertion.PathLang,
-			Field:    assertion.Field,
-			Operator: assertion.Operator,
-		})
-	}
-	return fields
-}
-
 func buildOperationSamples(entries []flowEntry, schemas []*loadedSchema, channel string) map[string]map[string][]FlowSample {
 	raw := map[string]map[string][]FlowSample{}
 	for _, entry := range entries {
@@ -1162,74 +1130,6 @@ func truncateBody(text string) string {
 	return clean[:limit] + "…"
 }
 
-func buildAssertedFieldsBySpec(assertions []artifact.Assertion, flows map[string]artifact.Flow, schemas []*loadedSchema, channel string) (map[string][]OperationAssertions, []string) {
-	out := map[string]map[string][]AssertedField{}
-	var notes []string
-	if len(assertions) == 0 || len(schemas) == 0 {
-		return map[string][]OperationAssertions{}, notes
-	}
-	for _, assertion := range assertions {
-		if assertion.Channel != channel {
-			continue
-		}
-		if assertion.FlowID == "" {
-			notes = append(notes, fmt.Sprintf("Assertion %q missing flow_id; cannot map to operation.", assertion.ID))
-			continue
-		}
-		flow, ok := flows[assertion.FlowID]
-		if !ok {
-			notes = append(notes, fmt.Sprintf("Assertion %q references unknown flow %q.", assertion.ID, assertion.FlowID))
-			continue
-		}
-		for _, schema := range schemas {
-			switch {
-			case schema.OpenAPI != nil && flow.Protocol == "http":
-				if op, ok := openapiOperationFromFlow(flow, schema.OpenAPI); ok {
-					if !containsOp(schema.Operations, op) {
-						continue
-					}
-					out = addOperationAssertion(out, schema.Ref.ID, op, assertion)
-				}
-			}
-		}
-	}
-	return normalizeOperationAssertions(out), notes
-}
-
-func addOperationAssertion(target map[string]map[string][]AssertedField, schemaID, operation string, assertion artifact.Assertion) map[string]map[string][]AssertedField {
-	if _, ok := target[schemaID]; !ok {
-		target[schemaID] = map[string][]AssertedField{}
-	}
-	target[schemaID][operation] = append(target[schemaID][operation], AssertedField{
-		FlowID:   assertion.FlowID,
-		Channel:  assertion.Channel,
-		Phase:    assertion.Phase,
-		PathLang: assertion.PathLang,
-		Field:    assertion.Field,
-		Operator: assertion.Operator,
-	})
-	return target
-}
-
-func normalizeOperationAssertions(raw map[string]map[string][]AssertedField) map[string][]OperationAssertions {
-	out := map[string][]OperationAssertions{}
-	for schemaID, opMap := range raw {
-		var ops []OperationAssertions
-		for op, fields := range opMap {
-			sort.Slice(fields, func(i, j int) bool {
-				if fields[i].Field == fields[j].Field {
-					return fields[i].FlowID < fields[j].FlowID
-				}
-				return fields[i].Field < fields[j].Field
-			})
-			ops = append(ops, OperationAssertions{Operation: op, Fields: fields})
-		}
-		sort.Slice(ops, func(i, j int) bool { return ops[i].Operation < ops[j].Operation })
-		out[schemaID] = ops
-	}
-	return out
-}
-
 func schemaKey(schema artifact.SchemaRef) string {
 	return fmt.Sprintf("%s|%s|%s|%s|%s|%s", schema.ID, schema.Role, schema.Type, schema.Source.Path, schema.Source.URL, schema.Source.Format)
 }
@@ -1371,42 +1271,6 @@ func loadOpenAPISpec(ref artifact.SchemaRef) (*openapiSpec, error) {
 		return nil, err
 	}
 	return &openapiSpec{Doc: doc, Router: router}, nil
-}
-
-func downloadToTemp(urlStr, pattern string) (string, func(), error) {
-	resp, err := http.Get(urlStr)
-	if err != nil {
-		return "", func() {}, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 300 {
-		return "", func() {}, fmt.Errorf("download failed: %d", resp.StatusCode)
-	}
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", func() {}, err
-	}
-	return writeTempContent(data, pattern)
-}
-
-func writeTempContent(data []byte, pattern string) (string, func(), error) {
-	file, err := os.CreateTemp("", pattern)
-	if err != nil {
-		return "", func() {}, err
-	}
-	if _, err := file.Write(data); err != nil {
-		_ = file.Close()
-		_ = os.Remove(file.Name())
-		return "", func() {}, err
-	}
-	if err := file.Close(); err != nil {
-		_ = os.Remove(file.Name())
-		return "", func() {}, err
-	}
-	cleanup := func() {
-		_ = os.Remove(file.Name())
-	}
-	return file.Name(), cleanup, nil
 }
 
 func resolvePath(path string) string {

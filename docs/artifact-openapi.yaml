@@ -30,6 +30,8 @@ components:
         version:
           type: integer
           minimum: 1
+        producer:
+          $ref: "#/components/schemas/Producer"
         testcase:
           $ref: "#/components/schemas/TestCase"
         environment:
@@ -55,6 +57,25 @@ components:
         meta:
           type: object
           additionalProperties: true
+      additionalProperties: false
+
+    Producer:
+      type: object
+      description: >-
+        Auto-detected identity of the repository and build that produced this
+        artifact. Used by a central broker as the consumer-side join key.
+      properties:
+        repo:
+          type: string
+        commit_sha:
+          type: string
+        branch:
+          type: string
+        build:
+          type: string
+        source:
+          type: string
+          description: How identity was resolved (env, github-actions, gitlab-ci, git).
       additionalProperties: false
 
     TestCase:
@@ -120,6 +141,18 @@ components:
           $ref: "#/components/schemas/SchemaSource"
         openapi_version:
           type: string
+        asset_name:
+          type: string
+          description: Human-friendly asset name; defaults to id when omitted.
+        asset_id:
+          type: string
+          description: >-
+            Stable, cross-repo identifier for the asset. A broker joins a
+            consumer's faked dependency (role: fake) to the provider that owns
+            the same asset_id (role: sut).
+        asset_sha:
+          type: string
+          description: Fingerprint of the asset version; defaults to source.sha256.
       additionalProperties: false
 
     SchemaSource:
@@ -179,6 +212,75 @@ components:
             type: string
         matched_stub_id:
           type: string
+        mock_stub:
+          $ref: "#/components/schemas/MockStub"
+        unmatched:
+          type: boolean
+          description: >-
+            True when the SUT called the mock but no stub matched — an
+            undeclared dependency call the tests never modelled.
+      additionalProperties: false
+
+    MockStub:
+      type: object
+      description: >-
+        The consumer's modelled assumption that produced a sut_to_mock response:
+        the match rule plus the unrendered response template (the stable
+        contract, distinct from the rendered response captured on the flow).
+      properties:
+        id:
+          type: string
+        default:
+          type: boolean
+        source:
+          type: string
+        match:
+          $ref: "#/components/schemas/StubMatch"
+        matched_on:
+          type: array
+          items:
+            type: string
+          description: Which match criteria the stub constrained.
+        response_template:
+          $ref: "#/components/schemas/StubResponseTemplate"
+      additionalProperties: false
+
+    StubMatch:
+      type: object
+      properties:
+        method:
+          type: string
+        path:
+          type: string
+        headers:
+          type: object
+          additionalProperties:
+            type: string
+        query:
+          type: object
+          additionalProperties:
+            type: string
+        body:
+          type: string
+        body_contains:
+          type: string
+      additionalProperties: false
+
+    StubResponseTemplate:
+      type: object
+      properties:
+        status:
+          type: integer
+        headers:
+          type: object
+          additionalProperties:
+            type: string
+        body:
+          type: string
+        delay_ms:
+          type: integer
+        fault:
+          type: string
       additionalProperties: false
 
     HttpRequest:
@@ -230,6 +332,11 @@ components:
         bytes:
           type: string
           description: Base64-encoded bytes when encoding=base64.
+        content_encoding:
+          type: string
+          description: >-
+            Original on-the-wire Content-Encoding (e.g. gzip) when the payload
+            was decompressed before storage. Absent means it was not compressed.
         decoded:
           $ref: "#/components/schemas/DecodedBody"
       additionalProperties: false

@@ -1,9 +1,14 @@
 package app
 
 import (
+	"bytes"
+	"compress/flate"
+	"compress/gzip"
+	"compress/zlib"
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"sync"
 	"time"
@@ -18,11 +23,20 @@ import (
 type TestCaseStore struct {
 	mu        sync.Mutex
 	outputDir string
+	producer  artifact.Producer
 	active    *testCaseState
 	last      *artifact.Artifact
 	flowSeq   int
 	schemaSeq int
 	expectSeq int
+}
+
+// SetProducer attaches auto-detected producer identity to artifacts written by
+// this store.
+func (s *TestCaseStore) SetProducer(producer artifact.Producer) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.producer = producer
 }
 
 type testCaseState struct {
@@ -97,6 +111,7 @@ func (s *TestCaseStore) FinishCase(status string, env *artifact.Environment, moc
 		return nil, "", errors.New("no active test case")
 	}
 	s.active = nil
+	producer := s.producer
 	s.mu.Unlock()
 
 	finishedAt := time.Now().UTC()
@@ -124,6 +139,10 @@ func (s *TestCaseStore) FinishCase(status string, env *artifact.Environment, moc
 		Traffic:    flows,
 		Redactions: append([]artifact.Redaction{}, state.redactions...),
 		Meta:       map[string]any{},
+	}
+	if producer != (artifact.Producer{}) {
+		p := producer
+		art.Producer = &p
 	}
 
 	if len(state.expectation) > 0 {
@@ -237,6 +256,8 @@ func (s *TestCaseStore) flowFromProxy(exchange proxy.HTTPExchange) artifact.Flow
 		return artifact.Flow{}
 	}
 	id := s.nextFlowID()
+	reqHeaders := cloneHeaders(exchange.RequestHeaders)
+	respHeaders := cloneHeaders(exchange.ResponseHeaders)
 	return artifact.Flow{
 		ID:         id,
 		Protocol:   "http",
@@ -246,13 +267,13 @@ func (s *TestCaseStore) flowFromProxy(exchange proxy.HTTPExchange) artifact.Flow
 		Request: artifact.Message{HTTP: &artifact.HttpMessage{
 			Method:  exchange.Method,
 			URL:     exchange.URL,
-			Headers: cloneHeaders(exchange.RequestHeaders),
-			Body:    bodyFromBytes(exchange.RequestBody),
+			Headers: reqHeaders,
+			Body:    bodyFromHTTP(reqHeaders, exchange.RequestBody),
 		}},
 		Response: artifact.Message{HTTP: &artifact.HttpMessage{
 			Status:  exchange.Status,
-			Headers: cloneHeaders(exchange.ResponseHeaders),
-			Body:    bodyFromBytes(exchange.ResponseBody),
+			Headers: respHeaders,
+			Body:    bodyFromHTTP(respHeaders, exchange.ResponseBody),
 		}},
 	}
 }
@@ -262,6 +283,8 @@ func (s *TestCaseStore) flowFromMock(exchange mock.Exchange) artifact.Flow {
 	id := s.nextFlowID()
 	s.mu.Unlock()
 
+	reqHeaders := cloneHeaders(exchange.Request.Headers)
+	respHeaders := cloneHeaders(exchange.Response.Headers)
 	return artifact.Flow{
 		ID:         id,
 		Protocol:   "http",
@@ -271,16 +294,73 @@ func (s *TestCaseStore) flowFromMock(exchange mock.Exchange) artifact.Flow {
 		Request: artifact.Message{HTTP: &artifact.HttpMessage{
 			Method:  exchange.Request.Method,
 			URL:     exchange.Request.URL,
-			Headers: cloneHeaders(exchange.Request.Headers),
-			Body:    bodyFromString(exchange.Request.Body),
+			Headers: reqHeaders,
+			Body:    bodyFromHTTP(reqHeaders, []byte(exchange.Request.Body)),
 		}},
 		Response: artifact.Message{HTTP: &artifact.HttpMessage{
 			Status:  exchange.Response.Status,
-			Headers: cloneHeaders(exchange.Response.Headers),
-			Body:    bodyFromString(exchange.Response.Body),
+			Headers: respHeaders,
+			Body:    bodyFromHTTP(respHeaders, []byte(exchange.Response.Body)),
 		}},
 		MatchedStubID: exchange.MatchedStubID,
+		MockStub:      mockStubFromExchange(exchange),
+		Unmatched:     !exchange.Matched,
 	}
+}
+
+// mockStubFromExchange captures the consumer's assumption (match rule + the
+// unrendered response template) from the stub that served the exchange.
+func mockStubFromExchange(exchange mock.Exchange) *artifact.MockStub {
+	stub := exchange.MatchedStub
+	if stub == nil {
+		return nil
+	}
+	_, path := stripSessionPath(stub.Match.Path)
+	return &artifact.MockStub{
+		ID:        stub.ID,
+		Default:   stub.Default,
+		MatchedOn: matchedOn(stub.Match),
+		Match: artifact.StubMatch{
+			Method:       stub.Match.Method,
+			Path:         path,
+			Headers:      stub.Match.Headers,
+			Query:        stub.Match.Query,
+			Body:         stub.Match.Body,
+			BodyContains: stub.Match.BodyContains,
+		},
+		ResponseTemplate: artifact.StubResponseTmpl{
+			Status:  stub.Response.Status,
+			Headers: stub.Response.Headers,
+			Body:    stub.Response.Body,
+			DelayMS: stub.Response.DelayMS,
+			Fault:   stub.Response.Fault,
+		},
+	}
+}
+
+// matchedOn lists which match criteria the stub constrained, so a broker knows
+// how loose or strict the recorded assumption was.
+func matchedOn(match mock.StubMatch) []string {
+	var on []string
+	if strings.TrimSpace(match.Method) != "" {
+		on = append(on, "method")
+	}
+	if strings.TrimSpace(match.Path) != "" {
+		on = append(on, "path")
+	}
+	if len(match.Headers) > 0 {
+		on = append(on, "headers")
+	}
+	if len(match.Query) > 0 {
+		on = append(on, "query")
+	}
+	if match.Body != "" {
+		on = append(on, "body")
+	}
+	if match.BodyContains != "" {
+		on = append(on, "body_contains")
+	}
+	return on
 }
 
 func cloneHeaders(in map[string][]string) artifact.Headers {
@@ -306,9 +386,65 @@ func bodyFromBytes(raw []byte) *artifact.Body {
 	return &artifact.Body{Encoding: "base64", Bytes: base64.StdEncoding.EncodeToString(raw)}
 }
 
-func bodyFromString(raw string) *artifact.Body {
-	if raw == "" {
+// bodyFromHTTP captures a payload, transparently decompressing it when the
+// headers declare a Content-Encoding so the stored body is the real content
+// (and is diffable). The original wire encoding is preserved on the Body.
+func bodyFromHTTP(headers artifact.Headers, raw []byte) *artifact.Body {
+	if len(raw) == 0 {
 		return nil
 	}
-	return &artifact.Body{Encoding: "utf8", Text: raw}
+	encoding := strings.ToLower(strings.TrimSpace(firstHeaderValue(headers, "Content-Encoding")))
+	decoded := raw
+	if encoding != "" && encoding != "identity" {
+		if out, ok := decompressBody(encoding, raw); ok {
+			decoded = out
+		}
+	}
+	body := bodyFromBytes(decoded)
+	if body != nil && encoding != "" && encoding != "identity" {
+		body.ContentEncoding = encoding
+	}
+	return body
+}
+
+func firstHeaderValue(headers artifact.Headers, key string) string {
+	for name, values := range headers {
+		if strings.EqualFold(name, key) && len(values) > 0 {
+			return values[0]
+		}
+	}
+	return ""
+}
+
+// decompressBody decodes gzip/deflate payloads. Other encodings (e.g. br) are
+// left untouched and reported as not decoded.
+func decompressBody(encoding string, raw []byte) ([]byte, bool) {
+	switch encoding {
+	case "gzip", "x-gzip":
+		reader, err := gzip.NewReader(bytes.NewReader(raw))
+		if err != nil {
+			return nil, false
+		}
+		defer reader.Close()
+		return readAllLimited(reader)
+	case "deflate":
+		// HTTP "deflate" is zlib-wrapped; fall back to raw DEFLATE streams.
+		if reader, err := zlib.NewReader(bytes.NewReader(raw)); err == nil {
+			defer reader.Close()
+			return readAllLimited(reader)
+		}
+		reader := flate.NewReader(bytes.NewReader(raw))
+		defer reader.Close()
+		return readAllLimited(reader)
+	default:
+		return nil, false
+	}
+}
+
+func readAllLimited(r io.Reader) ([]byte, bool) {
+	out, err := io.ReadAll(r)
+	if err != nil {
+		return nil, false
+	}
+	return out, true
 }

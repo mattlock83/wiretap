@@ -215,20 +215,6 @@ func (m *MockComponent) SetSessionRecordingEnabled(sessionID string, enabled boo
 	m.server.SetSessionRecordingEnabled(sessionID, enabled)
 }
 
-func (m *MockComponent) ClearSessionVars(sessionID string) {
-	if m == nil || m.server == nil {
-		return
-	}
-	m.server.ClearSessionVars(sessionID)
-}
-
-func (m *MockComponent) ClearAllSessionVars() {
-	if m == nil || m.server == nil {
-		return
-	}
-	m.server.ClearAllSessionVars()
-}
-
 func defaultCABaseDir() string {
 	cacheDir, err := os.UserCacheDir()
 	if err != nil || cacheDir == "" {

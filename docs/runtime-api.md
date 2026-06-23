@@ -136,7 +136,7 @@ Request:
     "delay_ms": 25,
     "headers": {"Content-Type": "application/json"},
     "body": "{\"id\":\"acct-100\"}",
-    "body_file": "docs/templates/account-balance.tmpl.json",
+    "body_file": "examples/fixtures/account-balance.json",
     "connection_error": false,
     "ssl_error": false
   }
@@ -157,7 +157,7 @@ Response:
 Rules:
 - `match.method` and `match.path` are required.
 - `connection_error` and `ssl_error` are mutually exclusive.
-- `body_file` is read from disk when queued and rendered per request at runtime.
+- `body` and `body_file` are literal: `body_file` is read verbatim from disk when queued. There is no templating/rendering.
 - `default: true` marks a fallback response:
   - it only matches when no non-default queued response matches,
   - it is not consumed on match,
@@ -229,7 +229,6 @@ Response:
 ```
 
 Note: SDK `teardownTest()` maps to this endpoint.
-Also clears any session-scoped template variables set via `setVar`.
 When `record_traffic` is false, the response contains `artifact_recorded: false` and omits `artifact`, `path`, and `schema_validation`.
 
 ## `POST /v1/report`
@@ -261,7 +260,6 @@ Response:
 ## `POST /v1/killServer`
 
 Stops runtime components, clears queued state, and terminates all sessions.
-Also clears all session-scoped template variables.
 
 Response:
 

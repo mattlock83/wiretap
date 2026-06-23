@@ -78,4 +78,19 @@ The report includes:
 - Artifact OpenAPI schema: `docs/artifact-openapi.yaml`
 - HTTPS trust: `docs/https-trust.md`
 - Runtime HTTP API: `docs/runtime-api.md`
-- Mock template format: `docs/mock-template-format.md`
+
+## Mock responses
+
+Mock responses are literal: `response.body` (an exact string) or `response.body_file`
+(a file read verbatim from disk), plus `status`, `headers`, `delay_ms`, and fault
+injection. There is no template/rendering engine — tests compute the exact bytes
+they expect, which keeps recorded artifacts deterministic and diffable. For dynamic
+or stateful behavior, queue the concrete responses your test needs (the response
+stack is consumed in order).
+
+## Persistent mock server
+
+For a long-lived mock against a running dev environment, see
+`examples/persistent-mock` — a single-file server that registers static default
+routes using the built-in matcher and (optionally) forwards unmatched requests to
+a real upstream.

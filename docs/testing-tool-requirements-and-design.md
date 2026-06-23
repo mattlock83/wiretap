@@ -312,6 +312,10 @@ redactions:
 ```
 
 Notes:
+- The artifact also carries broker-oriented fields documented in §11a: top-level
+  `producer`, per-schema `asset_name`/`asset_id`/`asset_sha`, per-`sut_to_mock`-flow
+  `mock_stub` + `unmatched`, and `body.content_encoding`. The authoritative schema
+  is `docs/artifact-openapi.yaml`.
 - For binary payloads, use `encoding: "base64"` and store `body.bytes`.
 - The current encoder writes JSON (valid YAML 1.2) for deterministic output without external YAML dependencies.
 - Assertion results default to `recorded` when the SDK captures a check without evaluation.
@@ -346,6 +350,73 @@ Notes:
 2. Add artifact fields for additional protocol metadata if needed.
 3. Add schema registry support for future schema types.
 4. Add placeholder SDK calls for future protocol-specific stubs and assertions.
+
+## 11a) Central Broker Direction ("stealth reverse-Pact")
+
+The strategic goal is a Pact-like contract system that requires **no change to how
+teams write tests**. Teams keep writing black-box tests against a real SUT with
+mocked dependencies; the recorder passively captures everything a future central
+broker needs. The broker is intentionally **not built yet** — the priority is to
+make the recorder's capture lossless and self-identifying so the broker can later
+be bolted on as a pure read-side consumer of artifacts.
+
+Key concept: a consumer's mock stub *is* the contract ("what I assume my
+dependency does"). The broker joins a consumer's faked dependency to the provider
+that owns it and detects drift between the modelled assumption and provider truth.
+
+### Identity (auto-detected, zero team effort)
+Captured automatically by `internal/identity` (PHROND_* env → GitHub Actions →
+GitLab CI → local git), so artifacts are always self-identifying:
+- `artifact.producer`: `repo`, `commit_sha`, `branch`, `build`, `source`.
+- Per schema (`schemas[].`): `asset_name`, `asset_id`, `asset_sha`.
+  - `asset_id` is the **stable cross-repo join key**: a consumer's `role: fake`
+    asset is joined to the provider's `role: sut` asset with the same id. This is
+    the one bit of cross-team coordination required (a shared asset-id naming
+    convention) — it is not contract authoring.
+  - `asset_sha` defaults to `source.sha256`; `asset_name` defaults to the id.
+
+### Assumption capture (the contract)
+Each `sut_to_mock` flow carries `mock_stub`:
+- `match` (session-path stripped) + `matched_on` (which criteria constrained it).
+- `response_template`: the stub's configured response (`status`/`headers`/`body`),
+  the stable contract — identical to the rendered `response` on the flow since
+  responses are literal (see below).
+- `unmatched: true` flags a SUT call no stub modelled (an undeclared dependency).
+The stub is snapshotted at match time in `mock.Exchange.MatchedStub` because
+matched stubs are consumed (removed) from the registry on match.
+
+### Mock responses are literal (no templating)
+The mock server returns `response.body` / `response.body_file` verbatim — there
+is **no** template/render engine (removed 2026-06-23 along with the `sprig`,
+`cel-go`, and `gofakeit` deps and `setVar`/`getVar` session state). This is
+deliberate: literal responses are deterministic, so artifacts are diffable and a
+broker sees no false drift. Tests compute the exact bytes they expect; ordered
+sequences use the response stack. For a long-lived mock against a running dev
+environment, `examples/persistent-mock` shows a single-file server built on the
+default matcher (static `default: true` routes + optional upstream fallback).
+
+### Body fidelity
+`Body.content_encoding` records the original wire encoding when a gzip/deflate
+payload was transparently decompressed before storage, so bodies stay diffable
+(see `bodyFromHTTP` in `internal/app/recorder.go`). Binary/undecodable payloads
+fall back to base64.
+
+### Deferred capture-fidelity roadmap (not yet implemented)
+These remain before the recorder is "perfect"; capture them passively so the
+broker never needs team-side changes:
+- **B3**: HTTP/2 (ALPN h2) + record negotiated protocol; detect & passthrough
+  WebSocket/SSE `101` upgrades instead of mis-recording them via the manual
+  `http.ReadRequest` loop in `internal/proxy/proxy.go`.
+- **B4**: max capture size with a `truncated` marker (currently `io.ReadAll`
+  buffers whole payloads into the artifact).
+- **B5**: MITM `RoundTrip` error should synthesize a 502 to the client for parity
+  with `handleHTTP` (today it drops the connection — `proxyTLSRequests`).
+- ~~**B6**: deterministic renders~~ — resolved by removing the template engine;
+  literal responses are deterministic by construction.
+- **D**: remove session-threading friction. Correlation needs either the
+  `X-Phrond-Session-Id` header or the `/__phrond/session/<id>/` URL prefix; a
+  team must thread a session id into the SUT. This is the least-stealth part —
+  needs a design pass on time-window / connection-based correlation.
 
 ## 12) Risks and Open Questions
 - How will the SUT be configured to trust the local CA in CI?

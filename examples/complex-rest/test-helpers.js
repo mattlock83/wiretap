@@ -198,36 +198,6 @@ async function registerAccounts(phrond, accounts) {
   }
 }
 
-async function registerTemplateLinkedAccounts(phrond, options = {}) {
-  const fromAccountID = options.fromAccountId || "acct-template-from";
-  const toAccountID = options.toAccountId || "acct-template-to";
-
-  await phrond.queueResponse({
-    id: `account-template-context-${fromAccountID}`,
-    match: { method: "GET", path: `/accounts/${fromAccountID}` },
-    response: {
-      status: 200,
-      bodyFile: "examples/complex-rest/templates/account-context-shared.tmpl.json",
-      headers: { "Content-Type": "application/json" }
-    }
-  });
-
-  await phrond.queueResponse({
-    id: `account-template-dependent-${toAccountID}`,
-    match: { method: "GET", path: `/accounts/${toAccountID}` },
-    response: {
-      status: 200,
-      bodyFile: "examples/complex-rest/templates/account-dependent-shared.tmpl.json",
-      headers: { "Content-Type": "application/json" }
-    }
-  });
-
-  return {
-    fromAccountID,
-    toAccountID
-  };
-}
-
 function resolveBaseUrl() {
   return (
     process.env.PHROND_BASE_URL ||
@@ -320,6 +290,5 @@ module.exports = {
   startRuntime,
   startComplexServices,
   stopComplexServices,
-  registerAccounts,
-  registerTemplateLinkedAccounts
+  registerAccounts
 };

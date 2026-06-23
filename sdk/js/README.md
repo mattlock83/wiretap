@@ -83,8 +83,8 @@ test("submit payment", async () => {
 - `runtime.http.get/post/postJson/request(...)` sends test traffic through the proxy and tags it with the active session id.
 - `default: true` responses are fallback stubs: they are matched only if no non-default stub matches and they persist until `teardownTest()`.
 - `recordTraffic: false` disables artifact capture and schema validation for mock-only/performance sessions.
+- Responses are literal: `body` is an exact string and `bodyFile` is read verbatim from disk. There is no templating — compute the exact bytes in test code.
 
 ## Related Docs
 
 - Runtime HTTP endpoints: `docs/runtime-api.md`
-- Response template format (`body` / `body_file`): `docs/mock-template-format.md`

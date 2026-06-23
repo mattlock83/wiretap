@@ -523,6 +523,7 @@ func (a *App) handleSetupTest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	store := NewTestCaseStore(a.cfg.Artifact.OutputDir)
+	store.SetProducer(a.producer)
 	if _, err := store.StartCase(name, payload.Tags, payload.Meta, payload.SUTBaseURL); err != nil {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 		return
@@ -760,7 +761,6 @@ func (a *App) handleTeardownTest(w http.ResponseWriter, r *http.Request) {
 	if len(queuedIDs) > 0 {
 		a.mockComponent.RemoveStubsByID(queuedIDs)
 	}
-	a.mockComponent.ClearSessionVars(sessionID)
 	a.mockComponent.SetSessionRecordingEnabled(sessionID, true)
 
 	if !session.RecordTraffic {
@@ -902,7 +902,6 @@ func (a *App) handleKillServer(w http.ResponseWriter, r *http.Request) {
 
 	if a.mockComponent != nil {
 		a.mockComponent.ClearStubs()
-		a.mockComponent.ClearAllSessionVars()
 		a.mockComponent.SetRecordingEnabled(true)
 		if recorder := a.mockComponent.Recorder(); recorder != nil {
 			recorder.Clear()

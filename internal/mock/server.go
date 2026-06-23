@@ -18,7 +18,6 @@ import (
 type Server struct {
 	registry *Registry
 	recorder *Recorder
-	renderer *Renderer
 
 	mu               syncState
 	listener         net.Listener
@@ -47,7 +46,6 @@ func NewServer(registry *Registry, recorder *Recorder) *Server {
 	server := &Server{
 		registry:      registry,
 		recorder:      recorder,
-		renderer:      NewRenderer(),
 		skipRecording: map[string]struct{}{},
 	}
 	server.recordingEnabled.Store(true)
@@ -160,20 +158,6 @@ func (s *Server) Recorder() *Recorder {
 	return s.recorder
 }
 
-func (s *Server) ClearSessionVars(sessionID string) {
-	if s == nil || s.renderer == nil {
-		return
-	}
-	s.renderer.ClearSessionVars(sessionID)
-}
-
-func (s *Server) ClearAllSessionVars() {
-	if s == nil || s.renderer == nil {
-		return
-	}
-	s.renderer.ClearAllSessionVars()
-}
-
 func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	started := time.Now()
 	bodyBytes, _ := io.ReadAll(r.Body)
@@ -203,17 +187,8 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		Headers: map[string][]string{},
 		Body:    "no matching stub",
 	}
-	var renderErr error
 	if matched {
-		resp, renderErr = s.renderer.RenderResponse(stub, req)
-		if renderErr != nil {
-			resp = RecordedResponse{
-				Status:  http.StatusInternalServerError,
-				DelayMS: 0,
-				Headers: map[string][]string{},
-				Body:    "response template error",
-			}
-		}
+		resp = literalResponse(stub)
 	} else if s.fallbackUpstream != "" {
 		recordedID := "recorded-" + strconv.FormatUint(s.recordSeq.Add(1), 10)
 		upstreamResp, upstreamErr := s.forwardToUpstream(r, trimmedPath, bodyBytes)
@@ -256,12 +231,10 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 			Response:      resp,
 			MatchedStubID: stub.ID,
 			Matched:       matched,
+			MatchedStub:   matchedStubSnapshot(matched, stub),
 			StartedAt:     started,
 			FinishedAt:    time.Now(),
 			Error:         "connection_error",
-		}
-		if renderErr != nil {
-			exchange.Error = renderErr.Error()
 		}
 		s.recordExchange(exchange)
 		return
@@ -290,13 +263,41 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		Response:      resp,
 		MatchedStubID: stub.ID,
 		Matched:       matched,
+		MatchedStub:   matchedStubSnapshot(matched, stub),
 		StartedAt:     started,
 		FinishedAt:    time.Now(),
 	}
-	if renderErr != nil {
-		exchange.Error = renderErr.Error()
-	}
 	s.recordExchange(exchange)
+}
+
+// literalResponse returns the stub's configured response verbatim. Bodies and
+// headers are returned exactly as registered — there is no templating.
+func literalResponse(stub Stub) RecordedResponse {
+	status := stub.Response.Status
+	if status == 0 {
+		status = http.StatusOK
+	}
+	headers := make(map[string][]string, len(stub.Response.Headers))
+	for key, value := range stub.Response.Headers {
+		headers[key] = []string{value}
+	}
+	return RecordedResponse{
+		Status:  status,
+		DelayMS: stub.Response.DelayMS,
+		Headers: headers,
+		Body:    stub.Response.Body,
+		Fault:   stub.Response.Fault,
+	}
+}
+
+// matchedStubSnapshot returns a copy of the stub that served a request, or nil
+// when no stub matched. The copy preserves the response template.
+func matchedStubSnapshot(matched bool, stub Stub) *Stub {
+	if !matched {
+		return nil
+	}
+	snapshot := stub
+	return &snapshot
 }
 
 func (s *Server) forwardToUpstream(r *http.Request, trimmedPath string, body []byte) (RecordedResponse, error) {

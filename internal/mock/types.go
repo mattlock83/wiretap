@@ -57,7 +57,11 @@ type Exchange struct {
 	Response      RecordedResponse
 	MatchedStubID string
 	Matched       bool
-	Error         string
-	StartedAt     time.Time
-	FinishedAt    time.Time
+	// MatchedStub is a snapshot of the stub that served this exchange,
+	// including its unrendered response template. It is captured at match
+	// time because matched stubs are consumed (removed) from the registry.
+	MatchedStub *Stub
+	Error       string
+	StartedAt   time.Time
+	FinishedAt  time.Time
 }

@@ -2,12 +2,14 @@ package artifact
 
 import (
 	"sort"
+	"strings"
 	"time"
 )
 
 // Artifact is the top-level test artifact written per test case.
 type Artifact struct {
 	Version          int               `yaml:"version" json:"version"`
+	Producer         *Producer         `yaml:"producer,omitempty" json:"producer,omitempty"`
 	TestCase         TestCase          `yaml:"testcase" json:"testcase"`
 	Env              *Environment      `yaml:"environment,omitempty" json:"environment,omitempty"`
 	Schemas          []SchemaRef       `yaml:"schemas,omitempty" json:"schemas,omitempty"`
@@ -18,10 +20,24 @@ type Artifact struct {
 	Meta             map[string]any    `yaml:"meta,omitempty" json:"meta,omitempty"`
 }
 
+// Producer identifies the repository and build that produced the artifact.
+// It is the consumer-side join key a central broker uses to attribute
+// recorded assumptions back to the team that made them.
+type Producer struct {
+	Repo      string `yaml:"repo,omitempty" json:"repo,omitempty"`
+	CommitSHA string `yaml:"commit_sha,omitempty" json:"commit_sha,omitempty"`
+	Branch    string `yaml:"branch,omitempty" json:"branch,omitempty"`
+	Build     string `yaml:"build,omitempty" json:"build,omitempty"`
+	Source    string `yaml:"source,omitempty" json:"source,omitempty"`
+}
+
 // Normalize ensures deterministic ordering for slices.
 func (a *Artifact) Normalize() {
 	if a == nil {
 		return
+	}
+	for i := range a.Schemas {
+		a.Schemas[i].fillAssetDefaults()
 	}
 	if len(a.Schemas) > 1 {
 		sort.SliceStable(a.Schemas, func(i, j int) bool {
@@ -71,6 +87,28 @@ type SchemaRef struct {
 	Type           string       `yaml:"type" json:"type"`
 	Source         SchemaSource `yaml:"source" json:"source"`
 	OpenAPIVersion string       `yaml:"openapi_version,omitempty" json:"openapi_version,omitempty"`
+
+	// Asset identity. AssetID is the stable, cross-repo key a broker uses to
+	// join a consumer's faked dependency (role: fake) to the provider that
+	// owns it (role: sut). AssetSHA fingerprints the asset version so drift
+	// between the modelled version and the live one can be detected.
+	AssetName string `yaml:"asset_name,omitempty" json:"asset_name,omitempty"`
+	AssetID   string `yaml:"asset_id,omitempty" json:"asset_id,omitempty"`
+	AssetSHA  string `yaml:"asset_sha,omitempty" json:"asset_sha,omitempty"`
+}
+
+// fillAssetDefaults derives asset identity from existing fields when the
+// caller did not supply it, so artifacts are always self-identifying.
+func (s *SchemaRef) fillAssetDefaults() {
+	if s == nil {
+		return
+	}
+	if strings.TrimSpace(s.AssetName) == "" {
+		s.AssetName = s.ID
+	}
+	if strings.TrimSpace(s.AssetSHA) == "" {
+		s.AssetSHA = s.Source.SHA256
+	}
 }
 
 // SchemaSource identifies where the schema came from.
@@ -95,6 +133,43 @@ type Flow struct {
 	Response      Message   `yaml:"response" json:"response"`
 	AssertionIDs  []string  `yaml:"assertion_ids,omitempty" json:"assertion_ids,omitempty"`
 	MatchedStubID string    `yaml:"matched_stub_id,omitempty" json:"matched_stub_id,omitempty"`
+	// MockStub is the consumer's assumption that produced a sut_to_mock
+	// response: the match rule plus the unrendered response template. This is
+	// the contract a broker compares against provider truth.
+	MockStub *MockStub `yaml:"mock_stub,omitempty" json:"mock_stub,omitempty"`
+	// Unmatched is true when the SUT called the mock but no stub matched —
+	// i.e. an undeclared dependency call the tests never modelled.
+	Unmatched bool `yaml:"unmatched,omitempty" json:"unmatched,omitempty"`
+}
+
+// MockStub records a consumer's modelled assumption about a dependency.
+type MockStub struct {
+	ID               string           `yaml:"id,omitempty" json:"id,omitempty"`
+	Default          bool             `yaml:"default,omitempty" json:"default,omitempty"`
+	Source           string           `yaml:"source,omitempty" json:"source,omitempty"`
+	Match            StubMatch        `yaml:"match" json:"match"`
+	MatchedOn        []string         `yaml:"matched_on,omitempty" json:"matched_on,omitempty"`
+	ResponseTemplate StubResponseTmpl `yaml:"response_template" json:"response_template"`
+}
+
+// StubMatch is the match rule that selected a stub. Empty fields are ignored.
+type StubMatch struct {
+	Method       string            `yaml:"method,omitempty" json:"method,omitempty"`
+	Path         string            `yaml:"path,omitempty" json:"path,omitempty"`
+	Headers      map[string]string `yaml:"headers,omitempty" json:"headers,omitempty"`
+	Query        map[string]string `yaml:"query,omitempty" json:"query,omitempty"`
+	Body         string            `yaml:"body,omitempty" json:"body,omitempty"`
+	BodyContains string            `yaml:"body_contains,omitempty" json:"body_contains,omitempty"`
+}
+
+// StubResponseTmpl is the unrendered response template (the stable contract,
+// distinct from the rendered Response captured on the Flow).
+type StubResponseTmpl struct {
+	Status  int               `yaml:"status,omitempty" json:"status,omitempty"`
+	Headers map[string]string `yaml:"headers,omitempty" json:"headers,omitempty"`
+	Body    string            `yaml:"body,omitempty" json:"body,omitempty"`
+	DelayMS int               `yaml:"delay_ms,omitempty" json:"delay_ms,omitempty"`
+	Fault   string            `yaml:"fault,omitempty" json:"fault,omitempty"`
 }
 
 // Message wraps HTTP message payloads.
@@ -116,10 +191,14 @@ type Headers map[string][]string
 
 // Body stores raw and decoded payloads.
 type Body struct {
-	Encoding string       `yaml:"encoding,omitempty" json:"encoding,omitempty"`
-	Text     string       `yaml:"text,omitempty" json:"text,omitempty"`
-	Bytes    string       `yaml:"bytes,omitempty" json:"bytes,omitempty"`
-	Decoded  *DecodedBody `yaml:"decoded,omitempty" json:"decoded,omitempty"`
+	Encoding string `yaml:"encoding,omitempty" json:"encoding,omitempty"`
+	Text     string `yaml:"text,omitempty" json:"text,omitempty"`
+	Bytes    string `yaml:"bytes,omitempty" json:"bytes,omitempty"`
+	// ContentEncoding records the original on-the-wire Content-Encoding (e.g.
+	// "gzip") when the payload was transparently decompressed before storage.
+	// Empty means the body was not compressed.
+	ContentEncoding string       `yaml:"content_encoding,omitempty" json:"content_encoding,omitempty"`
+	Decoded         *DecodedBody `yaml:"decoded,omitempty" json:"decoded,omitempty"`
 }
 
 // DecodedBody stores decoded payloads.

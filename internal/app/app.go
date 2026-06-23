@@ -8,6 +8,8 @@ import (
 	"sync"
 
 	"github.com/phrond/evermock/core"
+	"github.com/phrond/evermock/internal/artifact"
+	"github.com/phrond/evermock/internal/identity"
 )
 
 type Deps struct {
@@ -26,6 +28,8 @@ type App struct {
 
 	proxyComponent *ProxyComponent
 	mockComponent  *MockComponent
+
+	producer artifact.Producer
 
 	sessionRecorder *SessionProxyRecorder
 	sessionsMu      sync.Mutex
@@ -48,7 +52,9 @@ func New(deps Deps) (*App, error) {
 		logger = newLogger(cfg.Log)
 	}
 
+	producer := identity.Detect()
 	store := NewTestCaseStore(cfg.Artifact.OutputDir)
+	store.SetProducer(producer)
 	sessionRecorder := NewSessionProxyRecorder()
 	proxyRecorder := &ProxyFanoutRecorder{recorders: []proxyRecorder{
 		store,
@@ -79,6 +85,7 @@ func New(deps Deps) (*App, error) {
 		logger:          logger,
 		lifecycle:       lifecycle,
 		store:           store,
+		producer:        producer,
 		sessionRecorder: sessionRecorder,
 		sessions:        map[string]*runtimeSession{},
 		stackSize:       100,

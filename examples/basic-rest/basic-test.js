@@ -94,7 +94,7 @@ if (!RUN_E2E) {
       match: { method: "POST", path: "/alpha", body: payload },
       response: {
         status: 200,
-        bodyFile: "examples/basic-rest/templates/alpha-response.tmpl.json",
+        body: JSON.stringify({ result: "alpha-ok" }),
         headers: { "Content-Type": "application/json" }
       }
     });

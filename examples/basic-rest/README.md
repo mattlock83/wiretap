@@ -14,5 +14,4 @@ Or use the e2e runner:
 ./examples/run-basic-rest-e2e.sh
 ```
 
-Template example used by this test:
-- `examples/basic-rest/templates/alpha-response.tmpl.json`
+Mock responses in this test are literal `body` strings — there is no templating.
