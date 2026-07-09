@@ -1,5 +1,6 @@
-const { test, before, beforeEach, afterEach, after } = require("node:test");
+const { test, before, after } = require("node:test");
 const assert = require("node:assert/strict");
+const { bindTest } = require("../../sdk/js/src/index");
 const {
   startRuntime,
   startComplexServices,
@@ -12,6 +13,8 @@ const RUN_E2E = Boolean(process.env.PHROND_BASE_URL || process.env.PHROND_HTTP_L
 let runtime;
 let services;
 
+const phrondTest = bindTest(() => runtime, test);
+
 if (!RUN_E2E) {
   test("submits payment and lists transactions", { skip: "set PHROND_BASE_URL to run this example" }, async () => {});
   test("rejects amount too high (6000)", { skip: "set PHROND_BASE_URL to run this example" }, async () => {});
@@ -20,16 +23,7 @@ if (!RUN_E2E) {
 } else {
   before(async () => {
     runtime = await startRuntime();
-    services = await startComplexServices();
-  });
-
-  beforeEach(async (t) => {
-    const session = await runtime.setupTest({ name: t.name });
-    services.dependencyRouter.setTargetBaseUrl(session.mockBaseUrl);
-  });
-
-  afterEach(async () => {
-    await runtime.teardownTest({ status: "pass" });
+    services = await startComplexServices(runtime);
   });
 
   after(async () => {
@@ -51,7 +45,7 @@ if (!RUN_E2E) {
     }
   });
 
-  test("submits payment and lists transactions", async () => {
+  phrondTest("submits payment and lists transactions", async () => {
     const from = { id: "acct-100", name: "Alice", balance: 1000, currency: "USD", status: "active" };
     const to = { id: "acct-200", name: "Bob", balance: 500, currency: "USD", status: "active" };
 
@@ -79,9 +73,12 @@ if (!RUN_E2E) {
     assert.equal(paymentLookup.exchange.Request.Path, `/accounts/${from.id}`);
     assert.equal(transactionLookup.exchange.Request.Method, "GET");
     assert.equal(transactionLookup.exchange.Request.Path, `/accounts/${from.id}`);
+
+    // The payment SUT depends on balance and status to accept the payment.
+    await runtime.verify(`account-${from.id}-3`, ["body.balance", "body.status", "body.currency"]);
   });
 
-  test("rejects amount too high (6000)", async () => {
+  phrondTest("rejects amount too high (6000)", async () => {
     const from = { id: "acct-100", name: "Alice", balance: 12000, currency: "USD", status: "active" };
     const to = { id: "acct-200", name: "Bob", balance: 500, currency: "USD", status: "active" };
 
@@ -103,7 +100,7 @@ if (!RUN_E2E) {
     );
   });
 
-  test("rejects amount too high (15000)", async () => {
+  phrondTest("rejects amount too high (15000)", async () => {
     const from = { id: "acct-100", name: "Alice", balance: 20000, currency: "USD", status: "active" };
     const to = { id: "acct-200", name: "Bob", balance: 500, currency: "USD", status: "active" };
 
@@ -125,7 +122,7 @@ if (!RUN_E2E) {
     );
   });
 
-  test("rejects insufficient balance", async () => {
+  phrondTest("rejects insufficient balance", async () => {
     const from = { id: "acct-100", name: "Alice", balance: 40, currency: "USD", status: "active" };
     const to = { id: "acct-200", name: "Bob", balance: 500, currency: "USD", status: "active" };
 

@@ -49,12 +49,19 @@ Response:
     "listen_addr": "127.0.0.1:19000",
     "target_url": "http://127.0.0.1:18090"
   },
+  "sut_url": "http://127.0.0.1:19000",
   "mock": {
     "listen_addr": "127.0.0.1:19001"
   },
   "stack_size": 100
 }
 ```
+
+Notes:
+- `proxy.target_url` enables reverse capture: tests call `sut_url` (the proxy
+  address) directly with any HTTP client and requests are forwarded to the
+  target. No proxy configuration or CA trust is required for HTTP. Absolute-URI
+  forward-proxy requests and CONNECT/MITM still work on the same listener.
 
 ## `POST /v1/setupTest`
 
@@ -69,6 +76,21 @@ Request:
   "meta": {"suite": "complex-rest"},
   "sut_base_url": "http://127.0.0.1:18110",
   "record_traffic": true,
+  "explicit_session": false,
+  "dependencies": [
+    {
+      "asset_id": "account-service",
+      "asset_name": "Account Service",
+      "schema": {
+        "id": "account-openapi",
+        "type": "openapi",
+        "source": {
+          "type": "file",
+          "path": "examples/complex-rest/schemas/account-openapi.yaml"
+        }
+      }
+    }
+  ],
   "sut_schemas": [
     {
       "id": "payment-openapi",
@@ -77,17 +99,6 @@ Request:
       "source": {
         "type": "file",
         "path": "examples/complex-rest/schemas/payment-sut-openapi.yaml"
-      }
-    }
-  ],
-  "fake_schemas": [
-    {
-      "id": "account-openapi",
-      "role": "fake",
-      "type": "openapi",
-      "source": {
-        "type": "file",
-        "path": "examples/complex-rest/schemas/account-openapi.yaml"
       }
     }
   ]
@@ -103,14 +114,31 @@ Response:
   "session_id": "session-1770801133915885000-1",
   "name": "submit payment",
   "record_traffic": true,
+  "explicit": false,
   "proxy_listen": "http://127.0.0.1:37079",
-  "mock_base_url": "http://127.0.0.1:40713/__phrond/session/session-1770801133915885000-1"
+  "sut_url": "http://127.0.0.1:37079",
+  "mock_base_url": "http://127.0.0.1:40713",
+  "dependency_urls": {
+    "account-service": "http://127.0.0.1:40713/__phrond/dep/account-service"
+  }
 }
 ```
 
 Notes:
-- At least one schema is required across `sut_schemas` + `fake_schemas` when `record_traffic` is true.
-- `mock_base_url` should be injected into the SUT as the dependency base URL.
+- **Dependencies** declare the SUT's downstream services. Each gets its own
+  stable base URL (`dependency_urls`); inject it into the SUT once at startup.
+  Captured flows carry the dependency's `asset_id` as ground truth, so two
+  dependencies with overlapping paths never collide.
+- **Correlation** is zero-config by default: URLs carry no session component and
+  unlabeled traffic is attributed to the single active session. Only one
+  zero-config session may be active at a time (a second `setupTest` returns
+  409). For parallel suites set `explicit_session: true` — URLs then carry a
+  `/__phrond/session/<id>` prefix and coexist freely.
+- **Schemas are optional.** Without any, the artifact's `schema_validation`
+  status is `skipped` instead of failing — attach specs when you have them.
+- A dependency `schema` is registered with `role: fake` and the dependency's
+  asset identity; `sut_schemas`/`fake_schemas` still work for schemas not tied
+  to a declared dependency.
 
 ## `POST /v1/queue-response`
 
@@ -156,6 +184,9 @@ Response:
 
 Rules:
 - `match.method` and `match.path` are required.
+- `asset_id` scopes the response to a declared dependency. Optional when the
+  session declares exactly one dependency (used automatically); required when
+  it declares several.
 - `connection_error` and `ssl_error` are mutually exclusive.
 - `body` and `body_file` are literal: `body_file` is read verbatim from disk when queued. There is no templating/rendering.
 - `default: true` marks a fallback response:
@@ -163,6 +194,34 @@ Rules:
   - it is not consumed on match,
   - it stays queued until `teardownTest`,
   - it still counts toward `stack_size`.
+
+## `POST /v1/verify`
+
+Records which fields of a mocked response the test depends on. The fields are
+attached to the matching flows in the artifact (`consumed_fields`), letting
+later analysis distinguish breaking changes to consumed fields from harmless
+changes to ignored ones.
+
+Request:
+
+```json
+{
+  "session_id": "session-1770801133915885000-1",
+  "id": "account-acct-100",
+  "fields": ["body.balance", "body.status"]
+}
+```
+
+Response:
+
+```json
+{
+  "status": "recorded",
+  "session_id": "session-1770801133915885000-1",
+  "id": "account-acct-100",
+  "fields": 2
+}
+```
 
 ## `GET /v1/listQueued?session_id=...`
 

@@ -30,6 +30,16 @@ func applySchemaValidation(art *artifact.Artifact) {
 	if art == nil {
 		return
 	}
+	if len(art.Schemas) == 0 {
+		// Schemas are optional: without any, validation is skipped rather than
+		// failed, so teams can adopt before they have specs.
+		art.SchemaValidation = &artifact.SchemaValidation{Status: "skipped"}
+		if art.Meta == nil {
+			art.Meta = map[string]any{}
+		}
+		art.Meta["schema_validation"] = map[string]any{"status": "skipped"}
+		return
+	}
 	issues := validateSchemas(art)
 	result := &artifact.SchemaValidation{Status: "pass"}
 	if len(issues) > 0 {

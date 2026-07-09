@@ -212,6 +212,34 @@ components:
             type: string
         matched_stub_id:
           type: string
+        asset_id:
+          type: string
+          description: >-
+            Declared dependency this sut_to_mock flow was routed to. Ground
+            truth for attribution — no spec inference required.
+        trace_id:
+          type: string
+          description: >-
+            Phrond trace id. Injected by the proxy on test_to_sut requests;
+            present on sut_to_mock flows when the SUT propagated the
+            X-Phrond-Trace-Id header.
+        parent_flow_id:
+          type: string
+          description: >-
+            The test_to_sut flow that caused this sut_to_mock call, resolved by
+            trace id when available, else by time-window nesting.
+        fingerprint:
+          type: string
+          description: >-
+            Stable hash of the interaction shape (channel, method, path,
+            status, JSON body key/type structure) for cross-run dedup.
+        consumed_fields:
+          type: array
+          items:
+            type: string
+          description: >-
+            Response fields the test declared it depends on (via the verify
+            API). Distinguishes breaking changes from changes to ignored fields.
         mock_stub:
           $ref: "#/components/schemas/MockStub"
         unmatched:
@@ -395,7 +423,8 @@ components:
       properties:
         status:
           type: string
-          enum: [pass, fail]
+          enum: [pass, fail, skipped]
+          description: skipped when the test case attached no schemas.
         errors:
           type: array
           items:

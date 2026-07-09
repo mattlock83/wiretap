@@ -57,15 +57,16 @@ func TestMockStubFromExchangeCapturesAssumption(t *testing.T) {
 	exchange := mock.Exchange{
 		Matched: true,
 		MatchedStub: &mock.Stub{
-			ID: "alpha",
+			ID:     "alpha",
+			Source: "queued",
 			Match: mock.StubMatch{
 				Method: "POST",
-				Path:   "/__phrond/session/session-1/alpha",
+				Path:   "/alpha",
 				Body:   `{"id":"123"}`,
 			},
 			Response: mock.StubResponse{
 				Status: 200,
-				Body:   `{"served_at":"{{cel "now"}}"}`,
+				Body:   `{"result":"alpha-ok"}`,
 			},
 		},
 	}
@@ -75,10 +76,13 @@ func TestMockStubFromExchangeCapturesAssumption(t *testing.T) {
 		t.Fatal("expected mock stub, got nil")
 	}
 	if stub.Match.Path != "/alpha" {
-		t.Fatalf("expected session-stripped path /alpha, got %q", stub.Match.Path)
+		t.Fatalf("expected path /alpha, got %q", stub.Match.Path)
 	}
-	if stub.ResponseTemplate.Body != `{"served_at":"{{cel "now"}}"}` {
-		t.Fatalf("expected unrendered template, got %q", stub.ResponseTemplate.Body)
+	if stub.Source != "queued" {
+		t.Fatalf("expected source queued, got %q", stub.Source)
+	}
+	if stub.ResponseTemplate.Body != `{"result":"alpha-ok"}` {
+		t.Fatalf("expected response template, got %q", stub.ResponseTemplate.Body)
 	}
 	wantOn := map[string]bool{"method": true, "path": true, "body": true}
 	if len(stub.MatchedOn) != len(wantOn) {
@@ -113,7 +117,7 @@ func TestFinishCaseAttachesProducer(t *testing.T) {
 	if _, err := store.StartCase("producer-case", nil, nil, ""); err != nil {
 		t.Fatalf("start case: %v", err)
 	}
-	art, _, err := store.FinishCase("pass", nil, nil)
+	art, _, err := store.FinishCase("pass", nil, nil, nil)
 	if err != nil {
 		t.Fatalf("finish case: %v", err)
 	}
@@ -122,5 +126,105 @@ func TestFinishCaseAttachesProducer(t *testing.T) {
 	}
 	if art.Producer.Repo != "acme/widgets" || art.Producer.CommitSHA != "abc123" {
 		t.Fatalf("unexpected producer: %+v", art.Producer)
+	}
+	if art.SchemaValidation == nil || art.SchemaValidation.Status != "skipped" {
+		t.Fatalf("expected schema validation skipped without schemas, got %+v", art.SchemaValidation)
+	}
+}
+
+func TestLinkCausalityTraceAndTimeWindow(t *testing.T) {
+	base := time.Now().UTC()
+	flows := []artifact.Flow{
+		{ID: "flow-1", Channel: "test_to_sut", TraceID: "phtr-1", StartedAt: base, DurationMS: 100},
+		{ID: "flow-2", Channel: "sut_to_mock", TraceID: "phtr-1", StartedAt: base.Add(200 * time.Millisecond)},
+		{ID: "flow-3", Channel: "sut_to_mock", StartedAt: base.Add(50 * time.Millisecond)},
+		{ID: "flow-4", Channel: "sut_to_mock", StartedAt: base.Add(5 * time.Second)},
+	}
+	linkCausality(flows)
+	if flows[1].ParentFlowID != "flow-1" {
+		t.Fatalf("expected trace-id link to flow-1, got %q", flows[1].ParentFlowID)
+	}
+	if flows[2].ParentFlowID != "flow-1" {
+		t.Fatalf("expected time-window link to flow-1, got %q", flows[2].ParentFlowID)
+	}
+	if flows[3].ParentFlowID != "" {
+		t.Fatalf("expected no parent outside window, got %q", flows[3].ParentFlowID)
+	}
+}
+
+func TestFlowFingerprintStableAcrossValues(t *testing.T) {
+	makeFlow := func(id, qty string) artifact.Flow {
+		return artifact.Flow{
+			ID:      "flow-x",
+			Channel: "sut_to_mock",
+			Request: artifact.Message{HTTP: &artifact.HttpMessage{
+				Method: "POST",
+				URL:    "/orders",
+				Body:   &artifact.Body{Encoding: "utf8", Text: `{"id":"` + id + `","qty":` + qty + `}`},
+			}},
+			Response: artifact.Message{HTTP: &artifact.HttpMessage{
+				Status: 201,
+				Body:   &artifact.Body{Encoding: "utf8", Text: `{"order_id":"` + id + `"}`},
+			}},
+		}
+	}
+	a := flowFingerprint(makeFlow("abc", "1"))
+	b := flowFingerprint(makeFlow("zzz", "42"))
+	if a == "" || a != b {
+		t.Fatalf("expected identical shape fingerprints, got %q vs %q", a, b)
+	}
+	c := flowFingerprint(makeFlow("abc", `"not-a-number"`))
+	if c == a {
+		t.Fatalf("expected different fingerprint for different shape")
+	}
+}
+
+func TestFillSchemaSHAInline(t *testing.T) {
+	store := NewTestCaseStore(t.TempDir())
+	if _, err := store.StartCase("sha-case", nil, nil, ""); err != nil {
+		t.Fatalf("start case: %v", err)
+	}
+	stored := store.AddSchema(artifact.SchemaRef{
+		ID:     "dep-openapi",
+		Role:   "fake",
+		Type:   "openapi",
+		Source: artifact.SchemaSource{Type: "inline", Content: "openapi: 3.0.0"},
+	})
+	if stored.Source.SHA256 == "" {
+		t.Fatal("expected inline schema sha256 to be computed")
+	}
+}
+
+func TestFinishCaseAttachesConsumedFields(t *testing.T) {
+	store := NewTestCaseStore(t.TempDir())
+	if _, err := store.StartCase("consumed-case", nil, nil, ""); err != nil {
+		t.Fatalf("start case: %v", err)
+	}
+	exchanges := []mock.Exchange{{
+		Matched:       true,
+		MatchedStubID: "account-lookup",
+		Request:       mock.RecordedRequest{Method: "GET", Path: "/accounts/1"},
+		Response:      mock.RecordedResponse{Status: 200, Body: `{"id":"1","balance":10}`},
+	}}
+	art, _, err := store.FinishCase("pass", nil, exchanges, map[string][]string{
+		"account-lookup": {"body.id", "body.balance"},
+	})
+	if err != nil {
+		t.Fatalf("finish case: %v", err)
+	}
+	var found bool
+	for _, flow := range art.Traffic {
+		if flow.MatchedStubID == "account-lookup" {
+			found = true
+			if len(flow.ConsumedFields) != 2 {
+				t.Fatalf("expected 2 consumed fields, got %v", flow.ConsumedFields)
+			}
+			if flow.Fingerprint == "" {
+				t.Fatal("expected fingerprint on flow")
+			}
+		}
+	}
+	if !found {
+		t.Fatal("expected flow for matched stub")
 	}
 }

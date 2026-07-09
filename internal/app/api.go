@@ -43,10 +43,6 @@ func (a *App) handleTestCaseStart(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "store not configured"})
 		return
 	}
-	if len(req.Schemas) == 0 {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "at least one schema is required"})
-		return
-	}
 
 	if a.proxyComponent != nil {
 		if err := a.proxyComponent.Start(r.Context()); err != nil && !errors.Is(err, proxy.ErrAlreadyStarted) {
@@ -101,7 +97,7 @@ func (a *App) handleTestCaseFinish(w http.ResponseWriter, r *http.Request) {
 	}
 
 	env := a.environmentSnapshot()
-	artifactDoc, path, err := a.store.FinishCase(req.Status, env, exchanges)
+	artifactDoc, path, err := a.store.FinishCase(req.Status, env, exchanges, nil)
 	if err != nil {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 		return
@@ -450,6 +446,12 @@ func (a *App) handleStartServer(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if target := strings.TrimSpace(payload.Proxy.TargetURL); target != "" {
+		if err := a.proxyComponent.SetReverseTarget(target); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("invalid proxy target_url: %v", err)})
+			return
+		}
+	}
 	a.mockComponent.SetRecordingEnabled(true)
 
 	if err := a.proxyComponent.Start(r.Context()); err != nil && !errors.Is(err, proxy.ErrAlreadyStarted) {
@@ -470,6 +472,9 @@ func (a *App) handleStartServer(w http.ResponseWriter, r *http.Request) {
 			"listen_addr": a.proxyComponent.ListenAddr(),
 			"target_url":  strings.TrimSpace(payload.Proxy.TargetURL),
 		},
+		// sut_url is where tests point their HTTP client: the capture proxy in
+		// reverse mode, forwarding to the configured SUT target.
+		"sut_url": normalizeURL(a.proxyComponent.ListenAddr()),
 		"mock": map[string]any{
 			"listen_addr": a.mockComponent.Addr(),
 		},
@@ -477,14 +482,25 @@ func (a *App) handleStartServer(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+type dependencyPayload struct {
+	AssetID   string              `json:"asset_id"`
+	AssetName string              `json:"asset_name,omitempty"`
+	Schema    *artifact.SchemaRef `json:"schema,omitempty"`
+}
+
 type setupTestRequest struct {
-	Name          string               `json:"name,omitempty"`
-	Tags          []string             `json:"tags,omitempty"`
-	Meta          map[string]any       `json:"meta,omitempty"`
-	SUTBaseURL    string               `json:"sut_base_url,omitempty"`
-	RecordTraffic *bool                `json:"record_traffic,omitempty"`
-	SUTSchemas    []artifact.SchemaRef `json:"sut_schemas,omitempty"`
-	FakeSchemas   []artifact.SchemaRef `json:"fake_schemas,omitempty"`
+	Name          string         `json:"name,omitempty"`
+	Tags          []string       `json:"tags,omitempty"`
+	Meta          map[string]any `json:"meta,omitempty"`
+	SUTBaseURL    string         `json:"sut_base_url,omitempty"`
+	RecordTraffic *bool          `json:"record_traffic,omitempty"`
+	// ExplicitSession opts into session-prefixed URLs / header correlation for
+	// parallel suites. Default (false) is zero-config: stable unprefixed URLs,
+	// unlabeled traffic attributed to this session, one at a time.
+	ExplicitSession bool                 `json:"explicit_session,omitempty"`
+	Dependencies    []dependencyPayload  `json:"dependencies,omitempty"`
+	SUTSchemas      []artifact.SchemaRef `json:"sut_schemas,omitempty"`
+	FakeSchemas     []artifact.SchemaRef `json:"fake_schemas,omitempty"`
 }
 
 func (a *App) handleSetupTest(w http.ResponseWriter, r *http.Request) {
@@ -512,9 +528,20 @@ func (a *App) handleSetupTest(w http.ResponseWriter, r *http.Request) {
 		recordTraffic = *payload.RecordTraffic
 	}
 
-	if recordTraffic && len(payload.SUTSchemas) == 0 && len(payload.FakeSchemas) == 0 {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "at least one schema is required"})
-		return
+	deps := make([]sessionDependency, 0, len(payload.Dependencies))
+	seenDeps := map[string]struct{}{}
+	for _, dep := range payload.Dependencies {
+		assetID := strings.TrimSpace(dep.AssetID)
+		if assetID == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "dependency asset_id is required"})
+			return
+		}
+		if _, dup := seenDeps[assetID]; dup {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("duplicate dependency asset_id %q", assetID)})
+			return
+		}
+		seenDeps[assetID] = struct{}{}
+		deps = append(deps, sessionDependency{AssetID: assetID, AssetName: strings.TrimSpace(dep.AssetName)})
 	}
 
 	name := strings.TrimSpace(payload.Name)
@@ -536,17 +563,52 @@ func (a *App) handleSetupTest(w http.ResponseWriter, r *http.Request) {
 		schema.Role = "fake"
 		store.AddSchema(schema)
 	}
+	for _, dep := range payload.Dependencies {
+		if dep.Schema == nil {
+			continue
+		}
+		schema := *dep.Schema
+		schema.Role = "fake"
+		schema.AssetID = strings.TrimSpace(dep.AssetID)
+		if schema.AssetName == "" {
+			schema.AssetName = strings.TrimSpace(dep.AssetName)
+		}
+		store.AddSchema(schema)
+	}
 
 	a.sessionsMu.Lock()
+	if !payload.ExplicitSession {
+		for _, existing := range a.sessions {
+			if !existing.Explicit {
+				a.sessionsMu.Unlock()
+				writeJSON(w, http.StatusConflict, map[string]string{
+					"error": fmt.Sprintf("zero-config session %q is already active; run tests serially or set explicit_session for parallel suites", existing.ID),
+				})
+				return
+			}
+		}
+	}
 	sessionID := a.nextSessionID()
+	mockBase := normalizeURL(a.mockComponent.Addr())
+	sessionBase := mockBase
+	if payload.ExplicitSession {
+		sessionBase = mockBase + sessionPathPrefix(sessionID)
+	}
+	dependencyURLs := map[string]string{}
+	for _, dep := range deps {
+		dependencyURLs[dep.AssetID] = sessionBase + dependencyPathPrefix(dep.AssetID)
+	}
 	session := &runtimeSession{
 		ID:             sessionID,
 		Name:           name,
 		Store:          store,
 		SUTBaseURL:     payload.SUTBaseURL,
 		CreatedAt:      time.Now().UTC(),
-		MockBaseURL:    normalizeURL(a.mockComponent.Addr()) + sessionPathPrefix(sessionID),
+		MockBaseURL:    sessionBase,
 		RecordTraffic:  recordTraffic,
+		Explicit:       payload.ExplicitSession,
+		Dependencies:   deps,
+		Consumed:       map[string][]string{},
 		QueueOrder:     []string{},
 		Queued:         map[string]*queuedResponse{},
 		RespondedOrder: []string{},
@@ -554,15 +616,24 @@ func (a *App) handleSetupTest(w http.ResponseWriter, r *http.Request) {
 		SeenExchanges:  map[string]struct{}{},
 	}
 	a.sessions[sessionID] = session
+	if !payload.ExplicitSession {
+		a.defaultSessionID = sessionID
+	}
 	a.sessionsMu.Unlock()
+	if !payload.ExplicitSession {
+		a.mockComponent.SetDefaultSession(sessionID)
+	}
 	a.mockComponent.SetSessionRecordingEnabled(sessionID, recordTraffic)
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"session_id":     sessionID,
-		"name":           name,
-		"record_traffic": recordTraffic,
-		"proxy_listen":   normalizeURL(a.proxyComponent.ListenAddr()),
-		"mock_base_url":  session.MockBaseURL,
+		"session_id":      sessionID,
+		"name":            name,
+		"record_traffic":  recordTraffic,
+		"explicit":        payload.ExplicitSession,
+		"proxy_listen":    normalizeURL(a.proxyComponent.ListenAddr()),
+		"sut_url":         normalizeURL(a.proxyComponent.ListenAddr()),
+		"mock_base_url":   session.MockBaseURL,
+		"dependency_urls": dependencyURLs,
 	})
 }
 
@@ -570,7 +641,10 @@ type queueResponseRequest struct {
 	SessionID string `json:"session_id"`
 	ID        string `json:"id,omitempty"`
 	Default   bool   `json:"default,omitempty"`
-	Match     struct {
+	// AssetID scopes the stub to a declared dependency. Optional when the
+	// session declares exactly one dependency (it is used automatically).
+	AssetID string `json:"asset_id,omitempty"`
+	Match   struct {
 		Method       string            `json:"method,omitempty"`
 		Path         string            `json:"path,omitempty"`
 		Headers      map[string]string `json:"headers,omitempty"`
@@ -635,6 +709,21 @@ func (a *App) handleQueueResponse(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "session not found"})
 		return
 	}
+	assetID := strings.TrimSpace(payload.AssetID)
+	if assetID == "" && len(session.Dependencies) == 1 {
+		assetID = session.Dependencies[0].AssetID
+	}
+	if assetID != "" {
+		if _, ok := session.dependency(assetID); !ok {
+			a.sessionsMu.Unlock()
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("asset_id %q is not a declared dependency of this session", assetID)})
+			return
+		}
+	} else if len(session.Dependencies) > 1 {
+		a.sessionsMu.Unlock()
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "asset_id is required when the session declares multiple dependencies"})
+		return
+	}
 	a.syncSessionResponsesLocked(session)
 	if len(session.Queued) >= a.stackSize {
 		a.sessionsMu.Unlock()
@@ -676,10 +765,12 @@ func (a *App) handleQueueResponse(w http.ResponseWriter, r *http.Request) {
 	stub := mock.Stub{
 		ID:        responseID,
 		SessionID: sessionID,
+		AssetID:   assetID,
 		Default:   payload.Default,
+		Source:    "queued",
 		Match: mock.StubMatch{
 			Method:       method,
-			Path:         withSessionPath(sessionID, path),
+			Path:         path,
 			Headers:      payload.Match.Headers,
 			Query:        payload.Match.Query,
 			Body:         payload.Match.Body,
@@ -707,8 +798,82 @@ func (a *App) handleQueueResponse(w http.ResponseWriter, r *http.Request) {
 		"status":     "queued",
 		"session_id": sessionID,
 		"id":         responseID,
+		"asset_id":   assetID,
 		"default":    payload.Default,
 	})
+}
+
+type verifyRequest struct {
+	SessionID string   `json:"session_id"`
+	ID        string   `json:"id"`
+	Fields    []string `json:"fields"`
+}
+
+// handleVerify records which fields of a mocked response the test depends on.
+// Consumed fields are attached to the matching flows in the artifact so later
+// analysis can distinguish breaking changes from changes to ignored fields.
+func (a *App) handleVerify(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+	var payload verifyRequest
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
+		return
+	}
+	sessionID := strings.TrimSpace(payload.SessionID)
+	responseID := strings.TrimSpace(payload.ID)
+	if sessionID == "" || responseID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "session_id and id are required"})
+		return
+	}
+	fields := make([]string, 0, len(payload.Fields))
+	for _, field := range payload.Fields {
+		if trimmed := strings.TrimSpace(field); trimmed != "" {
+			fields = append(fields, trimmed)
+		}
+	}
+	if len(fields) == 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "at least one field is required"})
+		return
+	}
+
+	a.sessionsMu.Lock()
+	session := a.sessions[sessionID]
+	if session == nil {
+		a.sessionsMu.Unlock()
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "session not found"})
+		return
+	}
+	if session.Consumed == nil {
+		session.Consumed = map[string][]string{}
+	}
+	session.Consumed[responseID] = appendUnique(session.Consumed[responseID], fields)
+	recorded := len(session.Consumed[responseID])
+	a.sessionsMu.Unlock()
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status":     "recorded",
+		"session_id": sessionID,
+		"id":         responseID,
+		"fields":     recorded,
+	})
+}
+
+func appendUnique(existing []string, incoming []string) []string {
+	seen := make(map[string]struct{}, len(existing))
+	for _, value := range existing {
+		seen[value] = struct{}{}
+	}
+	for _, value := range incoming {
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		existing = append(existing, value)
+	}
+	return existing
 }
 
 type teardownTestRequest struct {
@@ -756,8 +921,16 @@ func (a *App) handleTeardownTest(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	delete(a.sessions, sessionID)
+	wasDefault := a.defaultSessionID == sessionID
+	if wasDefault {
+		a.defaultSessionID = ""
+	}
+	consumed := session.Consumed
 	a.sessionsMu.Unlock()
 
+	if wasDefault {
+		a.mockComponent.SetDefaultSession("")
+	}
 	if len(queuedIDs) > 0 {
 		a.mockComponent.RemoveStubsByID(queuedIDs)
 	}
@@ -785,7 +958,7 @@ func (a *App) handleTeardownTest(w http.ResponseWriter, r *http.Request) {
 	env := a.environmentSnapshot()
 	env.MockBaseURL = session.MockBaseURL
 
-	artifactDoc, path, err := session.Store.FinishCase(status, env, exchanges)
+	artifactDoc, path, err := session.Store.FinishCase(status, env, exchanges, consumed)
 	if err != nil {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 		return
@@ -891,7 +1064,9 @@ func (a *App) handleKillServer(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	a.sessions = map[string]*runtimeSession{}
+	a.defaultSessionID = ""
 	a.sessionsMu.Unlock()
+	a.mockComponent.SetDefaultSession("")
 
 	if len(staleIDs) > 0 {
 		a.mockComponent.RemoveStubsByID(staleIDs)
@@ -940,16 +1115,16 @@ func (a *App) handleListQueued(w http.ResponseWriter, r *http.Request) {
 		if item == nil {
 			continue
 		}
-		_, unprefixedPath := stripSessionPath(item.Stub.Match.Path)
 		out = append(out, map[string]any{
 			"id":         item.ID,
 			"session_id": sessionID,
+			"asset_id":   item.Stub.AssetID,
 			"created_at": item.CreatedAt,
 			"source":     item.Source,
 			"default":    item.Stub.Default,
 			"match": map[string]any{
 				"method":        item.Stub.Match.Method,
-				"path":          unprefixedPath,
+				"path":          item.Stub.Match.Path,
 				"headers":       item.Stub.Match.Headers,
 				"query":         item.Stub.Match.Query,
 				"body":          item.Stub.Match.Body,
@@ -997,10 +1172,10 @@ func (a *App) handleListResponded(w http.ResponseWriter, r *http.Request) {
 		if item == nil {
 			continue
 		}
-		_, unprefixedPath := stripSessionPath(item.Stub.Match.Path)
 		entry := map[string]any{
 			"id":              item.ID,
 			"session_id":      sessionID,
+			"asset_id":        item.Stub.AssetID,
 			"created_at":      item.CreatedAt,
 			"responded_at":    item.RespondedAt,
 			"source":          item.Source,
@@ -1008,7 +1183,7 @@ func (a *App) handleListResponded(w http.ResponseWriter, r *http.Request) {
 			"responded_count": item.RespondedCnt,
 			"match": map[string]any{
 				"method":        item.Stub.Match.Method,
-				"path":          unprefixedPath,
+				"path":          item.Stub.Match.Path,
 				"headers":       item.Stub.Match.Headers,
 				"query":         item.Stub.Match.Query,
 				"body":          item.Stub.Match.Body,
@@ -1068,11 +1243,11 @@ func (a *App) handleGetResponse(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "response id not found"})
 		return
 	}
-	_, unprefixedPath := stripSessionPath(item.Stub.Match.Path)
 	resp := map[string]any{
 		"id":              item.ID,
 		"state":           state,
 		"session_id":      sessionID,
+		"asset_id":        item.Stub.AssetID,
 		"created_at":      item.CreatedAt,
 		"responded_at":    item.RespondedAt,
 		"source":          item.Source,
@@ -1080,7 +1255,7 @@ func (a *App) handleGetResponse(w http.ResponseWriter, r *http.Request) {
 		"responded_count": item.RespondedCnt,
 		"match": map[string]any{
 			"method":        item.Stub.Match.Method,
-			"path":          unprefixedPath,
+			"path":          item.Stub.Match.Path,
 			"headers":       item.Stub.Match.Headers,
 			"query":         item.Stub.Match.Query,
 			"body":          item.Stub.Match.Body,

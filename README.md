@@ -2,6 +2,10 @@
 
 Phrond is a test harness that captures SUT traffic and mock traffic and writes a per-test YAML artifact. It supports HTTP/HTTPS with a mock server and a capture proxy, with schema validation against OpenAPI.
 
+Design goals:
+- **No workflow changes**: declare each dependency once with a stable `asset_id`; inject its stable mock URL into the SUT at startup; call the SUT through the reverse-capture proxy with any HTTP client. Zero-config session correlation means no per-test rewiring (parallel suites opt into explicit sessions).
+- **Broker-ready artifacts**: flows carry dependency `asset_id` (ground truth attribution), `parent_flow_id` (causality: which SUT operation called which dependency), `consumed_fields` (what the test depends on), shape `fingerprint`s for dedup, and the full mock assumption (`mock_stub`).
+
 ## Quick Start
 
 ```bash
@@ -32,9 +36,9 @@ Use normal runtime sessions with `record_traffic: false` when you want mock beha
 }
 ```
 
-## Schema Validation (Required)
+## Schema Validation (Optional)
 
-Every recorded test case must include at least one schema. Validation runs at test finish and is stored under `artifact.schema_validation` and returned in the finish response as `schema_validation`.
+Schemas are optional: a test case without any records `schema_validation.status: "skipped"` in its artifact, so teams can adopt phrond before they have OpenAPI specs. When schemas are attached, validation runs at test finish and is stored under `artifact.schema_validation` and returned in the finish response as `schema_validation`.
 
 OpenAPI example (inline):
 

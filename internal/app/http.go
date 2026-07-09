@@ -25,6 +25,7 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("/v1/startServer", a.handleStartServer)
 	mux.HandleFunc("/v1/setupTest", a.handleSetupTest)
 	mux.HandleFunc("/v1/queue-response", a.handleQueueResponse)
+	mux.HandleFunc("/v1/verify", a.handleVerify)
 	mux.HandleFunc("/v1/teardownTest", a.handleTeardownTest)
 	mux.HandleFunc("/v1/report", a.handleRuntimeReport)
 	mux.HandleFunc("/v1/killServer", a.handleKillServer)

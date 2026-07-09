@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	tlsmgr "github.com/phrond/evermock/internal/tls"
@@ -37,6 +38,11 @@ type Config struct {
 	UpstreamTLSConfig *tls.Config
 	IdleTimeout       time.Duration
 	Logger            *log.Logger
+	// ReverseTarget, when set, makes the listener also act as a reverse proxy:
+	// plain (non-absolute-URI, non-CONNECT) requests are forwarded to this
+	// base URL and captured. Tests then call the proxy address directly with
+	// any HTTP client — no proxy configuration or CA trust required.
+	ReverseTarget string
 }
 
 // Info reports proxy runtime configuration.
@@ -45,13 +51,21 @@ type Info struct {
 	Mode       Mode   `json:"mode"`
 }
 
-// Server is an explicit forward proxy with CONNECT + MITM support.
+// Server is a capture proxy. It serves three request styles on one listener:
+// reverse-proxied plain requests (forwarded to ReverseTarget), explicit
+// forward-proxy requests (absolute-URI), and CONNECT tunnels (MITM or
+// passthrough).
 type Server struct {
 	cfg        Config
 	server     *http.Server
 	listener   net.Listener
 	shutdownCh chan struct{}
 	once       sync.Once
+
+	reverseMu     sync.RWMutex
+	reverseTarget string
+
+	traceSeq atomic.Uint64
 }
 
 // Recorder receives captured HTTP exchanges.
@@ -61,7 +75,11 @@ type Recorder interface {
 
 // HTTPExchange captures a proxied request/response pair.
 type HTTPExchange struct {
-	SessionID       string
+	SessionID string
+	// TraceID is injected by the proxy as X-Phrond-Trace-Id on the forwarded
+	// request. When the SUT propagates the header to its dependencies, the
+	// mock server records it, linking downstream calls to this exchange.
+	TraceID         string
 	Method          string
 	URL             string
 	RequestHeaders  map[string][]string
@@ -85,9 +103,39 @@ func NewServer(cfg Config) *Server {
 		cfg.IdleTimeout = 30 * time.Second
 	}
 	return &Server{
-		cfg:        cfg,
-		shutdownCh: make(chan struct{}),
+		cfg:           cfg,
+		reverseTarget: strings.TrimRight(strings.TrimSpace(cfg.ReverseTarget), "/"),
+		shutdownCh:    make(chan struct{}),
 	}
+}
+
+// SetReverseTarget updates the base URL plain requests are forwarded to.
+// Safe to call while the server is running; empty clears reverse mode.
+func (s *Server) SetReverseTarget(target string) error {
+	trimmed := strings.TrimRight(strings.TrimSpace(target), "/")
+	if trimmed != "" {
+		parsed, err := url.Parse(trimmed)
+		if err != nil {
+			return err
+		}
+		if parsed.Scheme == "" || parsed.Host == "" {
+			return errors.New("reverse target must be an absolute URL")
+		}
+	}
+	s.reverseMu.Lock()
+	s.reverseTarget = trimmed
+	s.reverseMu.Unlock()
+	return nil
+}
+
+func (s *Server) getReverseTarget() string {
+	s.reverseMu.RLock()
+	defer s.reverseMu.RUnlock()
+	return s.reverseTarget
+}
+
+func (s *Server) nextTraceID() string {
+	return fmt.Sprintf("phtr-%d-%d", time.Now().UTC().UnixNano(), s.traceSeq.Add(1))
 }
 
 // Start begins listening for proxy traffic.
@@ -208,19 +256,39 @@ func (s *Server) handleHTTP(w http.ResponseWriter, r *http.Request) {
 	req := r.Clone(r.Context())
 	sessionID := req.Header.Get("X-Phrond-Session-Id")
 	req.Header.Del("X-Phrond-Session-Id")
-	if req.URL.Scheme == "" {
-		req.URL.Scheme = "http"
-	}
-	if req.URL.Host == "" {
-		req.URL.Host = req.Host
+
+	if req.URL.Scheme == "" || req.URL.Host == "" {
+		// Plain (non-absolute-URI) request: reverse-proxy it to the target so
+		// tests can call the proxy address directly with any HTTP client.
+		target := s.getReverseTarget()
+		if target == "" {
+			writeProxyError(w, http.StatusBadGateway, errors.New("no reverse target configured; send an absolute-URI proxy request or set the SUT target"))
+			return
+		}
+		parsed, err := url.Parse(target)
+		if err != nil {
+			writeProxyError(w, http.StatusBadGateway, err)
+			return
+		}
+		req.URL.Scheme = parsed.Scheme
+		req.URL.Host = parsed.Host
+		req.URL.Path = strings.TrimSuffix(parsed.Path, "/") + req.URL.Path
+		req.Host = parsed.Host
+		if parsed.Scheme == "https" {
+			transport = s.httpTransport(s.upstreamTLSConfig(parsed.Host))
+		}
 	}
 	req.RequestURI = ""
 	req.Header.Del("Proxy-Connection")
+
+	traceID := s.nextTraceID()
+	req.Header.Set("X-Phrond-Trace-Id", traceID)
 
 	resp, err := transport.RoundTrip(req)
 	if err != nil {
 		s.recordHTTP(HTTPExchange{
 			SessionID:      sessionID,
+			TraceID:        traceID,
 			Method:         req.Method,
 			URL:            req.URL.String(),
 			RequestHeaders: cloneHeader(req.Header),
@@ -240,6 +308,7 @@ func (s *Server) handleHTTP(w http.ResponseWriter, r *http.Request) {
 
 	s.recordHTTP(HTTPExchange{
 		SessionID:       sessionID,
+		TraceID:         traceID,
 		Method:          req.Method,
 		URL:             req.URL.String(),
 		RequestHeaders:  cloneHeader(req.Header),
@@ -346,10 +415,14 @@ func (s *Server) proxyTLSRequests(clientTLS net.Conn) {
 		req.RequestURI = ""
 		req.Header.Del("Proxy-Connection")
 
+		traceID := s.nextTraceID()
+		req.Header.Set("X-Phrond-Trace-Id", traceID)
+
 		resp, err := s.httpTransport(s.upstreamTLSConfig(req.URL.Host)).RoundTrip(req)
 		if err != nil {
 			s.recordHTTP(HTTPExchange{
 				SessionID:      sessionID,
+				TraceID:        traceID,
 				Method:         req.Method,
 				URL:            req.URL.String(),
 				RequestHeaders: cloneHeader(req.Header),
@@ -367,6 +440,7 @@ func (s *Server) proxyTLSRequests(clientTLS net.Conn) {
 
 		s.recordHTTP(HTTPExchange{
 			SessionID:       sessionID,
+			TraceID:         traceID,
 			Method:          req.Method,
 			URL:             req.URL.String(),
 			RequestHeaders:  cloneHeader(req.Header),

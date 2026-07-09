@@ -20,6 +20,23 @@
 - Some environments restrict local TCP listeners. Run tests with the required permissions or configure your test runner to allow localhost binds.
 
 ## No Traffic Captured
-- Ensure the SUT is configured to use the proxy for outbound requests.
-- Verify downstream dependencies are pointed at the mock server.
-- Check that the proxy is in `mitm` mode and the CA is trusted for HTTPS traffic.
+- Test→SUT: send test traffic to the proxy address (`sut_url` /
+  `runtime.sutUrl`) — with reverse capture the proxy forwards to the SUT
+  target configured at `startServer` (`sutBaseUrl` in the SDK).
+- SUT→mock: point each downstream dependency at its stable URL from
+  `runtime.dependencyUrl(assetId)` (or `dependency_urls` in the `setupTest`
+  response).
+- For HTTPS targets via CONNECT, check the proxy is in `mitm` mode and the CA
+  is trusted; plain-HTTP reverse capture needs no CA.
+
+## setupTest Returns 409 "zero-config session is already active"
+- Only one zero-config session may be active at a time. Either run tests
+  serially (make sure every test tears down its session — `bindTest` does this
+  automatically), or set `explicit_session: true` for parallel suites.
+
+## Mock Returns 501 "no matching stub"
+- The flow is recorded with `unmatched: true` — the SUT made a dependency call
+  no queued response models. Queue a response for it, or check the request was
+  routed to the right dependency URL (asset-scoped stubs only match requests
+  sent to that dependency's base URL).
+- With multiple declared dependencies, `queue-response` needs `asset_id`.

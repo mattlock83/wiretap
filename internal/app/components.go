@@ -105,6 +105,13 @@ func (p *ProxyComponent) CACertPEM() ([]byte, error) {
 	return p.server.CACertPEM()
 }
 
+func (p *ProxyComponent) SetReverseTarget(target string) error {
+	if p == nil || p.server == nil {
+		return nil
+	}
+	return p.server.SetReverseTarget(target)
+}
+
 type MockComponent struct {
 	server     *mock.Server
 	listenAddr string
@@ -213,6 +220,13 @@ func (m *MockComponent) SetSessionRecordingEnabled(sessionID string, enabled boo
 		return
 	}
 	m.server.SetSessionRecordingEnabled(sessionID, enabled)
+}
+
+func (m *MockComponent) SetDefaultSession(sessionID string) {
+	if m == nil || m.server == nil {
+		return
+	}
+	m.server.SetDefaultSession(sessionID)
 }
 
 func defaultCABaseDir() string {

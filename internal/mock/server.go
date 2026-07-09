@@ -28,6 +28,12 @@ type Server struct {
 	exchangeSeq      atomic.Uint64
 	recordSeq        atomic.Uint64
 	recordingEnabled atomic.Bool
+
+	// defaultSessionMu guards defaultSession: the session that unlabeled
+	// traffic (no session prefix in the URL) is attributed to. Set while
+	// exactly one zero-config session is active.
+	defaultSessionMu sync.RWMutex
+	defaultSession   string
 }
 
 type syncState struct {
@@ -57,6 +63,27 @@ func (s *Server) SetRecordingEnabled(enabled bool) {
 		return
 	}
 	s.recordingEnabled.Store(enabled)
+}
+
+// SetDefaultSession sets (or clears, with "") the session that unlabeled
+// traffic is attributed to. Used for zero-config correlation when a single
+// session is active.
+func (s *Server) SetDefaultSession(sessionID string) {
+	if s == nil {
+		return
+	}
+	s.defaultSessionMu.Lock()
+	s.defaultSession = strings.TrimSpace(sessionID)
+	s.defaultSessionMu.Unlock()
+}
+
+func (s *Server) getDefaultSession() string {
+	if s == nil {
+		return ""
+	}
+	s.defaultSessionMu.RLock()
+	defer s.defaultSessionMu.RUnlock()
+	return s.defaultSession
 }
 
 func (s *Server) SetSessionRecordingEnabled(sessionID string, enabled bool) {
@@ -163,7 +190,13 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	bodyBytes, _ := io.ReadAll(r.Body)
 	_ = r.Body.Close()
 
-	sessionID, trimmedPath := splitSessionPath(r.URL.Path)
+	sessionID, assetID, trimmedPath := parseMockPath(r.URL.Path)
+	if sessionID == "" {
+		// Zero-config correlation: unlabeled traffic belongs to the single
+		// active session, when one is registered.
+		sessionID = s.getDefaultSession()
+	}
+	traceID := strings.TrimSpace(r.Header.Get("X-Phrond-Trace-Id"))
 	recordURL := r.URL.String()
 	if trimmedPath != r.URL.Path {
 		copyURL := *r.URL
@@ -180,7 +213,11 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		Body:    string(bodyBytes),
 	}
 
-	stub, matched := s.registry.Match(r, bodyBytes)
+	stub, matched := s.registry.Match(r, bodyBytes, MatchTarget{
+		SessionID: sessionID,
+		AssetID:   assetID,
+		Path:      trimmedPath,
+	})
 	resp := RecordedResponse{
 		Status:  http.StatusNotImplemented,
 		DelayMS: 0,
@@ -204,6 +241,8 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 			matched = true
 			stub.ID = recordedID
 			stub.SessionID = sessionID
+			stub.AssetID = assetID
+			stub.Source = "recorded"
 			stub.Match = StubMatch{
 				Method: r.Method,
 				Path:   trimmedPath,
@@ -227,6 +266,8 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		exchange := Exchange{
 			ID:            "exchange-" + strconv.FormatUint(s.exchangeSeq.Add(1), 10),
 			SessionID:     sessionID,
+			AssetID:       assetID,
+			TraceID:       traceID,
 			Request:       req,
 			Response:      resp,
 			MatchedStubID: stub.ID,
@@ -259,6 +300,8 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	exchange := Exchange{
 		ID:            "exchange-" + strconv.FormatUint(s.exchangeSeq.Add(1), 10),
 		SessionID:     sessionID,
+		AssetID:       assetID,
+		TraceID:       traceID,
 		Request:       req,
 		Response:      resp,
 		MatchedStubID: stub.ID,
@@ -344,23 +387,35 @@ func (s *Server) writeConnectionError(w http.ResponseWriter) {
 	_ = conn.Close()
 }
 
-func splitSessionPath(rawPath string) (string, string) {
+// parseMockPath strips phrond routing segments from an incoming path and
+// returns (sessionID, assetID, remaining path). Supported forms:
+//
+//	/__phrond/session/<sid>/dep/<assetID>/rest...  (explicit session + dependency)
+//	/__phrond/session/<sid>/rest...                (explicit session)
+//	/__phrond/dep/<assetID>/rest...                (dependency, zero-config session)
+//	/rest...                                       (plain)
+func parseMockPath(rawPath string) (sessionID, assetID, remaining string) {
 	parts := strings.Split(strings.TrimPrefix(rawPath, "/"), "/")
-	if len(parts) < 3 {
-		return "", rawPath
+	idx := 0
+	if len(parts) > idx && parts[idx] == "__phrond" {
+		idx++
+		if len(parts) > idx+1 && parts[idx] == "session" && strings.TrimSpace(parts[idx+1]) != "" {
+			sessionID = strings.TrimSpace(parts[idx+1])
+			idx += 2
+		}
+		if len(parts) > idx+1 && parts[idx] == "dep" && strings.TrimSpace(parts[idx+1]) != "" {
+			assetID = strings.TrimSpace(parts[idx+1])
+			idx += 2
+		}
 	}
-	if parts[0] != "__phrond" || parts[1] != "session" {
-		return "", rawPath
+	if idx == 0 {
+		return "", "", rawPath
 	}
-	sessionID := strings.TrimSpace(parts[2])
-	if sessionID == "" {
-		return "", rawPath
+	remaining = "/"
+	if len(parts) > idx {
+		remaining += strings.Join(parts[idx:], "/")
 	}
-	remaining := "/"
-	if len(parts) > 3 {
-		remaining += strings.Join(parts[3:], "/")
-	}
-	return sessionID, remaining
+	return sessionID, assetID, remaining
 }
 
 func toSingleHeaders(in map[string][]string) map[string]string {

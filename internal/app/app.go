@@ -34,8 +34,11 @@ type App struct {
 	sessionRecorder *SessionProxyRecorder
 	sessionsMu      sync.Mutex
 	sessions        map[string]*runtimeSession
-	sessionSeq      uint64
-	stackSize       int
+	// defaultSessionID names the single active zero-config session that
+	// unlabeled traffic is attributed to ("" when none / explicit-only).
+	defaultSessionID string
+	sessionSeq       uint64
+	stackSize        int
 }
 
 func New(deps Deps) (*App, error) {

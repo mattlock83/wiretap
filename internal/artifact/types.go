@@ -133,6 +133,22 @@ type Flow struct {
 	Response      Message   `yaml:"response" json:"response"`
 	AssertionIDs  []string  `yaml:"assertion_ids,omitempty" json:"assertion_ids,omitempty"`
 	MatchedStubID string    `yaml:"matched_stub_id,omitempty" json:"matched_stub_id,omitempty"`
+	// AssetID identifies the declared dependency a sut_to_mock flow was routed
+	// to. Ground truth for attribution — no spec inference required.
+	AssetID string `yaml:"asset_id,omitempty" json:"asset_id,omitempty"`
+	// TraceID links flows across channels: the proxy injects it on
+	// test_to_sut requests and the mock records it when the SUT propagates it.
+	TraceID string `yaml:"trace_id,omitempty" json:"trace_id,omitempty"`
+	// ParentFlowID names the test_to_sut flow that caused this sut_to_mock
+	// call, resolved by trace id when available, else by time-window nesting.
+	ParentFlowID string `yaml:"parent_flow_id,omitempty" json:"parent_flow_id,omitempty"`
+	// Fingerprint is a stable hash of the interaction shape (channel, method,
+	// path, status, JSON body key/type structure) for cross-run dedup.
+	Fingerprint string `yaml:"fingerprint,omitempty" json:"fingerprint,omitempty"`
+	// ConsumedFields lists response fields the test declared it depends on
+	// (via the verify API). Lets analysis distinguish breaking changes to
+	// consumed fields from harmless changes to ignored ones.
+	ConsumedFields []string `yaml:"consumed_fields,omitempty" json:"consumed_fields,omitempty"`
 	// MockStub is the consumer's assumption that produced a sut_to_mock
 	// response: the match rule plus the unrendered response template. This is
 	// the contract a broker compares against provider truth.

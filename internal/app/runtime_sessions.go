@@ -19,19 +19,42 @@ type queuedResponse struct {
 	LastExchange *mock.Exchange
 }
 
+// sessionDependency is a declared downstream dependency of the SUT for one
+// session. Each dependency gets its own mock base URL so captured flows carry
+// the dependency's asset identity as ground truth.
+type sessionDependency struct {
+	AssetID   string
+	AssetName string
+}
+
 type runtimeSession struct {
-	ID             string
-	Name           string
-	Store          *TestCaseStore
-	SUTBaseURL     string
-	MockBaseURL    string
-	RecordTraffic  bool
+	ID            string
+	Name          string
+	Store         *TestCaseStore
+	SUTBaseURL    string
+	MockBaseURL   string
+	RecordTraffic bool
+	// Explicit marks sessions that use session-prefixed URLs / headers for
+	// correlation (parallel-safe). Non-explicit sessions rely on zero-config
+	// active-session attribution and are limited to one at a time.
+	Explicit       bool
+	Dependencies   []sessionDependency
+	Consumed       map[string][]string
 	CreatedAt      time.Time
 	QueueOrder     []string
 	Queued         map[string]*queuedResponse
 	RespondedOrder []string
 	Responded      map[string]*queuedResponse
 	SeenExchanges  map[string]struct{}
+}
+
+func (s *runtimeSession) dependency(assetID string) (sessionDependency, bool) {
+	for _, dep := range s.Dependencies {
+		if dep.AssetID == assetID {
+			return dep, true
+		}
+	}
+	return sessionDependency{}, false
 }
 
 func (a *App) nextSessionID() string {
@@ -43,11 +66,10 @@ func (a *App) recordProxyForSession(exchange proxy.HTTPExchange) {
 	sessionID := strings.TrimSpace(exchange.SessionID)
 
 	a.sessionsMu.Lock()
-	if sessionID == "" && len(a.sessions) == 1 {
-		for id := range a.sessions {
-			sessionID = id
-			break
-		}
+	if sessionID == "" {
+		// Zero-config correlation: unlabeled proxy traffic belongs to the
+		// active (non-explicit) session when one exists.
+		sessionID = a.defaultSessionID
 	}
 	session := a.sessions[sessionID]
 	a.sessionsMu.Unlock()
@@ -65,34 +87,8 @@ func sessionPathPrefix(sessionID string) string {
 	return "/__phrond/session/" + strings.TrimSpace(sessionID)
 }
 
-func withSessionPath(sessionID, path string) string {
-	prefix := sessionPathPrefix(sessionID)
-	if path == "" || path == "/" {
-		return prefix + "/"
-	}
-	if strings.HasPrefix(path, "/") {
-		return prefix + path
-	}
-	return prefix + "/" + path
-}
-
-func stripSessionPath(path string) (sessionID, trimmed string) {
-	parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
-	if len(parts) < 3 {
-		return "", path
-	}
-	if parts[0] != "__phrond" || parts[1] != "session" {
-		return "", path
-	}
-	sessionID = strings.TrimSpace(parts[2])
-	if sessionID == "" {
-		return "", path
-	}
-	trimmed = "/"
-	if len(parts) > 3 {
-		trimmed += strings.Join(parts[3:], "/")
-	}
-	return sessionID, trimmed
+func dependencyPathPrefix(assetID string) string {
+	return "/__phrond/dep/" + strings.TrimSpace(assetID)
 }
 
 func removeID(order []string, id string) []string {
@@ -152,6 +148,8 @@ func (a *App) syncSessionResponsesLocked(session *runtimeSession) {
 				Stub: mock.Stub{
 					ID:        responseID,
 					SessionID: session.ID,
+					AssetID:   exchange.AssetID,
+					Source:    "recorded",
 					Match: mock.StubMatch{
 						Method: exchange.Request.Method,
 						Path:   exchange.Request.Path,

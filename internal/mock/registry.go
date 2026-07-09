@@ -68,7 +68,15 @@ func (r *Registry) List() []Stub {
 	return out
 }
 
-func (r *Registry) Match(req *http.Request, body []byte) (Stub, bool) {
+// MatchTarget describes an incoming request after routing prefixes
+// (session/dependency) have been stripped from the path.
+type MatchTarget struct {
+	SessionID string
+	AssetID   string
+	Path      string
+}
+
+func (r *Registry) Match(req *http.Request, body []byte, target MatchTarget) (Stub, bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -78,7 +86,7 @@ func (r *Registry) Match(req *http.Request, body []byte) (Stub, bool) {
 		if stub.Default {
 			continue
 		}
-		if !matchStub(stub, req, body) {
+		if !matchStub(stub, req, body, target) {
 			continue
 		}
 		r.stubs = append(r.stubs[:i], r.stubs[i+1:]...)
@@ -91,7 +99,7 @@ func (r *Registry) Match(req *http.Request, body []byte) (Stub, bool) {
 		if !stub.Default {
 			continue
 		}
-		if !matchStub(stub, req, body) {
+		if !matchStub(stub, req, body, target) {
 			continue
 		}
 		return stub, true
@@ -99,12 +107,20 @@ func (r *Registry) Match(req *http.Request, body []byte) (Stub, bool) {
 	return Stub{}, false
 }
 
-func matchStub(stub Stub, req *http.Request, body []byte) bool {
+func matchStub(stub Stub, req *http.Request, body []byte, target MatchTarget) bool {
+	// Scope: a session-bound stub only serves its session; an asset-bound stub
+	// only serves requests routed to that dependency (and vice versa).
+	if stub.SessionID != "" && stub.SessionID != target.SessionID {
+		return false
+	}
+	if stub.AssetID != target.AssetID {
+		return false
+	}
 	match := stub.Match
 	if match.Method != "" && !strings.EqualFold(match.Method, req.Method) {
 		return false
 	}
-	if match.Path != "" && match.Path != req.URL.Path {
+	if match.Path != "" && match.Path != target.Path {
 		return false
 	}
 	if match.Body != "" && match.Body != string(body) {

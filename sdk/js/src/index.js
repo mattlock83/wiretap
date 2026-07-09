@@ -25,6 +25,10 @@ function normalizeStartPayload(config) {
     payload.listen_addr = payload.listenAddr;
   }
   delete payload.listenAddr;
+  if (payload.targetUrl && !payload.target_url) {
+    payload.target_url = payload.targetUrl;
+  }
+  delete payload.targetUrl;
   return payload;
 }
 
@@ -62,6 +66,7 @@ function toSnakeCaseQueuePayload(payload, sessionId) {
   return {
     session_id: payload?.sessionId || payload?.session_id || sessionId,
     id: payload?.id,
+    asset_id: payload?.assetId || payload?.asset_id,
     default: Boolean(isDefault),
     match: {
       method: match.method,
@@ -81,6 +86,26 @@ function toSnakeCaseQueuePayload(payload, sessionId) {
       ssl_error: Boolean(response.sslError || response.ssl_error)
     }
   };
+}
+
+function normalizeDependencies(dependencies) {
+  if (!Array.isArray(dependencies)) {
+    return undefined;
+  }
+  return dependencies.map((dep) => {
+    if (!dep || typeof dep !== "object") {
+      throw new Error("each dependency must be an object with an assetId");
+    }
+    const assetId = dep.assetId || dep.asset_id;
+    if (!assetId || typeof assetId !== "string") {
+      throw new Error("dependency assetId is required");
+    }
+    return {
+      asset_id: assetId,
+      asset_name: dep.assetName || dep.asset_name,
+      schema: dep.schema
+    };
+  });
 }
 
 function splitSchemasByRole(schemas = []) {
@@ -113,6 +138,10 @@ class CoreClient {
 
   async queueResponse(payload) {
     return this._post("/v1/queue-response", payload || {});
+  }
+
+  async verify(payload) {
+    return this._post("/v1/verify", payload || {});
   }
 
   async teardownTest(payload) {
@@ -194,8 +223,13 @@ class Runtime {
 
     this.defaultSutBaseUrl = config.sutBaseUrl || null;
     this.defaultSchemas = Array.isArray(config.schemas) ? [...config.schemas] : [];
+    this.defaultDependencies = Array.isArray(config.dependencies) ? [...config.dependencies] : [];
     this.strictSchema = config.strictSchema !== false;
     this.pendingScenarioName = "";
+
+    // sutUrl is the reverse-capture address: tests call it with any HTTP
+    // client as if it were the SUT itself.
+    this.sutUrl = runtimeInfo?.sut_url || null;
 
     this.activeSession = null;
 
@@ -239,6 +273,9 @@ class Runtime {
     const split = splitSchemasByRole(schemas);
     const sutSchemas = Array.isArray(options.sutSchemas) ? options.sutSchemas : split.sutSchemas;
     const fakeSchemas = Array.isArray(options.fakeSchemas) ? options.fakeSchemas : split.fakeSchemas;
+    const dependencies = normalizeDependencies(
+      Array.isArray(options.dependencies) ? options.dependencies : this.defaultDependencies
+    );
     const scenarioName = pickFirstString(options.name, options.scenarioName, this.pendingScenarioName);
 
     const payload = {
@@ -247,6 +284,8 @@ class Runtime {
       meta: options.meta,
       sut_base_url: options.sutBaseUrl || options.sut_base_url || this.defaultSutBaseUrl,
       record_traffic: options.recordTraffic ?? options.record_traffic,
+      explicit_session: Boolean(options.explicitSession ?? options.explicit_session),
+      dependencies,
       sut_schemas: sutSchemas,
       fake_schemas: fakeSchemas
     };
@@ -255,13 +294,45 @@ class Runtime {
     this.activeSession = {
       sessionId: session.session_id,
       name: session.name,
+      explicit: Boolean(session.explicit),
       sutBaseUrl: payload.sut_base_url,
       recordTraffic: session.record_traffic,
       proxyListen: session.proxy_listen || this.runtimeInfo?.proxy?.listen_addr,
-      mockBaseUrl: session.mock_base_url
+      sutUrl: session.sut_url || this.sutUrl,
+      mockBaseUrl: session.mock_base_url,
+      dependencyUrls: session.dependency_urls || {}
     };
     this.pendingScenarioName = "";
     return this.activeSession;
+  }
+
+  // dependencyUrl returns the mock base URL to inject into the SUT for one
+  // declared dependency. Stable across zero-config sessions, so it can be
+  // configured once at SUT startup.
+  dependencyUrl(assetId) {
+    if (!assetId || typeof assetId !== "string") {
+      throw new Error("assetId is required");
+    }
+    const fromSession = this.activeSession?.dependencyUrls?.[assetId];
+    if (fromSession) {
+      return fromSession;
+    }
+    const mockListen = this.runtimeInfo?.mock?.listen_addr;
+    if (!mockListen) {
+      throw new Error("mock listen address is not available; call startServer() first");
+    }
+    const base = mockListen.startsWith("http") ? mockListen : `http://${mockListen}`;
+    return `${base}/__phrond/dep/${assetId}`;
+  }
+
+  // verify records which fields of a mocked response the test depends on.
+  async verify(id, fields, options = {}) {
+    if (!id || typeof id !== "string") {
+      throw new Error("response id is required");
+    }
+    const list = Array.isArray(fields) ? fields : [fields];
+    const sessionId = this._requireSession(options.sessionId || options.session_id);
+    return this.client.verify({ session_id: sessionId, id, fields: list });
   }
 
   async queueResponse(payload, options = {}) {
@@ -345,26 +416,38 @@ class Runtime {
     const session = await this._ensureSession(options);
 
     const method = (options.method || "GET").toUpperCase();
-    const sutBaseUrl = options.sutBaseUrl || options.sut_base_url || session.sutBaseUrl || this.defaultSutBaseUrl;
-    if (!sutBaseUrl) {
-      throw new Error("sutBaseUrl is required");
-    }
+    const defaultTarget = session.sutBaseUrl || this.defaultSutBaseUrl;
+    const overrideTarget = options.sutBaseUrl || options.sut_base_url;
 
     const proxyBaseUrl = options.proxyBaseUrl || options.proxy_base_url || session.proxyListen;
     if (!proxyBaseUrl) {
       throw new Error("proxy listen address is not available; check startServer() response");
     }
-
-    const targetUrl = toURL(options.path, sutBaseUrl);
     const proxyUrl = toURL(proxyBaseUrl.startsWith("http") ? proxyBaseUrl : `http://${proxyBaseUrl}`);
 
     const headers = { ...(options.headers || {}) };
     headers["X-Phrond-Session-Id"] = session.sessionId;
 
+    if (overrideTarget && overrideTarget !== defaultTarget) {
+      // Explicit forward-proxy request for a target other than the configured
+      // reverse target (e.g. a second provided API in the same suite).
+      const targetUrl = toURL(options.path, overrideTarget);
+      return this._requestViaProxy(proxyUrl, targetUrl, {
+        method,
+        headers,
+        body: options.body,
+        forward: true
+      });
+    }
+
+    // Reverse mode: call the proxy address directly with a relative path; the
+    // proxy forwards to the SUT target configured at startServer().
+    const targetUrl = toURL(options.path, proxyUrl.href);
     return this._requestViaProxy(proxyUrl, targetUrl, {
       method,
       headers,
-      body: options.body
+      body: options.body,
+      forward: false
     });
   }
 
@@ -389,8 +472,14 @@ class Runtime {
 
   async _requestViaProxy(proxyUrl, targetUrl, options = {}) {
     const method = options.method || "GET";
+    const forward = options.forward !== false;
     const headers = { ...(options.headers || {}) };
-    headers.Host = targetUrl.host;
+    if (forward) {
+      headers.Host = targetUrl.host;
+    }
+    // Forward-proxy requests carry the absolute URI; reverse requests carry
+    // just the path (the proxy resolves the target itself).
+    const requestPath = forward ? targetUrl.href : targetUrl.pathname + targetUrl.search;
 
     let body = options.body;
     if (body !== undefined && body !== null) {
@@ -410,7 +499,7 @@ class Runtime {
           host: proxyUrl.hostname,
           port: proxyUrl.port || (proxyUrl.protocol === "https:" ? 443 : 80),
           method,
-          path: targetUrl.href,
+          path: requestPath,
           headers
         },
         (res) => {
@@ -484,6 +573,11 @@ async function startServer(config = {}) {
   const proxyConfig = normalizeComponentConfig(config.proxy, "proxy");
   const mockServerConfig = normalizeComponentConfig(config.mockServer, "mockServer");
 
+  if (proxyConfig !== null && config.sutBaseUrl && !proxyConfig.targetUrl && !proxyConfig.target_url) {
+    // Reverse capture: tests call the proxy address as if it were the SUT.
+    proxyConfig.target_url = config.sutBaseUrl;
+  }
+
   const payload = {
     proxy: proxyConfig === null ? undefined : normalizeStartPayload(proxyConfig),
     mock: mockServerConfig === null ? undefined : normalizeStartPayload(mockServerConfig),
@@ -499,6 +593,54 @@ async function startServer(config = {}) {
   return new Runtime(client, config, runtimeInfo);
 }
 
+// bindTest wraps a test function (e.g. node:test's `test`) so every test gets
+// an automatic phrond session named after it, and — crucially — the artifact
+// status reflects the real test outcome (pass/fail) instead of a hardcoded
+// value in an afterEach hook.
+//
+// The first argument is the runtime, or a function returning it (use a getter
+// when the runtime is created in a before() hook after tests are registered):
+//
+//   const { test } = require("node:test");
+//   const phrondTest = bindTest(() => runtime, test);
+//   phrondTest("submits payment", async (t, session) => { ... });
+function bindTest(runtimeOrGetter, testFn, defaults = {}) {
+  const resolveRuntime =
+    typeof runtimeOrGetter === "function" ? runtimeOrGetter : () => runtimeOrGetter;
+  if (typeof testFn !== "function") {
+    throw new Error("bindTest requires a test function (e.g. node:test's test)");
+  }
+  return function phrondTest(name, optionsOrFn, maybeFn) {
+    const fn = typeof optionsOrFn === "function" ? optionsOrFn : maybeFn;
+    const testOptions = typeof optionsOrFn === "function" ? undefined : optionsOrFn;
+    const run = async (t) => {
+      const runtime = resolveRuntime();
+      if (!runtime || typeof runtime.setupTest !== "function") {
+        throw new Error("bindTest could not resolve a phrond runtime");
+      }
+      const session = await runtime.setupTest({ ...defaults, name });
+      if (typeof defaults.onSession === "function") {
+        await defaults.onSession(session);
+      }
+      try {
+        await fn(t, session);
+      } catch (err) {
+        try {
+          await runtime.teardownTest({ status: "fail" });
+        } catch (_) {
+          // preserve the original test failure
+        }
+        throw err;
+      }
+      // teardownTest throws on schema validation failure (strictSchema),
+      // which correctly fails the test.
+      await runtime.teardownTest({ status: "pass" });
+    };
+    return testOptions === undefined ? testFn(name, run) : testFn(name, testOptions, run);
+  };
+}
+
 module.exports = {
-  startServer
+  startServer,
+  bindTest
 };

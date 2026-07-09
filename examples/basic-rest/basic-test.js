@@ -1,28 +1,35 @@
-const { test, before, beforeEach, afterEach, after } = require("node:test");
+const { test, before, after } = require("node:test");
 const assert = require("node:assert/strict");
-const { startServer } = require("../../sdk/js/src/index");
-const { startBasicRestSUT, createDependencyRouter } = require("./test-helpers");
+const { startServer, bindTest } = require("../../sdk/js/src/index");
+const { startBasicRestSUT } = require("./test-helpers");
 
 const RUN_E2E = Boolean(process.env.PHROND_BASE_URL || process.env.PHROND_HTTP_LISTEN);
 
-const SCHEMAS = [
-  {
-    id: "basic-rest-sut-openapi",
-    role: "sut",
-    type: "openapi",
-    source: { type: "file", path: "examples/basic-rest/schemas/sut-openapi.yaml" }
-  },
-  {
+const SUT_SCHEMA = {
+  id: "basic-rest-sut-openapi",
+  role: "sut",
+  type: "openapi",
+  source: { type: "file", path: "examples/basic-rest/schemas/sut-openapi.yaml" }
+};
+
+// The dependency is declared once with a stable asset id — the cross-repo key
+// a broker later uses to join this consumer's assumptions to the provider.
+const DEPENDENCY = {
+  assetId: "basic-rest-dependency",
+  assetName: "Basic REST Dependency",
+  schema: {
     id: "basic-rest-fake-openapi",
-    role: "fake",
     type: "openapi",
     source: { type: "file", path: "examples/basic-rest/schemas/fake-openapi.yaml" }
   }
-];
+};
 
 let runtime;
 let sut;
-let dependencyRouter;
+
+// bindTest wraps node:test so each test gets an auto-named session and a
+// truthful pass/fail artifact status.
+const phrondTest = bindTest(() => runtime, test);
 
 function resolveBaseUrl() {
   return (
@@ -41,24 +48,18 @@ if (!RUN_E2E) {
       baseUrl,
       proxy: process.env.PHROND_PROXY_LISTEN ? { listenAddr: process.env.PHROND_PROXY_LISTEN } : true,
       mockServer: process.env.PHROND_MOCK_LISTEN ? { listenAddr: process.env.PHROND_MOCK_LISTEN } : true,
-      schemas: SCHEMAS,
+      schemas: [SUT_SCHEMA],
+      dependencies: [DEPENDENCY],
       sutBaseUrl: `http://${sutListen}`,
       strictSchema: true
     });
-    dependencyRouter = await createDependencyRouter();
+
+    // The dependency URL is stable across tests: configure the SUT once and
+    // never re-point it (no per-test rewiring, no forwarding shim).
     sut = await startBasicRestSUT({
       listen: sutListen,
-      dependencyBaseUrl: dependencyRouter.baseUrl
+      dependencyBaseUrl: runtime.dependencyUrl(DEPENDENCY.assetId)
     });
-  });
-
-  beforeEach(async (t) => {
-    const session = await runtime.setupTest({ name: t.name });
-    dependencyRouter.setTargetBaseUrl(session.mockBaseUrl);
-  });
-
-  afterEach(async () => {
-    await runtime.teardownTest({ status: "pass" });
   });
 
   after(async () => {
@@ -69,24 +70,18 @@ if (!RUN_E2E) {
       errors.push(err);
     }
     try {
-      await dependencyRouter?.stop?.();
-    } catch (err) {
-      errors.push(err);
-    }
-    try {
       await runtime?.killServer();
     } catch (err) {
       errors.push(err);
     }
     sut = null;
-    dependencyRouter = null;
     runtime = null;
     if (errors.length > 0) {
       throw errors[0];
     }
   });
 
-  test("basic REST flow through proxy and fake", async () => {
+  phrondTest("basic REST flow through proxy and fake", async () => {
     const payload = JSON.stringify({ id: "123", action: "process" });
 
     await runtime.queueResponse({
@@ -117,7 +112,12 @@ if (!RUN_E2E) {
     const betaResponse = await runtime.getResponse("beta-basic-rest");
     assert.equal(alphaResponse.state, "responded");
     assert.equal(betaResponse.state, "responded");
+    assert.equal(alphaResponse.asset_id, DEPENDENCY.assetId);
     assert.deepEqual(JSON.parse(alphaResponse.exchange.Request.Body), { id: "123", action: "process" });
     assert.deepEqual(JSON.parse(betaResponse.exchange.Request.Body), { id: "123", action: "process" });
+
+    // Declare which mocked fields the SUT's behavior depends on, so later
+    // analysis can tell breaking changes from changes to ignored fields.
+    await runtime.verify("alpha-basic-rest", ["body.result"]);
   });
 }

@@ -1,30 +1,53 @@
 # Testing Tool Requirements and Solution Design
 
-Date: 2026-02-04
+Date: 2026-02-04 (updated 2026-07-09)
 Owner: TBD
 Status: Draft
 
 ## 1) Overview
 We are building a testing tool for microservice isolated black-box tests. The system provides a mock server and a capture proxy so tests can run against a real SUT while recording all HTTP traffic between:
-- Tests -> SUT (via proxy)
-- SUT -> Mock server (downstream dependencies)
+- Tests -> SUT (via reverse-capture proxy)
+- SUT -> Mock server (declared downstream dependencies)
+
+**Ultimate product goal:** capture the network API expectations of dependent
+systems during ordinary black-box tests **without changing how teams work**.
+Example: Service A's API calls Service B then Service C; a test on Service A
+mocks B and C. The proxy captures A's implemented requests/responses, and the
+mock server captures the assumptions baked into the B/C mocks. A later
+server-side component consumes these artifacts to detect integration errors
+proactively (e.g. a provider change that breaks a consumer's recorded
+assumption) — see §11a. The server side is intentionally deferred; the recorder
+must capture everything it will need, passively.
 
 Primary output is a single YAML artifact per test case that captures:
-- Request/response traffic on both channels
-- Field-level assertions made by the test
-- References to OpenAPI specs
+- Request/response traffic on both channels, with dependency attribution and
+  causality links between them
+- The mock assumptions (match rules + response contracts) and the fields the
+  test depends on
+- Producer/asset identity and references to OpenAPI specs
 
 The system should stay focused on HTTP/HTTPS in v1.
 
 ## 2) Goals
-- Produce a YAML artifact per test case that is deterministic, diffable, and merge-safe.
+- **Zero workflow change for teams**: declare each dependency once with a stable
+  `asset_id`, inject its stable mock URL into the SUT at startup, call the SUT
+  through the reverse-capture proxy with any HTTP client. No per-test rewiring,
+  no proxy client configuration, no CA trust for HTTP, no mandatory specs.
+- Produce a YAML artifact per test case that is deterministic, diffable, and
+  merge-safe — sufficient for a future broker to detect breaking changes
+  without any further team input.
 - Capture HTTP/HTTPS traffic for two channels:
   - `test_to_sut`
   - `sut_to_mock`
-- Support explicit traffic expectations and link them to captured traffic.
-- Attach OpenAPI schema references for contract comparison.
-- Provide a JavaScript SDK that test code uses to orchestrate test cases and record assertions.
-- Minimal provider burden (consumer-driven), similar intent to Pact but without provider-side setup.
+- Attribute every `sut_to_mock` flow to a declared dependency (`asset_id`) and
+  to the `test_to_sut` request that caused it (`parent_flow_id`).
+- Capture the consumer's assumptions: the mock stub contract (`mock_stub`) and
+  the response fields the test depends on (`consumed_fields`).
+- Attach OpenAPI schema references for contract comparison (optional,
+  progressive enrichment).
+- Provide a JavaScript SDK that test code uses to orchestrate test cases.
+- Minimal provider burden (consumer-driven), similar intent to Pact but without
+  provider-side setup or contract authoring.
 
 ## 3) Non-Goals (v1)
 - Full service virtualization beyond deterministic HTTP responses (e.g., streaming SSE or WebSockets).
@@ -34,20 +57,25 @@ The system should stay focused on HTTP/HTTPS in v1.
 ## 4) Functional Requirements
 
 ### 4.1 Core Capabilities
-1. Start and stop a capture proxy per test case.
-2. Start and stop a mock server per test case.
-3. Register HTTP stubs with matching rules and responses.
-4. Capture HTTP request/response pairs for both channels.
-5. Record and evaluate traffic expectations in tests.
+1. Run a long-lived capture proxy and mock server per suite, with one isolated
+   session per test case (zero-config correlation by default).
+2. Declare downstream dependencies per session; each gets a stable asset-scoped
+   mock base URL.
+3. Register HTTP stubs (per dependency) with matching rules and literal responses.
+4. Capture HTTP request/response pairs for both channels, with dependency
+   attribution and causality links.
+5. Record which mocked response fields the test depends on (`verify`).
 6. Export a YAML artifact per test case.
-7. Attach OpenAPI spec references to test cases (required).
-8. Validate captured traffic against the provided specs for both SUT and mock channels.
+7. Attach OpenAPI spec references to test cases (optional).
+8. Validate captured traffic against attached specs for both SUT and mock channels.
 
 ### 4.4 Schema Validation Rules (v1)
-- Tests must provide at least one schema via `schemas` when starting a test case.
-- Traffic is validated against schemas based on role:
+- Schemas are optional. Without any, `schema_validation.status` is `skipped`
+  (not failed) so teams can adopt before they have specs.
+- When present, traffic is validated against schemas based on role:
   - `role: sut` validates `test_to_sut` traffic
-  - `role: fake` validates `sut_to_mock` traffic
+  - `role: fake` validates `sut_to_mock` traffic (dependency schemas are
+    registered with `role: fake` and the dependency's asset identity)
 - OpenAPI schemas are validated for request + response bodies and headers.
 - Validation results are stored in `artifact.schema_validation` with structured error objects.
 
@@ -118,15 +146,23 @@ Example (inline OpenAPI):
 - **Core language**: Go (recommended) for reliable HTTP/1.1 + HTTP/2 plumbing and MITM.
 - **SDK language**: JavaScript (TypeScript recommended for SDK implementation).
 - **Transport**: HTTP API between SDK and core service.
-- **Proxy model**: Explicit forward proxy with CONNECT and MITM for HTTPS.
+- **Proxy model**: reverse capture by default (tests call the proxy address as
+  if it were the SUT); explicit forward proxy with CONNECT and MITM remains for
+  traffic whose URL cannot be re-pointed.
 
 ### 6.3 Data Flow
-1. SDK starts a test case and launches the proxy + mock server.
-2. Test configures SUT to use the proxy for outbound calls, and SUT downstream URLs are pointed at the mock server.
-3. Requests are captured on both channels.
-4. Test records assertions via SDK.
-5. SDK finalizes test case, triggers artifact generation.
-   - The core service stops the proxy and mock server after test case completion.
+1. SDK starts the suite runtime once (`startServer`): proxy (with SUT reverse
+   target) + mock server.
+2. The SUT is configured **once at startup** with the stable per-dependency mock
+   URLs (`runtime.dependencyUrl(assetId)`).
+3. Each test opens a session (`setupTest` — done automatically by `bindTest`),
+   queues asset-scoped mock responses, and drives the SUT through the proxy
+   with any HTTP client.
+4. Requests are captured on both channels, attributed to the session
+   (zero-config) and to the dependency (asset routing).
+5. The test optionally records consumed fields (`verify`).
+6. Session teardown finalizes the artifact: causality linking, fingerprints,
+   consumed fields, schema validation (if schemas attached), redaction.
 
 ### 6.4 Architecture Diagram
 
@@ -228,25 +264,30 @@ type ArtifactWriter interface {
 
 ## 9) SDK API Surface (JavaScript)
 
+The implemented surface (see `sdk/js/README.md` for details):
+
 ### 9.1 Core Lifecycle
-- `createHarness(config)`
-- `startTestCase(name, meta)`
-- `finishTestCase(status)`
-- `getArtifact()`
+- `startServer({ baseUrl, proxy, mockServer, schemas, dependencies, sutBaseUrl, strictSchema, ... })`
+- `runtime.setupTest({ name, tags, meta, dependencies, sutSchemas, fakeSchemas, recordTraffic, explicitSession })`
+- `runtime.teardownTest({ status })`
+- `runtime.killServer()`
+- `bindTest(runtimeOrGetter, testFn)` — framework adapter: auto session per
+  test, truthful pass/fail artifact status.
 
-### 9.2 Proxy and Mock
-- `startProxy({ targetUrl, listen, mode })`
-- `startMockServer({ listen })`
-- `registerStub({ id, match, response, tags, schemaRef, operationId })`
-- `clearStubs()`
+### 9.2 Dependencies and Mock Responses
+- `runtime.dependencyUrl(assetId)` — stable base URL to inject into the SUT.
+- `runtime.queueResponse({ id, assetId, default, match, response })`
+- `runtime.listQueued()` / `runtime.listResponded()` / `runtime.getResponse(id)`
 
-### 9.3 Schemas and Expectations
-- `setSchema({ role, type, source })`
-- `expectCall({ channel, match, times })`
+### 9.3 Expectation Capture
+- `runtime.verify(id, fields)` — record the mocked response fields the test
+  depends on (`consumed_fields`).
 
-### 9.4 HTTPS Utilities
-- `getCaCertificate()`
-- `setProxyMode({ mode })`
+### 9.4 Test Traffic and Reporting
+- `runtime.http.get/post/postJson/request(...)` — reverse-capture by default;
+  per-request `sutBaseUrl` targets another service via forward proxy. Any HTTP
+  client pointed at `runtime.sutUrl` works equally.
+- `runtime.report({ artifactsDir, sutName, ... })`
 
 ## 10) YAML Artifact Format (Draft)
 
@@ -278,6 +319,8 @@ traffic:
   - id: "flow-1"
     protocol: "http"
     channel: "test_to_sut"
+    trace_id: "phtr-1770000000-1"
+    fingerprint: "418beb33ffdf23c6"
     started_at: "2026-02-04T19:22:18.120Z"
     duration_ms: 42
     request:
@@ -296,6 +339,33 @@ traffic:
         encoding: "utf8"
         text: "{\"id\":\"o-123\"}"
     assertion_ids: ["a-1"]
+  - id: "flow-2"
+    protocol: "http"
+    channel: "sut_to_mock"
+    asset_id: "inventory-service"
+    parent_flow_id: "flow-1"
+    fingerprint: "1d202cfddab85b59"
+    matched_stub_id: "inventory-check"
+    consumed_fields: ["body.available"]
+    started_at: "2026-02-04T19:22:18.140Z"
+    request:
+      method: "GET"
+      url: "/items/ABC"
+    response:
+      status: 200
+      body:
+        encoding: "utf8"
+        text: "{\"sku\":\"ABC\",\"available\":true}"
+    mock_stub:
+      id: "inventory-check"
+      source: "queued"
+      matched_on: ["method", "path"]
+      match:
+        method: "GET"
+        path: "/items/ABC"
+      response_template:
+        status: 200
+        body: "{\"sku\":\"ABC\",\"available\":true}"
 
 assertions:
   - id: "a-1"
@@ -327,9 +397,9 @@ Notes:
 1. Define YAML schema and data model for artifacts.
 2. Publish OpenAPI schema for the artifact (`docs/artifact-openapi.yaml`).
 3. Implement Go core service skeleton (config, logging, test case lifecycle).
-4. Implement HTTP capture proxy (explicit proxy with CONNECT).
+4. Implement HTTP capture proxy (reverse capture + explicit proxy with CONNECT).
 5. Implement MITM mode with local CA generation and per-host certs.
-6. Implement mock server with stub matching and response templating.
+6. Implement mock server with asset-scoped stub matching and literal responses.
 7. Implement traffic recorder and artifact builder.
 8. Implement redaction pipeline.
 
@@ -375,15 +445,62 @@ GitLab CI → local git), so artifacts are always self-identifying:
     convention) — it is not contract authoring.
   - `asset_sha` defaults to `source.sha256`; `asset_name` defaults to the id.
 
+### First-class dependencies (asset routing)
+The SUT's downstream services are declared per session
+(`setupTest({dependencies: [{asset_id, asset_name, schema}]})`). Each dependency
+gets its own stable mock base URL (`.../__phrond/dep/<asset_id>`), stubs are
+scoped to a dependency (`Stub.AssetID`), and captured flows carry `asset_id` as
+**ground truth** — attribution never relies on OpenAPI route inference, so two
+dependencies with overlapping paths (both exposing `GET /health`) never collide.
+A dependency's schema is registered as `role: fake` with the asset identity.
+
+### Correlation (zero-config by default)
+Session URLs carry no session component: unlabeled traffic (mock and proxy
+channels) is attributed to the single active session, tracked as a "default
+session" on both components. Only one zero-config session may be active at a
+time (second `setupTest` → 409). Parallel suites opt into
+`explicit_session: true` (session-prefixed URLs / `X-Phrond-Session-Id` header).
+Net effect: teams inject N stable dependency URLs once at SUT startup — no
+per-test rewiring, no forwarding shims.
+
+### Reverse capture (test→SUT)
+The proxy listener serves three request styles: plain requests are
+reverse-proxied to the configured SUT target (`startServer` `proxy.target_url`,
+set automatically by the SDK from `sutBaseUrl`); absolute-URI forward-proxy
+requests and CONNECT/MITM tunnels still work. Tests point any HTTP client at
+`sut_url` — no proxy configuration and no CA trust needed for HTTP. MITM remains
+the escape hatch for traffic whose URL cannot be re-pointed.
+
 ### Assumption capture (the contract)
 Each `sut_to_mock` flow carries `mock_stub`:
-- `match` (session-path stripped) + `matched_on` (which criteria constrained it).
+- `match` + `matched_on` (which criteria constrained it) + `source`
+  (`queued` = hand-written by the test; `recorded` = captured from a fallback
+  upstream — different trust levels for a broker).
 - `response_template`: the stub's configured response (`status`/`headers`/`body`),
   the stable contract — identical to the rendered `response` on the flow since
   responses are literal (see below).
 - `unmatched: true` flags a SUT call no stub modelled (an undeclared dependency).
 The stub is snapshotted at match time in `mock.Exchange.MatchedStub` because
 matched stubs are consumed (removed) from the registry on match.
+
+### Consumption, causality, dedup
+- `consumed_fields` (via `POST /v1/verify` / SDK `runtime.verify(id, fields)`):
+  which mocked response fields the test depends on — distinguishes breaking
+  changes from changes to ignored fields, avoiding broker false positives.
+- `trace_id` / `parent_flow_id`: the proxy injects `X-Phrond-Trace-Id` on every
+  test→SUT request; if the SUT propagates it, downstream calls link exactly.
+  Otherwise time-window nesting (with 1ms rounding slack) links each
+  `sut_to_mock` flow to the `test_to_sut` request that caused it. This yields
+  the call graph: which provided operation depends on which dependency
+  operations.
+- `fingerprint`: stable hash of interaction shape (channel|method|path|status|
+  JSON key/type structure) for cross-run and cross-repo dedup.
+
+### Schemas are optional
+`setupTest` no longer requires schemas; without any, `schema_validation.status`
+is `skipped` (not failed). Adoption first, rigor second — specs enrich
+validation when attached. `source.sha256` (and thus `asset_sha`) is computed at
+capture time for file/inline schemas.
 
 ### Mock responses are literal (no templating)
 The mock server returns `response.body` / `response.body_file` verbatim — there
@@ -413,10 +530,9 @@ broker never needs team-side changes:
   with `handleHTTP` (today it drops the connection — `proxyTLSRequests`).
 - ~~**B6**: deterministic renders~~ — resolved by removing the template engine;
   literal responses are deterministic by construction.
-- **D**: remove session-threading friction. Correlation needs either the
-  `X-Phrond-Session-Id` header or the `/__phrond/session/<id>/` URL prefix; a
-  team must thread a session id into the SUT. This is the least-stealth part —
-  needs a design pass on time-window / connection-based correlation.
+- ~~**D**: session-threading friction~~ — resolved by zero-config correlation
+  (see "Correlation" above): stable unprefixed URLs, active-session attribution,
+  explicit sessions only for parallel suites.
 
 ## 12) Risks and Open Questions
 - How will the SUT be configured to trust the local CA in CI?

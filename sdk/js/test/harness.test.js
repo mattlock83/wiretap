@@ -240,14 +240,13 @@ test("setupTest forwards recordTraffic option", async (t) => {
   assert.equal(session.recordTraffic, false);
 });
 
-test("http helper sends traffic through proxy and tags session header", async (t) => {
+test("http helper sends reverse-mode traffic to proxy with session header", async (t) => {
   const proxyRequests = [];
   const proxyServer = await startHarnessServer(async (req, res) => {
     const body = await readBody(req);
     proxyRequests.push({
       method: req.method,
       path: req.url,
-      host: req.headers.host,
       session: req.headers["x-phrond-session-id"],
       body
     });
@@ -264,6 +263,7 @@ test("http helper sends traffic through proxy and tags session header", async (t
       res.end(
         JSON.stringify({
           proxy: { listen_addr: proxyServer.url.replace("http://", "") },
+          sut_url: proxyServer.url,
           mock: { listen_addr: "127.0.0.1:19101" }
         })
       );
@@ -275,7 +275,8 @@ test("http helper sends traffic through proxy and tags session header", async (t
           session_id: "session-2",
           name: "scenario-2",
           proxy_listen: proxyServer.url,
-          mock_base_url: "http://127.0.0.1:19101/__phrond/session/session-2"
+          sut_url: proxyServer.url,
+          mock_base_url: "http://127.0.0.1:19101"
         })
       );
       return;
@@ -310,10 +311,76 @@ test("http helper sends traffic through proxy and tags session header", async (t
   await runtime.teardownTest();
   await runtime.killServer();
 
+  // Reverse mode: a plain relative-path request; the proxy resolves the target.
   assert.equal(proxyRequests.length, 1);
-  assert.equal(proxyRequests[0].path, "http://sut.local:18090/process?mode=test");
-  assert.equal(proxyRequests[0].host, "sut.local:18090");
+  assert.equal(proxyRequests[0].path, "/process?mode=test");
   assert.equal(proxyRequests[0].session, "session-2");
+});
+
+test("http helper uses forward-proxy style for an overridden target", async (t) => {
+  const proxyRequests = [];
+  const proxyServer = await startHarnessServer(async (req, res) => {
+    const body = await readBody(req);
+    proxyRequests.push({
+      method: req.method,
+      path: req.url,
+      host: req.headers.host,
+      session: req.headers["x-phrond-session-id"],
+      body
+    });
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify({ ok: true }));
+  });
+  t.after(() => proxyServer.close());
+
+  const server = await startHarnessServer(async (req, res) => {
+    const body = await readBody(req);
+    void body;
+    res.setHeader("content-type", "application/json");
+    if (req.url === "/v1/startServer") {
+      res.end(
+        JSON.stringify({
+          proxy: { listen_addr: proxyServer.url.replace("http://", "") },
+          sut_url: proxyServer.url,
+          mock: { listen_addr: "127.0.0.1:19101" }
+        })
+      );
+      return;
+    }
+    if (req.url === "/v1/setupTest") {
+      res.end(
+        JSON.stringify({
+          session_id: "session-2b",
+          name: "scenario-2b",
+          proxy_listen: proxyServer.url,
+          sut_url: proxyServer.url,
+          mock_base_url: "http://127.0.0.1:19101"
+        })
+      );
+      return;
+    }
+    res.end(JSON.stringify({ status: "ok" }));
+  });
+  t.after(() => server.close());
+
+  const runtime = await startServer({
+    baseUrl: server.url,
+    schemas: INLINE_OPENAPI,
+    sutBaseUrl: "http://sut.local:18090",
+    proxy: true,
+    mockServer: true
+  });
+
+  await runtime.setupTest({ name: "forward-flow" });
+  const resp = await runtime.http.get("/transactions", { sutBaseUrl: "http://other.local:18111" });
+  assert.equal(resp.status, 200);
+  await runtime.killServer();
+
+  // Overridden target: absolute-URI forward-proxy request.
+  assert.equal(proxyRequests.length, 1);
+  assert.equal(proxyRequests[0].path, "http://other.local:18111/transactions");
+  assert.equal(proxyRequests[0].host, "other.local:18111");
+  assert.equal(proxyRequests[0].session, "session-2b");
 });
 
 test("teardownTest throws when schema validation fails", async (t) => {

@@ -5,10 +5,17 @@ import (
 	"compress/flate"
 	"compress/gzip"
 	"compress/zlib"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
+	"os"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -103,7 +110,9 @@ type TestCaseStatus struct {
 	LastPath    string     `json:"last_path,omitempty"`
 }
 
-func (s *TestCaseStore) FinishCase(status string, env *artifact.Environment, mockExchanges []mock.Exchange) (*artifact.Artifact, string, error) {
+// FinishCase finalizes the active test case. consumedFields maps a response id
+// (matched stub id) to the fields the test declared it depends on.
+func (s *TestCaseStore) FinishCase(status string, env *artifact.Environment, mockExchanges []mock.Exchange, consumedFields map[string][]string) (*artifact.Artifact, string, error) {
 	s.mu.Lock()
 	state := s.active
 	if state == nil {
@@ -122,6 +131,15 @@ func (s *TestCaseStore) FinishCase(status string, env *artifact.Environment, moc
 	for _, exchange := range mockExchanges {
 		flow := s.flowFromMock(exchange)
 		flows = append(flows, flow)
+	}
+	linkCausality(flows)
+	for i := range flows {
+		flows[i].Fingerprint = flowFingerprint(flows[i])
+		if len(consumedFields) > 0 && flows[i].MatchedStubID != "" {
+			if fields, ok := consumedFields[flows[i].MatchedStubID]; ok {
+				flows[i].ConsumedFields = append([]string{}, fields...)
+			}
+		}
 	}
 
 	if env == nil {
@@ -207,8 +225,36 @@ func (s *TestCaseStore) AddSchema(ref artifact.SchemaRef) artifact.SchemaRef {
 		s.schemaSeq++
 		ref.ID = fmt.Sprintf("schema-%d", s.schemaSeq)
 	}
+	fillSchemaSHA(&ref)
 	s.active.schemas = append(s.active.schemas, ref)
 	return ref
+}
+
+// fillSchemaSHA computes the content hash for file/inline schemas when the
+// caller did not provide one, so asset_sha (the asset version key) is always
+// populated for locally available specs.
+func fillSchemaSHA(ref *artifact.SchemaRef) {
+	if ref == nil || strings.TrimSpace(ref.Source.SHA256) != "" {
+		return
+	}
+	switch strings.ToLower(strings.TrimSpace(ref.Source.Type)) {
+	case "inline":
+		if content := ref.Source.Content; content != "" {
+			sum := sha256.Sum256([]byte(content))
+			ref.Source.SHA256 = hex.EncodeToString(sum[:])
+		}
+	case "file":
+		path := strings.TrimSpace(ref.Source.Path)
+		if path == "" {
+			return
+		}
+		data, err := os.ReadFile(resolvePath(path))
+		if err != nil {
+			return
+		}
+		sum := sha256.Sum256(data)
+		ref.Source.SHA256 = hex.EncodeToString(sum[:])
+	}
 }
 
 func (s *TestCaseStore) AddExpectation(expectation Expectation) {
@@ -262,6 +308,7 @@ func (s *TestCaseStore) flowFromProxy(exchange proxy.HTTPExchange) artifact.Flow
 		ID:         id,
 		Protocol:   "http",
 		Channel:    "test_to_sut",
+		TraceID:    exchange.TraceID,
 		StartedAt:  exchange.StartedAt,
 		DurationMS: exchange.Duration.Milliseconds(),
 		Request: artifact.Message{HTTP: &artifact.HttpMessage{
@@ -289,6 +336,8 @@ func (s *TestCaseStore) flowFromMock(exchange mock.Exchange) artifact.Flow {
 		ID:         id,
 		Protocol:   "http",
 		Channel:    "sut_to_mock",
+		AssetID:    exchange.AssetID,
+		TraceID:    exchange.TraceID,
 		StartedAt:  exchange.StartedAt,
 		DurationMS: exchange.FinishedAt.Sub(exchange.StartedAt).Milliseconds(),
 		Request: artifact.Message{HTTP: &artifact.HttpMessage{
@@ -309,20 +358,20 @@ func (s *TestCaseStore) flowFromMock(exchange mock.Exchange) artifact.Flow {
 }
 
 // mockStubFromExchange captures the consumer's assumption (match rule + the
-// unrendered response template) from the stub that served the exchange.
+// response template) from the stub that served the exchange.
 func mockStubFromExchange(exchange mock.Exchange) *artifact.MockStub {
 	stub := exchange.MatchedStub
 	if stub == nil {
 		return nil
 	}
-	_, path := stripSessionPath(stub.Match.Path)
 	return &artifact.MockStub{
 		ID:        stub.ID,
 		Default:   stub.Default,
+		Source:    stub.Source,
 		MatchedOn: matchedOn(stub.Match),
 		Match: artifact.StubMatch{
 			Method:       stub.Match.Method,
-			Path:         path,
+			Path:         stub.Match.Path,
 			Headers:      stub.Match.Headers,
 			Query:        stub.Match.Query,
 			Body:         stub.Match.Body,
@@ -361,6 +410,132 @@ func matchedOn(match mock.StubMatch) []string {
 		on = append(on, "body_contains")
 	}
 	return on
+}
+
+// linkCausality resolves which test_to_sut flow caused each sut_to_mock flow.
+// Trace ids (propagated by the SUT) are authoritative; time-window nesting is
+// the best-effort fallback.
+func linkCausality(flows []artifact.Flow) {
+	type parent struct {
+		id    string
+		start time.Time
+		end   time.Time
+	}
+	byTrace := map[string]string{}
+	var parents []parent
+	for _, flow := range flows {
+		if flow.Channel != "test_to_sut" {
+			continue
+		}
+		if flow.TraceID != "" {
+			byTrace[flow.TraceID] = flow.ID
+		}
+		// DurationMS is floor-rounded; extend the window by one millisecond so
+		// downstream calls issued at the tail of the request still nest.
+		end := flow.StartedAt.Add(time.Duration(flow.DurationMS+1) * time.Millisecond)
+		parents = append(parents, parent{id: flow.ID, start: flow.StartedAt, end: end})
+	}
+	for i := range flows {
+		if flows[i].Channel != "sut_to_mock" {
+			continue
+		}
+		if flows[i].TraceID != "" {
+			if parentID, ok := byTrace[flows[i].TraceID]; ok {
+				flows[i].ParentFlowID = parentID
+				continue
+			}
+		}
+		// Fallback: latest-starting test_to_sut flow whose window contains
+		// this call's start.
+		best := ""
+		var bestStart time.Time
+		for _, candidate := range parents {
+			if flows[i].StartedAt.Before(candidate.start) || flows[i].StartedAt.After(candidate.end) {
+				continue
+			}
+			if best == "" || candidate.start.After(bestStart) {
+				best = candidate.id
+				bestStart = candidate.start
+			}
+		}
+		flows[i].ParentFlowID = best
+	}
+}
+
+// flowFingerprint hashes the interaction shape (not its values) so identical
+// interactions across runs and repos dedupe even when test data varies.
+func flowFingerprint(flow artifact.Flow) string {
+	var reqMethod, reqPath, reqShape, respShape string
+	status := 0
+	if flow.Request.HTTP != nil {
+		reqMethod = flow.Request.HTTP.Method
+		if parsed, err := url.Parse(flow.Request.HTTP.URL); err == nil {
+			reqPath = parsed.Path
+		} else {
+			reqPath = flow.Request.HTTP.URL
+		}
+		reqShape = bodyShape(flow.Request.HTTP.Body)
+	}
+	if flow.Response.HTTP != nil {
+		status = flow.Response.HTTP.Status
+		respShape = bodyShape(flow.Response.HTTP.Body)
+	}
+	canonical := strings.Join([]string{
+		flow.Channel, reqMethod, reqPath, strconv.Itoa(status), reqShape, respShape,
+	}, "|")
+	sum := sha256.Sum256([]byte(canonical))
+	return hex.EncodeToString(sum[:])[:16]
+}
+
+// bodyShape reduces a JSON body to its key/type structure; non-JSON bodies
+// collapse to a coarse token.
+func bodyShape(body *artifact.Body) string {
+	if body == nil {
+		return ""
+	}
+	if body.Encoding == "base64" {
+		return "binary"
+	}
+	trimmed := strings.TrimSpace(body.Text)
+	if trimmed == "" {
+		return ""
+	}
+	var payload any
+	if err := json.Unmarshal([]byte(trimmed), &payload); err != nil {
+		return "text"
+	}
+	return valueShape(payload)
+}
+
+func valueShape(value any) string {
+	switch typed := value.(type) {
+	case map[string]any:
+		keys := make([]string, 0, len(typed))
+		for key := range typed {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		parts := make([]string, 0, len(keys))
+		for _, key := range keys {
+			parts = append(parts, key+":"+valueShape(typed[key]))
+		}
+		return "{" + strings.Join(parts, ",") + "}"
+	case []any:
+		if len(typed) == 0 {
+			return "[]"
+		}
+		return "[" + valueShape(typed[0]) + "]"
+	case string:
+		return "string"
+	case float64:
+		return "number"
+	case bool:
+		return "bool"
+	case nil:
+		return "null"
+	default:
+		return "unknown"
+	}
 }
 
 func cloneHeaders(in map[string][]string) artifact.Headers {
