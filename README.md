@@ -82,6 +82,7 @@ The report includes:
 - Artifact OpenAPI schema: `docs/artifact-openapi.yaml`
 - HTTPS trust: `docs/https-trust.md`
 - Runtime HTTP API: `docs/runtime-api.md`
+- Outstanding capture-fidelity work (HTTP/2, size caps, MITM 502): `docs/roadmap-capture-fidelity.md`
 
 ## Mock responses
 

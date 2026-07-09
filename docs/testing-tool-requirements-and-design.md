@@ -519,15 +519,20 @@ payload was transparently decompressed before storage, so bodies stay diffable
 fall back to base64.
 
 ### Deferred capture-fidelity roadmap (not yet implemented)
-These remain before the recorder is "perfect"; capture them passively so the
-broker never needs team-side changes:
-- **B3**: HTTP/2 (ALPN h2) + record negotiated protocol; detect & passthrough
-  WebSocket/SSE `101` upgrades instead of mis-recording them via the manual
-  `http.ReadRequest` loop in `internal/proxy/proxy.go`.
-- **B4**: max capture size with a `truncated` marker (currently `io.ReadAll`
-  buffers whole payloads into the artifact).
-- **B5**: MITM `RoundTrip` error should synthesize a 502 to the client for parity
-  with `handleHTTP` (today it drops the connection — `proxyTLSRequests`).
+The remaining gaps before the recorder is "perfect" are specified in detail —
+problem, code locations, implementation steps, acceptance criteria — in
+`docs/roadmap-capture-fidelity.md`. Summary:
+- **B3**: HTTP/2 support (upstream + h2c + MITM ALPN) and RPC
+  (gRPC/gRPC-Web/Connect) mocking + capture built on Buf Connect
+  (`connectrpc.com/connect`) with a raw-bytes codec — **schema-less**: no
+  `.proto` files, generated types, or server reflection; payloads stored as
+  opaque bytes (decoding would require descriptors and stays out of scope).
+  Plus WebSocket/SSE upgrade detection with byte-tunnel passthrough, and the
+  negotiated protocol recorded per flow.
+- **B4**: capture size caps with `truncated`/`original_bytes` markers —
+  forward full bodies but cap what is buffered and stored.
+- **B5**: MITM upstream errors must synthesize a 502 for parity with the
+  plain/reverse path (today the TLS connection is dropped without a response).
 - ~~**B6**: deterministic renders~~ — resolved by removing the template engine;
   literal responses are deterministic by construction.
 - ~~**D**: session-threading friction~~ — resolved by zero-config correlation
