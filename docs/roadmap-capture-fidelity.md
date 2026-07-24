@@ -1,25 +1,34 @@
 # Capture Fidelity Roadmap — Outstanding Items
 
 Status: open
-Last reviewed: 2026-07-09
+Last reviewed: 2026-07-24
 
-These are the known gaps that remain before the recorder can claim lossless
+These are the known gaps and recently completed work from the capture-fidelity
+review. B3 and B4 remain before the recorder can claim lossless
 capture. They are deliberately deferred (v1 is scoped to plain HTTP
 request/response), but each can silently corrupt or bloat artifacts when hit,
 so they are specified here in enough detail to implement without re-deriving
 context. Item numbering (B3–B5) is historical, from the original capture-fidelity
 review; B1/B2 (content-encoding + binary bodies), B6 (deterministic responses),
 and D (session-correlation friction) are already resolved — see
-`testing-tool-requirements-and-design.md` §11a.
+`testing-tool-requirements-and-design.md` §11a. B5 was completed on
+2026-07-24.
 
-Suggested order: **B5 → B4 → B3** (smallest to largest; B5 and B4 are
-contained, B3 needs design).
+Suggested order for the remaining work: **B4 → B3** (B4 is contained; B3
+needs design).
 
 ---
 
-## B5 — MITM upstream errors drop the connection instead of returning 502
+## B5 — MITM upstream errors drop the connection instead of returning 502 — resolved
 
-Priority: high (trivial fix, confusing failure mode) · Effort: ~10 lines + test
+Status: completed 2026-07-24 in `341e201`
+
+### Resolution
+The MITM `RoundTrip` error path now records the exchange and writes a closing
+HTTP/1.1 `502 Bad Gateway` response with `Content-Type: text/plain` and the
+same `proxy error: <err>` body as the plain/reverse path. A focused MITM test
+uses an unreachable upstream and verifies both the response and recorded
+error.
 
 ### Problem
 The two proxy capture paths behave differently when the upstream request fails:
