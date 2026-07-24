@@ -99,7 +99,7 @@ phrondTest("submit payment", async () => {
 - `runtime.listResponded()`
 - `runtime.getResponse(id)`
 - `runtime.teardownTest({ status })`
-- `runtime.report({ artifactsDir, sutName, includeArtifacts, collectionPath, htmlPath })`
+- `runtime.report({ artifactsDir, sutName, includeArtifacts, collectionPath, workflowPath, htmlPath })`
 - `runtime.killServer()`
 - `bindTest(runtimeOrGetter, testFn, defaults)`
 

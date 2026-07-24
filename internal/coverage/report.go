@@ -54,6 +54,7 @@ type OperationSamples struct {
 
 type TestCaseCoverage struct {
 	Name      string                 `json:"name" yaml:"name"`
+	Traffic   []FlowSample           `json:"traffic,omitempty" yaml:"traffic,omitempty"`
 	Provided  []SpecOperationSamples `json:"provided,omitempty" yaml:"provided,omitempty"`
 	Dependent []SpecOperationSamples `json:"dependent,omitempty" yaml:"dependent,omitempty"`
 }
@@ -66,20 +67,28 @@ type SpecOperationSamples struct {
 }
 
 type FlowSample struct {
-	TestCase string             `json:"testcase" yaml:"testcase"`
-	FlowID   string             `json:"flow_id,omitempty" yaml:"flow_id,omitempty"`
-	Protocol string             `json:"protocol,omitempty" yaml:"protocol,omitempty"`
-	Channel  string             `json:"channel,omitempty" yaml:"channel,omitempty"`
-	Request  InteractionMessage `json:"request,omitempty" yaml:"request,omitempty"`
-	Response InteractionMessage `json:"response,omitempty" yaml:"response,omitempty"`
+	TestCase       string             `json:"testcase" yaml:"testcase"`
+	FlowID         string             `json:"flow_id,omitempty" yaml:"flow_id,omitempty"`
+	Protocol       string             `json:"protocol,omitempty" yaml:"protocol,omitempty"`
+	Channel        string             `json:"channel,omitempty" yaml:"channel,omitempty"`
+	AssetID        string             `json:"asset_id,omitempty" yaml:"asset_id,omitempty"`
+	TraceID        string             `json:"trace_id,omitempty" yaml:"trace_id,omitempty"`
+	ParentFlowID   string             `json:"parent_flow_id,omitempty" yaml:"parent_flow_id,omitempty"`
+	Fingerprint    string             `json:"fingerprint,omitempty" yaml:"fingerprint,omitempty"`
+	ConsumedFields []string           `json:"consumed_fields,omitempty" yaml:"consumed_fields,omitempty"`
+	MockStub       *artifact.MockStub `json:"mock_stub,omitempty" yaml:"mock_stub,omitempty"`
+	Unmatched      bool               `json:"unmatched,omitempty" yaml:"unmatched,omitempty"`
+	Request        InteractionMessage `json:"request,omitempty" yaml:"request,omitempty"`
+	Response       InteractionMessage `json:"response,omitempty" yaml:"response,omitempty"`
 }
 
 type InteractionMessage struct {
-	Method  string           `json:"method,omitempty" yaml:"method,omitempty"`
-	URL     string           `json:"url,omitempty" yaml:"url,omitempty"`
-	Status  int              `json:"status,omitempty" yaml:"status,omitempty"`
-	Headers artifact.Headers `json:"headers,omitempty" yaml:"headers,omitempty"`
-	Body    string           `json:"body,omitempty" yaml:"body,omitempty"`
+	Method       string           `json:"method,omitempty" yaml:"method,omitempty"`
+	URL          string           `json:"url,omitempty" yaml:"url,omitempty"`
+	Status       int              `json:"status,omitempty" yaml:"status,omitempty"`
+	Headers      artifact.Headers `json:"headers,omitempty" yaml:"headers,omitempty"`
+	Body         string           `json:"body,omitempty" yaml:"body,omitempty"`
+	ArtifactBody *artifact.Body   `json:"-" yaml:"-"`
 }
 
 type loadedSchema struct {
@@ -149,6 +158,8 @@ func WriteReport(w io.Writer, report *Report, format string) error {
 	switch strings.ToLower(strings.TrimSpace(format)) {
 	case "postman", "collection":
 		return WritePostmanCollection(w, report)
+	case "workflow", "serverless-workflow", "serverless_workflow", "sw":
+		return WriteServerlessWorkflow(w, report)
 	case "yaml", "yml":
 		data, err := yaml.Marshal(report)
 		if err != nil {
@@ -992,6 +1003,7 @@ func buildTestCaseCoverage(entries []flowEntry, providedSchemas, dependentSchema
 			tc = &TestCaseCoverage{Name: tcName}
 			buckets[tcName] = tc
 		}
+		tc.Traffic = append(tc.Traffic, flowSampleFromFlow(entry))
 
 		var schemas []*loadedSchema
 		var target *[]SpecOperationSamples
@@ -1024,6 +1036,9 @@ func buildTestCaseCoverage(entries []flowEntry, providedSchemas, dependentSchema
 
 	var out []TestCaseCoverage
 	for _, tc := range buckets {
+		if len(tc.Traffic) > 1 {
+			sortSamples(tc.Traffic)
+		}
 		sort.Slice(tc.Provided, func(i, j int) bool { return tc.Provided[i].SchemaID < tc.Provided[j].SchemaID })
 		sort.Slice(tc.Dependent, func(i, j int) bool { return tc.Dependent[i].SchemaID < tc.Dependent[j].SchemaID })
 		for i := range tc.Provided {
@@ -1076,10 +1091,17 @@ func sortOperationSamples(ops []OperationSamples) {
 func flowSampleFromFlow(entry flowEntry) FlowSample {
 	flow := entry.Flow
 	sample := FlowSample{
-		TestCase: entry.TestCase,
-		FlowID:   flow.ID,
-		Protocol: flow.Protocol,
-		Channel:  flow.Channel,
+		TestCase:       entry.TestCase,
+		FlowID:         flow.ID,
+		Protocol:       flow.Protocol,
+		Channel:        flow.Channel,
+		AssetID:        flow.AssetID,
+		TraceID:        flow.TraceID,
+		ParentFlowID:   flow.ParentFlowID,
+		Fingerprint:    flow.Fingerprint,
+		ConsumedFields: append([]string(nil), flow.ConsumedFields...),
+		MockStub:       flow.MockStub,
+		Unmatched:      flow.Unmatched,
 	}
 	if flow.Protocol == "http" {
 		if flow.Request.HTTP != nil {
@@ -1097,11 +1119,12 @@ func httpMessageSample(msg *artifact.HttpMessage) InteractionMessage {
 		return InteractionMessage{}
 	}
 	return InteractionMessage{
-		Method:  msg.Method,
-		URL:     msg.URL,
-		Status:  msg.Status,
-		Headers: msg.Headers,
-		Body:    bodyPreview(msg.Body),
+		Method:       msg.Method,
+		URL:          msg.URL,
+		Status:       msg.Status,
+		Headers:      msg.Headers,
+		Body:         bodyPreview(msg.Body),
+		ArtifactBody: msg.Body,
 	}
 }
 

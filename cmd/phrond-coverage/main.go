@@ -19,7 +19,7 @@ func main() {
 	flag.StringVar(&artifactsDir, "artifacts", "artifacts", "directory containing artifact files")
 	flag.StringVar(&sutName, "sut-name", "", "SUT name to display in the report")
 	flag.StringVar(&outputPath, "output", "", "output file path (default: stdout)")
-	flag.StringVar(&format, "format", "postman", "output format: postman, html, json (yaml is legacy)")
+	flag.StringVar(&format, "format", "postman", "output format: postman, workflow, html, json (yaml is legacy)")
 	flag.BoolVar(&includeArtifacts, "include-artifacts", false, "include artifact file paths in the report")
 	flag.Parse()
 

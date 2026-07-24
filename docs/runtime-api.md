@@ -302,15 +302,21 @@ Request:
   "sut_name": "Complex REST Services",
   "include_artifacts": false,
   "collection_path": "artifacts/run-1770801838-30876/coverage.postman_collection.json",
+  "workflow_path": "artifacts/run-1770801838-30876/coverage.workflow.yaml",
   "html_path": "artifacts/run-1770801838-30876/coverage.html"
 }
 ```
+
+When paths are omitted, the endpoint writes all three formats using the
+filenames shown above. The workflow output conforms to Open Workflow
+Specification DSL 1.0.3; Postman output remains supported.
 
 Response:
 
 ```json
 {
   "collection_path": ".../coverage.postman_collection.json",
+  "workflow_path": ".../coverage.workflow.yaml",
   "html_path": ".../coverage.html",
   "report": {}
 }

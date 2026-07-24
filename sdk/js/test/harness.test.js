@@ -69,6 +69,47 @@ test("startServer initializes runtime with configured listen addresses", async (
   });
 });
 
+test("report forwards Postman, workflow, and HTML output paths", async (t) => {
+  const requests = [];
+  const server = await startHarnessServer(async (req, res) => {
+    const body = await readBody(req);
+    requests.push({ path: req.url, body });
+
+    res.setHeader("content-type", "application/json");
+    if (req.url === "/v1/startServer") {
+      res.end(
+        JSON.stringify({
+          proxy: { listen_addr: "127.0.0.1:19100" },
+          mock: { listen_addr: "127.0.0.1:19101" }
+        })
+      );
+      return;
+    }
+    res.end(JSON.stringify({ status: "ok" }));
+  });
+  t.after(() => server.close());
+
+  const runtime = await startServer({ baseUrl: server.url });
+  await runtime.report({
+    artifactsDir: "artifacts/run-1",
+    sutName: "Example SUT",
+    collectionPath: "artifacts/run-1/coverage.postman.json",
+    workflowPath: "artifacts/run-1/coverage.workflow.yaml",
+    htmlPath: "artifacts/run-1/coverage.html"
+  });
+  await runtime.killServer();
+
+  const request = requests.find((entry) => entry.path === "/v1/report");
+  assert.deepEqual(JSON.parse(request.body), {
+    artifacts_dir: "artifacts/run-1",
+    sut_name: "Example SUT",
+    include_artifacts: false,
+    collection_path: "artifacts/run-1/coverage.postman.json",
+    workflow_path: "artifacts/run-1/coverage.workflow.yaml",
+    html_path: "artifacts/run-1/coverage.html"
+  });
+});
+
 test("scenarioName is applied when setup is auto-started by queueResponse", async (t) => {
   const requests = [];
   const server = await startHarnessServer(async (req, res) => {

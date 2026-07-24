@@ -382,6 +382,7 @@ class Runtime {
         options.collection_path ||
         options.yamlPath ||
         options.yaml_path,
+      workflow_path: options.workflowPath || options.workflow_path,
       html_path: options.htmlPath || options.html_path
     });
   }

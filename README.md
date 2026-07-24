@@ -68,9 +68,16 @@ See `sdk/js/README.md` for SDK API details.
 Generate a spec coverage report from the artifacts:
 
 ```bash
+go run ./cmd/phrond-coverage --artifacts ./artifacts --sut-name "Example SUT" --format workflow --output coverage.workflow.yaml
 go run ./cmd/phrond-coverage --artifacts ./artifacts --sut-name "Example SUT" --format postman --output coverage.postman_collection.json
 go run ./cmd/phrond-coverage --artifacts ./artifacts --sut-name "Example SUT" --format html --output coverage.html
 ```
+
+The workflow export uses Open Workflow Specification (formerly Serverless
+Workflow) DSL 1.0.3. It includes schema-matched and unmatched captured HTTP
+traffic, preserves test/mock grouping and correlation details, and stores
+captured response examples under namespaced `metadata.phrond` fields. Postman
+remains available for collection-based tooling.
 
 The report includes:
 - Provided API specs: exercised + not covered paths

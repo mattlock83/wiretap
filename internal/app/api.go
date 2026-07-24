@@ -981,6 +981,7 @@ type runtimeReportRequest struct {
 	IncludeArtifacts bool   `json:"include_artifacts,omitempty"`
 	CollectionPath   string `json:"collection_path,omitempty"`
 	YAMLPath         string `json:"yaml_path,omitempty"` // Deprecated alias for collection_path.
+	WorkflowPath     string `json:"workflow_path,omitempty"`
 	HTMLPath         string `json:"html_path,omitempty"`
 }
 
@@ -1013,12 +1014,20 @@ func (a *App) handleRuntimeReport(w http.ResponseWriter, r *http.Request) {
 	if collectionPath == "" {
 		collectionPath = filepath.Join(artifactsDir, "coverage.postman_collection.json")
 	}
+	workflowPath := strings.TrimSpace(payload.WorkflowPath)
+	if workflowPath == "" {
+		workflowPath = filepath.Join(artifactsDir, "coverage.workflow.yaml")
+	}
 	htmlPath := strings.TrimSpace(payload.HTMLPath)
 	if htmlPath == "" {
 		htmlPath = filepath.Join(artifactsDir, "coverage.html")
 	}
 
 	if err := writeCoverageReport(collectionPath, report, "postman"); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	if err := writeCoverageReport(workflowPath, report, "workflow"); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
@@ -1029,6 +1038,7 @@ func (a *App) handleRuntimeReport(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"collection_path": collectionPath,
+		"workflow_path":   workflowPath,
 		"html_path":       htmlPath,
 		"report":          report,
 	})
