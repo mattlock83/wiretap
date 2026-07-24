@@ -431,6 +431,7 @@ func (s *Server) proxyTLSRequests(clientTLS net.Conn) {
 				Duration:       time.Since(started),
 				Error:          err.Error(),
 			})
+			writeTunnelProxyError(clientTLS, http.StatusBadGateway, err)
 			return
 		}
 
@@ -530,8 +531,29 @@ func cloneHeader(header http.Header) map[string][]string {
 }
 
 func writeProxyError(w http.ResponseWriter, status int, err error) {
+	w.Header().Set("Content-Type", "text/plain")
 	w.WriteHeader(status)
-	_, _ = w.Write([]byte(fmt.Sprintf("proxy error: %v", err)))
+	_, _ = w.Write(proxyErrorBody(err))
+}
+
+func writeTunnelProxyError(w io.Writer, status int, err error) {
+	body := proxyErrorBody(err)
+	resp := &http.Response{
+		StatusCode:    status,
+		Status:        fmt.Sprintf("%d %s", status, http.StatusText(status)),
+		Proto:         "HTTP/1.1",
+		ProtoMajor:    1,
+		ProtoMinor:    1,
+		Header:        http.Header{"Content-Type": []string{"text/plain"}},
+		Body:          io.NopCloser(bytes.NewReader(body)),
+		ContentLength: int64(len(body)),
+		Close:         true,
+	}
+	_ = resp.Write(w)
+}
+
+func proxyErrorBody(err error) []byte {
+	return []byte(fmt.Sprintf("proxy error: %v", err))
 }
 
 func hostOnly(hostport string) string {
