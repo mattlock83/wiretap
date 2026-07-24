@@ -1,21 +1,22 @@
-# Capture Fidelity Roadmap — Outstanding Items
+# Capture Fidelity and Export Roadmap — Outstanding Items
 
 Status: open
 Last reviewed: 2026-07-24
 
 These are the known gaps and recently completed work from the capture-fidelity
-review. B3 and B4 remain before the recorder can claim lossless
-capture. They are deliberately deferred (v1 is scoped to plain HTTP
-request/response), but each can silently corrupt or bloat artifacts when hit,
-so they are specified here in enough detail to implement without re-deriving
-context. Item numbering (B3–B5) is historical, from the original capture-fidelity
-review; B1/B2 (content-encoding + binary bodies), B6 (deterministic responses),
-and D (session-correlation friction) are already resolved — see
-`testing-tool-requirements-and-design.md` §11a. B5 was completed on
-2026-07-24.
+review, plus independent export work. B3 and B4 remain before the recorder can
+claim lossless capture. They are deliberately deferred (v1 is scoped to plain
+HTTP request/response), but each can silently corrupt or bloat artifacts when
+hit, so they are specified here in enough detail to implement without
+re-deriving context. Item numbering (B3–B5) is historical, from the original
+capture-fidelity review; B1/B2 (content-encoding + binary bodies), B6
+(deterministic responses), and D (session-correlation friction) are already
+resolved — see `testing-tool-requirements-and-design.md` §11a. B5 was completed
+on 2026-07-24. E1 is a separate coverage-export track and does not change the
+canonical Phrond artifact.
 
 Suggested order for the remaining work: **B4 → B3** (B4 is contained; B3
-needs design).
+needs design). E1 can proceed independently.
 
 ---
 
@@ -240,6 +241,75 @@ Phased — each phase is independently shippable:
 - Phase 5: a SUT calling a real gRPC upstream through the reverse proxy works
   end-to-end with flows recorded as `http_version: "2"`, `rpc_protocol:
   "grpc"`, and correct `grpc-status`.
+
+---
+
+## E1 — Replace the Postman export with Open Workflow YAML
+
+Priority: medium (vendor-neutral executable export) · Effort: medium
+
+### Goal
+Replace the Postman v2.1 collection export with deterministic YAML conforming
+to the CNCF Open Workflow Specification (formerly Serverless Workflow). The
+workflow export is a replay/orchestration projection of captured tests; the
+per-test Phrond artifact remains the lossless source of truth for broker-side
+integration detection.
+
+### Current state
+- `phrond-coverage` defaults to `--format postman` and writes a combined Postman
+  collection containing captured requests, saved responses, and Phrond metadata
+  embedded in descriptions.
+- `POST /v1/report` accepts `collection_path` and defaults to
+  `coverage.postman_collection.json`.
+- The HTML report serializes to Postman and parses it back before rendering.
+- Examples, SDK report options, documentation, and coverage tests expose
+  Postman-specific names and behavior.
+
+### What needs to be done
+1. **Define the workflow projection** against a pinned stable Open Workflow DSL
+   schema (currently 1.0.3):
+   - emit one independently runnable workflow per test case, with a deterministic
+     package/manifest when multiple artifacts are exported;
+   - translate `test_to_sut` flows into ordered HTTP `call` tasks using stable,
+     sanitized task names;
+   - parameterize SUT base URLs so captured ephemeral addresses are not baked
+     into the workflow;
+   - encode captured response expectations as explicit checks that raise a
+     workflow error on mismatch;
+   - preserve causally linked `sut_to_mock` expectations, `asset_id`,
+     `mock_stub`, `consumed_fields`, fingerprints, and coverage classification
+     under namespaced Phrond metadata rather than executing dependency calls a
+     second time;
+   - preserve redaction and binary-body semantics.
+2. **Add a native workflow writer** in `internal/coverage` that emits
+   deterministic YAML and validates generated documents against the pinned
+   official schema in tests.
+3. **Replace the public export surface**:
+   - make `--format workflow` the CLI default and remove
+     `--format postman`/`collection`;
+   - replace runtime/SDK `collection_path` with `workflow_path` and use a
+     `.workflow.yaml` default;
+   - update README, runtime API docs, and example scripts.
+4. **Decouple HTML from Postman** by rendering the internal `coverage.Report`
+   directly. Keep HTML and JSON report formats, but delete the Postman models,
+   metadata codec, reverse parser, and Postman-specific tests.
+5. **Document the boundary**: Open Workflow YAML is an executable export for
+   replay and orchestration; raw Phrond artifacts remain the input to
+   integration-drift detection.
+
+### Acceptance criteria
+- `phrond-coverage --format workflow` produces deterministic YAML that validates
+  against the pinned Open Workflow schema.
+- A conforming workflow runtime can replay a generated test workflow against a
+  configurable SUT endpoint and fails when a captured response expectation is
+  violated.
+- Downstream mock assumptions and coverage metadata survive the projection
+  without producing duplicate dependency calls during replay.
+- The runtime API, JavaScript SDK, examples, and docs expose
+  `workflow_path`/`.workflow.yaml` and no longer expose Postman output.
+- HTML generation uses `coverage.Report` directly and produces the same
+  coverage information without a Postman serialization round-trip.
+- The canonical per-test Phrond artifact and its OpenAPI schema are unchanged.
 
 ---
 
