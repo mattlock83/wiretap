@@ -100,10 +100,30 @@ function normalizeDependencies(dependencies) {
     if (!assetId || typeof assetId !== "string") {
       throw new Error("dependency assetId is required");
     }
+    const mockConfig = dep.mock && typeof dep.mock === "object" ? dep.mock : {};
+    const mockMode = mockConfig.mode || dep.mockMode || dep.mock_mode;
+    const upstreamUrl =
+      mockConfig.upstreamUrl ||
+      mockConfig.upstream_url ||
+      dep.upstreamUrl ||
+      dep.upstream_url;
+    const preserveHost =
+      mockConfig.preserveHost ??
+      mockConfig.preserve_host ??
+      dep.preserveHost ??
+      dep.preserve_host;
     return {
       asset_id: assetId,
       asset_name: dep.assetName || dep.asset_name,
-      schema: dep.schema
+      schema: dep.schema,
+      mock:
+        mockMode || upstreamUrl || preserveHost !== undefined
+          ? {
+              mode: mockMode,
+              upstream_url: upstreamUrl,
+              preserve_host: preserveHost
+            }
+          : undefined
     };
   });
 }

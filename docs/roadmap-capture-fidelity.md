@@ -12,13 +12,11 @@ re-deriving context. Item numbering (B3–B5) is historical, from the original
 capture-fidelity review; B1/B2 (content-encoding + binary bodies), B6
 (deterministic responses), and D (session-correlation friction) are already
 resolved — see `testing-tool-requirements-and-design.md` §11a. B5 was completed
-on 2026-07-24. M1 is the BYO-mock interoperability track. E1, the independent
-coverage-export track, was completed on 2026-07-24 without changing the
-canonical Phrond artifact.
+on 2026-07-24. M1, the BYO-mock interoperability track, and E1, the independent
+coverage-export track, were completed on 2026-07-24 without changing the
+canonical Phrond artifact format beyond additive flow metadata.
 
-Suggested order for the remaining work: **M1 → B4 → B3**. Preserving capture
-and correlation while allowing teams to keep their existing mock tooling is
-the highest-priority product capability. E1 can proceed independently.
+Suggested order for the remaining work: **B4 → B3**.
 
 ---
 
@@ -246,7 +244,9 @@ Phased — each phase is independently shippable:
 
 ---
 
-## M1 — Capture gateway for bring-your-own mock servers
+## M1 — Capture gateway for bring-your-own mock servers — resolved
+
+Status: completed 2026-07-24
 
 Priority: highest (adoption without replacing established mock tooling) ·
 Effort: medium
@@ -262,7 +262,7 @@ The default remains Phrond's built-in literal-response mock. BYO mode is
 selected per dependency, so built-in and external mocks can coexist in one
 test.
 
-### Proposed model
+### Implemented model
 Declare the external mock as the upstream for a dependency:
 
 ```json
@@ -291,71 +291,75 @@ must inject the external mock URL directly, but it is not required for M1.
 - The flow remains `channel: sut_to_mock` and retains `asset_id`, `trace_id`,
   `parent_flow_id`, fingerprints, request/response bodies, schema validation,
   and timing.
-- Add an explicit source field such as `mock_mode: external` so consumers can
+- `mock_mode: external` lets consumers
   distinguish an observed external response from a Phrond-served stub.
-- Add optional flow-level transport error metadata so a failed external
-  upstream remains visible in the finalized artifact, not only in the
-  in-memory recorder.
+- Optional flow-level `transport_error` metadata keeps a failed external
+  upstream visible in the finalized artifact, not only in the in-memory
+  recorder.
 - `mock_stub` is absent because a generic gateway cannot know the external
   mock's match rule or unrendered response template. The captured response is
   evidence, but not a complete declaration of the consumer's configured
   assumption.
-- Do not set `unmatched` merely because Phrond did not match a local stub.
+- `unmatched` is not set merely because Phrond did not match a local stub.
   Whether an external mock's response represents an unmatched request is
   provider-specific and cannot be inferred reliably from HTTP status alone.
 - A future adapter interface may enrich flows from external admin APIs (for
   example, WireMock mappings), but generic traffic capture must not depend on
   an adapter.
 
-### What needs to be done
+### Implementation
 1. **Configuration and session state**
-   - extend each dependency with `mock.mode` (`builtin`, the default, or
+   - each dependency accepts `mock.mode` (`builtin`, the default, or
      `external`) and an absolute `mock.upstream_url` required for external
      mode;
-   - validate schemes, reject recursive targets that point back to Phrond, and
-     retain the mapping per session plus `asset_id`;
-   - expose the configuration through the runtime API and JavaScript SDK while
-     keeping existing dependency declarations backward-compatible.
+   - schemes and recursive targets are validated, and the mapping is retained
+     per session plus `asset_id`;
+   - the runtime API and JavaScript SDK expose the configuration while existing
+     dependency declarations remain backward-compatible.
 2. **Per-dependency capture gateway**
-   - route external dependencies before the built-in stub registry;
-   - strip only Phrond's internal session and dependency prefixes, preserving
-     the application path and query exactly;
-   - forward request and response bytes, status, end-to-end headers, and
-     trailers without redirects or implicit retries; rewrite `Host` to the
-     upstream by default with an explicit preserve-host option;
-   - apply the same TLS controls, error-to-502 behavior, body fidelity, and
-     future B4 capture limits as the other proxy paths;
-   - return the external response to the SUT even if artifact recording fails.
+   - external dependencies route before the built-in stub registry;
+   - only Phrond's internal session and dependency prefixes are stripped,
+     preserving the application path and query exactly;
+   - request and response bytes, status, end-to-end headers, and trailers are
+     forwarded without redirects or implicit retries; `Host` is rewritten to
+     the upstream by default with an explicit preserve-host option;
+   - the gateway applies the same TLS controls, error-to-502 behavior, body
+     fidelity, and future B4 capture limits as the other proxy paths;
+   - the external response is returned to the SUT independently of artifact
+     recording.
 3. **Recording and correlation**
-   - record every completed or failed external exchange through the existing
-     session recorder with the routed `asset_id`;
-   - preserve `X-Phrond-Trace-Id` so exact parent linking works when the SUT
+   - every completed or failed external exchange is recorded through the
+     existing session recorder with the routed `asset_id`;
+   - `X-Phrond-Trace-Id` is preserved so exact parent linking works when the SUT
      propagates it, with time-window nesting as the fallback;
-   - support zero-config serial sessions and explicit-session URLs for
+   - zero-config serial sessions and explicit-session URLs are supported for
      parallel suites;
-   - update artifact types and `docs/artifact-openapi.yaml` with the external
-     mock source marker, optional transport error, and their invariants.
+   - artifact types and `docs/artifact-openapi.yaml` include `mock_mode`,
+     optional `transport_error`, and HTTP trailers.
 4. **API behavior**
-   - reject `queue-response` for an external dependency with a clear error
+   - `queue-response` rejects an external dependency with a clear error
      rather than silently registering an unused Phrond stub;
-   - keep `verify` behavior for built-in mocks and document that generic BYO
+   - `verify` behavior remains unchanged for built-in mocks; generic BYO
      mode cannot automatically identify consumed external stub fields;
-   - report upstream connection/TLS failures as recorded 502 exchanges without
+   - upstream connection/TLS failures become recorded 502 exchanges without
      hiding the original error.
 5. **Tests and examples**
-   - add focused gateway tests for path/query/header/body fidelity, response
+   - focused gateway tests cover path/query/header/body fidelity, response
      fidelity, errors, session isolation, asset attribution, and trace
      correlation;
-   - add a mixed-mode integration test with one built-in dependency and one
+   - a mixed-mode integration test uses one built-in dependency and one
      external mock dependency exposing an overlapping route;
-   - add a WireMock/Spring Boot example showing WireMock still owns stub setup
-     while the SUT endpoint points at Phrond's returned capture URL.
+   - the runnable `complex-rest` example routes the payment SUT to a
+     user-owned mock and the transaction service to the built-in mock, then
+     exports their correlated artifacts as Workflow YAML, Postman, and HTML;
+   - `docs/byo-mock-server.md` shows WireMock/Spring Boot integration where
+     WireMock still owns stub setup while the SUT uses Phrond's capture URL.
 
 Phrond does not own the external mock's lifecycle, reset behavior, scenarios,
 or verification API. The test framework starts, configures, verifies, and
 stops its chosen mock server exactly as it does today.
 
-### Acceptance criteria
+### Verified acceptance criteria
 - An SUT call through an external-mock dependency receives the same status,
   end-to-end headers, and body the external server produced.
 - The artifact contains one `sut_to_mock` flow with the correct `asset_id`,

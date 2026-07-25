@@ -281,6 +281,71 @@ test("setupTest forwards recordTraffic option", async (t) => {
   assert.equal(session.recordTraffic, false);
 });
 
+test("setupTest normalizes external mock dependency configuration", async (t) => {
+  const requests = [];
+  const server = await startHarnessServer(async (req, res) => {
+    const body = await readBody(req);
+    requests.push({ path: req.url, body });
+    res.setHeader("content-type", "application/json");
+
+    if (req.url === "/v1/startServer") {
+      res.end(
+        JSON.stringify({
+          proxy: { listen_addr: "127.0.0.1:19100" },
+          mock: { listen_addr: "127.0.0.1:19101" }
+        })
+      );
+      return;
+    }
+    if (req.url === "/v1/setupTest") {
+      res.end(
+        JSON.stringify({
+          session_id: "session-external-1",
+          name: "external-flow",
+          record_traffic: true,
+          dependency_urls: {
+            inventory: "http://127.0.0.1:19101/__phrond/dep/inventory"
+          }
+        })
+      );
+      return;
+    }
+    res.end(JSON.stringify({ status: "ok" }));
+  });
+  t.after(() => server.close());
+
+  const runtime = await startServer({
+    baseUrl: server.url,
+    dependencies: [
+      {
+        assetId: "inventory",
+        assetName: "Inventory",
+        mock: {
+          mode: "external",
+          upstreamUrl: "http://127.0.0.1:18089",
+          preserveHost: true
+        }
+      }
+    ]
+  });
+  await runtime.setupTest({ name: "external-flow" });
+  await runtime.killServer();
+
+  const setupReq = requests.find((entry) => entry.path === "/v1/setupTest");
+  const dependencies = JSON.parse(setupReq.body).dependencies;
+  assert.deepEqual(dependencies, [
+    {
+      asset_id: "inventory",
+      asset_name: "Inventory",
+      mock: {
+        mode: "external",
+        upstream_url: "http://127.0.0.1:18089",
+        preserve_host: true
+      }
+    }
+  ]);
+});
+
 test("http helper sends reverse-mode traffic to proxy with session header", async (t) => {
   const proxyRequests = [];
   const proxyServer = await startHarnessServer(async (req, res) => {

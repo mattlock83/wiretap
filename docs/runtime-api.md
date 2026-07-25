@@ -139,6 +139,28 @@ Notes:
 - A dependency `schema` is registered with `role: fake` and the dependency's
   asset identity; `sut_schemas`/`fake_schemas` still work for schemas not tied
   to a declared dependency.
+- `mock.mode` defaults to `builtin`. Set it to `external` with an absolute
+  HTTP(S) `mock.upstream_url` to route this dependency through a BYO mock
+  server. Phrond still returns its own `dependency_url`; the SUT must use that
+  capture URL rather than the upstream URL.
+- External dependencies may set `mock.preserve_host: true`; the default
+  rewrites `Host` to the upstream mock. Redirects are returned without being
+  followed. Query strings, bodies, end-to-end headers, and trailers are
+  forwarded and recorded.
+
+External dependency example:
+
+```json
+{
+  "asset_id": "inventory-service",
+  "asset_name": "Inventory",
+  "mock": {
+    "mode": "external",
+    "upstream_url": "http://127.0.0.1:18089",
+    "preserve_host": false
+  }
+}
+```
 
 ## `POST /v1/queue-response`
 
@@ -187,6 +209,8 @@ Rules:
 - `asset_id` scopes the response to a declared dependency. Optional when the
   session declares exactly one dependency (used automatically); required when
   it declares several.
+- `queue-response` returns `409` when `asset_id` selects an external
+  dependency; configure that response in the external mock instead.
 - `connection_error` and `ssl_error` are mutually exclusive.
 - `body` and `body_file` are literal: `body_file` is read verbatim from disk when queued. There is no templating/rendering.
 - `default: true` marks a fallback response:
@@ -201,6 +225,9 @@ Records which fields of a mocked response the test depends on. The fields are
 attached to the matching flows in the artifact (`consumed_fields`), letting
 later analysis distinguish breaking changes to consumed fields from harmless
 changes to ignored ones.
+This applies to built-in mocks. Generic external mode cannot associate a
+provider-specific stub ID or consumed fields without an adapter to that mock's
+admin API.
 
 Request:
 

@@ -77,6 +77,8 @@ type FlowSample struct {
 	Fingerprint    string             `json:"fingerprint,omitempty" yaml:"fingerprint,omitempty"`
 	ConsumedFields []string           `json:"consumed_fields,omitempty" yaml:"consumed_fields,omitempty"`
 	MockStub       *artifact.MockStub `json:"mock_stub,omitempty" yaml:"mock_stub,omitempty"`
+	MockMode       string             `json:"mock_mode,omitempty" yaml:"mock_mode,omitempty"`
+	TransportError string             `json:"transport_error,omitempty" yaml:"transport_error,omitempty"`
 	Unmatched      bool               `json:"unmatched,omitempty" yaml:"unmatched,omitempty"`
 	Request        InteractionMessage `json:"request,omitempty" yaml:"request,omitempty"`
 	Response       InteractionMessage `json:"response,omitempty" yaml:"response,omitempty"`
@@ -87,6 +89,7 @@ type InteractionMessage struct {
 	URL          string           `json:"url,omitempty" yaml:"url,omitempty"`
 	Status       int              `json:"status,omitempty" yaml:"status,omitempty"`
 	Headers      artifact.Headers `json:"headers,omitempty" yaml:"headers,omitempty"`
+	Trailers     artifact.Headers `json:"trailers,omitempty" yaml:"trailers,omitempty"`
 	Body         string           `json:"body,omitempty" yaml:"body,omitempty"`
 	ArtifactBody *artifact.Body   `json:"-" yaml:"-"`
 }
@@ -1101,6 +1104,8 @@ func flowSampleFromFlow(entry flowEntry) FlowSample {
 		Fingerprint:    flow.Fingerprint,
 		ConsumedFields: append([]string(nil), flow.ConsumedFields...),
 		MockStub:       flow.MockStub,
+		MockMode:       flow.MockMode,
+		TransportError: flow.TransportError,
 		Unmatched:      flow.Unmatched,
 	}
 	if flow.Protocol == "http" {
@@ -1123,6 +1128,7 @@ func httpMessageSample(msg *artifact.HttpMessage) InteractionMessage {
 		URL:          msg.URL,
 		Status:       msg.Status,
 		Headers:      msg.Headers,
+		Trailers:     msg.Trailers,
 		Body:         bodyPreview(msg.Body),
 		ArtifactBody: msg.Body,
 	}

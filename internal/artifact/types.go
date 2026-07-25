@@ -153,8 +153,15 @@ type Flow struct {
 	// response: the match rule plus the unrendered response template. This is
 	// the contract a broker compares against provider truth.
 	MockStub *MockStub `yaml:"mock_stub,omitempty" json:"mock_stub,omitempty"`
-	// Unmatched is true when the SUT called the mock but no stub matched —
-	// i.e. an undeclared dependency call the tests never modelled.
+	// MockMode identifies whether a sut_to_mock response was produced by
+	// Phrond's built-in mock or observed through an external mock gateway.
+	MockMode string `yaml:"mock_mode,omitempty" json:"mock_mode,omitempty"`
+	// TransportError preserves an upstream connection or TLS failure. External
+	// mock gateway failures are still represented by the recorded 502 response.
+	TransportError string `yaml:"transport_error,omitempty" json:"transport_error,omitempty"`
+	// Unmatched is true when the SUT called the built-in mock but no stub
+	// matched. It remains false for external mocks because provider-specific
+	// unmatched behavior cannot be inferred from HTTP traffic.
 	Unmatched bool `yaml:"unmatched,omitempty" json:"unmatched,omitempty"`
 }
 
@@ -195,11 +202,12 @@ type Message struct {
 
 // HttpMessage represents a request or response payload.
 type HttpMessage struct {
-	Method  string  `yaml:"method,omitempty" json:"method,omitempty"`
-	URL     string  `yaml:"url,omitempty" json:"url,omitempty"`
-	Status  int     `yaml:"status,omitempty" json:"status,omitempty"`
-	Headers Headers `yaml:"headers,omitempty" json:"headers,omitempty"`
-	Body    *Body   `yaml:"body,omitempty" json:"body,omitempty"`
+	Method   string  `yaml:"method,omitempty" json:"method,omitempty"`
+	URL      string  `yaml:"url,omitempty" json:"url,omitempty"`
+	Status   int     `yaml:"status,omitempty" json:"status,omitempty"`
+	Headers  Headers `yaml:"headers,omitempty" json:"headers,omitempty"`
+	Trailers Headers `yaml:"trailers,omitempty" json:"trailers,omitempty"`
+	Body     *Body   `yaml:"body,omitempty" json:"body,omitempty"`
 }
 
 // Headers stores multi-valued headers.

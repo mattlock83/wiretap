@@ -39,21 +39,23 @@ type StubResponse struct {
 
 // RecordedRequest captures the inbound request to the mock server.
 type RecordedRequest struct {
-	Method  string
-	Path    string
-	URL     string
-	Headers map[string][]string
-	Query   map[string][]string
-	Body    string
+	Method   string
+	Path     string
+	URL      string
+	Headers  map[string][]string
+	Trailers map[string][]string
+	Query    map[string][]string
+	Body     string
 }
 
 // RecordedResponse captures the response written by the mock server.
 type RecordedResponse struct {
-	Status  int
-	DelayMS int
-	Headers map[string][]string
-	Body    string
-	Fault   string
+	Status   int
+	DelayMS  int
+	Headers  map[string][]string
+	Trailers map[string][]string
+	Body     string
+	Fault    string
 }
 
 // Exchange records the request/response pair and match metadata.
@@ -75,7 +77,10 @@ type Exchange struct {
 	// including its unrendered response template. It is captured at match
 	// time because matched stubs are consumed (removed) from the registry.
 	MatchedStub *Stub
-	Error       string
-	StartedAt   time.Time
-	FinishedAt  time.Time
+	// MockMode identifies whether Phrond served a built-in stub or observed a
+	// response from a configured external mock gateway.
+	MockMode   string
+	Error      string
+	StartedAt  time.Time
+	FinishedAt time.Time
 }

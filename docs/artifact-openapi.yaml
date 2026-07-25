@@ -242,11 +242,23 @@ components:
             API). Distinguishes breaking changes from changes to ignored fields.
         mock_stub:
           $ref: "#/components/schemas/MockStub"
+        mock_mode:
+          type: string
+          enum: [builtin, external]
+          description: >-
+            Whether the response was served by Phrond's built-in mock or
+            observed through a configured external mock gateway.
+        transport_error:
+          type: string
+          description: >-
+            Original upstream connection or TLS error when the recorded
+            response is a gateway-generated 502.
         unmatched:
           type: boolean
           description: >-
-            True when the SUT called the mock but no stub matched — an
-            undeclared dependency call the tests never modelled.
+            True when the SUT called Phrond's built-in mock but no stub
+            matched. Omitted for external mocks because provider-specific
+            unmatched behavior cannot be inferred from HTTP traffic.
       additionalProperties: false
 
     MockStub:
@@ -323,6 +335,8 @@ components:
           type: string
         headers:
           $ref: "#/components/schemas/Headers"
+        trailers:
+          $ref: "#/components/schemas/Headers"
         body:
           $ref: "#/components/schemas/Body"
       additionalProperties: false
@@ -337,6 +351,8 @@ components:
           minimum: 100
           maximum: 599
         headers:
+          $ref: "#/components/schemas/Headers"
+        trailers:
           $ref: "#/components/schemas/Headers"
         body:
           $ref: "#/components/schemas/Body"

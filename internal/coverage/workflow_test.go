@@ -177,12 +177,18 @@ func TestServerlessWorkflowFromReport_IncludesSchemaLessTrafficAndCorrelation(t 
 				ParentFlowID:   "flow-1",
 				Fingerprint:    "abc123",
 				ConsumedFields: []string{"body.available"},
-				Unmatched:      true,
+				MockMode:       "external",
+				TransportError: "dial tcp: connection refused",
 				Request: InteractionMessage{
-					Method: "GET",
-					URL:    "/inventory/SKU-1",
+					Method:   "GET",
+					URL:      "/inventory/SKU-1",
+					Trailers: artifact.Headers{"X-Request-Checksum": {"abc"}},
 				},
-				Response: InteractionMessage{Status: 501, Body: "no matching stub"},
+				Response: InteractionMessage{
+					Status:   502,
+					Body:     "proxy error: dial tcp: connection refused",
+					Trailers: artifact.Headers{"X-Response-Checksum": {"def"}},
+				},
 			}},
 		}},
 	}
@@ -200,8 +206,14 @@ func TestServerlessWorkflowFromReport_IncludesSchemaLessTrafficAndCorrelation(t 
 		meta.TraceID != "phtr-9" ||
 		meta.ParentFlowID != "flow-1" ||
 		meta.Fingerprint != "abc123" ||
-		!meta.Unmatched {
+		meta.Unmatched {
 		t.Fatalf("schema-less correlation metadata = %#v", meta)
+	}
+	if meta.MockMode != "external" ||
+		meta.TransportError != "dial tcp: connection refused" ||
+		meta.RequestTrailers["X-Request-Checksum"][0] != "abc" ||
+		meta.CapturedResponse.Trailers["X-Response-Checksum"][0] != "def" {
+		t.Fatalf("external mock metadata = %#v", meta)
 	}
 	if len(meta.ConsumedFields) != 1 || meta.ConsumedFields[0] != "body.available" {
 		t.Fatalf("consumed fields = %#v", meta.ConsumedFields)

@@ -25,6 +25,9 @@ func TestApplyRedactions(t *testing.T) {
 					Headers: artifact.Headers{
 						"Authorization": {"secret"},
 					},
+					Trailers: artifact.Headers{
+						"X-Checksum": {"sensitive"},
+					},
 					Body: &artifact.Body{
 						Encoding: "utf8",
 						Text:     `{"token":"abc","nested":{"id":123}}`,
@@ -37,6 +40,7 @@ func TestApplyRedactions(t *testing.T) {
 
 	rules := []artifact.Redaction{
 		{Field: "request.headers.authorization", Rule: "mask"},
+		{Field: "request.trailers.x-checksum", Rule: "remove"},
 		{Field: "request.body.token", Rule: "remove"},
 	}
 
@@ -56,6 +60,9 @@ func TestApplyRedactions(t *testing.T) {
 	}
 	if values[0] != "****" {
 		t.Fatalf("expected default mask, got %q", values[0])
+	}
+	if _, ok := req.Trailers["X-Checksum"]; ok {
+		t.Fatalf("expected request trailer to be removed")
 	}
 
 	var payload map[string]any

@@ -41,8 +41,10 @@ The system should stay focused on HTTP/HTTPS in v1.
   - `sut_to_mock`
 - Attribute every `sut_to_mock` flow to a declared dependency (`asset_id`) and
   to the `test_to_sut` request that caused it (`parent_flow_id`).
-- Capture the consumer's assumptions: the mock stub contract (`mock_stub`) and
-  the response fields the test depends on (`consumed_fields`).
+- Capture the consumer's assumptions for built-in mocks: the mock stub contract
+  (`mock_stub`) and the response fields the test depends on
+  (`consumed_fields`). External mocks retain observed traffic and source
+  metadata without fabricating provider-specific stub details.
 - Attach OpenAPI schema references for contract comparison (optional,
   progressive enrichment).
 - Provide a JavaScript SDK that test code uses to orchestrate test cases.
@@ -384,8 +386,9 @@ redactions:
 Notes:
 - The artifact also carries broker-oriented fields documented in §11a: top-level
   `producer`, per-schema `asset_name`/`asset_id`/`asset_sha`, per-`sut_to_mock`-flow
-  `mock_stub` + `unmatched`, and `body.content_encoding`. The authoritative schema
-  is `docs/artifact-openapi.yaml`.
+  `mock_mode`, optional `mock_stub`/`unmatched`/`transport_error`, HTTP trailers,
+  and `body.content_encoding`. The authoritative schema is
+  `docs/artifact-openapi.yaml`.
 - For binary payloads, use `encoding: "base64"` and store `body.bytes`.
 - The current encoder writes JSON (valid YAML 1.2) for deterministic output without external YAML dependencies.
 - Assertion results default to `recorded` when the SDK captures a check without evaluation.
@@ -472,7 +475,7 @@ requests and CONNECT/MITM tunnels still work. Tests point any HTTP client at
 the escape hatch for traffic whose URL cannot be re-pointed.
 
 ### Assumption capture (the contract)
-Each `sut_to_mock` flow carries `mock_stub`:
+Each built-in matched `sut_to_mock` flow carries `mock_stub`:
 - `match` + `matched_on` (which criteria constrained it) + `source`
   (`queued` = hand-written by the test; `recorded` = captured from a fallback
   upstream — different trust levels for a broker).
@@ -482,6 +485,11 @@ Each `sut_to_mock` flow carries `mock_stub`:
 - `unmatched: true` flags a SUT call no stub modelled (an undeclared dependency).
 The stub is snapshotted at match time in `mock.Exchange.MatchedStub` because
 matched stubs are consumed (removed) from the registry on match.
+
+An external dependency instead carries `mock_mode: external` with the observed
+request/response. It has no `mock_stub` or `unmatched` claim because a generic
+gateway cannot infer the external provider's configured match rule. Connection
+and TLS failures retain `transport_error` alongside a recorded 502 response.
 
 ### Consumption, causality, dedup
 - `consumed_fields` (via `POST /v1/verify` / SDK `runtime.verify(id, fields)`):

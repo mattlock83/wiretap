@@ -486,6 +486,11 @@ type dependencyPayload struct {
 	AssetID   string              `json:"asset_id"`
 	AssetName string              `json:"asset_name,omitempty"`
 	Schema    *artifact.SchemaRef `json:"schema,omitempty"`
+	Mock      struct {
+		Mode         string `json:"mode,omitempty"`
+		UpstreamURL  string `json:"upstream_url,omitempty"`
+		PreserveHost bool   `json:"preserve_host,omitempty"`
+	} `json:"mock,omitempty"`
 }
 
 type setupTestRequest struct {
@@ -541,7 +546,39 @@ func (a *App) handleSetupTest(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		seenDeps[assetID] = struct{}{}
-		deps = append(deps, sessionDependency{AssetID: assetID, AssetName: strings.TrimSpace(dep.AssetName)})
+		mockMode := strings.ToLower(strings.TrimSpace(dep.Mock.Mode))
+		if mockMode == "" {
+			mockMode = "builtin"
+		}
+		upstreamURL := strings.TrimSpace(dep.Mock.UpstreamURL)
+		switch mockMode {
+		case "builtin":
+			if upstreamURL != "" || dep.Mock.PreserveHost {
+				writeJSON(w, http.StatusBadRequest, map[string]string{
+					"error": fmt.Sprintf("dependency %q uses builtin mock mode and cannot set mock.upstream_url or mock.preserve_host", assetID),
+				})
+				return
+			}
+		case "external":
+			if err := a.mockComponent.ValidateExternalUpstream(upstreamURL); err != nil {
+				writeJSON(w, http.StatusBadRequest, map[string]string{
+					"error": fmt.Sprintf("dependency %q: %v", assetID, err),
+				})
+				return
+			}
+		default:
+			writeJSON(w, http.StatusBadRequest, map[string]string{
+				"error": fmt.Sprintf("dependency %q mock.mode must be builtin or external", assetID),
+			})
+			return
+		}
+		deps = append(deps, sessionDependency{
+			AssetID:      assetID,
+			AssetName:    strings.TrimSpace(dep.AssetName),
+			MockMode:     mockMode,
+			UpstreamURL:  upstreamURL,
+			PreserveHost: dep.Mock.PreserveHost,
+		})
 	}
 
 	name := strings.TrimSpace(payload.Name)
@@ -620,6 +657,30 @@ func (a *App) handleSetupTest(w http.ResponseWriter, r *http.Request) {
 		a.defaultSessionID = sessionID
 	}
 	a.sessionsMu.Unlock()
+
+	for _, dep := range deps {
+		if dep.MockMode != "external" {
+			continue
+		}
+		if err := a.mockComponent.SetExternalUpstream(
+			sessionID,
+			dep.AssetID,
+			dep.UpstreamURL,
+			dep.PreserveHost,
+		); err != nil {
+			a.sessionsMu.Lock()
+			delete(a.sessions, sessionID)
+			if a.defaultSessionID == sessionID {
+				a.defaultSessionID = ""
+			}
+			a.sessionsMu.Unlock()
+			a.mockComponent.RemoveExternalUpstreams(sessionID)
+			writeJSON(w, http.StatusBadRequest, map[string]string{
+				"error": fmt.Sprintf("dependency %q: %v", dep.AssetID, err),
+			})
+			return
+		}
+	}
 	if !payload.ExplicitSession {
 		a.mockComponent.SetDefaultSession(sessionID)
 	}
@@ -684,23 +745,6 @@ func (a *App) handleQueueResponse(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "session_id is required"})
 		return
 	}
-	method := strings.ToUpper(strings.TrimSpace(payload.Match.Method))
-	path := strings.TrimSpace(payload.Match.Path)
-	if method == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "match.method is required"})
-		return
-	}
-	if path == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "match.path is required"})
-		return
-	}
-	if !strings.HasPrefix(path, "/") {
-		path = "/" + path
-	}
-	if payload.Response.ConnectionError && payload.Response.SSLError {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "connection_error and ssl_error cannot both be true"})
-		return
-	}
 
 	a.sessionsMu.Lock()
 	session := a.sessions[sessionID]
@@ -713,8 +757,11 @@ func (a *App) handleQueueResponse(w http.ResponseWriter, r *http.Request) {
 	if assetID == "" && len(session.Dependencies) == 1 {
 		assetID = session.Dependencies[0].AssetID
 	}
+	var dependency sessionDependency
 	if assetID != "" {
-		if _, ok := session.dependency(assetID); !ok {
+		var ok bool
+		dependency, ok = session.dependency(assetID)
+		if !ok {
 			a.sessionsMu.Unlock()
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("asset_id %q is not a declared dependency of this session", assetID)})
 			return
@@ -722,6 +769,33 @@ func (a *App) handleQueueResponse(w http.ResponseWriter, r *http.Request) {
 	} else if len(session.Dependencies) > 1 {
 		a.sessionsMu.Unlock()
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "asset_id is required when the session declares multiple dependencies"})
+		return
+	}
+	if dependency.MockMode == "external" {
+		a.sessionsMu.Unlock()
+		writeJSON(w, http.StatusConflict, map[string]string{
+			"error": fmt.Sprintf("dependency %q uses an external mock; configure responses in that mock server instead of queue-response", assetID),
+		})
+		return
+	}
+	method := strings.ToUpper(strings.TrimSpace(payload.Match.Method))
+	path := strings.TrimSpace(payload.Match.Path)
+	if method == "" {
+		a.sessionsMu.Unlock()
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "match.method is required"})
+		return
+	}
+	if path == "" {
+		a.sessionsMu.Unlock()
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "match.path is required"})
+		return
+	}
+	if !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
+	if payload.Response.ConnectionError && payload.Response.SSLError {
+		a.sessionsMu.Unlock()
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "connection_error and ssl_error cannot both be true"})
 		return
 	}
 	a.syncSessionResponsesLocked(session)
@@ -931,6 +1005,7 @@ func (a *App) handleTeardownTest(w http.ResponseWriter, r *http.Request) {
 	if wasDefault {
 		a.mockComponent.SetDefaultSession("")
 	}
+	a.mockComponent.RemoveExternalUpstreams(sessionID)
 	if len(queuedIDs) > 0 {
 		a.mockComponent.RemoveStubsByID(queuedIDs)
 	}
@@ -1082,6 +1157,7 @@ func (a *App) handleKillServer(w http.ResponseWriter, r *http.Request) {
 		a.mockComponent.RemoveStubsByID(staleIDs)
 	}
 	for _, sessionID := range staleSessionIDs {
+		a.mockComponent.RemoveExternalUpstreams(sessionID)
 		a.mockComponent.SetSessionRecordingEnabled(sessionID, true)
 	}
 

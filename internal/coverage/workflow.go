@@ -90,9 +90,12 @@ type workflowTaskPhrondMetadata struct {
 	Fingerprint            string                    `yaml:"fingerprint,omitempty" json:"fingerprint,omitempty"`
 	ConsumedFields         []string                  `yaml:"consumed_fields,omitempty" json:"consumed_fields,omitempty"`
 	MockStub               *artifact.MockStub        `yaml:"mock_stub,omitempty" json:"mock_stub,omitempty"`
+	MockMode               string                    `yaml:"mock_mode,omitempty" json:"mock_mode,omitempty"`
+	TransportError         string                    `yaml:"transport_error,omitempty" json:"transport_error,omitempty"`
 	Unmatched              bool                      `yaml:"unmatched,omitempty" json:"unmatched,omitempty"`
 	RequestURL             string                    `yaml:"request_url,omitempty" json:"request_url,omitempty"`
 	RequestHeaders         artifact.Headers          `yaml:"request_headers,omitempty" json:"request_headers,omitempty"`
+	RequestTrailers        artifact.Headers          `yaml:"request_trailers,omitempty" json:"request_trailers,omitempty"`
 	RequestEncoding        string                    `yaml:"request_encoding,omitempty" json:"request_encoding,omitempty"`
 	RequestContentEncoding string                    `yaml:"request_content_encoding,omitempty" json:"request_content_encoding,omitempty"`
 	CapturedResponse       *workflowCapturedResponse `yaml:"captured_response,omitempty" json:"captured_response,omitempty"`
@@ -101,6 +104,7 @@ type workflowTaskPhrondMetadata struct {
 type workflowCapturedResponse struct {
 	Status          int              `yaml:"status,omitempty" json:"status,omitempty"`
 	Headers         artifact.Headers `yaml:"headers,omitempty" json:"headers,omitempty"`
+	Trailers        artifact.Headers `yaml:"trailers,omitempty" json:"trailers,omitempty"`
 	Body            *any             `yaml:"body,omitempty" json:"body,omitempty"`
 	Encoding        string           `yaml:"encoding,omitempty" json:"encoding,omitempty"`
 	ContentEncoding string           `yaml:"content_encoding,omitempty" json:"content_encoding,omitempty"`
@@ -349,9 +353,12 @@ func workflowHTTPTaskDefinition(
 			Fingerprint:            sample.Fingerprint,
 			ConsumedFields:         append([]string(nil), sample.ConsumedFields...),
 			MockStub:               sample.MockStub,
+			MockMode:               sample.MockMode,
+			TransportError:         sample.TransportError,
 			Unmatched:              sample.Unmatched,
 			RequestURL:             sample.Request.URL,
 			RequestHeaders:         cloneWorkflowHeaders(sample.Request.Headers),
+			RequestTrailers:        cloneWorkflowHeaders(sample.Request.Trailers),
 			RequestEncoding:        requestEncoding,
 			RequestContentEncoding: contentEncoding,
 			CapturedResponse:       capturedWorkflowResponse(sample.Response),
@@ -416,6 +423,7 @@ func capturedWorkflowResponse(msg InteractionMessage) *workflowCapturedResponse 
 	return &workflowCapturedResponse{
 		Status:          msg.Status,
 		Headers:         cloneWorkflowHeaders(msg.Headers),
+		Trailers:        cloneWorkflowHeaders(msg.Trailers),
 		Body:            body,
 		Encoding:        encoding,
 		ContentEncoding: contentEncoding,

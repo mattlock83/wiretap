@@ -77,6 +77,11 @@ phrondTest("submit payment", async () => {
   (the cross-repo key a broker later uses to join consumer assumptions to the
   provider). Each dependency gets its own stable mock base URL via
   `runtime.dependencyUrl(assetId)` — inject it into the SUT once at startup.
+- **External mocks**: add
+  `mock: { mode: "external", upstreamUrl: wireMockUrl }` to a dependency to
+  keep WireMock or another HTTP mock. The SUT still uses
+  `runtime.dependencyUrl(assetId)`, so Phrond captures and attributes the
+  exchange. Built-in and external dependencies can coexist.
 - **Reverse capture**: with `sutBaseUrl` set, tests call `runtime.sutUrl` (the
   proxy address) with any HTTP client; requests are captured and forwarded. No
   proxy configuration or CA trust needed for HTTP.
@@ -110,6 +115,8 @@ phrondTest("submit payment", async () => {
 - `default: true` responses are fallback stubs: they are matched only if no non-default stub matches and they persist until `teardownTest()`.
 - `recordTraffic: false` disables artifact capture and schema validation for mock-only/performance sessions.
 - `assetId` on `queueResponse` is optional with a single declared dependency; required with several.
+- `queueResponse` is rejected for external dependencies; configure and verify
+  those stubs through the external mock's own API.
 - Responses are literal: `body` is an exact string and `bodyFile` is read verbatim from disk. There is no templating — compute the exact bytes in test code.
 
 ## Related Docs

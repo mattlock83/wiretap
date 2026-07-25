@@ -40,3 +40,6 @@
   routed to the right dependency URL (asset-scoped stubs only match requests
   sent to that dependency's base URL).
 - With multiple declared dependencies, `queue-response` needs `asset_id`.
+- External dependencies do not use Phrond's stub matcher. Configure the route
+  with `mock.mode: external`, point `mock.upstream_url` at the external server,
+  and configure stubs through that server's API.

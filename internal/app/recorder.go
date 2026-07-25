@@ -341,19 +341,23 @@ func (s *TestCaseStore) flowFromMock(exchange mock.Exchange) artifact.Flow {
 		StartedAt:  exchange.StartedAt,
 		DurationMS: exchange.FinishedAt.Sub(exchange.StartedAt).Milliseconds(),
 		Request: artifact.Message{HTTP: &artifact.HttpMessage{
-			Method:  exchange.Request.Method,
-			URL:     exchange.Request.URL,
-			Headers: reqHeaders,
-			Body:    bodyFromHTTP(reqHeaders, []byte(exchange.Request.Body)),
+			Method:   exchange.Request.Method,
+			URL:      exchange.Request.URL,
+			Headers:  reqHeaders,
+			Trailers: cloneHeaders(exchange.Request.Trailers),
+			Body:     bodyFromHTTP(reqHeaders, []byte(exchange.Request.Body)),
 		}},
 		Response: artifact.Message{HTTP: &artifact.HttpMessage{
-			Status:  exchange.Response.Status,
-			Headers: respHeaders,
-			Body:    bodyFromHTTP(respHeaders, []byte(exchange.Response.Body)),
+			Status:   exchange.Response.Status,
+			Headers:  respHeaders,
+			Trailers: cloneHeaders(exchange.Response.Trailers),
+			Body:     bodyFromHTTP(respHeaders, []byte(exchange.Response.Body)),
 		}},
-		MatchedStubID: exchange.MatchedStubID,
-		MockStub:      mockStubFromExchange(exchange),
-		Unmatched:     !exchange.Matched,
+		MatchedStubID:  exchange.MatchedStubID,
+		MockStub:       mockStubFromExchange(exchange),
+		MockMode:       exchange.MockMode,
+		TransportError: exchange.Error,
+		Unmatched:      exchange.MockMode != "external" && !exchange.Matched,
 	}
 }
 

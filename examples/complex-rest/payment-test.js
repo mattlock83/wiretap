@@ -2,6 +2,7 @@ const { test, before, after } = require("node:test");
 const assert = require("node:assert/strict");
 const { bindTest } = require("../../sdk/js/src/index");
 const {
+  startExternalAccountMock,
   startRuntime,
   startComplexServices,
   stopComplexServices,
@@ -12,6 +13,7 @@ const RUN_E2E = Boolean(process.env.PHROND_BASE_URL || process.env.PHROND_HTTP_L
 
 let runtime;
 let services;
+let externalAccountMock;
 
 const phrondTest = bindTest(() => runtime, test);
 
@@ -22,7 +24,8 @@ if (!RUN_E2E) {
   test("rejects insufficient balance", { skip: "set PHROND_BASE_URL to run this example" }, async () => {});
 } else {
   before(async () => {
-    runtime = await startRuntime();
+    externalAccountMock = await startExternalAccountMock();
+    runtime = await startRuntime({ externalAccountUrl: externalAccountMock.baseUrl });
     services = await startComplexServices(runtime);
   });
 
@@ -38,8 +41,14 @@ if (!RUN_E2E) {
     } catch (err) {
       errors.push(err);
     }
+    try {
+      await externalAccountMock?.stop?.();
+    } catch (err) {
+      errors.push(err);
+    }
     services = null;
     runtime = null;
+    externalAccountMock = null;
     if (errors.length > 0) {
       throw errors[0];
     }
@@ -49,7 +58,8 @@ if (!RUN_E2E) {
     const from = { id: "acct-100", name: "Alice", balance: 1000, currency: "USD", status: "active" };
     const to = { id: "acct-200", name: "Bob", balance: 500, currency: "USD", status: "active" };
 
-    await registerAccounts(runtime, [from, to, from]);
+    externalAccountMock.reset([from, to]);
+    await registerAccounts(runtime, [from]);
 
     const submit = await runtime.http.postJson("/payments/submit", {
       from_account: from.id,
@@ -65,24 +75,25 @@ if (!RUN_E2E) {
     assert.equal(list.status, 200);
     assert.ok(list.body.transactions.some((tx) => tx.transaction_id === submit.body.transaction_id));
 
-    const paymentLookup = await runtime.getResponse(`account-${from.id}-3`);
     const transactionLookup = await runtime.getResponse(`account-${from.id}-1`);
-    assert.equal(paymentLookup.state, "responded");
     assert.equal(transactionLookup.state, "responded");
-    assert.equal(paymentLookup.exchange.Request.Method, "GET");
-    assert.equal(paymentLookup.exchange.Request.Path, `/accounts/${from.id}`);
     assert.equal(transactionLookup.exchange.Request.Method, "GET");
     assert.equal(transactionLookup.exchange.Request.Path, `/accounts/${from.id}`);
 
-    // The payment SUT depends on balance and status to accept the payment.
-    await runtime.verify(`account-${from.id}-3`, ["body.balance", "body.status", "body.currency"]);
+    assert.deepEqual(externalAccountMock.requests(), [
+      { method: "GET", path: `/accounts/${from.id}`, query: "" },
+      { method: "GET", path: `/accounts/${to.id}`, query: "" }
+    ]);
+
+    // Built-in verification remains available alongside the external mock.
+    await runtime.verify(`account-${from.id}-1`, ["body.id", "body.status"]);
   });
 
   phrondTest("rejects amount too high (6000)", async () => {
     const from = { id: "acct-100", name: "Alice", balance: 12000, currency: "USD", status: "active" };
     const to = { id: "acct-200", name: "Bob", balance: 500, currency: "USD", status: "active" };
 
-    await registerAccounts(runtime, [from, to]);
+    externalAccountMock.reset([from, to]);
 
     await assert.rejects(
       () =>
@@ -104,7 +115,7 @@ if (!RUN_E2E) {
     const from = { id: "acct-100", name: "Alice", balance: 20000, currency: "USD", status: "active" };
     const to = { id: "acct-200", name: "Bob", balance: 500, currency: "USD", status: "active" };
 
-    await registerAccounts(runtime, [from, to]);
+    externalAccountMock.reset([from, to]);
 
     await assert.rejects(
       () =>
@@ -126,7 +137,7 @@ if (!RUN_E2E) {
     const from = { id: "acct-100", name: "Alice", balance: 40, currency: "USD", status: "active" };
     const to = { id: "acct-200", name: "Bob", balance: 500, currency: "USD", status: "active" };
 
-    await registerAccounts(runtime, [from, to]);
+    externalAccountMock.reset([from, to]);
 
     await assert.rejects(
       () =>

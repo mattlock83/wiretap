@@ -23,8 +23,11 @@ type queuedResponse struct {
 // session. Each dependency gets its own mock base URL so captured flows carry
 // the dependency's asset identity as ground truth.
 type sessionDependency struct {
-	AssetID   string
-	AssetName string
+	AssetID      string
+	AssetName    string
+	MockMode     string
+	UpstreamURL  string
+	PreserveHost bool
 }
 
 type runtimeSession struct {

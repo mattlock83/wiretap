@@ -61,33 +61,35 @@ func applyRule(flow *artifact.Flow, rule artifact.Redaction) {
 
 	switch target {
 	case "headers":
-		applyHeaderRule(msg, path, rule)
+		applyHeaderRule(msg.Headers, path, rule)
+	case "trailers":
+		applyHeaderRule(msg.Trailers, path, rule)
 	case "body":
 		applyBodyRule(msg, path, rule)
 	}
 }
 
-func applyHeaderRule(msg *artifact.HttpMessage, headerKey string, rule artifact.Redaction) {
-	if msg == nil || msg.Headers == nil {
+func applyHeaderRule(headers artifact.Headers, headerKey string, rule artifact.Redaction) {
+	if headers == nil {
 		return
 	}
-	for key := range msg.Headers {
+	for key := range headers {
 		if !strings.EqualFold(key, headerKey) {
 			continue
 		}
 		switch strings.ToLower(rule.Rule) {
 		case "remove":
-			delete(msg.Headers, key)
+			delete(headers, key)
 		default:
 			replacement := rule.Replacement
 			if replacement == "" {
 				replacement = defaultMask
 			}
-			values := msg.Headers[key]
+			values := headers[key]
 			for i := range values {
 				values[i] = replacement
 			}
-			msg.Headers[key] = values
+			headers[key] = values
 		}
 	}
 }

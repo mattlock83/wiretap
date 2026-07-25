@@ -229,6 +229,27 @@ func (m *MockComponent) SetDefaultSession(sessionID string) {
 	m.server.SetDefaultSession(sessionID)
 }
 
+func (m *MockComponent) ValidateExternalUpstream(baseURL string) error {
+	if m == nil || m.server == nil {
+		return errors.New("mock component not configured")
+	}
+	return m.server.ValidateExternalUpstream(baseURL)
+}
+
+func (m *MockComponent) SetExternalUpstream(sessionID, assetID, baseURL string, preserveHost bool) error {
+	if m == nil || m.server == nil {
+		return errors.New("mock component not configured")
+	}
+	return m.server.SetExternalUpstream(sessionID, assetID, baseURL, preserveHost)
+}
+
+func (m *MockComponent) RemoveExternalUpstreams(sessionID string) {
+	if m == nil || m.server == nil {
+		return
+	}
+	m.server.RemoveExternalUpstreams(sessionID)
+}
+
 func defaultCABaseDir() string {
 	cacheDir, err := os.UserCacheDir()
 	if err != nil || cacheDir == "" {

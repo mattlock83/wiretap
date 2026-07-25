@@ -3,6 +3,8 @@ package mock
 import (
 	"bytes"
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -28,6 +30,9 @@ type Server struct {
 	exchangeSeq      atomic.Uint64
 	recordSeq        atomic.Uint64
 	recordingEnabled atomic.Bool
+	externalClient   *http.Client
+	externalMu       sync.RWMutex
+	externalRoutes   map[string]map[string]externalUpstream
 
 	// defaultSessionMu guards defaultSession: the session that unlabeled
 	// traffic (no session prefix in the URL) is attributed to. Set while
@@ -41,6 +46,11 @@ type syncState struct {
 	running bool
 }
 
+type externalUpstream struct {
+	baseURL      *url.URL
+	preserveHost bool
+}
+
 // NewServer creates a mock server using the provided registry/recorder.
 func NewServer(registry *Registry, recorder *Recorder) *Server {
 	if registry == nil {
@@ -49,10 +59,26 @@ func NewServer(registry *Registry, recorder *Recorder) *Server {
 	if recorder == nil {
 		recorder = NewRecorder()
 	}
+	transport := &http.Transport{
+		Proxy:                 nil,
+		DialContext:           (&net.Dialer{Timeout: 30 * time.Second}).DialContext,
+		ForceAttemptHTTP2:     false,
+		DisableCompression:    true,
+		DisableKeepAlives:     true,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: time.Second,
+	}
 	server := &Server{
 		registry:      registry,
 		recorder:      recorder,
 		skipRecording: map[string]struct{}{},
+		externalClient: &http.Client{
+			Transport: transport,
+			CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		},
+		externalRoutes: map[string]map[string]externalUpstream{},
 	}
 	server.recordingEnabled.Store(true)
 	return server
@@ -185,6 +211,121 @@ func (s *Server) Recorder() *Recorder {
 	return s.recorder
 }
 
+// ValidateExternalUpstream checks that a BYO mock target is an absolute HTTP
+// URL and does not point back at this Phrond mock listener.
+func (s *Server) ValidateExternalUpstream(baseURL string) error {
+	parsed, err := parseExternalUpstream(baseURL)
+	if err != nil {
+		return err
+	}
+	if parsed.RawQuery != "" || parsed.Fragment != "" {
+		return errors.New("external mock upstream_url must not include a query or fragment")
+	}
+	if s.targetsOwnListener(parsed) {
+		return errors.New("external mock upstream_url must not point to the Phrond mock listener")
+	}
+	return nil
+}
+
+// SetExternalUpstream registers a per-session, per-dependency capture gateway.
+func (s *Server) SetExternalUpstream(sessionID, assetID, baseURL string, preserveHost bool) error {
+	sessionID = strings.TrimSpace(sessionID)
+	assetID = strings.TrimSpace(assetID)
+	if sessionID == "" || assetID == "" {
+		return errors.New("session_id and asset_id are required for an external mock")
+	}
+	if err := s.ValidateExternalUpstream(baseURL); err != nil {
+		return err
+	}
+	parsed, _ := parseExternalUpstream(baseURL)
+	parsed.Path = strings.TrimRight(parsed.Path, "/")
+	parsed.RawPath = strings.TrimRight(parsed.RawPath, "/")
+
+	s.externalMu.Lock()
+	defer s.externalMu.Unlock()
+	routes := s.externalRoutes[sessionID]
+	if routes == nil {
+		routes = map[string]externalUpstream{}
+		s.externalRoutes[sessionID] = routes
+	}
+	routes[assetID] = externalUpstream{baseURL: parsed, preserveHost: preserveHost}
+	return nil
+}
+
+// RemoveExternalUpstreams removes all BYO mock routes owned by a session.
+func (s *Server) RemoveExternalUpstreams(sessionID string) {
+	if s == nil {
+		return
+	}
+	s.externalMu.Lock()
+	delete(s.externalRoutes, strings.TrimSpace(sessionID))
+	s.externalMu.Unlock()
+}
+
+func parseExternalUpstream(raw string) (*url.URL, error) {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return nil, errors.New("external mock upstream_url is required")
+	}
+	parsed, err := url.Parse(value)
+	if err != nil {
+		return nil, fmt.Errorf("invalid external mock upstream_url: %w", err)
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return nil, errors.New("external mock upstream_url scheme must be http or https")
+	}
+	if parsed.Host == "" {
+		return nil, errors.New("external mock upstream_url must be absolute")
+	}
+	return parsed, nil
+}
+
+func (s *Server) targetsOwnListener(target *url.URL) bool {
+	if s == nil || s.listener == nil || target == nil {
+		return false
+	}
+	listenHost, listenPort, err := net.SplitHostPort(s.listener.Addr().String())
+	if err != nil {
+		return false
+	}
+	targetPort := target.Port()
+	if targetPort == "" {
+		if target.Scheme == "https" {
+			targetPort = "443"
+		} else {
+			targetPort = "80"
+		}
+	}
+	if listenPort != targetPort {
+		return false
+	}
+	targetHost := strings.TrimSpace(target.Hostname())
+	if strings.EqualFold(listenHost, targetHost) {
+		return true
+	}
+	return isLocalHost(listenHost) && isLocalHost(targetHost)
+}
+
+func isLocalHost(host string) bool {
+	host = strings.TrimSpace(strings.Trim(host, "[]"))
+	if host == "" || host == "0.0.0.0" || host == "::" || strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && (ip.IsLoopback() || ip.IsUnspecified())
+}
+
+func (s *Server) externalUpstream(sessionID, assetID string) (externalUpstream, bool) {
+	s.externalMu.RLock()
+	defer s.externalMu.RUnlock()
+	routes := s.externalRoutes[sessionID]
+	if routes == nil {
+		return externalUpstream{}, false
+	}
+	upstream, ok := routes[assetID]
+	return upstream, ok
+}
+
 func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	started := time.Now()
 	bodyBytes, _ := io.ReadAll(r.Body)
@@ -201,16 +342,23 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	if trimmedPath != r.URL.Path {
 		copyURL := *r.URL
 		copyURL.Path = trimmedPath
+		copyURL.RawPath = stripMockEscapedPath(r.URL.EscapedPath())
 		recordURL = copyURL.String()
 	}
 
 	req := RecordedRequest{
-		Method:  r.Method,
-		Path:    trimmedPath,
-		URL:     recordURL,
-		Headers: cloneHeader(r.Header),
-		Query:   cloneQuery(r.URL.Query()),
-		Body:    string(bodyBytes),
+		Method:   r.Method,
+		Path:     trimmedPath,
+		URL:      recordURL,
+		Headers:  cloneHeader(r.Header),
+		Trailers: cloneHeader(r.Trailer),
+		Query:    cloneQuery(r.URL.Query()),
+		Body:     string(bodyBytes),
+	}
+
+	if upstream, ok := s.externalUpstream(sessionID, assetID); ok {
+		s.handleExternal(w, r, req, bodyBytes, sessionID, assetID, traceID, started, upstream)
+		return
 	}
 
 	stub, matched := s.registry.Match(r, bodyBytes, MatchTarget{
@@ -273,6 +421,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 			MatchedStubID: stub.ID,
 			Matched:       matched,
 			MatchedStub:   matchedStubSnapshot(matched, stub),
+			MockMode:      "builtin",
 			StartedAt:     started,
 			FinishedAt:    time.Now(),
 			Error:         "connection_error",
@@ -307,10 +456,187 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		MatchedStubID: stub.ID,
 		Matched:       matched,
 		MatchedStub:   matchedStubSnapshot(matched, stub),
+		MockMode:      "builtin",
 		StartedAt:     started,
 		FinishedAt:    time.Now(),
 	}
 	s.recordExchange(exchange)
+}
+
+func (s *Server) handleExternal(
+	w http.ResponseWriter,
+	r *http.Request,
+	recordedRequest RecordedRequest,
+	body []byte,
+	sessionID string,
+	assetID string,
+	traceID string,
+	started time.Time,
+	upstream externalUpstream,
+) {
+	response, err := s.forwardToExternal(r, body, upstream)
+	exchange := Exchange{
+		ID:        "exchange-" + strconv.FormatUint(s.exchangeSeq.Add(1), 10),
+		SessionID: sessionID,
+		AssetID:   assetID,
+		TraceID:   traceID,
+		Request:   recordedRequest,
+		MockMode:  "external",
+		StartedAt: started,
+	}
+	if err != nil {
+		exchange.Error = err.Error()
+		response = RecordedResponse{
+			Status:  http.StatusBadGateway,
+			Headers: map[string][]string{"Content-Type": {"text/plain"}},
+			Body:    "proxy error: " + err.Error(),
+		}
+	}
+	exchange.Response = response
+	exchange.FinishedAt = time.Now()
+
+	writeRecordedResponse(w, response)
+	s.recordExchange(exchange)
+}
+
+func (s *Server) forwardToExternal(r *http.Request, body []byte, upstream externalUpstream) (RecordedResponse, error) {
+	target := *upstream.baseURL
+	target.Path = joinGatewayPath(upstream.baseURL.Path, stripMockPath(r.URL.Path))
+	target.RawPath = joinGatewayPath(upstream.baseURL.EscapedPath(), stripMockEscapedPath(r.URL.EscapedPath()))
+	target.RawQuery = r.URL.RawQuery
+	target.ForceQuery = r.URL.ForceQuery
+
+	req, err := http.NewRequestWithContext(r.Context(), r.Method, target.String(), bytes.NewReader(body))
+	if err != nil {
+		return RecordedResponse{}, err
+	}
+	req.Header = endToEndHeader(r.Header)
+	if _, present := r.Header["User-Agent"]; !present {
+		req.Header["User-Agent"] = nil
+	}
+	req.Trailer = http.Header(cloneHeader(r.Trailer))
+	if len(req.Trailer) > 0 {
+		req.ContentLength = -1
+	}
+	if upstream.preserveHost {
+		req.Host = r.Host
+	} else {
+		req.Host = target.Host
+	}
+
+	resp, err := s.externalClient.Do(req)
+	if err != nil {
+		return RecordedResponse{}, err
+	}
+	defer resp.Body.Close()
+	respBody, readErr := io.ReadAll(resp.Body)
+	if readErr != nil {
+		return RecordedResponse{}, readErr
+	}
+	headers := endToEndHeader(resp.Header)
+	if resp.ContentLength >= 0 && headers.Get("Content-Length") == "" {
+		headers.Set("Content-Length", strconv.FormatInt(resp.ContentLength, 10))
+	}
+	return RecordedResponse{
+		Status:   resp.StatusCode,
+		Headers:  cloneHeader(headers),
+		Trailers: cloneHeader(resp.Trailer),
+		Body:     string(respBody),
+	}, nil
+}
+
+func writeRecordedResponse(w http.ResponseWriter, resp RecordedResponse) {
+	headers := http.Header(resp.Headers)
+	for key, values := range headers {
+		for _, value := range values {
+			w.Header().Add(key, value)
+		}
+	}
+	for key := range resp.Trailers {
+		w.Header().Add("Trailer", key)
+	}
+	status := resp.Status
+	if status == 0 {
+		status = http.StatusOK
+	}
+	w.WriteHeader(status)
+	if resp.Body != "" {
+		_, _ = io.WriteString(w, resp.Body)
+	}
+	for key, values := range resp.Trailers {
+		w.Header().Del(key)
+		for _, value := range values {
+			w.Header().Add(key, value)
+		}
+	}
+}
+
+func endToEndHeader(header http.Header) http.Header {
+	out := http.Header(cloneHeader(header))
+	for _, value := range out.Values("Connection") {
+		for _, token := range strings.Split(value, ",") {
+			out.Del(strings.TrimSpace(token))
+		}
+	}
+	for _, key := range []string{
+		"Connection",
+		"Proxy-Connection",
+		"Keep-Alive",
+		"Proxy-Authenticate",
+		"Proxy-Authorization",
+		"Te",
+		"Trailer",
+		"Transfer-Encoding",
+		"Upgrade",
+	} {
+		out.Del(key)
+	}
+	return out
+}
+
+func stripMockPath(rawPath string) string {
+	_, _, remaining := parseMockPath(rawPath)
+	return remaining
+}
+
+func stripMockEscapedPath(escapedPath string) string {
+	parts := strings.Split(strings.TrimPrefix(escapedPath, "/"), "/")
+	decoded := make([]string, len(parts))
+	for i, part := range parts {
+		value, err := url.PathUnescape(part)
+		if err != nil {
+			return stripMockPath(escapedPath)
+		}
+		decoded[i] = value
+	}
+	idx := 0
+	if len(decoded) > idx && decoded[idx] == "__phrond" {
+		idx++
+		if len(decoded) > idx+1 && decoded[idx] == "session" && strings.TrimSpace(decoded[idx+1]) != "" {
+			idx += 2
+		}
+		if len(decoded) > idx+1 && decoded[idx] == "dep" && strings.TrimSpace(decoded[idx+1]) != "" {
+			idx += 2
+		}
+	}
+	if idx == 0 {
+		return escapedPath
+	}
+	if len(parts) <= idx {
+		return "/"
+	}
+	return "/" + strings.Join(parts[idx:], "/")
+}
+
+func joinGatewayPath(base, applicationPath string) string {
+	base = strings.TrimRight(base, "/")
+	if applicationPath == "" {
+		applicationPath = "/"
+	}
+	if !strings.HasPrefix(applicationPath, "/") {
+		applicationPath = "/" + applicationPath
+	}
+	return base + applicationPath
 }
 
 // literalResponse returns the stub's configured response verbatim. Bodies and

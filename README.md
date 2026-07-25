@@ -4,7 +4,14 @@ Phrond is a test harness that captures SUT traffic and mock traffic and writes a
 
 Design goals:
 - **No workflow changes**: declare each dependency once with a stable `asset_id`; inject its stable mock URL into the SUT at startup; call the SUT through the reverse-capture proxy with any HTTP client. Zero-config session correlation means no per-test rewiring (parallel suites opt into explicit sessions).
-- **Broker-ready artifacts**: flows carry dependency `asset_id` (ground truth attribution), `parent_flow_id` (causality: which SUT operation called which dependency), `consumed_fields` (what the test depends on), shape `fingerprint`s for dedup, and the full mock assumption (`mock_stub`).
+- **Bring your own mock**: select `mock.mode: external` per dependency to keep
+  WireMock or another HTTP mock server while Phrond remains the capture and
+  correlation gateway. Built-in and external dependencies can coexist.
+- **Broker-ready artifacts**: flows carry dependency `asset_id` (ground truth
+  attribution), `parent_flow_id` (causality), and shape `fingerprint`s for
+  dedup. Built-in mocks also retain `consumed_fields` and the full
+  `mock_stub`; external mocks retain their observed source and transport
+  evidence without inventing provider-specific match rules.
 
 ## Quick Start
 
@@ -35,6 +42,27 @@ Use normal runtime sessions with `record_traffic: false` when you want mock beha
   "record_traffic": false
 }
 ```
+
+## Bring Your Own Mock Server
+
+Declare an external mock per dependency:
+
+```json
+{
+  "asset_id": "inventory-service",
+  "asset_name": "Inventory",
+  "mock": {
+    "mode": "external",
+    "upstream_url": "http://127.0.0.1:18089"
+  }
+}
+```
+
+Continue injecting Phrond's returned `dependency_url` into the SUT. Phrond
+strips its routing prefix, forwards the exchange to the external mock, returns
+the response unchanged, and records the flow with `mock_mode: external`.
+Phrond does not start, configure, reset, verify, or stop the external server.
+See [Bring Your Own Mock Server](docs/byo-mock-server.md).
 
 ## Schema Validation (Optional)
 
