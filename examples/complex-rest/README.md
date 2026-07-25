@@ -20,8 +20,10 @@ setup and request verification; Phrond only gateways and records its traffic.
 ./examples/run-complex-rest-e2e.sh
 ```
 
-The runner starts Phrond and the two demo services, runs the tests, and emits
-the captured artifacts plus Workflow YAML, Postman, and HTML coverage reports.
+The runner starts and configures both demo services before the test process.
+The test's `createNodeTestSuite` helper starts only Phrond's capture runtime,
+opens named sessions, and emits the captured artifacts plus Workflow YAML,
+Postman, and HTML coverage reports.
 To run the test file against services you already started:
 
 ```bash

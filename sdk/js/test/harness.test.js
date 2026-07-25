@@ -2,7 +2,7 @@ const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const http = require("node:http");
 
-const { startServer } = require("../src/index.js");
+const { startServer, createNodeTestSuite } = require("../src/index.js");
 
 const INLINE_OPENAPI = [
   {
@@ -758,5 +758,178 @@ test("getResponse returns exchange details for assertions", async (t) => {
   assert.equal(match.exchange.Request.Method, "GET");
   assert.equal(match.exchange.Request.Path, "/accounts/acct-100");
   assert.equal(match.exchange.MatchedStubID, "account-acct-100");
+  await runtime.killServer();
+});
+
+test("createNodeTestSuite owns only Phrond lifecycle and captures the node:test name", async (t) => {
+  const requests = [];
+  const server = await startHarnessServer(async (req, res) => {
+    const body = await readBody(req);
+    requests.push({ path: req.url, body });
+
+    res.setHeader("content-type", "application/json");
+    if (req.url === "/v1/startServer") {
+      res.end(
+        JSON.stringify({
+          proxy: { listen_addr: "127.0.0.1:19100" },
+          sut_url: "http://127.0.0.1:19100",
+          mock: { listen_addr: "127.0.0.1:19101" }
+        })
+      );
+      return;
+    }
+    if (req.url === "/v1/setupTest") {
+      const payload = JSON.parse(body);
+      res.end(
+        JSON.stringify({
+          session_id: "session-suite-1",
+          name: payload.name,
+          proxy_listen: "http://127.0.0.1:19100",
+          sut_url: "http://127.0.0.1:19100",
+          mock_base_url: "http://127.0.0.1:19101",
+          dependency_urls: {
+            greeter: "http://127.0.0.1:19101/__phrond/dep/greeter"
+          }
+        })
+      );
+      return;
+    }
+    if (req.url === "/v1/queue-response") {
+      res.end(JSON.stringify({ status: "queued", id: "greeter-happy" }));
+      return;
+    }
+    if (req.url === "/v1/teardownTest") {
+      res.end(
+        JSON.stringify({
+          path: "artifacts/hello-world.yaml",
+          schema_validation: { status: "pass", errors: null },
+          artifact: {
+            testcase: { name: "hello world happy flow", status: "pass" }
+          }
+        })
+      );
+      return;
+    }
+    if (req.url === "/v1/killServer") {
+      res.end(JSON.stringify({ status: "stopped" }));
+      return;
+    }
+    res.end(JSON.stringify({ status: "ok" }));
+  });
+  t.after(() => server.close());
+
+  const hooks = {};
+  const registered = {};
+  const testApi = {
+    before(fn) {
+      hooks.before = fn;
+    },
+    after(fn) {
+      hooks.after = fn;
+    },
+    test(name, optionsOrFn, maybeFn) {
+      registered.name = name;
+      registered.run = typeof optionsOrFn === "function" ? optionsOrFn : maybeFn;
+      return { name };
+    }
+  };
+
+  const phrond = createNodeTestSuite({
+    testApi,
+    baseUrl: server.url,
+    proxy: true,
+    mockServer: true,
+    sutBaseUrl: "http://externally-managed-sut:8080",
+    dependencies: [{ assetId: "greeter" }]
+  });
+
+  phrond.test("hello world happy flow", async () => {
+    await phrond.queueResponse({
+      id: "greeter-happy",
+      assetId: "greeter",
+      match: { method: "POST", path: "/greet", json: { name: "Matt" } },
+      response: { status: 200, json: { message: "Hello, Matt!" } }
+    });
+  });
+
+  await hooks.before();
+  assert.equal(phrond.sutUrl, "http://127.0.0.1:19100");
+  assert.equal(
+    phrond.dependencyUrl("greeter"),
+    "http://127.0.0.1:19101/__phrond/dep/greeter"
+  );
+  await registered.run({});
+  await hooks.after();
+
+  assert.equal(registered.name, "hello world happy flow");
+  const start = JSON.parse(requests.find((entry) => entry.path === "/v1/startServer").body);
+  assert.equal(start.proxy.target_url, "http://externally-managed-sut:8080");
+
+  const setup = JSON.parse(requests.find((entry) => entry.path === "/v1/setupTest").body);
+  assert.equal(setup.name, "hello world happy flow");
+  assert.equal(setup.sut_base_url, "http://externally-managed-sut:8080");
+
+  const queued = JSON.parse(requests.find((entry) => entry.path === "/v1/queue-response").body);
+  assert.equal(queued.match.body, "{\"name\":\"Matt\"}");
+  assert.equal(queued.response.body, "{\"message\":\"Hello, Matt!\"}");
+  assert.equal(queued.response.headers["Content-Type"], "application/json");
+  assert.deepEqual(
+    requests.map((entry) => entry.path),
+    [
+      "/v1/startServer",
+      "/v1/setupTest",
+      "/v1/queue-response",
+      "/v1/teardownTest",
+      "/v1/killServer"
+    ]
+  );
+});
+
+test("queueResponse rejects ambiguous JSON and literal body declarations", async (t) => {
+  const server = await startHarnessServer(async (req, res) => {
+    await readBody(req);
+    res.setHeader("content-type", "application/json");
+    if (req.url === "/v1/startServer") {
+      res.end(
+        JSON.stringify({
+          proxy: { listen_addr: "127.0.0.1:19100" },
+          mock: { listen_addr: "127.0.0.1:19101" }
+        })
+      );
+      return;
+    }
+    if (req.url === "/v1/setupTest") {
+      res.end(
+        JSON.stringify({
+          session_id: "session-json-1",
+          name: "json",
+          proxy_listen: "http://127.0.0.1:19100",
+          mock_base_url: "http://127.0.0.1:19101"
+        })
+      );
+      return;
+    }
+    res.end(JSON.stringify({ status: "ok" }));
+  });
+  t.after(() => server.close());
+
+  const runtime = await startServer({ baseUrl: server.url });
+  await runtime.setupTest({ name: "json" });
+  await assert.rejects(
+    () =>
+      runtime.queueResponse({
+        match: { method: "POST", path: "/", body: "{}", json: {} },
+        response: { status: 200 }
+      }),
+    /match cannot set both body and json/
+  );
+  await assert.rejects(
+    () =>
+      runtime.queueResponse({
+        match: { method: "GET", path: "/" },
+        response: { status: 200, body: "{}", json: {} }
+      }),
+    /cannot set json together with body/
+  );
   await runtime.killServer();
 });

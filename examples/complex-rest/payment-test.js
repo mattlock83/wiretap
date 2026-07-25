@@ -1,21 +1,15 @@
 const { test, before, after } = require("node:test");
 const assert = require("node:assert/strict");
-const { bindTest } = require("../../sdk/js/src/index");
+const { createNodeTestSuite } = require("../../sdk/js/src/index");
 const {
   startExternalAccountMock,
-  startRuntime,
-  startComplexServices,
-  stopComplexServices,
+  runtimeConfig,
   registerAccounts
 } = require("./test-helpers");
 
 const RUN_E2E = Boolean(process.env.PHROND_BASE_URL || process.env.PHROND_HTTP_LISTEN);
 
-let runtime;
-let services;
 let externalAccountMock;
-
-const phrondTest = bindTest(() => runtime, test);
 
 if (!RUN_E2E) {
   test("submits payment and lists transactions", { skip: "set PHROND_BASE_URL to run this example" }, async () => {});
@@ -23,45 +17,35 @@ if (!RUN_E2E) {
   test("rejects amount too high (15000)", { skip: "set PHROND_BASE_URL to run this example" }, async () => {});
   test("rejects insufficient balance", { skip: "set PHROND_BASE_URL to run this example" }, async () => {});
 } else {
+  // The runner owns the payment and transaction service processes and their
+  // configuration. The suite starts only Phrond's capture components.
+  const phrond = createNodeTestSuite({
+    runtimeConfig: () => runtimeConfig({ externalAccountUrl: externalAccountMock.baseUrl }),
+    autoHooks: false
+  });
+
   before(async () => {
     externalAccountMock = await startExternalAccountMock();
-    runtime = await startRuntime({ externalAccountUrl: externalAccountMock.baseUrl });
-    services = await startComplexServices(runtime);
+    await phrond.start();
   });
 
   after(async () => {
-    const errors = [];
     try {
-      await stopComplexServices(services);
-    } catch (err) {
-      errors.push(err);
-    }
-    try {
-      await runtime?.killServer();
-    } catch (err) {
-      errors.push(err);
-    }
-    try {
+      await phrond.close();
+    } finally {
       await externalAccountMock?.stop?.();
-    } catch (err) {
-      errors.push(err);
-    }
-    services = null;
-    runtime = null;
-    externalAccountMock = null;
-    if (errors.length > 0) {
-      throw errors[0];
+      externalAccountMock = null;
     }
   });
 
-  phrondTest("submits payment and lists transactions", async () => {
+  phrond.test("submits payment and lists transactions", async () => {
     const from = { id: "acct-100", name: "Alice", balance: 1000, currency: "USD", status: "active" };
     const to = { id: "acct-200", name: "Bob", balance: 500, currency: "USD", status: "active" };
 
     externalAccountMock.reset([from, to]);
-    await registerAccounts(runtime, [from]);
+    await registerAccounts(phrond, [from]);
 
-    const submit = await runtime.http.postJson("/payments/submit", {
+    const submit = await phrond.http.postJson("/payments/submit", {
       from_account: from.id,
       to_account: to.id,
       amount: 120,
@@ -69,13 +53,15 @@ if (!RUN_E2E) {
     });
     assert.equal(submit.status, 201);
 
-    const list = await runtime.http.get(`/transactions?account_id=${from.id}`, {
-      sutBaseUrl: `http://${services.transactionService.listen}`
+    const list = await phrond.http.get(`/transactions?account_id=${from.id}`, {
+      sutBaseUrl:
+        process.env.TRANSACTION_SERVICE_BASE_URL ||
+        `http://${process.env.TRANSACTION_SERVICE_LISTEN || "127.0.0.1:18111"}`
     });
     assert.equal(list.status, 200);
     assert.ok(list.body.transactions.some((tx) => tx.transaction_id === submit.body.transaction_id));
 
-    const transactionLookup = await runtime.getResponse(`account-${from.id}-1`);
+    const transactionLookup = await phrond.getResponse(`account-${from.id}-1`);
     assert.equal(transactionLookup.state, "responded");
     assert.equal(transactionLookup.exchange.Request.Method, "GET");
     assert.equal(transactionLookup.exchange.Request.Path, `/accounts/${from.id}`);
@@ -86,10 +72,10 @@ if (!RUN_E2E) {
     ]);
 
     // Built-in verification remains available alongside the external mock.
-    await runtime.verify(`account-${from.id}-1`, ["body.id", "body.status"]);
+    await phrond.verify(`account-${from.id}-1`, ["body.id", "body.status"]);
   });
 
-  phrondTest("rejects amount too high (6000)", async () => {
+  phrond.test("rejects amount too high (6000)", async () => {
     const from = { id: "acct-100", name: "Alice", balance: 12000, currency: "USD", status: "active" };
     const to = { id: "acct-200", name: "Bob", balance: 500, currency: "USD", status: "active" };
 
@@ -97,7 +83,7 @@ if (!RUN_E2E) {
 
     await assert.rejects(
       () =>
-        runtime.http.postJson("/payments/submit", {
+        phrond.http.postJson("/payments/submit", {
           from_account: from.id,
           to_account: to.id,
           amount: 6000,
@@ -111,7 +97,7 @@ if (!RUN_E2E) {
     );
   });
 
-  phrondTest("rejects amount too high (15000)", async () => {
+  phrond.test("rejects amount too high (15000)", async () => {
     const from = { id: "acct-100", name: "Alice", balance: 20000, currency: "USD", status: "active" };
     const to = { id: "acct-200", name: "Bob", balance: 500, currency: "USD", status: "active" };
 
@@ -119,7 +105,7 @@ if (!RUN_E2E) {
 
     await assert.rejects(
       () =>
-        runtime.http.postJson("/payments/submit", {
+        phrond.http.postJson("/payments/submit", {
           from_account: from.id,
           to_account: to.id,
           amount: 15000,
@@ -133,7 +119,7 @@ if (!RUN_E2E) {
     );
   });
 
-  phrondTest("rejects insufficient balance", async () => {
+  phrond.test("rejects insufficient balance", async () => {
     const from = { id: "acct-100", name: "Alice", balance: 40, currency: "USD", status: "active" };
     const to = { id: "acct-200", name: "Bob", balance: 500, currency: "USD", status: "active" };
 
@@ -141,7 +127,7 @@ if (!RUN_E2E) {
 
     await assert.rejects(
       () =>
-        runtime.http.postJson("/payments/submit", {
+        phrond.http.postJson("/payments/submit", {
           from_account: from.id,
           to_account: to.id,
           amount: 75,

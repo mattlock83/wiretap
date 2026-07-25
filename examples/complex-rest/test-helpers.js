@@ -1,6 +1,4 @@
-const { spawn } = require("node:child_process");
 const http = require("node:http");
-const { startServer } = require("../../sdk/js/src/index");
 
 const SUT_SCHEMAS = [
   {
@@ -40,69 +38,6 @@ const EXTERNAL_ACCOUNT_DEPENDENCY = {
   }
 };
 
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-async function waitForHealth(url, timeoutMs = 12_000) {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    try {
-      if ((await fetch(url)).ok) return;
-    } catch (_) {
-      // retry until deadline
-    }
-    await sleep(25);
-  }
-  throw new Error(`service did not become healthy: ${url}`);
-}
-
-async function stopProcess(proc, timeoutMs = 2_000) {
-  if (!proc || proc.exitCode !== null) return;
-
-  proc.kill("SIGTERM");
-  await Promise.race([
-    new Promise((resolve) => proc.once("exit", resolve)),
-    sleep(timeoutMs).then(() => {
-      if (proc.exitCode === null) proc.kill("SIGKILL");
-    })
-  ]);
-}
-
-async function startService(options = {}) {
-  const {
-    listen,
-    binary,
-    command,
-    env = {},
-    healthPath = "/healthz",
-    healthTimeoutMs = 12_000
-  } = options;
-
-  if (!listen) {
-    throw new Error("listen address is required");
-  }
-
-  const cmd = binary ? [binary] : command;
-  const proc = spawn(cmd[0], cmd.slice(1), {
-    stdio: "inherit",
-    env: {
-      ...process.env,
-      ...env
-    }
-  });
-
-  try {
-    await waitForHealth(`http://${listen}${healthPath}`, healthTimeoutMs);
-  } catch (err) {
-    await stopProcess(proc);
-    throw err;
-  }
-
-  return {
-    listen,
-    stop: () => stopProcess(proc)
-  };
-}
-
 async function registerAccounts(phrond, accounts) {
   for (const [index, account] of accounts.entries()) {
     await phrond.queueResponse({
@@ -111,8 +46,7 @@ async function registerAccounts(phrond, accounts) {
       match: { method: "GET", path: `/accounts/${account.id}` },
       response: {
         status: 200,
-        body: JSON.stringify(account),
-        headers: { "Content-Type": "application/json" }
+        json: account
       }
     });
   }
@@ -178,14 +112,16 @@ function resolveBaseUrl() {
   );
 }
 
-async function startRuntime(options = {}) {
+function runtimeConfig(options = {}) {
   if (!options.externalAccountUrl) {
     throw new Error("externalAccountUrl is required");
   }
 
   const baseUrl = resolveBaseUrl();
-  const paymentListen = process.env.PAYMENT_SUT_LISTEN || "127.0.0.1:18110";
-  return startServer({
+  const paymentBaseUrl =
+    process.env.PAYMENT_SUT_BASE_URL ||
+    `http://${process.env.PAYMENT_SUT_LISTEN || "127.0.0.1:18110"}`;
+  return {
     baseUrl,
     proxy: process.env.PHROND_PROXY_LISTEN ? { listenAddr: process.env.PHROND_PROXY_LISTEN } : true,
     mockServer: process.env.PHROND_MOCK_LISTEN ? { listenAddr: process.env.PHROND_MOCK_LISTEN } : true,
@@ -200,80 +136,16 @@ async function startRuntime(options = {}) {
         }
       }
     ],
-    sutBaseUrl: `http://${paymentListen}`,
+    sutBaseUrl: paymentBaseUrl,
     strictSchema: true,
     meta: { suite: "complex-rest", mockMode: "mixed" }
-  });
-}
-
-async function startComplexServices(runtime, options = {}) {
-  const paymentListen = options.paymentListen || process.env.PAYMENT_SUT_LISTEN || "127.0.0.1:18110";
-  const transactionListen = options.transactionListen || process.env.TRANSACTION_SERVICE_LISTEN || "127.0.0.1:18111";
-
-  // Both URLs are stable across tests. Phrond serves the first dependency and
-  // gateways the second to the user-owned mock while recording both.
-  const builtinAccountBaseUrl = runtime.dependencyUrl(BUILTIN_ACCOUNT_DEPENDENCY.assetId);
-  const externalAccountBaseUrl = runtime.dependencyUrl(EXTERNAL_ACCOUNT_DEPENDENCY.assetId);
-
-  let transactionService;
-  let paymentSut;
-
-  try {
-    transactionService = await startService({
-      listen: transactionListen,
-      binary: process.env.TRANSACTION_SERVICE_BINARY,
-      command: ["go", "run", "./examples/demo-apps/complex-rest/transaction-service"],
-      env: {
-        TRANSACTION_SERVICE_LISTEN: transactionListen,
-        ACCOUNT_BASE_URL: builtinAccountBaseUrl
-      }
-    });
-
-    paymentSut = await startService({
-      listen: paymentListen,
-      binary: process.env.PAYMENT_SUT_BINARY,
-      command: ["go", "run", "./examples/demo-apps/complex-rest/payment-sut"],
-      env: {
-        PAYMENT_SUT_LISTEN: paymentListen,
-        ACCOUNT_BASE_URL: externalAccountBaseUrl,
-        TRANSACTION_BASE_URL: `http://${transactionService.listen}`
-      }
-    });
-  } catch (err) {
-    await paymentSut?.stop?.();
-    await transactionService?.stop?.();
-    throw err;
-  }
-
-  return {
-    paymentSut,
-    transactionService
   };
-}
-
-async function stopComplexServices(services) {
-  const errors = [];
-  try {
-    await services?.paymentSut?.stop?.();
-  } catch (err) {
-    errors.push(err);
-  }
-  try {
-    await services?.transactionService?.stop?.();
-  } catch (err) {
-    errors.push(err);
-  }
-  if (errors.length > 0) {
-    throw errors[0];
-  }
 }
 
 module.exports = {
   BUILTIN_ACCOUNT_DEPENDENCY,
   EXTERNAL_ACCOUNT_DEPENDENCY,
   startExternalAccountMock,
-  startRuntime,
-  startComplexServices,
-  stopComplexServices,
+  runtimeConfig,
   registerAccounts
 };

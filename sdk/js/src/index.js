@@ -58,10 +58,44 @@ function pickFirstString(...values) {
   return "";
 }
 
+function hasOwn(value, key) {
+  return value !== null && typeof value === "object" && Object.prototype.hasOwnProperty.call(value, key);
+}
+
+function normalizeJSONBody(value, label) {
+  try {
+    const encoded = JSON.stringify(value);
+    if (encoded === undefined) {
+      throw new Error("value is not JSON-serializable");
+    }
+    return encoded;
+  } catch (err) {
+    throw new Error(`${label} could not be encoded as JSON: ${err.message}`);
+  }
+}
+
 function toSnakeCaseQueuePayload(payload, sessionId) {
   const match = payload?.match || {};
   const response = payload?.response || {};
   const isDefault = payload?.default ?? payload?.isDefault;
+  const matchHasJSON = hasOwn(match, "json");
+  const responseHasJSON = hasOwn(response, "json");
+
+  if (matchHasJSON && hasOwn(match, "body")) {
+    throw new Error("queue response match cannot set both body and json");
+  }
+  if (responseHasJSON && (hasOwn(response, "body") || hasOwn(response, "bodyFile") || hasOwn(response, "body_file"))) {
+    throw new Error("queue response cannot set json together with body or bodyFile");
+  }
+
+  const responseHeaders = { ...(response.headers || {}) };
+  if (
+    responseHasJSON &&
+    !responseHeaders["Content-Type"] &&
+    !responseHeaders["content-type"]
+  ) {
+    responseHeaders["Content-Type"] = "application/json";
+  }
 
   return {
     session_id: payload?.sessionId || payload?.session_id || sessionId,
@@ -73,14 +107,14 @@ function toSnakeCaseQueuePayload(payload, sessionId) {
       path: match.path,
       headers: match.headers,
       query: match.query,
-      body: match.body,
+      body: matchHasJSON ? normalizeJSONBody(match.json, "queue response match.json") : match.body,
       body_contains: match.bodyContains || match.body_contains
     },
     response: {
       status: response.status,
       delay_ms: response.delayMs ?? response.delay_ms,
-      headers: response.headers,
-      body: response.body,
+      headers: Object.keys(responseHeaders).length > 0 ? responseHeaders : undefined,
+      body: responseHasJSON ? normalizeJSONBody(response.json, "queue response response.json") : response.body,
       body_file: response.bodyFile || response.body_file,
       connection_error: Boolean(response.connectionError || response.connection_error),
       ssl_error: Boolean(response.sslError || response.ssl_error)
@@ -614,6 +648,13 @@ async function startServer(config = {}) {
   return new Runtime(client, config, runtimeInfo);
 }
 
+// startCapture is the preferred lifecycle name for consumer tests. It starts
+// only Phrond's proxy/mock components; it never starts, stops, or configures
+// the system under test.
+async function startCapture(config = {}) {
+  return startServer(config);
+}
+
 // bindTest wraps a test function (e.g. node:test's `test`) so every test gets
 // an automatic phrond session named after it, and — crucially — the artifact
 // status reflects the real test outcome (pass/fail) instead of a hardcoded
@@ -661,7 +702,136 @@ function bindTest(runtimeOrGetter, testFn, defaults = {}) {
   };
 }
 
+// createNodeTestSuite pushes Phrond's suite/session ceremony behind a small
+// node:test facade. The SUT remains externally managed: sutBaseUrl is only the
+// reverse proxy target and no application process or configuration is owned
+// by this helper.
+//
+//   const phrond = createNodeTestSuite({
+//     baseUrl: process.env.PHROND_BASE_URL,
+//     sutBaseUrl: process.env.SUT_BASE_URL,
+//     dependencies: [{ assetId: "greeter" }]
+//   });
+//   phrond.test("hello world happy flow", async () => { ... });
+function createNodeTestSuite(config = {}) {
+  if (!config || typeof config !== "object" || Array.isArray(config)) {
+    throw new Error("createNodeTestSuite config must be an object");
+  }
+
+  const testApi = config.testApi || require("node:test");
+  if (
+    !testApi ||
+    typeof testApi.test !== "function" ||
+    typeof testApi.before !== "function" ||
+    typeof testApi.after !== "function"
+  ) {
+    throw new Error("createNodeTestSuite testApi must provide test, before, and after functions");
+  }
+
+  const runtimeConfigSource = config.runtimeConfig || (() => {
+    const runtimeConfig = { ...config };
+    delete runtimeConfig.runtimeConfig;
+    delete runtimeConfig.testApi;
+    delete runtimeConfig.testDefaults;
+    delete runtimeConfig.autoHooks;
+    return runtimeConfig;
+  })();
+
+  let runtime = null;
+  let starting = null;
+
+  const suite = {
+    async start() {
+      if (runtime) {
+        return runtime;
+      }
+      if (!starting) {
+        starting = Promise.resolve(
+          typeof runtimeConfigSource === "function"
+            ? runtimeConfigSource()
+            : runtimeConfigSource
+        )
+          .then((runtimeConfig) => startCapture(runtimeConfig || {}))
+          .then((started) => {
+            runtime = started;
+            return started;
+          })
+          .finally(() => {
+            starting = null;
+          });
+      }
+      return starting;
+    },
+
+    async close() {
+      if (starting) {
+        await starting;
+      }
+      if (!runtime) {
+        return { status: "idle" };
+      }
+      const active = runtime;
+      runtime = null;
+      return active.killServer();
+    },
+
+    get runtime() {
+      if (!runtime) {
+        throw new Error("Phrond capture runtime is not started yet");
+      }
+      return runtime;
+    },
+
+    get sutUrl() {
+      return this.runtime.sutUrl;
+    },
+
+    get http() {
+      return this.runtime.http;
+    },
+
+    dependencyUrl(assetId) {
+      return this.runtime.dependencyUrl(assetId);
+    },
+
+    queueResponse(payload, options) {
+      return this.runtime.queueResponse(payload, options);
+    },
+
+    verify(id, fields, options) {
+      return this.runtime.verify(id, fields, options);
+    },
+
+    listQueued(options) {
+      return this.runtime.listQueued(options);
+    },
+
+    listResponded(options) {
+      return this.runtime.listResponded(options);
+    },
+
+    getResponse(id, options) {
+      return this.runtime.getResponse(id, options);
+    },
+
+    report(options) {
+      return this.runtime.report(options);
+    }
+  };
+
+  suite.test = bindTest(() => runtime, testApi.test, config.testDefaults || {});
+
+  if (config.autoHooks !== false) {
+    testApi.before(() => suite.start());
+    testApi.after(() => suite.close());
+  }
+
+  return suite;
+}
+
 module.exports = {
   startServer,
-  bindTest
+  startCapture,
+  bindTest,
+  createNodeTestSuite
 };

@@ -33,12 +33,18 @@ const runtime = await startServer({
 });
 
 await runtime.setupTest({ name: "reserves inventory" });
-
-// Configure the SUT with this URL, not wireMockBaseUrl.
-const inventoryUrl = runtime.dependencyUrl("inventory-service");
 ```
 
-The SUT calls `inventoryUrl`. Phrond removes its internal session/dependency
+Configure the SUT in its own launcher, before the test process, with Phrond's
+deterministic asset URL—not `wireMockBaseUrl`:
+
+```text
+http://<phrond-mock-listen>/__phrond/dep/inventory-service
+```
+
+After capture starts, `runtime.dependencyUrl("inventory-service")` returns that
+same URL for discovery or diagnostics. The SUT calls this URL. Phrond removes
+its internal session/dependency
 prefix, forwards the original application path and query to `wireMockBaseUrl`,
 and records the request and response as `channel: sut_to_mock` with
 `asset_id: inventory-service` and `mock_mode: external`.
@@ -72,8 +78,8 @@ class InventoryIntegrationTest {
 
   @Test
   void reservesInventory() {
-    // Call the SUT. Its inventory base URL is Phrond's returned
-    // dependency URL, not wiremock.inventory.url.
+    // Call the already-running SUT. Its inventory base URL was configured by
+    // the Spring test harness as Phrond's deterministic dependency URL.
   }
 }
 ```

@@ -43,8 +43,13 @@ SUT_PORT="${SUT_PORT:-$(pick_unique_port "${USED_PORTS}")}"
 BUILD_DIR="${BUILD_DIR:-$(mktemp -d)}"
 
 cleanup() {
+  if [[ -n "${SUT_PID:-}" ]]; then
+    kill "${SUT_PID}" 2>/dev/null || true
+    wait "${SUT_PID}" 2>/dev/null || true
+  fi
   if [[ -n "${PHROND_PID:-}" ]]; then
     kill "${PHROND_PID}" 2>/dev/null || true
+    wait "${PHROND_PID}" 2>/dev/null || true
   fi
   if [[ -n "${BUILD_DIR:-}" && -d "${BUILD_DIR}" ]]; then
     rm -rf "${BUILD_DIR}" || true
@@ -64,6 +69,8 @@ export PHROND_BASE_URL="http://127.0.0.1:${PHROND_PORT}"
 export PHROND_MAX_CAPTURE_BYTES="${PHROND_MAX_CAPTURE_BYTES:-64}"
 
 export SUT_LISTEN="127.0.0.1:${SUT_PORT}"
+export SUT_BASE_URL="http://${SUT_LISTEN}"
+export DEPENDENCY_BASE_URL="http://${PHROND_MOCK_LISTEN}/__phrond/dep/basic-rest-dependency"
 
 pushd "$ROOT_DIR" >/dev/null
 
@@ -92,7 +99,17 @@ if ! wait_for "http://127.0.0.1:${PHROND_PORT}/healthz"; then
   exit 1
 fi
 
-export SUT_BINARY="${BUILD_DIR}/basic-rest-sut"
+# The runner owns the SUT lifecycle and configuration. The test suite only
+# connects Phrond's capture proxy to this already-running target.
+nohup "${BUILD_DIR}/basic-rest-sut" > /tmp/phrond-basic-rest-sut.log 2>&1 &
+SUT_PID=$!
+
+if ! wait_for "${SUT_BASE_URL}/healthz"; then
+  echo "Basic REST SUT failed to start. See /tmp/phrond-basic-rest-sut.log"
+  tail -n 50 /tmp/phrond-basic-rest-sut.log || true
+  exit 1
+fi
+
 node --test ./examples/basic-rest/basic-test.js
 
 go run ./cmd/phrond-coverage \

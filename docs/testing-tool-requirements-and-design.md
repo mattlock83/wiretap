@@ -133,8 +133,9 @@ Example (inline OpenAPI):
    - Captures traffic, evaluates assertions, and emits artifacts.
 
 2. **JS SDK (test-side)**
-   - Orchestrates test case lifecycle.
+   - Orchestrates Phrond capture and test-case lifecycle.
    - Registers stubs, declares assertions, sets schema references.
+   - Never starts, stops, configures, or waits for the SUT.
 
 3. **Artifact Builder**
    - Aggregates traffic + assertions + metadata.
@@ -153,11 +154,13 @@ Example (inline OpenAPI):
   traffic whose URL cannot be re-pointed.
 
 ### 6.3 Data Flow
-1. SDK starts the suite runtime once (`startServer`): proxy (with SUT reverse
-   target) + mock server.
-2. The SUT is configured **once at startup** with the stable per-dependency mock
-   URLs (`runtime.dependencyUrl(assetId)`).
-3. Each test opens a session (`setupTest` — done automatically by `bindTest`),
+1. The consumer's existing orchestration starts the SUT and configures its
+   stable per-dependency Phrond URLs.
+2. SDK starts the Phrond capture runtime once (`startCapture`, legacy
+   `startServer`): proxy (with the already-running SUT as reverse target) +
+   mock gateway.
+3. Each test opens a named session (`setupTest` — done automatically by
+   `createNodeTestSuite` or `bindTest`),
    queues asset-scoped mock responses, and drives the SUT through the proxy
    with any HTTP client.
 4. Requests are captured on both channels, attributed to the session
@@ -269,6 +272,10 @@ type ArtifactWriter interface {
 The implemented surface (see `sdk/js/README.md` for details):
 
 ### 9.1 Core Lifecycle
+- `createNodeTestSuite({ ... })` — preferred `node:test` facade: Phrond hooks,
+  named sessions, truthful status, and direct runtime delegation.
+- `startCapture({ ... })` — preferred lower-level lifecycle name; starts only
+  Phrond components.
 - `startServer({ baseUrl, proxy, mockServer, schemas, dependencies, sutBaseUrl, strictSchema, ... })`
 - `runtime.setupTest({ name, tags, meta, dependencies, sutSchemas, fakeSchemas, recordTraffic, explicitSession })`
 - `runtime.teardownTest({ status })`
@@ -276,9 +283,13 @@ The implemented surface (see `sdk/js/README.md` for details):
 - `bindTest(runtimeOrGetter, testFn)` — framework adapter: auto session per
   test, truthful pass/fail artifact status.
 
+`startServer` is retained for compatibility. Neither lifecycle API owns the
+SUT; `sutBaseUrl` is only the reverse proxy's routing target.
+
 ### 9.2 Dependencies and Mock Responses
 - `runtime.dependencyUrl(assetId)` — stable base URL to inject into the SUT.
 - `runtime.queueResponse({ id, assetId, default, match, response })`
+  (`match.json` and `response.json` are SDK shorthands for literal JSON bodies)
 - `runtime.listQueued()` / `runtime.listResponded()` / `runtime.getResponse(id)`
 
 ### 9.3 Expectation Capture

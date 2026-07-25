@@ -1,82 +1,74 @@
 # JS SDK
 
-The JS SDK is session-based and stack-based. Ergonomics are designed so teams
-change nothing about how they write tests: declare dependencies once, configure
-the SUT once with stable URLs, and use any HTTP client.
+The JS SDK is session-based and stack-based. Phrond owns its capture proxy,
+mock gateway, named test sessions, and artifacts. It does **not** start, stop,
+or configure the system under test (SUT); Docker Compose, Testcontainers,
+Spring Boot, Kubernetes, CI, or another application harness owns that work.
 
 ## Quick start
 
+Start and configure the SUT before the test process. Its dependency URL is
+deterministic from the configured Phrond mock address and asset id:
+
+```bash
+export PHROND_BASE_URL=http://127.0.0.1:18000
+export PHROND_PROXY_LISTEN=127.0.0.1:19000
+export PHROND_MOCK_LISTEN=127.0.0.1:19001
+export SUT_BASE_URL=http://127.0.0.1:18090
+
+# Configure this in the SUT's own launcher, not through Phrond:
+export ACCOUNT_BASE_URL=http://127.0.0.1:19001/__phrond/dep/account-service
+```
+
+The consumer test contains only capture and mock intent:
+
 ```js
-const { test, before, after } = require("node:test");
-const { startServer, bindTest } = require("@phrond/sdk");
+const assert = require("node:assert/strict");
+const { createNodeTestSuite } = require("@phrond/sdk");
 
-let runtime;
-const phrondTest = bindTest(() => runtime, test);
-
-before(async () => {
-  runtime = await startServer({
-    baseUrl: "http://127.0.0.1:18000",
-    proxy: true,
-    mockServer: true,
-    sutBaseUrl: "http://127.0.0.1:18090",
-    schemas: [
-      {
-        id: "sut-openapi",
-        role: "sut",
-        type: "openapi",
-        source: { type: "file", path: "specs/sut-openapi.yaml" }
-      }
-    ],
-    dependencies: [
-      {
-        assetId: "account-service",
-        assetName: "Account Service",
-        schema: {
-          id: "account-openapi",
-          type: "openapi",
-          source: { type: "file", path: "specs/account-openapi.yaml" }
-        }
-      }
-    ]
-  });
-
-  // Stable across all tests: configure the SUT once with this URL.
-  const accountUrl = runtime.dependencyUrl("account-service");
-  // ... start your SUT with ACCOUNT_BASE_URL=accountUrl
+const phrond = createNodeTestSuite({
+  baseUrl: process.env.PHROND_BASE_URL,
+  proxy: { listenAddr: process.env.PHROND_PROXY_LISTEN },
+  mockServer: { listenAddr: process.env.PHROND_MOCK_LISTEN },
+  sutBaseUrl: process.env.SUT_BASE_URL,
+  dependencies: [
+    {
+      assetId: "account-service",
+      assetName: "Account Service"
+    }
+  ]
 });
 
-after(async () => {
-  await runtime.killServer();
-});
-
-phrondTest("submit payment", async () => {
-  await runtime.queueResponse({
+phrond.test("hello world happy flow", async () => {
+  await phrond.queueResponse({
     id: "account-lookup",
     match: { method: "GET", path: "/accounts/acct-100" },
-    response: { status: 200, body: JSON.stringify({ id: "acct-100", balance: 1000 }) }
+    response: { status: 200, json: { id: "acct-100", name: "Matt" } }
   });
 
-  // runtime.http.* calls the capture proxy in reverse mode — or use any HTTP
-  // client pointed at runtime.sutUrl.
-  await runtime.http.postJson("/payments/submit", {
-    from_account: "acct-100",
-    to_account: "acct-200",
-    amount: 120,
-    currency: "USD"
-  });
+  const response = await fetch(`${phrond.sutUrl}/hello?account=acct-100`);
+  assert.equal(response.status, 200);
 
-  const outbound = await runtime.getResponse("account-lookup");
-  // Declare which mocked fields the SUT depends on.
-  await runtime.verify("account-lookup", ["body.balance"]);
+  await phrond.verify("account-lookup", ["body.name"]);
 });
 ```
 
+`createNodeTestSuite` registers `node:test` suite hooks for Phrond only. It
+starts Phrond's proxy/mock components, creates one session per
+`phrond.test(...)`, records the exact test name (`hello world happy flow`),
+sets pass/fail from the test outcome, and closes Phrond after the suite.
+
 ## Key concepts
 
+- **Consumer-owned SUT lifecycle**: `sutBaseUrl` tells the reverse capture
+  proxy where an already-running SUT is listening. It does not launch the
+  application, inject environment variables, wait for readiness, or stop it.
 - **Dependencies**: declare each downstream service with a stable `assetId`
   (the cross-repo key a broker later uses to join consumer assumptions to the
   provider). Each dependency gets its own stable mock base URL via
-  `runtime.dependencyUrl(assetId)` — inject it into the SUT once at startup.
+  `<mock-base>/__phrond/dep/<assetId>`. External orchestration can configure
+  this before tests start. `phrond.dependencyUrl(assetId)` returns the same URL
+  after Phrond has started.
 - **External mocks**: add
   `mock: { mode: "external", upstreamUrl: wireMockUrl }` to a dependency to
   keep WireMock or another HTTP mock. The SUT still uses
@@ -88,13 +80,22 @@ phrondTest("submit payment", async () => {
 - **Zero-config correlation**: session URLs are stable — no per-test rewiring.
   Run tests serially (one session at a time), or pass
   `setupTest({ explicitSession: true })` for parallel suites.
-- **`bindTest(runtimeOrGetter, test)`** wraps a test function so each test gets
-  an auto-named session and a truthful pass/fail artifact status.
+- **Named tests**: `phrond.test("hello world happy flow", ...)` records that
+  exact name in `artifact.testcase.name`. The lower-level
+  `bindTest(runtimeOrGetter, test)` adapter behaves the same way.
 - **Schemas are optional**: without any, artifact validation is `skipped`, not
   failed. Attach OpenAPI specs when you have them for contract validation.
+- **JSON shorthand**: `match.json` and `response.json` are JSON-encoded by the
+  SDK; response JSON also gets `Content-Type: application/json` unless
+  supplied explicitly.
 
 ## API
 
+- `createNodeTestSuite({ ...startCaptureOptions, runtimeConfig, testApi, testDefaults, autoHooks })`
+- `phrond.test(name, options?, fn)`
+- `phrond.sutUrl` / `phrond.http` / `phrond.dependencyUrl(assetId)`
+- `phrond.queueResponse(...)` / `phrond.verify(...)` / inspection and report methods
+- `startCapture(options)` — preferred lower-level name; starts only Phrond components
 - `startServer({ baseUrl, timeoutMs, proxy, mockServer, stackSize, recordResponses, schemas, dependencies, sutBaseUrl, strictSchema })`
 - `runtime.setupTest({ name, tags, meta, schemas, sutSchemas, fakeSchemas, dependencies, sutBaseUrl, recordTraffic, explicitSession })`
 - `runtime.dependencyUrl(assetId)`
@@ -108,6 +109,10 @@ phrondTest("submit payment", async () => {
 - `runtime.killServer()`
 - `bindTest(runtimeOrGetter, testFn, defaults)`
 
+`startServer` remains supported for backwards compatibility with the original API.
+Use `startCapture` in new lower-level integrations because its ownership
+boundary is clearer.
+
 ## Convenience methods
 
 - `runtime.scenarioName(name)` sets the next test name (optional if `setupTest({ name })` is used).
@@ -117,7 +122,9 @@ phrondTest("submit payment", async () => {
 - `assetId` on `queueResponse` is optional with a single declared dependency; required with several.
 - `queueResponse` is rejected for external dependencies; configure and verify
   those stubs through the external mock's own API.
-- Responses are literal: `body` is an exact string and `bodyFile` is read verbatim from disk. There is no templating — compute the exact bytes in test code.
+- Responses are literal: `body` is an exact string, `bodyFile` is read verbatim
+  from disk, and `json` is SDK sugar for `JSON.stringify`. There is no
+  templating.
 
 ## Related Docs
 

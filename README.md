@@ -3,6 +3,10 @@
 Phrond is a test harness that captures SUT traffic and mock traffic and writes a per-test YAML artifact. It supports HTTP/HTTPS with a mock server and a capture proxy, with schema validation against OpenAPI.
 
 Design goals:
+- **Consumer-owned application lifecycle**: Phrond never starts, stops, waits
+  for, or configures the SUT. Existing orchestration owns the application;
+  Phrond receives its base URL and owns only capture, mocks, correlation, and
+  artifacts.
 - **No workflow changes**: declare each dependency once with a stable `asset_id`; inject its stable mock URL into the SUT at startup; call the SUT through the reverse-capture proxy with any HTTP client. Zero-config session correlation means no per-test rewiring (parallel suites opt into explicit sessions).
 - **Bring your own mock**: select `mock.mode: external` per dependency to keep
   WireMock or another HTTP mock server while Phrond remains the capture and
@@ -93,7 +97,10 @@ OpenAPI example (inline):
 
 ## JS SDK
 
-See `sdk/js/README.md` for SDK API details.
+The `createNodeTestSuite` helper hides Phrond lifecycle/session ceremony while
+preserving the test runner's name in `artifact.testcase.name`. The SUT must
+already be running and configured by the caller's normal application harness.
+See `sdk/js/README.md` for the basic consumer example and lower-level APIs.
 
 ## Coverage Report CLI
 

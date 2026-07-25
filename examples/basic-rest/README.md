@@ -2,6 +2,15 @@
 
 Framework test: Node `node:test`
 
+The shell runner starts and configures the demo SUT before starting the test
+process. The test uses `createNodeTestSuite`, which owns only Phrond's capture
+runtime and automatically records each `phrond.test(...)` name. The SUT's
+dependency is configured externally with the deterministic URL:
+
+```text
+http://<PHROND_MOCK_LISTEN>/__phrond/dep/basic-rest-dependency
+```
+
 The runner includes a bounded-capture scenario. Phrond retains the first 64
 bytes of a 512-byte response while the test receives and verifies the complete
 response. The resulting body records:
@@ -27,4 +36,5 @@ PHROND_MAX_CAPTURE_BYTES=64 \
   node --test ./examples/basic-rest/basic-test.js
 ```
 
-Mock responses in this test are literal `body` strings — there is no templating.
+Mock responses use the SDK's `response.json` shorthand, which produces the
+same literal response body and JSON content type without a templating engine.

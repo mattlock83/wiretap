@@ -3,13 +3,15 @@
 This page documents the session-based runtime API used by the SDK.
 
 Recommended flow:
-1. `POST /v1/startServer` once per test suite (or worker)
-2. `POST /v1/setupTest` once per test case
-3. `POST /v1/queue-response` zero or more times
-4. Run test traffic through the proxy
-5. `POST /v1/teardownTest` once per test case (SDK method: `teardownTest()`)
-6. `POST /v1/report` once after all tests
-7. `POST /v1/killServer` once when done
+1. External orchestration starts and configures the SUT.
+2. `POST /v1/startServer` once per test suite (or worker); despite the legacy
+   endpoint name, this starts only Phrond's proxy/mock components.
+3. `POST /v1/setupTest` once per test case.
+4. `POST /v1/queue-response` zero or more times.
+5. Run test traffic through the proxy.
+6. `POST /v1/teardownTest` once per test case (SDK method: `teardownTest()`).
+7. `POST /v1/report` once after all tests.
+8. `POST /v1/killServer` once when done; this stops only Phrond components.
 
 Performance/mock-only flow:
 1. `POST /v1/startServer` once
@@ -58,6 +60,9 @@ Response:
 ```
 
 Notes:
+- Phrond never starts, stops, configures, or performs readiness checks for the
+  SUT. `proxy.target_url` is only a routing destination for an application
+  managed elsewhere.
 - `proxy.target_url` enables reverse capture: tests call `sut_url` (the proxy
   address) directly with any HTTP client and requests are forwarded to the
   target. No proxy configuration or CA trust is required for HTTP. Absolute-URI
@@ -130,7 +135,9 @@ Response:
 
 Notes:
 - **Dependencies** declare the SUT's downstream services. Each gets its own
-  stable base URL (`dependency_urls`); inject it into the SUT once at startup.
+  stable base URL (`dependency_urls`). With a fixed mock listener, external
+  orchestration may configure it before Phrond starts as
+  `http://<mock-listen>/__phrond/dep/<asset-id>`.
   Captured flows carry the dependency's `asset_id` as ground truth, so two
   dependencies with overlapping paths never collide.
 - **Correlation** is zero-config by default: URLs carry no session component and

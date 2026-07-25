@@ -14,9 +14,41 @@ B1/B2 (content-encoding + binary bodies), B4 (bounded capture), B6
 resolved — see `testing-tool-requirements-and-design.md` §11a. B5 was completed
 on 2026-07-24. M1, the BYO-mock interoperability track, and E1, the independent
 coverage-export track, were completed on 2026-07-24 without changing the
-canonical Phrond artifact format beyond additive flow metadata.
+canonical Phrond artifact format beyond additive flow metadata. C1, the
+consumer-facing suite API and explicit externally managed SUT boundary, was
+completed on 2026-07-25.
 
 Next remaining work: **B3**, implemented in the phases below.
+
+---
+
+## C1 — Consumer-owned SUT lifecycle and low-ceremony Node API — resolved
+
+Status: completed 2026-07-25
+
+### Resolution
+
+- Added `createNodeTestSuite`, which registers Phrond-only `node:test` hooks,
+  automatically names each session from `phrond.test("name", ...)`, records
+  truthful pass/fail status, and delegates capture/mock inspection operations.
+- Added `startCapture` as the preferred lower-level lifecycle name while
+  retaining `startServer` for compatibility. Both start only Phrond's proxy
+  and mock components.
+- Added `match.json` and `response.json` SDK shorthands for literal JSON mock
+  bodies, including the default JSON response content type.
+- Documented the stable pre-start dependency URL shape
+  `http://<mock-listen>/__phrond/dep/<asset-id>` so Docker Compose,
+  Testcontainers, Spring Boot, Kubernetes, or CI can configure the SUT without
+  waiting for test-side discovery.
+- Moved both runnable REST examples' application startup, readiness, shutdown,
+  and dependency configuration into their shell runners. Test code now owns
+  only Phrond capture intent and any test fixture/mock state.
+
+### Ownership boundary
+
+Phrond never launches, stops, mutates, injects configuration into, or performs
+readiness checks for the SUT. `sutBaseUrl` is only the capture proxy's routing
+target. Application orchestration remains an explicit consumer responsibility.
 
 ---
 

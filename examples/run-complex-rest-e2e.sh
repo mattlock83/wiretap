@@ -45,8 +45,17 @@ TRANSACTION_SERVICE_PORT="${TRANSACTION_SERVICE_PORT:-$(pick_unique_port "${USED
 BUILD_DIR="${BUILD_DIR:-$(mktemp -d)}"
 
 cleanup() {
+  if [[ -n "${PAYMENT_SUT_PID:-}" ]]; then
+    kill "${PAYMENT_SUT_PID}" 2>/dev/null || true
+    wait "${PAYMENT_SUT_PID}" 2>/dev/null || true
+  fi
+  if [[ -n "${TRANSACTION_SERVICE_PID:-}" ]]; then
+    kill "${TRANSACTION_SERVICE_PID}" 2>/dev/null || true
+    wait "${TRANSACTION_SERVICE_PID}" 2>/dev/null || true
+  fi
   if [[ -n "${PHROND_PID:-}" ]]; then
     kill "${PHROND_PID}" 2>/dev/null || true
+    wait "${PHROND_PID}" 2>/dev/null || true
   fi
   if [[ -n "${BUILD_DIR:-}" && -d "${BUILD_DIR}" ]]; then
     rm -rf "${BUILD_DIR}" || true
@@ -64,6 +73,8 @@ export PHROND_BASE_URL="http://127.0.0.1:${PHROND_PORT}"
 
 export PAYMENT_SUT_LISTEN="127.0.0.1:${PAYMENT_SUT_PORT}"
 export TRANSACTION_SERVICE_LISTEN="127.0.0.1:${TRANSACTION_SERVICE_PORT}"
+export PAYMENT_SUT_BASE_URL="http://${PAYMENT_SUT_LISTEN}"
+export TRANSACTION_SERVICE_BASE_URL="http://${TRANSACTION_SERVICE_LISTEN}"
 
 pushd "$ROOT_DIR" >/dev/null
 
@@ -94,8 +105,29 @@ if ! wait_for "http://127.0.0.1:${PHROND_PORT}/healthz"; then
   exit 1
 fi
 
-export PAYMENT_SUT_BINARY="${BUILD_DIR}/complex-rest-payment-sut"
-export TRANSACTION_SERVICE_BINARY="${BUILD_DIR}/complex-rest-transaction-service"
+# The runner owns both application processes and configures their dependency
+# endpoints before the tests begin. Phrond never starts or mutates either SUT.
+ACCOUNT_BASE_URL="http://${PHROND_MOCK_LISTEN}/__phrond/dep/account-service" \
+  nohup "${BUILD_DIR}/complex-rest-transaction-service" > /tmp/phrond-complex-transaction.log 2>&1 &
+TRANSACTION_SERVICE_PID=$!
+
+if ! wait_for "${TRANSACTION_SERVICE_BASE_URL}/healthz"; then
+  echo "Transaction service failed to start. See /tmp/phrond-complex-transaction.log"
+  tail -n 50 /tmp/phrond-complex-transaction.log || true
+  exit 1
+fi
+
+ACCOUNT_BASE_URL="http://${PHROND_MOCK_LISTEN}/__phrond/dep/external-account-service" \
+TRANSACTION_BASE_URL="${TRANSACTION_SERVICE_BASE_URL}" \
+  nohup "${BUILD_DIR}/complex-rest-payment-sut" > /tmp/phrond-complex-payment.log 2>&1 &
+PAYMENT_SUT_PID=$!
+
+if ! wait_for "${PAYMENT_SUT_BASE_URL}/healthz"; then
+  echo "Payment SUT failed to start. See /tmp/phrond-complex-payment.log"
+  tail -n 50 /tmp/phrond-complex-payment.log || true
+  exit 1
+fi
+
 node --test ./examples/complex-rest/payment-test.js
 
 go run ./cmd/phrond-coverage \
