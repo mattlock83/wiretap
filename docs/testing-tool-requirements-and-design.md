@@ -526,7 +526,7 @@ payload was transparently decompressed before storage, so bodies stay diffable
 (see `bodyFromHTTP` in `internal/app/recorder.go`). Binary/undecodable payloads
 fall back to base64.
 
-### Deferred capture-fidelity roadmap (not yet implemented)
+### Capture-fidelity roadmap
 The remaining gaps before the recorder is "perfect" are specified in detail —
 problem, code locations, implementation steps, acceptance criteria — in
 `docs/roadmap-capture-fidelity.md`. Summary:
@@ -537,10 +537,12 @@ problem, code locations, implementation steps, acceptance criteria — in
   opaque bytes (decoding would require descriptors and stays out of scope).
   Plus WebSocket/SSE upgrade detection with byte-tunnel passthrough, and the
   negotiated protocol recorded per flow.
-- **B4**: capture size caps with `truncated`/`original_bytes` markers —
-  forward full bodies but cap what is buffered and stored.
-- **B5**: MITM upstream errors must synthesize a 502 for parity with the
-  plain/reverse path (today the TLS connection is dropped without a response).
+- **B4 (completed 2026-07-25)**: bounded streaming capture defaults to 4 MiB
+  per body and records `truncated`/`original_bytes` without truncating traffic
+  delivered to clients or upstreams. Decompression is independently bounded,
+  and truncated bodies skip body-only schema validation.
+- **B5 (completed 2026-07-24)**: MITM upstream errors synthesize the same
+  recorded 502 as the plain/reverse path.
 - ~~**B6**: deterministic renders~~ — resolved by removing the template engine;
   literal responses are deterministic by construction.
 - ~~**D**: session-threading friction~~ — resolved by zero-config correlation

@@ -4,6 +4,8 @@ const { startServer, bindTest } = require("../../sdk/js/src/index");
 const { startBasicRestSUT } = require("./test-helpers");
 
 const RUN_E2E = Boolean(process.env.PHROND_BASE_URL || process.env.PHROND_HTTP_LISTEN);
+const CAPTURE_LIMIT = Number(process.env.PHROND_MAX_CAPTURE_BYTES || 0);
+const LARGE_BODY_BYTES = 512;
 
 const SUT_SCHEMA = {
   id: "basic-rest-sut-openapi",
@@ -40,6 +42,7 @@ function resolveBaseUrl() {
 
 if (!RUN_E2E) {
   test("basic REST flow through proxy and fake", { skip: "set PHROND_BASE_URL to run this example" }, async () => {});
+  test("forwards a complete body while recording a bounded prefix", { skip: "set PHROND_BASE_URL to run this example" }, async () => {});
 } else {
   before(async () => {
     const baseUrl = resolveBaseUrl();
@@ -120,4 +123,38 @@ if (!RUN_E2E) {
     // analysis can tell breaking changes from changes to ignored fields.
     await runtime.verify("alpha-basic-rest", ["body.result"]);
   });
+
+  test(
+    "forwards a complete body while recording a bounded prefix",
+    {
+      skip:
+        CAPTURE_LIMIT <= 0 || CAPTURE_LIMIT >= LARGE_BODY_BYTES
+          ? "start Phrond with PHROND_MAX_CAPTURE_BYTES below 512"
+          : false
+    },
+    async () => {
+      await runtime.setupTest({ name: "bounded capture preserves delivery" });
+
+      let teardown;
+      try {
+        const response = await runtime.http.get("/large");
+        assert.equal(response.status, 200);
+        assert.equal(response.body, "x".repeat(LARGE_BODY_BYTES));
+        teardown = await runtime.teardownTest({ status: "pass" });
+      } catch (err) {
+        await runtime.teardownTest({ status: "fail" }).catch(() => {});
+        throw err;
+      }
+
+      const flow = teardown.artifact.traffic.find(
+        (candidate) => candidate.request?.url?.endsWith("/large")
+      );
+      assert.ok(flow, "expected /large flow in artifact");
+
+      const captured = flow.response.body;
+      assert.equal(captured.truncated, true);
+      assert.equal(captured.original_bytes, LARGE_BODY_BYTES);
+      assert.equal(captured.text, "x".repeat(CAPTURE_LIMIT));
+    }
+  );
 }

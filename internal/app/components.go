@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/phrond/evermock/core"
+	"github.com/phrond/evermock/internal/capture"
 	"github.com/phrond/evermock/internal/mock"
 	"github.com/phrond/evermock/internal/proxy"
 	tlsmgr "github.com/phrond/evermock/internal/tls"
@@ -20,7 +21,7 @@ type ProxyComponent struct {
 	info   proxy.Info
 }
 
-func NewProxyComponent(cfg core.ProxyConfig, logger *slog.Logger, recorder proxy.Recorder) (*ProxyComponent, error) {
+func NewProxyComponent(cfg core.ProxyConfig, logger *slog.Logger, recorder proxy.Recorder, maxBodyBytes ...int64) (*ProxyComponent, error) {
 	mode := proxy.Mode(cfg.Mode)
 	if mode == "" {
 		mode = proxy.ModeMITM
@@ -41,11 +42,12 @@ func NewProxyComponent(cfg core.ProxyConfig, logger *slog.Logger, recorder proxy
 	}
 
 	server := proxy.NewServer(proxy.Config{
-		ListenAddr: cfg.ListenAddr,
-		Mode:       mode,
-		TLSManager: mgr,
-		Recorder:   recorder,
-		Logger:     stdLogger,
+		ListenAddr:   cfg.ListenAddr,
+		Mode:         mode,
+		TLSManager:   mgr,
+		Recorder:     recorder,
+		Logger:       stdLogger,
+		MaxBodyBytes: captureLimit(maxBodyBytes),
 	})
 
 	return &ProxyComponent{server: server}, nil
@@ -118,11 +120,18 @@ type MockComponent struct {
 	addr       string
 }
 
-func NewMockComponent(cfg core.MockConfig) *MockComponent {
+func NewMockComponent(cfg core.MockConfig, maxBodyBytes ...int64) *MockComponent {
 	return &MockComponent{
-		server:     mock.NewServer(nil, nil),
+		server:     mock.NewServer(nil, nil, captureLimit(maxBodyBytes)),
 		listenAddr: cfg.ListenAddr,
 	}
+}
+
+func captureLimit(values []int64) int64 {
+	if len(values) == 0 {
+		return capture.DefaultMaxBodyBytes
+	}
+	return values[0]
 }
 
 func (m *MockComponent) Start(ctx context.Context) error {

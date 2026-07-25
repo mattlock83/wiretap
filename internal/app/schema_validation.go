@@ -236,7 +236,8 @@ func validateHTTPAgainstSpec(flow artifact.Flow, spec openapiSpec) (error, error
 		PathParams: params,
 		Route:      route,
 		Options: &openapi3filter.Options{
-			MultiError: true,
+			MultiError:         true,
+			ExcludeRequestBody: msg.Body != nil && msg.Body.Truncated,
 		},
 	}
 	if err := openapi3filter.ValidateRequest(context.Background(), input); err != nil {
@@ -250,7 +251,8 @@ func validateHTTPAgainstSpec(flow artifact.Flow, spec openapiSpec) (error, error
 		Header:                 toHTTPHeader(respMsg.Headers),
 		Body:                   io.NopCloser(bytes.NewReader(respBody)),
 		Options: &openapi3filter.Options{
-			MultiError: true,
+			MultiError:          true,
+			ExcludeResponseBody: respMsg.Body != nil && respMsg.Body.Truncated,
 		},
 	}
 	if err := openapi3filter.ValidateResponse(context.Background(), resp); err != nil {

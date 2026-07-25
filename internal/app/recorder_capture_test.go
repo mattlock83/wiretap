@@ -3,11 +3,15 @@ package app
 import (
 	"bytes"
 	"compress/gzip"
+	"net/http"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/phrond/evermock/internal/artifact"
+	"github.com/phrond/evermock/internal/capture"
 	"github.com/phrond/evermock/internal/mock"
+	"github.com/phrond/evermock/internal/proxy"
 )
 
 func TestBodyFromHTTPDecompressesGzip(t *testing.T) {
@@ -50,6 +54,118 @@ func TestBodyFromHTTPUndecodableEncodingKeptRaw(t *testing.T) {
 	}
 	if body.ContentEncoding != "br" {
 		t.Fatalf("expected content_encoding br, got %q", body.ContentEncoding)
+	}
+}
+
+func TestBodyFromHTTPCapsDecompressedPayload(t *testing.T) {
+	original := strings.Repeat("expanded-", 100)
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	if _, err := gz.Write([]byte(original)); err != nil {
+		t.Fatalf("gzip write: %v", err)
+	}
+	if err := gz.Close(); err != nil {
+		t.Fatalf("gzip close: %v", err)
+	}
+
+	headers := artifact.Headers{"Content-Encoding": {"gzip"}}
+	raw := capture.FromBytes(buf.Bytes(), int64(len(buf.Bytes())))
+	body := bodyFromCapturedHTTP(headers, raw, 16)
+	if body == nil {
+		t.Fatal("expected body")
+	}
+	if body.Text != original[:16] {
+		t.Fatalf("captured decompressed prefix = %q", body.Text)
+	}
+	if !body.Truncated || body.OriginalBytes != int64(len(original)) {
+		t.Fatalf("decompressed capture metadata = %#v", body)
+	}
+	if body.ContentEncoding != "gzip" {
+		t.Fatalf("content encoding = %q", body.ContentEncoding)
+	}
+}
+
+func TestFlowFromProxyCarriesCaptureMetadata(t *testing.T) {
+	store := NewTestCaseStore(t.TempDir(), 4)
+	if _, err := store.StartCase("bounded", nil, nil, ""); err != nil {
+		t.Fatalf("start case: %v", err)
+	}
+	flow := store.flowFromProxy(proxy.HTTPExchange{
+		Method:                http.MethodPost,
+		URL:                   "http://example.test/items",
+		RequestBody:           []byte("requ"),
+		RequestBodyBytes:      12,
+		RequestBodyTruncated:  true,
+		Status:                http.StatusOK,
+		ResponseBody:          []byte("resp"),
+		ResponseBodyBytes:     13,
+		ResponseBodyTruncated: true,
+	})
+	if flow.Request.HTTP == nil || flow.Request.HTTP.Body == nil ||
+		!flow.Request.HTTP.Body.Truncated || flow.Request.HTTP.Body.OriginalBytes != 12 {
+		t.Fatalf("request body = %#v", flow.Request.HTTP)
+	}
+	if flow.Response.HTTP == nil || flow.Response.HTTP.Body == nil ||
+		!flow.Response.HTTP.Body.Truncated || flow.Response.HTTP.Body.OriginalBytes != 13 {
+		t.Fatalf("response body = %#v", flow.Response.HTTP)
+	}
+	if got := bodyShape(flow.Request.HTTP.Body); got != "truncated" {
+		t.Fatalf("body shape = %q", got)
+	}
+}
+
+func TestSchemaValidationSkipsTruncatedBodies(t *testing.T) {
+	spec, err := loadOpenAPISpec(artifact.SchemaRef{
+		ID:   "bounded-openapi",
+		Type: "openapi",
+		Source: artifact.SchemaSource{
+			Type: "inline",
+			Content: `openapi: 3.0.0
+info:
+  title: bounded
+  version: "1"
+paths:
+  /items:
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id]
+`,
+		},
+	})
+	if err != nil {
+		t.Fatalf("load spec: %v", err)
+	}
+	flow := artifact.Flow{
+		ID:       "flow-1",
+		Protocol: "http",
+		Channel:  "test_to_sut",
+		Request: artifact.Message{HTTP: &artifact.HttpMessage{
+			Method:  http.MethodPost,
+			URL:     "http://example.test/items",
+			Headers: artifact.Headers{"Content-Type": {"application/json"}},
+			Body:    &artifact.Body{Encoding: "utf8", Text: `{"cut`, Truncated: true, OriginalBytes: 100},
+		}},
+		Response: artifact.Message{HTTP: &artifact.HttpMessage{
+			Status:  http.StatusOK,
+			Headers: artifact.Headers{"Content-Type": {"application/json"}},
+			Body:    &artifact.Body{Encoding: "utf8", Text: `{"cut`, Truncated: true, OriginalBytes: 100},
+		}},
+	}
+	if issues := validateHTTPFlow(flow, []openapiSpec{spec}); len(issues) != 0 {
+		t.Fatalf("truncated body validation issues = %#v", issues)
 	}
 }
 

@@ -1,22 +1,22 @@
 # Phrond Product Roadmap — Outstanding Items
 
 Status: open
-Last reviewed: 2026-07-24
+Last reviewed: 2026-07-25
 
 These are the known gaps and recently completed work across capture fidelity,
-mock interoperability, and exports. B3 and B4 remain before the recorder can
-claim lossless capture. They are deliberately deferred (v1 is scoped to plain
-HTTP request/response), but each can silently corrupt or bloat artifacts when
-hit, so they are specified here in enough detail to implement without
-re-deriving context. Item numbering (B3–B5) is historical, from the original
-capture-fidelity review; B1/B2 (content-encoding + binary bodies), B6
+mock interoperability, and exports. B3 remains before the recorder can claim
+lossless capture. It is deliberately deferred (v1 is scoped to plain HTTP
+request/response), but can silently corrupt artifacts when hit, so it is
+specified here in enough detail to implement without re-deriving context. Item
+numbering (B3–B5) is historical, from the original capture-fidelity review;
+B1/B2 (content-encoding + binary bodies), B4 (bounded capture), B6
 (deterministic responses), and D (session-correlation friction) are already
 resolved — see `testing-tool-requirements-and-design.md` §11a. B5 was completed
 on 2026-07-24. M1, the BYO-mock interoperability track, and E1, the independent
 coverage-export track, were completed on 2026-07-24 without changing the
 canonical Phrond artifact format beyond additive flow metadata.
 
-Suggested order for the remaining work: **B4 → B3**.
+Next remaining work: **B3**, implemented in the phases below.
 
 ---
 
@@ -67,11 +67,38 @@ making failures non-deterministic to debug.
 
 ---
 
-## B4 — No capture size caps (unbounded memory + artifact bloat)
+## B4 — Bounded body capture — resolved
+
+Status: completed 2026-07-25
 
 Priority: high (CI stability) · Effort: small-medium
 
-### Problem
+### Resolution
+
+- Added `core.Config.Capture.MaxBodyBytes` and
+  `PHROND_MAX_CAPTURE_BYTES`, defaulting to 4 MiB. `0` explicitly means
+  unlimited.
+- Proxy request and response bodies now stream while a shared counting writer
+  retains only the configured prefix. The same limit applies to plain/reverse
+  traffic and HTTPS MITM traffic.
+- Built-in mock requests retain only the bounded prefix, literal responses are
+  returned in full, external BYO mock traffic streams end to end, and fallback
+  requests use a temporary-file replay so large bodies remain memory-bounded.
+- Artifact bodies carry `truncated: true` and `original_bytes`; Workflow YAML
+  metadata preserves those markers.
+- Gzip and deflate decoding has its own bounded counting pass, preventing a
+  small compressed body from expanding without limit.
+- Truncated bodies use the stable `truncated` fingerprint shape and skip only
+  OpenAPI body validation. Routing, parameters, headers, and status validation
+  continue normally.
+- Focused tests verify complete delivery with bounded recording across the
+  plain proxy, MITM, built-in mock, external mock, fallback upstream, and
+  compressed-body paths.
+- The runnable `basic-rest` example uses a 64-byte limit to demonstrate a
+  complete 512-byte response with bounded artifact evidence.
+
+### Original problem
+
 Every request and response body is buffered fully into memory and stored whole
 in the artifact:
 
@@ -90,7 +117,8 @@ through the proxy means that many bytes held in RAM and written into the
 per-test artifact — degraded CI at best, OOM at worst. It also makes artifacts
 too large to ship to a broker.
 
-### What needs to be done
+### Implemented requirements
+
 1. **Config**: add a capture limit to `core.Config` (e.g.
    `Capture.MaxBodyBytes`, default ~4MB) with env override
    `PHROND_MAX_CAPTURE_BYTES`. `0` = unlimited (explicit opt-out).
@@ -114,7 +142,8 @@ too large to ship to a broker.
    also be capped — a small gzip body can decompress huge (zip-bomb shape).
    Cap the decompressed output at the same limit and mark truncated.
 
-### Acceptance criteria
+### Verified acceptance criteria
+
 - A response larger than the cap is delivered intact to the client, while the
   artifact stores at most the cap with `truncated: true` and the true size.
 - Memory use during a large transfer stays bounded (no full-body buffering).

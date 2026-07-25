@@ -43,4 +43,7 @@ jobs:
 
 Notes:
 - The core service writes artifacts to `./artifacts` by default. Override with `PHROND_ARTIFACT_DIR` in CI.
+- Body capture defaults to 4 MiB per request or response. Set
+  `PHROND_MAX_CAPTURE_BYTES` to another non-negative byte count when CI
+  artifact size requires a different bound; `0` means unlimited.
 - If HTTPS MITM is used in CI, add the proxy CA to the trust store (see `docs/https-trust.md`).

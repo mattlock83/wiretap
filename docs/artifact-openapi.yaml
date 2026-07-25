@@ -376,6 +376,19 @@ components:
         bytes:
           type: string
           description: Base64-encoded bytes when encoding=base64.
+        truncated:
+          type: boolean
+          description: >-
+            True when the artifact retains only a bounded prefix of the body.
+            Forwarding is unaffected.
+        original_bytes:
+          type: integer
+          format: int64
+          minimum: 0
+          description: >-
+            Complete observed body size before capture truncation. Present
+            with truncated=true; for successfully decompressed content this
+            is the decompressed size.
         content_encoding:
           type: string
           description: >-

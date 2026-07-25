@@ -17,6 +17,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/phrond/evermock/internal/capture"
 	tlsmgr "github.com/phrond/evermock/internal/tls"
 )
 
@@ -43,6 +44,9 @@ type Config struct {
 	// base URL and captured. Tests then call the proxy address directly with
 	// any HTTP client — no proxy configuration or CA trust required.
 	ReverseTarget string
+	// MaxBodyBytes bounds the request/response prefix retained for recording.
+	// Zero explicitly means unlimited.
+	MaxBodyBytes int64
 }
 
 // Info reports proxy runtime configuration.
@@ -79,17 +83,23 @@ type HTTPExchange struct {
 	// TraceID is injected by the proxy as X-Phrond-Trace-Id on the forwarded
 	// request. When the SUT propagates the header to its dependencies, the
 	// mock server records it, linking downstream calls to this exchange.
-	TraceID         string
-	Method          string
-	URL             string
-	RequestHeaders  map[string][]string
-	RequestBody     []byte
-	Status          int
-	ResponseHeaders map[string][]string
-	ResponseBody    []byte
-	StartedAt       time.Time
-	Duration        time.Duration
-	Error           string
+	TraceID               string
+	Method                string
+	URL                   string
+	RequestHeaders        map[string][]string
+	RequestTrailers       map[string][]string
+	RequestBody           []byte
+	RequestBodyBytes      int64
+	RequestBodyTruncated  bool
+	Status                int
+	ResponseHeaders       map[string][]string
+	ResponseTrailers      map[string][]string
+	ResponseBody          []byte
+	ResponseBodyBytes     int64
+	ResponseBodyTruncated bool
+	StartedAt             time.Time
+	Duration              time.Duration
+	Error                 string
 }
 
 var ErrAlreadyStarted = errors.New("proxy already started")
@@ -249,11 +259,9 @@ func (s *Server) handleHTTP(w http.ResponseWriter, r *http.Request) {
 	transport := s.httpTransport(nil)
 	started := time.Now()
 
-	reqBody, _ := io.ReadAll(r.Body)
-	_ = r.Body.Close()
-	r.Body = io.NopCloser(bytes.NewReader(reqBody))
-
 	req := r.Clone(r.Context())
+	var reqCapture *capture.Writer
+	req.Body, reqCapture = capture.WrapReadCloser(r.Body, s.cfg.MaxBodyBytes)
 	sessionID := req.Header.Get("X-Phrond-Session-Id")
 	req.Header.Del("X-Phrond-Session-Id")
 
@@ -286,43 +294,65 @@ func (s *Server) handleHTTP(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := transport.RoundTrip(req)
 	if err != nil {
+		capturedRequest := reqCapture.Body()
 		s.recordHTTP(HTTPExchange{
-			SessionID:      sessionID,
-			TraceID:        traceID,
-			Method:         req.Method,
-			URL:            req.URL.String(),
-			RequestHeaders: cloneHeader(req.Header),
-			RequestBody:    reqBody,
-			StartedAt:      started,
-			Duration:       time.Since(started),
-			Error:          err.Error(),
+			SessionID:            sessionID,
+			TraceID:              traceID,
+			Method:               req.Method,
+			URL:                  req.URL.String(),
+			RequestHeaders:       cloneHeader(req.Header),
+			RequestTrailers:      cloneHeader(req.Trailer),
+			RequestBody:          capturedRequest.Bytes,
+			RequestBodyBytes:     capturedRequest.OriginalBytes,
+			RequestBodyTruncated: capturedRequest.Truncated,
+			StartedAt:            started,
+			Duration:             time.Since(started),
+			Error:                err.Error(),
 		})
 		writeProxyError(w, http.StatusBadGateway, err)
 		return
 	}
 	defer resp.Body.Close()
 
-	respBody, _ := io.ReadAll(resp.Body)
-	_ = resp.Body.Close()
-	resp.Body = io.NopCloser(bytes.NewReader(respBody))
-
-	s.recordHTTP(HTTPExchange{
-		SessionID:       sessionID,
-		TraceID:         traceID,
-		Method:          req.Method,
-		URL:             req.URL.String(),
-		RequestHeaders:  cloneHeader(req.Header),
-		RequestBody:     reqBody,
-		Status:          resp.StatusCode,
-		ResponseHeaders: cloneHeader(resp.Header),
-		ResponseBody:    respBody,
-		StartedAt:       started,
-		Duration:        time.Since(started),
-	})
-
 	copyHeader(w.Header(), resp.Header)
+	for key := range resp.Trailer {
+		w.Header().Add("Trailer", key)
+	}
 	w.WriteHeader(resp.StatusCode)
-	_, _ = io.Copy(w, resp.Body)
+	respCapture := capture.NewWriter(s.cfg.MaxBodyBytes)
+	_, copyErr := io.Copy(w, io.TeeReader(resp.Body, respCapture))
+	for key, values := range resp.Trailer {
+		w.Header().Del(key)
+		for _, value := range values {
+			w.Header().Add(key, value)
+		}
+	}
+
+	capturedRequest := reqCapture.Body()
+	capturedResponse := respCapture.Body()
+	exchange := HTTPExchange{
+		SessionID:             sessionID,
+		TraceID:               traceID,
+		Method:                req.Method,
+		URL:                   req.URL.String(),
+		RequestHeaders:        cloneHeader(req.Header),
+		RequestTrailers:       cloneHeader(req.Trailer),
+		RequestBody:           capturedRequest.Bytes,
+		RequestBodyBytes:      capturedRequest.OriginalBytes,
+		RequestBodyTruncated:  capturedRequest.Truncated,
+		Status:                resp.StatusCode,
+		ResponseHeaders:       cloneHeader(resp.Header),
+		ResponseTrailers:      cloneHeader(resp.Trailer),
+		ResponseBody:          capturedResponse.Bytes,
+		ResponseBodyBytes:     capturedResponse.OriginalBytes,
+		ResponseBodyTruncated: capturedResponse.Truncated,
+		StartedAt:             started,
+		Duration:              time.Since(started),
+	}
+	if copyErr != nil {
+		exchange.Error = copyErr.Error()
+	}
+	s.recordHTTP(exchange)
 }
 
 func (s *Server) handleConnect(w http.ResponseWriter, r *http.Request) {
@@ -402,9 +432,8 @@ func (s *Server) proxyTLSRequests(clientTLS net.Conn) {
 		}
 
 		started := time.Now()
-		reqBody, _ := io.ReadAll(req.Body)
-		_ = req.Body.Close()
-		req.Body = io.NopCloser(bytes.NewReader(reqBody))
+		var reqCapture *capture.Writer
+		req.Body, reqCapture = capture.WrapReadCloser(req.Body, s.cfg.MaxBodyBytes)
 
 		sessionID := req.Header.Get("X-Phrond-Session-Id")
 		req.Header.Del("X-Phrond-Session-Id")
@@ -420,46 +449,72 @@ func (s *Server) proxyTLSRequests(clientTLS net.Conn) {
 
 		resp, err := s.httpTransport(s.upstreamTLSConfig(req.URL.Host)).RoundTrip(req)
 		if err != nil {
+			capturedRequest := reqCapture.Body()
 			s.recordHTTP(HTTPExchange{
-				SessionID:      sessionID,
-				TraceID:        traceID,
-				Method:         req.Method,
-				URL:            req.URL.String(),
-				RequestHeaders: cloneHeader(req.Header),
-				RequestBody:    reqBody,
-				StartedAt:      started,
-				Duration:       time.Since(started),
-				Error:          err.Error(),
+				SessionID:            sessionID,
+				TraceID:              traceID,
+				Method:               req.Method,
+				URL:                  req.URL.String(),
+				RequestHeaders:       cloneHeader(req.Header),
+				RequestTrailers:      cloneHeader(req.Trailer),
+				RequestBody:          capturedRequest.Bytes,
+				RequestBodyBytes:     capturedRequest.OriginalBytes,
+				RequestBodyTruncated: capturedRequest.Truncated,
+				StartedAt:            started,
+				Duration:             time.Since(started),
+				Error:                err.Error(),
 			})
 			writeTunnelProxyError(clientTLS, http.StatusBadGateway, err)
 			return
 		}
 
-		respBody, _ := io.ReadAll(resp.Body)
+		respCapture := capture.NewWriter(s.cfg.MaxBodyBytes)
+		originalBody := resp.Body
+		resp.Body = &capturingResponseBody{
+			Reader: io.TeeReader(originalBody, respCapture),
+			Closer: originalBody,
+		}
+		writeErr := resp.Write(clientTLS)
 		_ = resp.Body.Close()
-		resp.Body = io.NopCloser(bytes.NewReader(respBody))
 
-		s.recordHTTP(HTTPExchange{
-			SessionID:       sessionID,
-			TraceID:         traceID,
-			Method:          req.Method,
-			URL:             req.URL.String(),
-			RequestHeaders:  cloneHeader(req.Header),
-			RequestBody:     reqBody,
-			Status:          resp.StatusCode,
-			ResponseHeaders: cloneHeader(resp.Header),
-			ResponseBody:    respBody,
-			StartedAt:       started,
-			Duration:        time.Since(started),
-		})
-
-		_ = resp.Write(clientTLS)
-		resp.Body.Close()
+		capturedRequest := reqCapture.Body()
+		capturedResponse := respCapture.Body()
+		exchange := HTTPExchange{
+			SessionID:             sessionID,
+			TraceID:               traceID,
+			Method:                req.Method,
+			URL:                   req.URL.String(),
+			RequestHeaders:        cloneHeader(req.Header),
+			RequestTrailers:       cloneHeader(req.Trailer),
+			RequestBody:           capturedRequest.Bytes,
+			RequestBodyBytes:      capturedRequest.OriginalBytes,
+			RequestBodyTruncated:  capturedRequest.Truncated,
+			Status:                resp.StatusCode,
+			ResponseHeaders:       cloneHeader(resp.Header),
+			ResponseTrailers:      cloneHeader(resp.Trailer),
+			ResponseBody:          capturedResponse.Bytes,
+			ResponseBodyBytes:     capturedResponse.OriginalBytes,
+			ResponseBodyTruncated: capturedResponse.Truncated,
+			StartedAt:             started,
+			Duration:              time.Since(started),
+		}
+		if writeErr != nil {
+			exchange.Error = writeErr.Error()
+		}
+		s.recordHTTP(exchange)
+		if writeErr != nil {
+			return
+		}
 
 		if req.Close || resp.Close {
 			return
 		}
 	}
+}
+
+type capturingResponseBody struct {
+	io.Reader
+	io.Closer
 }
 
 func (s *Server) httpTransport(tlsConfig *tls.Config) *http.Transport {

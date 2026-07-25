@@ -76,9 +76,14 @@ type MatchTarget struct {
 	Path      string
 }
 
-func (r *Registry) Match(req *http.Request, body []byte, target MatchTarget) (Stub, bool) {
+func (r *Registry) Match(req *http.Request, body []byte, target MatchTarget, bodyComplete ...bool) (Stub, bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+
+	complete := true
+	if len(bodyComplete) > 0 {
+		complete = bodyComplete[0]
+	}
 
 	// Stack semantics: newest non-default matching response is consumed first.
 	for i := len(r.stubs) - 1; i >= 0; i-- {
@@ -86,7 +91,7 @@ func (r *Registry) Match(req *http.Request, body []byte, target MatchTarget) (St
 		if stub.Default {
 			continue
 		}
-		if !matchStub(stub, req, body, target) {
+		if !matchStub(stub, req, body, target, complete) {
 			continue
 		}
 		r.stubs = append(r.stubs[:i], r.stubs[i+1:]...)
@@ -99,7 +104,7 @@ func (r *Registry) Match(req *http.Request, body []byte, target MatchTarget) (St
 		if !stub.Default {
 			continue
 		}
-		if !matchStub(stub, req, body, target) {
+		if !matchStub(stub, req, body, target, complete) {
 			continue
 		}
 		return stub, true
@@ -107,7 +112,7 @@ func (r *Registry) Match(req *http.Request, body []byte, target MatchTarget) (St
 	return Stub{}, false
 }
 
-func matchStub(stub Stub, req *http.Request, body []byte, target MatchTarget) bool {
+func matchStub(stub Stub, req *http.Request, body []byte, target MatchTarget, bodyComplete bool) bool {
 	// Scope: a session-bound stub only serves its session; an asset-bound stub
 	// only serves requests routed to that dependency (and vice versa).
 	if stub.SessionID != "" && stub.SessionID != target.SessionID {
@@ -123,8 +128,10 @@ func matchStub(stub Stub, req *http.Request, body []byte, target MatchTarget) bo
 	if match.Path != "" && match.Path != target.Path {
 		return false
 	}
-	if match.Body != "" && match.Body != string(body) {
-		return false
+	if match.Body != "" {
+		if !bodyComplete || match.Body != string(body) {
+			return false
+		}
 	}
 	if match.BodyContains != "" && !strings.Contains(string(body), match.BodyContains) {
 		return false

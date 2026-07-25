@@ -22,20 +22,22 @@ import (
 	"unicode/utf8"
 
 	"github.com/phrond/evermock/internal/artifact"
+	"github.com/phrond/evermock/internal/capture"
 	"github.com/phrond/evermock/internal/mock"
 	"github.com/phrond/evermock/internal/proxy"
 	"github.com/phrond/evermock/internal/redact"
 )
 
 type TestCaseStore struct {
-	mu        sync.Mutex
-	outputDir string
-	producer  artifact.Producer
-	active    *testCaseState
-	last      *artifact.Artifact
-	flowSeq   int
-	schemaSeq int
-	expectSeq int
+	mu           sync.Mutex
+	outputDir    string
+	producer     artifact.Producer
+	active       *testCaseState
+	last         *artifact.Artifact
+	flowSeq      int
+	schemaSeq    int
+	expectSeq    int
+	maxBodyBytes int64
 }
 
 // SetProducer attaches auto-detected producer identity to artifacts written by
@@ -67,8 +69,12 @@ type Expectation struct {
 	Times   int            `json:"times"`
 }
 
-func NewTestCaseStore(outputDir string) *TestCaseStore {
-	return &TestCaseStore{outputDir: outputDir}
+func NewTestCaseStore(outputDir string, maxBodyBytes ...int64) *TestCaseStore {
+	limit := capture.DefaultMaxBodyBytes
+	if len(maxBodyBytes) > 0 {
+		limit = maxBodyBytes[0]
+	}
+	return &TestCaseStore{outputDir: outputDir, maxBodyBytes: limit}
 }
 
 func (s *TestCaseStore) StartCase(name string, tags []string, meta map[string]any, sutBaseURL string) (*artifact.TestCase, error) {
@@ -312,15 +318,25 @@ func (s *TestCaseStore) flowFromProxy(exchange proxy.HTTPExchange) artifact.Flow
 		StartedAt:  exchange.StartedAt,
 		DurationMS: exchange.Duration.Milliseconds(),
 		Request: artifact.Message{HTTP: &artifact.HttpMessage{
-			Method:  exchange.Method,
-			URL:     exchange.URL,
-			Headers: reqHeaders,
-			Body:    bodyFromHTTP(reqHeaders, exchange.RequestBody),
+			Method:   exchange.Method,
+			URL:      exchange.URL,
+			Headers:  reqHeaders,
+			Trailers: cloneHeaders(exchange.RequestTrailers),
+			Body: bodyFromCapturedHTTP(reqHeaders, normalizedCapturedBody(
+				exchange.RequestBody,
+				exchange.RequestBodyBytes,
+				exchange.RequestBodyTruncated,
+			), s.maxBodyBytes),
 		}},
 		Response: artifact.Message{HTTP: &artifact.HttpMessage{
-			Status:  exchange.Status,
-			Headers: respHeaders,
-			Body:    bodyFromHTTP(respHeaders, exchange.ResponseBody),
+			Status:   exchange.Status,
+			Headers:  respHeaders,
+			Trailers: cloneHeaders(exchange.ResponseTrailers),
+			Body: bodyFromCapturedHTTP(respHeaders, normalizedCapturedBody(
+				exchange.ResponseBody,
+				exchange.ResponseBodyBytes,
+				exchange.ResponseBodyTruncated,
+			), s.maxBodyBytes),
 		}},
 	}
 }
@@ -345,13 +361,21 @@ func (s *TestCaseStore) flowFromMock(exchange mock.Exchange) artifact.Flow {
 			URL:      exchange.Request.URL,
 			Headers:  reqHeaders,
 			Trailers: cloneHeaders(exchange.Request.Trailers),
-			Body:     bodyFromHTTP(reqHeaders, []byte(exchange.Request.Body)),
+			Body: bodyFromCapturedHTTP(reqHeaders, normalizedCapturedBody(
+				[]byte(exchange.Request.Body),
+				exchange.Request.BodyBytes,
+				exchange.Request.BodyTruncated,
+			), s.maxBodyBytes),
 		}},
 		Response: artifact.Message{HTTP: &artifact.HttpMessage{
 			Status:   exchange.Response.Status,
 			Headers:  respHeaders,
 			Trailers: cloneHeaders(exchange.Response.Trailers),
-			Body:     bodyFromHTTP(respHeaders, []byte(exchange.Response.Body)),
+			Body: bodyFromCapturedHTTP(respHeaders, normalizedCapturedBody(
+				[]byte(exchange.Response.Body),
+				exchange.Response.BodyBytes,
+				exchange.Response.BodyTruncated,
+			), s.maxBodyBytes),
 		}},
 		MatchedStubID:  exchange.MatchedStubID,
 		MockStub:       mockStubFromExchange(exchange),
@@ -497,6 +521,9 @@ func bodyShape(body *artifact.Body) string {
 	if body == nil {
 		return ""
 	}
+	if body.Truncated {
+		return "truncated"
+	}
 	if body.Encoding == "base64" {
 		return "binary"
 	}
@@ -569,19 +596,41 @@ func bodyFromBytes(raw []byte) *artifact.Body {
 // headers declare a Content-Encoding so the stored body is the real content
 // (and is diffable). The original wire encoding is preserved on the Body.
 func bodyFromHTTP(headers artifact.Headers, raw []byte) *artifact.Body {
-	if len(raw) == 0 {
+	return bodyFromCapturedHTTP(headers, capture.FromBytes(raw, capture.DefaultMaxBodyBytes), capture.DefaultMaxBodyBytes)
+}
+
+func normalizedCapturedBody(data []byte, originalBytes int64, truncated bool) capture.Body {
+	if originalBytes == 0 && len(data) > 0 {
+		originalBytes = int64(len(data))
+	}
+	if originalBytes < int64(len(data)) {
+		originalBytes = int64(len(data))
+	}
+	return capture.Body{
+		Bytes:         data,
+		OriginalBytes: originalBytes,
+		Truncated:     truncated || int64(len(data)) < originalBytes,
+	}
+}
+
+func bodyFromCapturedHTTP(headers artifact.Headers, raw capture.Body, maxBodyBytes int64) *artifact.Body {
+	if len(raw.Bytes) == 0 && raw.OriginalBytes == 0 {
 		return nil
 	}
 	encoding := strings.ToLower(strings.TrimSpace(firstHeaderValue(headers, "Content-Encoding")))
 	decoded := raw
-	if encoding != "" && encoding != "identity" {
-		if out, ok := decompressBody(encoding, raw); ok {
+	if !raw.Truncated && encoding != "" && encoding != "identity" {
+		if out, ok := decompressBody(encoding, raw.Bytes, maxBodyBytes); ok {
 			decoded = out
 		}
 	}
-	body := bodyFromBytes(decoded)
+	body := bodyFromBytes(decoded.Bytes)
 	if body != nil && encoding != "" && encoding != "identity" {
 		body.ContentEncoding = encoding
+	}
+	if body != nil && decoded.Truncated {
+		body.Truncated = true
+		body.OriginalBytes = decoded.OriginalBytes
 	}
 	return body
 }
@@ -597,33 +646,33 @@ func firstHeaderValue(headers artifact.Headers, key string) string {
 
 // decompressBody decodes gzip/deflate payloads. Other encodings (e.g. br) are
 // left untouched and reported as not decoded.
-func decompressBody(encoding string, raw []byte) ([]byte, bool) {
+func decompressBody(encoding string, raw []byte, maxBodyBytes int64) (capture.Body, bool) {
 	switch encoding {
 	case "gzip", "x-gzip":
 		reader, err := gzip.NewReader(bytes.NewReader(raw))
 		if err != nil {
-			return nil, false
+			return capture.Body{}, false
 		}
 		defer reader.Close()
-		return readAllLimited(reader)
+		return readAllLimited(reader, maxBodyBytes)
 	case "deflate":
 		// HTTP "deflate" is zlib-wrapped; fall back to raw DEFLATE streams.
 		if reader, err := zlib.NewReader(bytes.NewReader(raw)); err == nil {
 			defer reader.Close()
-			return readAllLimited(reader)
+			return readAllLimited(reader, maxBodyBytes)
 		}
 		reader := flate.NewReader(bytes.NewReader(raw))
 		defer reader.Close()
-		return readAllLimited(reader)
+		return readAllLimited(reader, maxBodyBytes)
 	default:
-		return nil, false
+		return capture.Body{}, false
 	}
 }
 
-func readAllLimited(r io.Reader) ([]byte, bool) {
-	out, err := io.ReadAll(r)
+func readAllLimited(r io.Reader, maxBodyBytes int64) (capture.Body, bool) {
+	out, err := capture.ReadAll(r, maxBodyBytes)
 	if err != nil {
-		return nil, false
+		return capture.Body{}, false
 	}
 	return out, true
 }

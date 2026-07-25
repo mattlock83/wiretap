@@ -128,13 +128,17 @@ func TestServerlessWorkflowFromReport_UsesFullArtifactBodies(t *testing.T) {
 	sample := &report.TestCases[0].Provided[0].Operations[0].Samples[0]
 	sample.Request.Body = `{"payload":"preview"}`
 	sample.Request.ArtifactBody = &artifact.Body{
-		Encoding: "utf8",
-		Text:     `{"payload":"` + payload + `"}`,
+		Encoding:      "utf8",
+		Text:          `{"payload":"` + payload + `"}`,
+		Truncated:     true,
+		OriginalBytes: 2048,
 	}
 	sample.Response.ArtifactBody = &artifact.Body{
 		Encoding:        "base64",
 		Bytes:           "AAEC",
 		ContentEncoding: "gzip",
+		Truncated:       true,
+		OriginalBytes:   4096,
 	}
 
 	workflow, err := ServerlessWorkflowFromReport(report)
@@ -152,12 +156,18 @@ func TestServerlessWorkflowFromReport_UsesFullArtifactBodies(t *testing.T) {
 	if call.Metadata.Phrond.RequestEncoding != "utf8" {
 		t.Fatalf("request encoding = %q", call.Metadata.Phrond.RequestEncoding)
 	}
+	if !call.Metadata.Phrond.RequestTruncated || call.Metadata.Phrond.RequestOriginalBytes != 2048 {
+		t.Fatalf("request capture metadata = %#v", call.Metadata.Phrond)
+	}
 	response := call.Metadata.Phrond.CapturedResponse
 	if response == nil || response.Body == nil || *response.Body != "AAEC" {
 		t.Fatalf("captured binary response = %#v", response)
 	}
 	if response.Encoding != "base64" || response.ContentEncoding != "gzip" {
 		t.Fatalf("captured response encoding = %#v", response)
+	}
+	if !response.Truncated || response.OriginalBytes != 4096 {
+		t.Fatalf("captured response limit metadata = %#v", response)
 	}
 }
 

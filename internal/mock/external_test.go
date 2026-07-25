@@ -113,6 +113,57 @@ func TestExternalMockGatewayPreservesHTTPExchange(t *testing.T) {
 	}
 }
 
+func TestExternalMockGatewayCaptureLimitForwardsCompleteBodies(t *testing.T) {
+	requestBody := []byte("complete-external-request")
+	responseBody := []byte("complete-external-response")
+	received := make(chan []byte, 1)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		received <- body
+		_, _ = w.Write(responseBody)
+	}))
+	defer upstream.Close()
+
+	server, addr := startMockServer(t, 6)
+	server.SetDefaultSession("session-a")
+	if err := server.SetExternalUpstream("session-a", "inventory", upstream.URL, false); err != nil {
+		t.Fatalf("set external upstream: %v", err)
+	}
+
+	resp, err := http.Post(
+		"http://"+addr+"/__phrond/dep/inventory/items",
+		"application/octet-stream",
+		bytes.NewReader(requestBody),
+	)
+	if err != nil {
+		t.Fatalf("gateway request: %v", err)
+	}
+	gotResponse, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if !bytes.Equal(gotResponse, responseBody) {
+		t.Fatalf("forwarded response = %q", gotResponse)
+	}
+	if gotRequest := <-received; !bytes.Equal(gotRequest, requestBody) {
+		t.Fatalf("forwarded request = %q", gotRequest)
+	}
+
+	exchanges := server.Recorder().Exchanges()
+	if len(exchanges) != 1 {
+		t.Fatalf("exchange count = %d", len(exchanges))
+	}
+	exchange := exchanges[0]
+	if exchange.Request.Body != string(requestBody[:6]) ||
+		exchange.Request.BodyBytes != int64(len(requestBody)) ||
+		!exchange.Request.BodyTruncated {
+		t.Fatalf("request capture = %#v", exchange.Request)
+	}
+	if exchange.Response.Body != string(responseBody[:6]) ||
+		exchange.Response.BodyBytes != int64(len(responseBody)) ||
+		!exchange.Response.BodyTruncated {
+		t.Fatalf("response capture = %#v", exchange.Response)
+	}
+}
+
 func TestExternalMockGatewayRecordsFailureAndReturns502(t *testing.T) {
 	server, addr := startMockServer(t)
 	server.SetDefaultSession("session-a")
@@ -267,9 +318,9 @@ func TestExternalMockGatewayRejectsRecursiveTarget(t *testing.T) {
 	}
 }
 
-func startMockServer(t *testing.T) (*Server, string) {
+func startMockServer(t *testing.T, maxBodyBytes ...int64) (*Server, string) {
 	t.Helper()
-	server := NewServer(nil, nil)
+	server := NewServer(nil, nil, maxBodyBytes...)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	t.Cleanup(cancel)
 	addr, err := server.Start(ctx, "127.0.0.1:0")

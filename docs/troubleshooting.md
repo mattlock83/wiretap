@@ -29,6 +29,20 @@
 - For HTTPS targets via CONNECT, check the proxy is in `mitm` mode and the CA
   is trusted; plain-HTTP reverse capture needs no CA.
 
+## Truncated Bodies in Artifacts
+
+- Phrond forwards complete request and response bodies but retains only the
+  first 4 MiB per body by default.
+- A bounded body has `truncated: true` and `original_bytes` in the artifact.
+- Set `PHROND_MAX_CAPTURE_BYTES` to a non-negative byte count before starting
+  Phrond. `0` explicitly enables unlimited capture and should be used
+  cautiously in CI.
+- Body schema validation and JSON-shape fingerprinting are skipped for a
+  truncated body; method, path, headers, query, and response status are still
+  validated and fingerprinted normally.
+- Run `./examples/run-basic-rest-e2e.sh` for a complete example that delivers
+  a 512-byte response while retaining a 64-byte artifact prefix.
+
 ## setupTest Returns 409 "zero-config session is already active"
 - Only one zero-config session may be active at a time. Either run tests
   serially (make sure every test tears down its session — `bindTest` does this

@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -72,6 +73,11 @@ func applyEnv(cfg *core.Config) {
 	}
 	if v := strings.TrimSpace(os.Getenv("PHROND_ARTIFACT_DIR")); v != "" {
 		cfg.Artifact.OutputDir = v
+	}
+	if v := strings.TrimSpace(os.Getenv("PHROND_MAX_CAPTURE_BYTES")); v != "" {
+		if parsed, err := strconv.ParseInt(v, 10, 64); err == nil {
+			cfg.Capture.MaxBodyBytes = parsed
+		}
 	}
 	if v := strings.TrimSpace(os.Getenv("PHROND_HTTP_READ_TIMEOUT")); v != "" {
 		cfg.HTTP.ReadTimeout = parseDuration(v, cfg.HTTP.ReadTimeout)

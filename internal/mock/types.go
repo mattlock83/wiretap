@@ -39,23 +39,27 @@ type StubResponse struct {
 
 // RecordedRequest captures the inbound request to the mock server.
 type RecordedRequest struct {
-	Method   string
-	Path     string
-	URL      string
-	Headers  map[string][]string
-	Trailers map[string][]string
-	Query    map[string][]string
-	Body     string
+	Method        string
+	Path          string
+	URL           string
+	Headers       map[string][]string
+	Trailers      map[string][]string
+	Query         map[string][]string
+	Body          string
+	BodyBytes     int64
+	BodyTruncated bool
 }
 
 // RecordedResponse captures the response written by the mock server.
 type RecordedResponse struct {
-	Status   int
-	DelayMS  int
-	Headers  map[string][]string
-	Trailers map[string][]string
-	Body     string
-	Fault    string
+	Status        int
+	DelayMS       int
+	Headers       map[string][]string
+	Trailers      map[string][]string
+	Body          string
+	BodyBytes     int64
+	BodyTruncated bool
+	Fault         string
 }
 
 // Exchange records the request/response pair and match metadata.

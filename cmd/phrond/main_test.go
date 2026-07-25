@@ -13,6 +13,7 @@ func TestApplyEnvProxySettings(t *testing.T) {
 	t.Setenv("PHROND_PROXY_LISTEN", "127.0.0.1:18081")
 	t.Setenv("PHROND_PROXY_CA_DIR", "/tmp/phrond-ca")
 	t.Setenv("PHROND_PROXY_MODE", "passthrough")
+	t.Setenv("PHROND_MAX_CAPTURE_BYTES", "1024")
 
 	applyEnv(&cfg)
 
@@ -24,6 +25,9 @@ func TestApplyEnvProxySettings(t *testing.T) {
 	}
 	if cfg.Proxy.Mode != "passthrough" {
 		t.Fatalf("expected proxy mode passthrough, got %q", cfg.Proxy.Mode)
+	}
+	if cfg.Capture.MaxBodyBytes != 1024 {
+		t.Fatalf("expected max capture bytes 1024, got %d", cfg.Capture.MaxBodyBytes)
 	}
 }
 

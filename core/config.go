@@ -12,6 +12,7 @@ type Config struct {
 	Log      LogConfig
 	Proxy    ProxyConfig
 	Mock     MockConfig
+	Capture  CaptureConfig
 	Artifact ArtifactConfig
 }
 
@@ -37,6 +38,12 @@ type MockConfig struct {
 	ListenAddr string
 }
 
+type CaptureConfig struct {
+	// MaxBodyBytes is the maximum request or response body prefix retained in
+	// memory and artifacts. Zero explicitly disables the limit.
+	MaxBodyBytes int64
+}
+
 type ArtifactConfig struct {
 	OutputDir string
 }
@@ -59,6 +66,9 @@ func DefaultConfig() Config {
 		},
 		Mock: MockConfig{
 			ListenAddr: "127.0.0.1:19090",
+		},
+		Capture: CaptureConfig{
+			MaxBodyBytes: 4 * 1024 * 1024,
 		},
 		Artifact: ArtifactConfig{
 			OutputDir: "artifacts",
@@ -88,6 +98,9 @@ func (c Config) Validate() error {
 	}
 	if c.HTTP.IdleTimeout < 0 {
 		errs = append(errs, errors.New("http.idle_timeout must be non-negative"))
+	}
+	if c.Capture.MaxBodyBytes < 0 {
+		errs = append(errs, errors.New("capture.max_body_bytes must be non-negative"))
 	}
 	if c.Log.Format != "text" && c.Log.Format != "json" {
 		errs = append(errs, fmt.Errorf("log.format must be 'text' or 'json', got %q", c.Log.Format))

@@ -62,6 +62,10 @@ Notes:
   address) directly with any HTTP client and requests are forwarded to the
   target. No proxy configuration or CA trust is required for HTTP. Absolute-URI
   forward-proxy requests and CONNECT/MITM still work on the same listener.
+- Body capture is process-level configuration rather than session state.
+  `PHROND_MAX_CAPTURE_BYTES` defaults to `4194304`; `0` explicitly enables
+  unlimited capture. Complete bodies are still forwarded when an artifact
+  retains only a bounded prefix.
 
 ## `POST /v1/setupTest`
 

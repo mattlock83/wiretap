@@ -62,3 +62,12 @@ paths:
                 properties:
                   status:
                     type: string
+  /large:
+    get:
+      responses:
+        "200":
+          description: body larger than the example capture limit
+          content:
+            text/plain:
+              schema:
+                type: string

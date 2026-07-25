@@ -586,7 +586,7 @@ func (a *App) handleSetupTest(w http.ResponseWriter, r *http.Request) {
 		name = "scenario-" + time.Now().UTC().Format("20060102150405.000")
 	}
 
-	store := NewTestCaseStore(a.cfg.Artifact.OutputDir)
+	store := NewTestCaseStore(a.cfg.Artifact.OutputDir, a.cfg.Capture.MaxBodyBytes)
 	store.SetProducer(a.producer)
 	if _, err := store.StartCase(name, payload.Tags, payload.Meta, payload.SUTBaseURL); err != nil {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})

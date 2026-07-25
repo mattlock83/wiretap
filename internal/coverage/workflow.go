@@ -98,6 +98,8 @@ type workflowTaskPhrondMetadata struct {
 	RequestTrailers        artifact.Headers          `yaml:"request_trailers,omitempty" json:"request_trailers,omitempty"`
 	RequestEncoding        string                    `yaml:"request_encoding,omitempty" json:"request_encoding,omitempty"`
 	RequestContentEncoding string                    `yaml:"request_content_encoding,omitempty" json:"request_content_encoding,omitempty"`
+	RequestTruncated       bool                      `yaml:"request_truncated,omitempty" json:"request_truncated,omitempty"`
+	RequestOriginalBytes   int64                     `yaml:"request_original_bytes,omitempty" json:"request_original_bytes,omitempty"`
 	CapturedResponse       *workflowCapturedResponse `yaml:"captured_response,omitempty" json:"captured_response,omitempty"`
 }
 
@@ -108,6 +110,8 @@ type workflowCapturedResponse struct {
 	Body            *any             `yaml:"body,omitempty" json:"body,omitempty"`
 	Encoding        string           `yaml:"encoding,omitempty" json:"encoding,omitempty"`
 	ContentEncoding string           `yaml:"content_encoding,omitempty" json:"content_encoding,omitempty"`
+	Truncated       bool             `yaml:"truncated,omitempty" json:"truncated,omitempty"`
+	OriginalBytes   int64            `yaml:"original_bytes,omitempty" json:"original_bytes,omitempty"`
 }
 
 // ServerlessWorkflowFromReport converts a coverage report into one
@@ -361,6 +365,8 @@ func workflowHTTPTaskDefinition(
 			RequestTrailers:        cloneWorkflowHeaders(sample.Request.Trailers),
 			RequestEncoding:        requestEncoding,
 			RequestContentEncoding: contentEncoding,
+			RequestTruncated:       sample.Request.ArtifactBody != nil && sample.Request.ArtifactBody.Truncated,
+			RequestOriginalBytes:   workflowOriginalBytes(sample.Request.ArtifactBody),
 			CapturedResponse:       capturedWorkflowResponse(sample.Response),
 		}},
 	}, true
@@ -427,7 +433,16 @@ func capturedWorkflowResponse(msg InteractionMessage) *workflowCapturedResponse 
 		Body:            body,
 		Encoding:        encoding,
 		ContentEncoding: contentEncoding,
+		Truncated:       msg.ArtifactBody != nil && msg.ArtifactBody.Truncated,
+		OriginalBytes:   workflowOriginalBytes(msg.ArtifactBody),
 	}
+}
+
+func workflowOriginalBytes(body *artifact.Body) int64 {
+	if body == nil || !body.Truncated {
+		return 0
+	}
+	return body.OriginalBytes
 }
 
 func workflowInteractionBody(msg InteractionMessage) (*any, string, string) {

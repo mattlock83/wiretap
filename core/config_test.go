@@ -10,6 +10,9 @@ func TestConfigValidateDefaults(t *testing.T) {
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("expected defaults to validate, got %v", err)
 	}
+	if cfg.Capture.MaxBodyBytes != 4*1024*1024 {
+		t.Fatalf("default max capture bytes = %d", cfg.Capture.MaxBodyBytes)
+	}
 }
 
 func TestConfigValidateErrors(t *testing.T) {
@@ -19,6 +22,7 @@ func TestConfigValidateErrors(t *testing.T) {
 	cfg.Proxy.ListenAddr = ""
 	cfg.Artifact.OutputDir = ""
 	cfg.HTTP.ReadTimeout = -1
+	cfg.Capture.MaxBodyBytes = -1
 	cfg.Log.Format = "xml"
 	cfg.Proxy.Mode = "socks5"
 

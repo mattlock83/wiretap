@@ -218,6 +218,10 @@ type Body struct {
 	Encoding string `yaml:"encoding,omitempty" json:"encoding,omitempty"`
 	Text     string `yaml:"text,omitempty" json:"text,omitempty"`
 	Bytes    string `yaml:"bytes,omitempty" json:"bytes,omitempty"`
+	// Truncated is true when only a bounded prefix was retained.
+	Truncated bool `yaml:"truncated,omitempty" json:"truncated,omitempty"`
+	// OriginalBytes is the complete observed size before capture truncation.
+	OriginalBytes int64 `yaml:"original_bytes,omitempty" json:"original_bytes,omitempty"`
 	// ContentEncoding records the original on-the-wire Content-Encoding (e.g.
 	// "gzip") when the payload was transparently decompressed before storage.
 	// Empty means the body was not compressed.

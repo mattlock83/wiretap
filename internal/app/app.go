@@ -56,7 +56,7 @@ func New(deps Deps) (*App, error) {
 	}
 
 	producer := identity.Detect()
-	store := NewTestCaseStore(cfg.Artifact.OutputDir)
+	store := NewTestCaseStore(cfg.Artifact.OutputDir, cfg.Capture.MaxBodyBytes)
 	store.SetProducer(producer)
 	sessionRecorder := NewSessionProxyRecorder()
 	proxyRecorder := &ProxyFanoutRecorder{recorders: []proxyRecorder{
@@ -66,7 +66,7 @@ func New(deps Deps) (*App, error) {
 
 	proxy := deps.Proxy
 	if proxy == nil {
-		component, err := NewProxyComponent(cfg.Proxy, logger, proxyRecorder)
+		component, err := NewProxyComponent(cfg.Proxy, logger, proxyRecorder, cfg.Capture.MaxBodyBytes)
 		if err != nil {
 			return nil, err
 		}
@@ -74,7 +74,7 @@ func New(deps Deps) (*App, error) {
 	}
 	mock := deps.Mock
 	if mock == nil {
-		mock = NewMockComponent(cfg.Mock)
+		mock = NewMockComponent(cfg.Mock, cfg.Capture.MaxBodyBytes)
 	}
 
 	lifecycle := &core.Lifecycle{

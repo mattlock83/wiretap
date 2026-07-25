@@ -1,7 +1,6 @@
 package mock
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -9,11 +8,14 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/phrond/evermock/internal/capture"
 )
 
 // Server implements an HTTP mock server with stub matching and recording.
@@ -33,6 +35,7 @@ type Server struct {
 	externalClient   *http.Client
 	externalMu       sync.RWMutex
 	externalRoutes   map[string]map[string]externalUpstream
+	maxBodyBytes     int64
 
 	// defaultSessionMu guards defaultSession: the session that unlabeled
 	// traffic (no session prefix in the URL) is attributed to. Set while
@@ -52,7 +55,7 @@ type externalUpstream struct {
 }
 
 // NewServer creates a mock server using the provided registry/recorder.
-func NewServer(registry *Registry, recorder *Recorder) *Server {
+func NewServer(registry *Registry, recorder *Recorder, maxBodyBytes ...int64) *Server {
 	if registry == nil {
 		registry = NewRegistry()
 	}
@@ -79,6 +82,10 @@ func NewServer(registry *Registry, recorder *Recorder) *Server {
 			},
 		},
 		externalRoutes: map[string]map[string]externalUpstream{},
+		maxBodyBytes:   capture.DefaultMaxBodyBytes,
+	}
+	if len(maxBodyBytes) > 0 {
+		server.maxBodyBytes = maxBodyBytes[0]
 	}
 	server.recordingEnabled.Store(true)
 	return server
@@ -328,8 +335,6 @@ func (s *Server) externalUpstream(sessionID, assetID string) (externalUpstream, 
 
 func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	started := time.Now()
-	bodyBytes, _ := io.ReadAll(r.Body)
-	_ = r.Body.Close()
 
 	sessionID, assetID, trimmedPath := parseMockPath(r.URL.Path)
 	if sessionID == "" {
@@ -347,25 +352,36 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	}
 
 	req := RecordedRequest{
-		Method:   r.Method,
-		Path:     trimmedPath,
-		URL:      recordURL,
-		Headers:  cloneHeader(r.Header),
-		Trailers: cloneHeader(r.Trailer),
-		Query:    cloneQuery(r.URL.Query()),
-		Body:     string(bodyBytes),
+		Method:  r.Method,
+		Path:    trimmedPath,
+		URL:     recordURL,
+		Headers: cloneHeader(r.Header),
+		Query:   cloneQuery(r.URL.Query()),
 	}
 
 	if upstream, ok := s.externalUpstream(sessionID, assetID); ok {
-		s.handleExternal(w, r, req, bodyBytes, sessionID, assetID, traceID, started, upstream)
+		s.handleExternal(w, r, req, sessionID, assetID, traceID, started, upstream)
 		return
 	}
 
-	stub, matched := s.registry.Match(r, bodyBytes, MatchTarget{
+	capturedRequest, replayBody, cleanup, err := s.captureMockRequest(r, s.fallbackUpstream != "")
+	if cleanup != nil {
+		defer cleanup()
+	}
+	if err != nil {
+		http.Error(w, "capture request body: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	req.Trailers = cloneHeader(r.Trailer)
+	req.Body = string(capturedRequest.Bytes)
+	req.BodyBytes = capturedRequest.OriginalBytes
+	req.BodyTruncated = capturedRequest.Truncated
+
+	stub, matched := s.registry.Match(r, capturedRequest.Bytes, MatchTarget{
 		SessionID: sessionID,
 		AssetID:   assetID,
 		Path:      trimmedPath,
-	})
+	}, !capturedRequest.Truncated)
 	resp := RecordedResponse{
 		Status:  http.StatusNotImplemented,
 		DelayMS: 0,
@@ -376,7 +392,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		resp = literalResponse(stub)
 	} else if s.fallbackUpstream != "" {
 		recordedID := "recorded-" + strconv.FormatUint(s.recordSeq.Add(1), 10)
-		upstreamResp, upstreamErr := s.forwardToUpstream(r, trimmedPath, bodyBytes)
+		upstreamResp, upstreamErr := s.forwardToUpstream(r, trimmedPath, replayBody, capturedRequest.OriginalBytes)
 		if upstreamErr != nil {
 			resp = RecordedResponse{
 				Status:  http.StatusBadGateway,
@@ -385,7 +401,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 				Body:    upstreamErr.Error(),
 			}
 		} else {
-			resp = upstreamResp
+			resp, upstreamErr = s.writeUpstreamResponse(w, upstreamResp)
 			matched = true
 			stub.ID = recordedID
 			stub.SessionID = sessionID
@@ -394,7 +410,9 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 			stub.Match = StubMatch{
 				Method: r.Method,
 				Path:   trimmedPath,
-				Body:   string(bodyBytes),
+			}
+			if !capturedRequest.Truncated {
+				stub.Match.Body = string(capturedRequest.Bytes)
 			}
 			stub.Response = StubResponse{
 				Status:  resp.Status,
@@ -403,6 +421,25 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 				DelayMS: resp.DelayMS,
 				Fault:   resp.Fault,
 			}
+			exchange := Exchange{
+				ID:            "exchange-" + strconv.FormatUint(s.exchangeSeq.Add(1), 10),
+				SessionID:     sessionID,
+				AssetID:       assetID,
+				TraceID:       traceID,
+				Request:       req,
+				Response:      resp,
+				MatchedStubID: stub.ID,
+				Matched:       true,
+				MatchedStub:   matchedStubSnapshot(true, stub),
+				MockMode:      "builtin",
+				StartedAt:     started,
+				FinishedAt:    time.Now(),
+			}
+			if upstreamErr != nil {
+				exchange.Error = upstreamErr.Error()
+			}
+			s.recordExchange(exchange)
+			return
 		}
 	}
 
@@ -417,7 +454,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 			AssetID:       assetID,
 			TraceID:       traceID,
 			Request:       req,
-			Response:      resp,
+			Response:      s.boundedRecordedResponse(resp),
 			MatchedStubID: stub.ID,
 			Matched:       matched,
 			MatchedStub:   matchedStubSnapshot(matched, stub),
@@ -452,7 +489,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		AssetID:       assetID,
 		TraceID:       traceID,
 		Request:       req,
-		Response:      resp,
+		Response:      s.boundedRecordedResponse(resp),
 		MatchedStubID: stub.ID,
 		Matched:       matched,
 		MatchedStub:   matchedStubSnapshot(matched, stub),
@@ -463,18 +500,60 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	s.recordExchange(exchange)
 }
 
+func (s *Server) captureMockRequest(r *http.Request, spool bool) (capture.Body, io.Reader, func(), error) {
+	if !spool {
+		body, err := capture.ReadAll(r.Body, s.maxBodyBytes)
+		_ = r.Body.Close()
+		return body, nil, nil, err
+	}
+
+	file, err := os.CreateTemp("", "phrond-mock-request-*")
+	if err != nil {
+		return capture.Body{}, nil, nil, err
+	}
+	cleanup := func() {
+		_ = file.Close()
+		_ = os.Remove(file.Name())
+	}
+	writer := capture.NewWriter(s.maxBodyBytes)
+	_, copyErr := io.Copy(io.MultiWriter(file, writer), r.Body)
+	_ = r.Body.Close()
+	if copyErr != nil {
+		cleanup()
+		return capture.Body{}, nil, nil, copyErr
+	}
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		cleanup()
+		return capture.Body{}, nil, nil, err
+	}
+	return writer.Body(), file, cleanup, nil
+}
+
+func (s *Server) boundedRecordedResponse(resp RecordedResponse) RecordedResponse {
+	body := capture.FromBytes([]byte(resp.Body), s.maxBodyBytes)
+	resp.Body = string(body.Bytes)
+	resp.BodyBytes = body.OriginalBytes
+	resp.BodyTruncated = body.Truncated
+	return resp
+}
+
 func (s *Server) handleExternal(
 	w http.ResponseWriter,
 	r *http.Request,
 	recordedRequest RecordedRequest,
-	body []byte,
 	sessionID string,
 	assetID string,
 	traceID string,
 	started time.Time,
 	upstream externalUpstream,
 ) {
-	response, err := s.forwardToExternal(r, body, upstream)
+	upstreamResponse, requestCapture, err := s.forwardToExternal(r, upstream)
+	capturedRequest := requestCapture.Body()
+	recordedRequest.Body = string(capturedRequest.Bytes)
+	recordedRequest.BodyBytes = capturedRequest.OriginalBytes
+	recordedRequest.BodyTruncated = capturedRequest.Truncated
+	recordedRequest.Trailers = cloneHeader(r.Trailer)
+
 	exchange := Exchange{
 		ID:        "exchange-" + strconv.FormatUint(s.exchangeSeq.Add(1), 10),
 		SessionID: sessionID,
@@ -486,35 +565,45 @@ func (s *Server) handleExternal(
 	}
 	if err != nil {
 		exchange.Error = err.Error()
-		response = RecordedResponse{
+		response := RecordedResponse{
 			Status:  http.StatusBadGateway,
 			Headers: map[string][]string{"Content-Type": {"text/plain"}},
 			Body:    "proxy error: " + err.Error(),
 		}
+		exchange.Response = s.boundedRecordedResponse(response)
+		exchange.FinishedAt = time.Now()
+		writeRecordedResponse(w, response)
+		s.recordExchange(exchange)
+		return
 	}
+
+	response, copyErr := s.writeUpstreamResponse(w, upstreamResponse)
 	exchange.Response = response
 	exchange.FinishedAt = time.Now()
-
-	writeRecordedResponse(w, response)
+	if copyErr != nil {
+		exchange.Error = copyErr.Error()
+	}
 	s.recordExchange(exchange)
 }
 
-func (s *Server) forwardToExternal(r *http.Request, body []byte, upstream externalUpstream) (RecordedResponse, error) {
+func (s *Server) forwardToExternal(r *http.Request, upstream externalUpstream) (*http.Response, *capture.Writer, error) {
 	target := *upstream.baseURL
 	target.Path = joinGatewayPath(upstream.baseURL.Path, stripMockPath(r.URL.Path))
 	target.RawPath = joinGatewayPath(upstream.baseURL.EscapedPath(), stripMockEscapedPath(r.URL.EscapedPath()))
 	target.RawQuery = r.URL.RawQuery
 	target.ForceQuery = r.URL.ForceQuery
 
-	req, err := http.NewRequestWithContext(r.Context(), r.Method, target.String(), bytes.NewReader(body))
+	body, requestCapture := capture.WrapReadCloser(r.Body, s.maxBodyBytes)
+	req, err := http.NewRequestWithContext(r.Context(), r.Method, target.String(), body)
 	if err != nil {
-		return RecordedResponse{}, err
+		return nil, requestCapture, err
 	}
+	req.ContentLength = r.ContentLength
 	req.Header = endToEndHeader(r.Header)
 	if _, present := r.Header["User-Agent"]; !present {
 		req.Header["User-Agent"] = nil
 	}
-	req.Trailer = http.Header(cloneHeader(r.Trailer))
+	req.Trailer = r.Trailer
 	if len(req.Trailer) > 0 {
 		req.ContentLength = -1
 	}
@@ -526,23 +615,52 @@ func (s *Server) forwardToExternal(r *http.Request, body []byte, upstream extern
 
 	resp, err := s.externalClient.Do(req)
 	if err != nil {
-		return RecordedResponse{}, err
+		return nil, requestCapture, err
+	}
+	return resp, requestCapture, nil
+}
+
+func (s *Server) writeUpstreamResponse(w http.ResponseWriter, resp *http.Response) (RecordedResponse, error) {
+	if resp == nil {
+		return RecordedResponse{}, errors.New("upstream response is nil")
 	}
 	defer resp.Body.Close()
-	respBody, readErr := io.ReadAll(resp.Body)
-	if readErr != nil {
-		return RecordedResponse{}, readErr
-	}
+
 	headers := endToEndHeader(resp.Header)
 	if resp.ContentLength >= 0 && headers.Get("Content-Length") == "" {
 		headers.Set("Content-Length", strconv.FormatInt(resp.ContentLength, 10))
 	}
+	for key, values := range headers {
+		for _, value := range values {
+			w.Header().Add(key, value)
+		}
+	}
+	for key := range resp.Trailer {
+		w.Header().Add("Trailer", key)
+	}
+	status := resp.StatusCode
+	if status == 0 {
+		status = http.StatusOK
+	}
+	w.WriteHeader(status)
+
+	responseCapture := capture.NewWriter(s.maxBodyBytes)
+	_, copyErr := io.Copy(w, io.TeeReader(resp.Body, responseCapture))
+	for key, values := range resp.Trailer {
+		w.Header().Del(key)
+		for _, value := range values {
+			w.Header().Add(key, value)
+		}
+	}
+	captured := responseCapture.Body()
 	return RecordedResponse{
-		Status:   resp.StatusCode,
-		Headers:  cloneHeader(headers),
-		Trailers: cloneHeader(resp.Trailer),
-		Body:     string(respBody),
-	}, nil
+		Status:        status,
+		Headers:       cloneHeader(headers),
+		Trailers:      cloneHeader(resp.Trailer),
+		Body:          string(captured.Bytes),
+		BodyBytes:     captured.OriginalBytes,
+		BodyTruncated: captured.Truncated,
+	}, copyErr
 }
 
 func writeRecordedResponse(w http.ResponseWriter, resp RecordedResponse) {
@@ -669,32 +787,31 @@ func matchedStubSnapshot(matched bool, stub Stub) *Stub {
 	return &snapshot
 }
 
-func (s *Server) forwardToUpstream(r *http.Request, trimmedPath string, body []byte) (RecordedResponse, error) {
+func (s *Server) forwardToUpstream(r *http.Request, trimmedPath string, body io.Reader, bodyBytes int64) (*http.Response, error) {
 	target, err := url.Parse(s.fallbackUpstream)
 	if err != nil {
-		return RecordedResponse{}, err
+		return nil, err
 	}
 	target.Path = strings.TrimSuffix(target.Path, "/") + trimmedPath
 	target.RawQuery = r.URL.RawQuery
 
-	req, err := http.NewRequestWithContext(r.Context(), r.Method, target.String(), bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(r.Context(), r.Method, target.String(), body)
 	if err != nil {
-		return RecordedResponse{}, err
+		return nil, err
 	}
 	req.Header = http.Header(cloneHeaderDirect(r.Header))
 	req.Host = target.Host
+	req.ContentLength = r.ContentLength
+	if req.ContentLength < 0 && len(r.Trailer) == 0 {
+		req.ContentLength = bodyBytes
+	}
+	req.Trailer = http.Header(cloneHeader(r.Trailer))
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return RecordedResponse{}, err
+		return nil, err
 	}
-	defer resp.Body.Close()
-	respBody, _ := io.ReadAll(resp.Body)
-	return RecordedResponse{
-		Status:  resp.StatusCode,
-		Headers: cloneHeader(resp.Header),
-		Body:    string(respBody),
-	}, nil
+	return resp, nil
 }
 
 func (s *Server) writeConnectionError(w http.ResponseWriter) {

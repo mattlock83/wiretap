@@ -7,6 +7,10 @@ Design goals:
 - **Bring your own mock**: select `mock.mode: external` per dependency to keep
   WireMock or another HTTP mock server while Phrond remains the capture and
   correlation gateway. Built-in and external dependencies can coexist.
+- **Bounded capture**: request and response bodies stream through unchanged
+  while artifacts retain at most 4 MiB per body by default. Truncated bodies
+  carry their complete observed size. Set `PHROND_MAX_CAPTURE_BYTES=0` for
+  unlimited capture.
 - **Broker-ready artifacts**: flows carry dependency `asset_id` (ground truth
   attribution), `parent_flow_id` (causality), and shape `fingerprint`s for
   dedup. Built-in mocks also retain `consumed_fields` and the full
