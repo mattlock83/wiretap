@@ -51,7 +51,12 @@ const { createNodeTestSuite } = require("@phrond/sdk");
 const phrond = createNodeTestSuite({
   baseUrl: "http://127.0.0.1:18000",
   sutBaseUrl: "http://127.0.0.1:8080",
-  strictSchema: false
+  schemas: [{
+    id: "orders-api",
+    role: "sut",
+    type: "openapi",
+    source: { type: "file", path: "schemas/orders.openapi.yaml" }
+  }]
 });
 
 phrond.test("creates an order", async () => {
@@ -85,26 +90,30 @@ phrond.test("gets an order", async () => {
 `phrond.sutUrl` is Phrond's capture address. Phrond forwards those calls to
 the already-running `sutBaseUrl`.
 
-## 4. Optionally validate against OpenAPI
+## 4. Generate a schema if you do not have one
 
-Add the SUT's OpenAPI schema when you want Phrond to validate the captured
-requests and responses:
+OpenAPI validation is strict by default. If the service does not have a schema,
+explicitly ask Phrond to generate a standard OpenAPI 3.1 draft:
 
 ```js
 const phrond = createNodeTestSuite({
   baseUrl: "http://127.0.0.1:18000",
   sutBaseUrl: "http://127.0.0.1:8080",
-  schemas: [{
-    id: "orders-api",
-    role: "sut",
-    type: "openapi",
-    source: { type: "file", path: "schemas/orders.openapi.yaml" }
-  }]
+  generateSchema: {
+    output: "artifacts/orders.generated.openapi.yaml",
+    title: "Orders API",
+    version: "1.0.0"
+  }
 });
 ```
 
-Without a schema, set `strictSchema: false` as shown in the first example.
-Capture still works and validation is recorded as skipped.
+The SDK combines the suite's captures and writes the draft during suite
+teardown. Captured values are not included as examples. Review the generated
+contract, move it into the project's schemas directory, then replace
+`generateSchema` with the normal `schemas` configuration shown above.
+
+Supplying neither option fails setup with a useful error. Supplying both is
+rejected so Phrond never silently changes an enforced contract.
 
 ## 5. Generate a report
 
@@ -119,8 +128,8 @@ go run ./cmd/phrond-coverage \
   --output ./artifacts/coverage.html
 ```
 
-The same command can export Postman JSON or Open Workflow YAML by changing
-`--format` to `postman` or `workflow`.
+The same command can export generated OpenAPI, Postman JSON, or Open Workflow
+YAML by changing `--format` to `openapi`, `postman`, or `workflow`.
 
 ## Other languages and test frameworks
 
@@ -128,9 +137,11 @@ Any test framework can integrate through Phrond's HTTP API:
 
 1. Start capture with `POST /v1/startServer` and the SUT in
    `proxy.target_url`.
-2. Start a named test with `POST /v1/setupTest`.
+2. Start a named test with `POST /v1/setupTest`, supplying `schemas` or
+   explicitly setting `generate_schema: true`.
 3. Send the test's HTTP calls to the returned `sut_url`.
 4. Finish with `POST /v1/teardownTest` and the test's pass/fail status.
+5. In generation mode, call `POST /v1/generateSchema` after the final test.
 
 See the [runtime HTTP API](runtime-api.md) for complete request and response
 examples.

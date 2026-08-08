@@ -17,11 +17,12 @@ import (
 )
 
 type testCaseStartRequest struct {
-	Name       string               `json:"name"`
-	Tags       []string             `json:"tags"`
-	Meta       map[string]any       `json:"meta"`
-	SUTBaseURL string               `json:"sut_base_url"`
-	Schemas    []artifact.SchemaRef `json:"schemas"`
+	Name           string               `json:"name"`
+	Tags           []string             `json:"tags"`
+	Meta           map[string]any       `json:"meta"`
+	SUTBaseURL     string               `json:"sut_base_url"`
+	Schemas        []artifact.SchemaRef `json:"schemas"`
+	GenerateSchema bool                 `json:"generate_schema,omitempty"`
 }
 
 type testCaseFinishRequest struct {
@@ -42,6 +43,13 @@ func (a *App) handleTestCaseStart(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "capture runtime not configured"})
 		return
 	}
+	for i := range req.Schemas {
+		req.Schemas[i].Role = "sut"
+	}
+	if err := validateSchemaSetup(req.Schemas, req.GenerateSchema); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
 	if target := strings.TrimSpace(req.SUTBaseURL); target != "" {
 		if err := a.proxyComponent.SetReverseTarget(target); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("invalid sut_base_url: %v", err)})
@@ -58,7 +66,6 @@ func (a *App) handleTestCaseStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for _, schema := range req.Schemas {
-		schema.Role = "sut"
 		a.store.AddSchema(schema)
 	}
 	writeJSON(w, http.StatusOK, tc)
@@ -272,6 +279,7 @@ type setupTestRequest struct {
 	SUTBaseURL      string               `json:"sut_base_url,omitempty"`
 	Schemas         []artifact.SchemaRef `json:"schemas,omitempty"`
 	SUTSchemas      []artifact.SchemaRef `json:"sut_schemas,omitempty"`
+	GenerateSchema  bool                 `json:"generate_schema,omitempty"`
 	ExplicitSession bool                 `json:"explicit_session,omitempty"`
 }
 
@@ -287,6 +295,15 @@ func (a *App) handleSetupTest(w http.ResponseWriter, r *http.Request) {
 	var payload setupTestRequest
 	if err := decodeStrictJSON(r, &payload); err != nil && !errors.Is(err, io.EOF) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
+		return
+	}
+	schemas := append([]artifact.SchemaRef{}, payload.Schemas...)
+	schemas = append(schemas, payload.SUTSchemas...)
+	for i := range schemas {
+		schemas[i].Role = "sut"
+	}
+	if err := validateSchemaSetup(schemas, payload.GenerateSchema); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
 	if target := strings.TrimSpace(payload.SUTBaseURL); target != "" {
@@ -322,8 +339,7 @@ func (a *App) handleSetupTest(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 		return
 	}
-	for _, schema := range append(payload.Schemas, payload.SUTSchemas...) {
-		schema.Role = "sut"
+	for _, schema := range schemas {
 		store.AddSchema(schema)
 	}
 	session := &runtimeSession{ID: sessionID, Name: name, Store: store, SUTBaseURL: payload.SUTBaseURL, Explicit: payload.ExplicitSession, CreatedAt: time.Now().UTC()}
@@ -386,6 +402,50 @@ func (a *App) handleTeardownTest(w http.ResponseWriter, r *http.Request) {
 	}
 	logFinishedCase(a, artifactDoc, path)
 	writeArtifactResponse(w, artifactDoc, path, sessionID)
+}
+
+type generateSchemaRequest struct {
+	ArtifactsDir string `json:"artifacts_dir,omitempty"`
+	OutputPath   string `json:"output_path,omitempty"`
+	Title        string `json:"title,omitempty"`
+	Version      string `json:"version,omitempty"`
+	Force        bool   `json:"force,omitempty"`
+}
+
+func (a *App) handleGenerateSchema(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+	var payload generateSchemaRequest
+	if err := decodeStrictJSON(r, &payload); err != nil && !errors.Is(err, io.EOF) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
+		return
+	}
+	artifactsDir := strings.TrimSpace(payload.ArtifactsDir)
+	if artifactsDir == "" {
+		artifactsDir = a.cfg.Artifact.OutputDir
+	}
+	outputPath := strings.TrimSpace(payload.OutputPath)
+	if outputPath == "" {
+		outputPath = filepath.Join(artifactsDir, "generated.openapi.yaml")
+	}
+	report, err := coverage.Generate(r.Context(), artifactsDir, payload.Title, false)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	if err := writeGeneratedSchema(outputPath, report, coverage.GeneratedOpenAPIOptions{
+		Title: payload.Title, Version: payload.Version,
+	}, payload.Force); err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, os.ErrExist) {
+			status = http.StatusConflict
+		}
+		writeJSON(w, status, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"schema_path": outputPath, "artifact_count": report.ArtifactCount})
 }
 
 type runtimeReportRequest struct {
@@ -469,6 +529,35 @@ func writeCoverageReport(path string, report *coverage.Report, format string) er
 	}
 	defer file.Close()
 	return coverage.WriteReport(file, report, format)
+}
+
+func writeGeneratedSchema(path string, report *coverage.Report, options coverage.GeneratedOpenAPIOptions, force bool) error {
+	if strings.TrimSpace(path) == "" {
+		return errors.New("generated schema output path is required")
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	flags := os.O_WRONLY | os.O_CREATE
+	if force {
+		flags |= os.O_TRUNC
+	} else {
+		flags |= os.O_EXCL
+	}
+	file, err := os.OpenFile(path, flags, 0o644)
+	if err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return fmt.Errorf("generated schema already exists at %s; set force to overwrite: %w", path, err)
+		}
+		return err
+	}
+	defer file.Close()
+	if err := coverage.WriteGeneratedOpenAPI(file, report, options); err != nil {
+		_ = file.Close()
+		_ = os.Remove(path)
+		return err
+	}
+	return nil
 }
 
 func (a *App) environmentSnapshot() *artifact.Environment {

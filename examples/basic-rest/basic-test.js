@@ -7,17 +7,27 @@ const RUN_E2E = Boolean(process.env.PHROND_BASE_URL || process.env.PHROND_HTTP_L
 if (!RUN_E2E) {
   test("hello world happy flow", { skip: "set PHROND_BASE_URL to run this example" }, () => {});
 } else {
+  const schemaConfig = process.env.PHROND_GENERATE_SCHEMA
+    ? {
+        generateSchema: {
+          output: process.env.PHROND_GENERATED_SCHEMA_PATH,
+          title: "Basic REST SUT",
+          version: "1.0.0"
+        }
+      }
+    : {
+        schemas: [{
+          id: "basic-rest-sut-openapi",
+          role: "sut",
+          type: "openapi",
+          source: { type: "file", path: "examples/basic-rest/schemas/sut-openapi.yaml" }
+        }]
+      };
   const phrond = createNodeTestSuite({
     baseUrl: process.env.PHROND_BASE_URL || `http://${process.env.PHROND_HTTP_LISTEN}`,
     proxy: process.env.PHROND_PROXY_LISTEN ? { listenAddr: process.env.PHROND_PROXY_LISTEN } : true,
     sutBaseUrl: process.env.SUT_BASE_URL || `http://${process.env.SUT_LISTEN || "127.0.0.1:18090"}`,
-    schemas: [{
-      id: "basic-rest-sut-openapi",
-      role: "sut",
-      type: "openapi",
-      source: { type: "file", path: "examples/basic-rest/schemas/sut-openapi.yaml" }
-    }],
-    strictSchema: true
+    ...schemaConfig
   });
 
   phrond.test("hello world happy flow", async () => {

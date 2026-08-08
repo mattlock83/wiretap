@@ -21,6 +21,13 @@ passthrough mode encrypted request and response bodies cannot be inspected.
 Only one zero-configuration session may be active. Ensure teardown runs after
 every test (`phrond.test` does this), run serially, or use explicit sessions.
 
+## `setupTest` says an OpenAPI schema is required
+
+Attach the service's schema through `schemas`. If the service does not have one,
+opt in with the SDK's `generateSchema` configuration or set
+`generate_schema: true` through the runtime API. Generation is intentionally
+explicit and cannot be combined with a supplied schema.
+
 ## An artifact contains HTTP 502
 
 Phrond returns 502 when it cannot reach or establish TLS with the configured

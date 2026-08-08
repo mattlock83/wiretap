@@ -29,6 +29,44 @@ function normalizeProxyConfig(config = {}) {
   return proxy;
 }
 
+function normalizeGenerateSchema(value) {
+  if (value === undefined || value === null || value === false) return null;
+  if (value === true) return {};
+  if (typeof value === "string") {
+    if (!value.trim()) throw new Error("generateSchema output path must not be empty");
+    return { outputPath: value.trim() };
+  }
+  if (typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("generateSchema must be true, an output path, or an options object");
+  }
+  const outputPath = pickFirstString(value.outputPath, value.output_path, value.output, value.path);
+  const artifactsDir = pickFirstString(value.artifactsDir, value.artifacts_dir);
+  const title = pickFirstString(value.title);
+  const version = pickFirstString(value.version);
+  return {
+    ...(outputPath ? { outputPath } : {}),
+    ...(artifactsDir ? { artifactsDir } : {}),
+    ...(title ? { title } : {}),
+    ...(version ? { version } : {}),
+    force: Boolean(value.force)
+  };
+}
+
+function schemaConfiguration(config = {}) {
+  const schemas = Array.isArray(config.schemas) ? config.schemas : [];
+  const generateSchema = normalizeGenerateSchema(config.generateSchema ?? config.generate_schema);
+  if (config.strictSchema === false || config.strict_schema === false) {
+    throw new Error("strictSchema: false is no longer supported; supply schemas or opt in with generateSchema");
+  }
+  if (schemas.length > 0 && generateSchema) {
+    throw new Error("schemas and generateSchema cannot be used together");
+  }
+  if (schemas.length === 0 && !generateSchema) {
+    throw new Error("OpenAPI schemas are required; supply schemas or explicitly opt in with generateSchema");
+  }
+  return { schemas, generateSchema };
+}
+
 class CoreClient {
   constructor(config = {}) {
     this.baseUrl = config.baseUrl || DEFAULT_BASE_URL;
@@ -38,6 +76,7 @@ class CoreClient {
   startServer(payload) { return this._request("POST", "/v1/startServer", payload || {}); }
   setupTest(payload) { return this._request("POST", "/v1/setupTest", payload || {}); }
   teardownTest(payload) { return this._request("POST", "/v1/teardownTest", payload || {}); }
+  generateSchema(payload) { return this._request("POST", "/v1/generateSchema", payload || {}); }
   report(payload) { return this._request("POST", "/v1/report", payload || {}); }
   killServer() { return this._request("POST", "/v1/killServer", {}); }
 
@@ -74,8 +113,10 @@ class Runtime {
     this.client = client;
     this.runtimeInfo = runtimeInfo;
     this.defaultSutBaseUrl = config.sutBaseUrl || null;
-    this.defaultSchemas = Array.isArray(config.schemas) ? [...config.schemas] : [];
-    this.strictSchema = config.strictSchema !== false;
+    const schemaConfig = schemaConfiguration(config);
+    this.defaultSchemas = [...schemaConfig.schemas];
+    this.generatedSchemaConfig = schemaConfig.generateSchema;
+    this.schemaGenerated = false;
     this.pendingScenarioName = "";
     this.sutUrl = runtimeInfo.sut_url || null;
     this.activeSession = null;
@@ -101,14 +142,20 @@ class Runtime {
 
   async setupTest(options = {}) {
     if (this.activeSession) throw new Error("a capture session is already active");
+    const selectedSchemas = Array.isArray(options.schemas) ? options.schemas : this.defaultSchemas;
+    const selectedGeneration = options.generateSchema === undefined && options.generate_schema === undefined
+      ? this.generatedSchemaConfig
+      : normalizeGenerateSchema(options.generateSchema ?? options.generate_schema);
+    const schemaConfig = schemaConfiguration({ schemas: selectedSchemas, generateSchema: selectedGeneration });
     const payload = {
       name: pickFirstString(options.name, options.scenarioName, this.pendingScenarioName) || undefined,
       tags: options.tags,
       meta: options.meta,
       sut_base_url: options.sutBaseUrl || options.sut_base_url || this.defaultSutBaseUrl,
       explicit_session: Boolean(options.explicitSession ?? options.explicit_session),
-      schemas: Array.isArray(options.schemas) ? options.schemas : this.defaultSchemas
+      schemas: schemaConfig.schemas
     };
+    if (schemaConfig.generateSchema) payload.generate_schema = true;
     const session = await this.client.setupTest(payload);
     this.activeSession = {
       sessionId: session.session_id,
@@ -116,7 +163,8 @@ class Runtime {
       explicit: Boolean(session.explicit),
       sutBaseUrl: payload.sut_base_url,
       proxyListen: session.proxy_listen || this.runtimeInfo?.proxy?.listen_addr,
-      sutUrl: session.sut_url || this.sutUrl
+      sutUrl: session.sut_url || this.sutUrl,
+      generateSchema: schemaConfig.generateSchema
     };
     this.pendingScenarioName = "";
     return this.activeSession;
@@ -125,9 +173,11 @@ class Runtime {
   async teardownTest(options = {}) {
     const sessionId = options.sessionId || options.session_id || this.activeSession?.sessionId;
     if (!sessionId) return { status: "idle" };
+    const generation = this.activeSession?.generateSchema || this.generatedSchemaConfig;
     const response = await this.client.teardownTest({ session_id: sessionId, status: options.status || "pass" });
     if (this.activeSession?.sessionId === sessionId) this.activeSession = null;
-    if (this.strictSchema && response?.schema_validation?.status && response.schema_validation.status !== "pass") {
+    const validationStatus = response?.schema_validation?.status;
+    if (validationStatus && validationStatus !== "pass" && (!generation || validationStatus === "fail")) {
       const errors = Array.isArray(response.schema_validation.errors) ? response.schema_validation.errors : [];
       const err = new Error(errors.map((entry) => entry.message || "schema violation").join("; ") || "schema validation failed");
       err.schemaValidation = response.schema_validation;
@@ -148,9 +198,40 @@ class Runtime {
     });
   }
 
+  async generateSchema(options) {
+    const config = options === undefined ? this.generatedSchemaConfig : normalizeGenerateSchema(options);
+    if (!config) throw new Error("generateSchema was not enabled for this capture runtime");
+    const response = await this.client.generateSchema({
+      artifacts_dir: config.artifactsDir,
+      output_path: config.outputPath,
+      title: config.title,
+      version: config.version,
+      force: Boolean(config.force)
+    });
+    this.schemaGenerated = true;
+    return response;
+  }
+
   async killServer() {
     this.activeSession = null;
-    return this.client.killServer();
+    let generationResult;
+    let generationError;
+    if (this.generatedSchemaConfig && !this.schemaGenerated) {
+      try {
+        generationResult = await this.generateSchema();
+      } catch (err) {
+        generationError = err;
+      }
+    }
+    let killResult;
+    try {
+      killResult = await this.client.killServer();
+    } catch (killError) {
+      if (generationError) throw new AggregateError([generationError, killError], "schema generation and Phrond shutdown failed");
+      throw killError;
+    }
+    if (generationError) throw generationError;
+    return generationResult ? { ...killResult, generatedSchema: generationResult } : killResult;
   }
 
   async _ensureSession(options = {}) {
@@ -220,9 +301,11 @@ class Runtime {
 
 async function startCapture(config = {}) {
   if (!config || typeof config !== "object" || Array.isArray(config)) throw new Error("startCapture config must be an object");
+  const schemaConfig = schemaConfiguration(config);
+  const runtimeConfig = { ...config, schemas: schemaConfig.schemas, generateSchema: schemaConfig.generateSchema };
   const client = new CoreClient({ baseUrl: config.baseUrl, timeoutMs: config.timeoutMs });
   const runtimeInfo = await client.startServer({ proxy: normalizeProxyConfig(config) });
-  return new Runtime(client, config, runtimeInfo);
+  return new Runtime(client, runtimeConfig, runtimeInfo);
 }
 
 const startServer = startCapture;
@@ -251,6 +334,7 @@ function bindTest(runtimeOrGetter, testFn, defaults = {}) {
 }
 
 function createNodeTestSuite(config = {}) {
+  schemaConfiguration(config);
   const testApi = config.testApi || require("node:test");
   if (!testApi || typeof testApi.test !== "function" || typeof testApi.before !== "function" || typeof testApi.after !== "function") {
     throw new Error("createNodeTestSuite testApi must provide test, before, and after functions");
@@ -277,6 +361,7 @@ function createNodeTestSuite(config = {}) {
     get runtime() { if (!runtime) throw new Error("Phrond capture runtime is not started yet"); return runtime; },
     get sutUrl() { return this.runtime.sutUrl; },
     get http() { return this.runtime.http; },
+    generateSchema(options) { return this.runtime.generateSchema(options); },
     report(options) { return this.runtime.report(options); }
   };
   suite.test = bindTest(() => runtime, testApi.test, config.testDefaults || {});

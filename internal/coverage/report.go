@@ -70,6 +70,7 @@ type SpecOperationSamples struct {
 
 type FlowSample struct {
 	TestCase       string             `json:"testcase" yaml:"testcase"`
+	TestStatus     string             `json:"test_status,omitempty" yaml:"test_status,omitempty"`
 	FlowID         string             `json:"flow_id,omitempty" yaml:"flow_id,omitempty"`
 	Protocol       string             `json:"protocol,omitempty" yaml:"protocol,omitempty"`
 	Channel        string             `json:"channel,omitempty" yaml:"channel,omitempty"`
@@ -107,6 +108,7 @@ type openapiSpec struct {
 type flowEntry struct {
 	Flow     artifact.Flow
 	TestCase string
+	Status   string
 }
 
 // Generate builds a coverage report from artifact files in a directory.
@@ -159,6 +161,8 @@ func WriteReport(w io.Writer, report *Report, format string) error {
 		return errors.New("report is nil")
 	}
 	switch strings.ToLower(strings.TrimSpace(format)) {
+	case "openapi", "openapi-yaml", "openapi_yaml":
+		return WriteGeneratedOpenAPI(w, report, GeneratedOpenAPIOptions{})
 	case "postman", "collection":
 		return WritePostmanCollection(w, report)
 	case "workflow", "serverless-workflow", "serverless_workflow", "sw":
@@ -842,7 +846,7 @@ func buildCoverage(entries []artifactEntry) (SpecCoverageGroup, []TestCaseCovera
 		}
 		for _, flow := range entry.Doc.Traffic {
 			flows = append(flows, flow)
-			flowEntries = append(flowEntries, flowEntry{Flow: flow, TestCase: tcName})
+			flowEntries = append(flowEntries, flowEntry{Flow: flow, TestCase: tcName, Status: entry.Doc.TestCase.Status})
 		}
 		schemas = append(schemas, entry.Doc.Schemas...)
 	}
@@ -1103,6 +1107,7 @@ func flowSampleFromFlow(entry flowEntry) FlowSample {
 	flow := entry.Flow
 	sample := FlowSample{
 		TestCase:       entry.TestCase,
+		TestStatus:     entry.Status,
 		FlowID:         flow.ID,
 		Protocol:       flow.Protocol,
 		Channel:        flow.Channel,

@@ -31,8 +31,8 @@ func applySchemaValidation(art *artifact.Artifact) {
 		return
 	}
 	if len(art.Schemas) == 0 {
-		// Schemas are optional: without any, validation is skipped rather than
-		// failed, so teams can adopt before they have specs.
+		// Public APIs permit this only for explicit schema generation. Direct
+		// store callers retain a truthful skipped result.
 		art.SchemaValidation = &artifact.SchemaValidation{Status: "skipped"}
 		if art.Meta == nil {
 			art.Meta = map[string]any{}
@@ -76,6 +76,27 @@ func applySchemaValidation(art *artifact.Artifact) {
 			art.TestCase.Status = "fail"
 		}
 	}
+}
+
+func validateSchemaSetup(schemas []artifact.SchemaRef, generate bool) error {
+	if len(schemas) == 0 {
+		if generate {
+			return nil
+		}
+		return errors.New("an OpenAPI schema is required; supply schemas or explicitly opt in with generate_schema")
+	}
+	if generate {
+		return errors.New("schemas and generate_schema cannot be used together")
+	}
+	for index, schema := range schemas {
+		if !strings.EqualFold(strings.TrimSpace(schema.Type), "openapi") {
+			return fmt.Errorf("schema %d (%q) must have type openapi", index+1, schema.ID)
+		}
+		if _, err := loadOpenAPISpec(schema); err != nil {
+			return fmt.Errorf("OpenAPI schema %q is invalid or unreadable: %w", schema.ID, err)
+		}
+	}
+	return nil
 }
 
 func validateSchemas(art *artifact.Artifact) []artifact.SchemaValidationError {

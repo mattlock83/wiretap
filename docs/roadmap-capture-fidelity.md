@@ -1,7 +1,7 @@
 # Phrond product roadmap
 
 Status: active
-Last reviewed: 2026-08-08
+Last reviewed: 2026-08-09
 
 Phrond's product focus is now exclusively test→SUT traffic capture, schema
 validation, and reporting. The built-in mock server, response stack, dependency
@@ -17,6 +17,8 @@ their preferred mock tooling independently.
   reverse proxy failures.
 - B6: deterministic error responses and artifacts.
 - C1: consumer-owned SUT lifecycle and low-ceremony named Node test API.
+- C2: strict-by-default OpenAPI enforcement with explicit, deterministic
+  OpenAPI 3.1 generation for teams bootstrapping a contract.
 - E1: Postman JSON and Open Workflow Specification YAML exports.
 - F1: capture-only product simplification; all mock-serving code and public
   mock APIs removed.

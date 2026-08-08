@@ -8,7 +8,7 @@ test. It owns:
 - an HTTP/HTTPS capture proxy;
 - isolated, named per-test capture sessions;
 - bounded request/response recording and redaction;
-- optional OpenAPI validation;
+- strict OpenAPI validation and opt-in OpenAPI bootstrapping;
 - deterministic YAML artifacts and aggregate reports.
 
 It does not own application lifecycle, application configuration, dependency
@@ -24,6 +24,7 @@ flowchart LR
   Proxy -->|forward unchanged| SUT["Externally managed SUT"]
   Proxy --> Store["Named test artifact"]
   Store --> Reports["HTML / Postman / Workflow YAML"]
+  Store --> Generated["Generated OpenAPI 3.1 draft"]
 ```
 
 Each recorded flow has `channel: test_to_sut`, the request and response,
@@ -37,6 +38,12 @@ timing, trace ID, shape fingerprint, and any upstream `transport_error`.
 4. Test traffic is sent through Phrond's returned `sut_url`.
 5. Teardown records pass/fail, validates schemas, and writes the artifact.
 6. Suite teardown generates aggregate reports and stops Phrond.
+
+Consumers normally attach a schema with no mode setting. Missing, unreadable,
+and invalid schemas fail before the test session starts; captured violations
+fail teardown. A consumer without a schema can explicitly request generation,
+which aggregates all completed suite artifacts into a reviewable OpenAPI 3.1
+draft before shutdown. Generation never modifies a supplied schema.
 
 The JavaScript `createNodeTestSuite` facade pushes steps 2, 3, 5, and 6 behind
 test-runner hooks while leaving step 1 explicitly outside Phrond.
@@ -53,7 +60,8 @@ test-runner hooks while leaving step 1 explicitly outside Phrond.
 
 ## Artifact and reporting contract
 
-YAML is the canonical per-test artifact. Postman JSON and Open Workflow YAML
-are derived exports, not storage formats. Reports cover provided SUT operations
-that were exercised or not covered and include captured examples grouped by
-test name.
+YAML is the canonical per-test artifact. Postman JSON, Open Workflow YAML, and
+generated OpenAPI are derived exports, not storage formats. Reports cover
+provided SUT operations that were exercised or not covered and include captured
+examples grouped by test name. Generated OpenAPI omits captured examples and is
+a bootstrap draft that must be reviewed before enforcement.

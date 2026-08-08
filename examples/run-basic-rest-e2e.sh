@@ -61,6 +61,9 @@ export PHROND_HTTP_LISTEN="127.0.0.1:${PHROND_PORT}"
 export PHROND_PROXY_LISTEN="127.0.0.1:${PROXY_PORT}"
 export PHROND_ARTIFACT_DIR="$ARTIFACT_DIR"
 export PHROND_BASE_URL="http://127.0.0.1:${PHROND_PORT}"
+if [[ -n "${PHROND_GENERATE_SCHEMA:-}" ]]; then
+  export PHROND_GENERATED_SCHEMA_PATH="${PHROND_GENERATED_SCHEMA_PATH:-${ARTIFACT_DIR}/basic-rest.generated.openapi.yaml}"
+fi
 # Keep generated example artifacts intentionally small.
 export PHROND_MAX_CAPTURE_BYTES="${PHROND_MAX_CAPTURE_BYTES:-64}"
 
@@ -131,3 +134,6 @@ echo "Artifacts written to ${ARTIFACT_DIR}"
 echo "Coverage report (Workflow): ${ARTIFACT_DIR}/coverage.workflow.yaml"
 echo "Coverage report (Postman): ${ARTIFACT_DIR}/coverage.postman_collection.json"
 echo "Coverage report (HTML): ${ARTIFACT_DIR}/coverage.html"
+if [[ -n "${PHROND_GENERATE_SCHEMA:-}" ]]; then
+  echo "Generated OpenAPI: ${PHROND_GENERATED_SCHEMA_PATH}"
+fi

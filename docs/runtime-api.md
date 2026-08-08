@@ -25,6 +25,8 @@ waits for, or stops that application.
 
 `POST /v1/setupTest` creates a named capture session. It also starts the proxy
 if needed, so lower-level consumers do not have to call `startServer` first.
+An OpenAPI schema is required and checked for readability and validity before
+the session starts.
 
 ```json
 {
@@ -57,6 +59,41 @@ tests.
 
 The response contains `artifact`, `path`, and `schema_validation`. OpenAPI
 violations change an otherwise passing artifact to `fail`.
+
+## Schema generation
+
+Teams without an OpenAPI document must explicitly mark each bootstrap session:
+
+```json
+{
+  "name": "hello world happy flow",
+  "sut_base_url": "http://127.0.0.1:18090",
+  "generate_schema": true
+}
+```
+
+After the final test, `POST /v1/generateSchema` combines the captured artifacts
+into a deterministic standard OpenAPI 3.1 document:
+
+```json
+{
+  "artifacts_dir": "artifacts",
+  "output_path": "artifacts/hello.generated.openapi.yaml",
+  "title": "Hello API",
+  "version": "1.0.0",
+  "force": false
+}
+```
+
+Passing tests are used for type and shape inference; failing tests are excluded,
+and captured values are never emitted as examples. Numeric and UUID path
+segments are conservatively converted to path parameters. Generated object
+schemas reject unobserved properties and require properties seen in every
+relevant capture. Existing files are not overwritten unless `force` is true.
+
+Supplying both `schemas` and `generate_schema` is rejected. Supplying neither
+is also rejected; generation is the explicit onboarding exception to strict
+schema enforcement.
 
 ## Reports
 

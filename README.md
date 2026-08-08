@@ -2,8 +2,8 @@
 
 Phrond captures network traffic between tests and an already-running system
 under test (SUT). It writes one YAML artifact per test, validates captured HTTP
-against optional OpenAPI schemas, and exports HTML, Postman, and Open Workflow
-Specification reports.
+strictly against supplied OpenAPI schemas, and exports HTML, Postman, Open
+Workflow Specification, and generated OpenAPI documents.
 
 Phrond deliberately does not start or configure the SUT, and it is not a mock
 server. Use the application harness and mocking tools that already fit your
@@ -51,21 +51,28 @@ The exact test name and truthful pass/fail status are stored in the artifact.
   capture.
 - Upstream connection and TLS failures return and record HTTP 502 responses,
   with the original failure in `transport_error`.
-- Schemas are optional. Without one, validation is recorded as `skipped`.
+- OpenAPI schemas are required and enforced by default. Teams without one can
+  explicitly opt into `generateSchema` to create a standard OpenAPI 3.1 draft
+  from their captured tests.
 
 ## Reports
 
 ```bash
+go run ./cmd/phrond-coverage --artifacts ./artifacts --sut-name "Example SUT" --format openapi --output generated.openapi.yaml
 go run ./cmd/phrond-coverage --artifacts ./artifacts --sut-name "Example SUT" --format workflow --output coverage.workflow.yaml
 go run ./cmd/phrond-coverage --artifacts ./artifacts --sut-name "Example SUT" --format postman --output coverage.postman_collection.json
 go run ./cmd/phrond-coverage --artifacts ./artifacts --sut-name "Example SUT" --format html --output coverage.html
 ```
 
-All formats report captured test→SUT traffic and provided-API coverage. The
-HTML report can be explored by SUT API operation or test case and includes the
-captured request/response headers, trailers, and payloads. The workflow export
-uses Open Workflow Specification DSL 1.0.3; Postman remains an interoperability
-option.
+HTML, Postman, and Workflow formats report captured test→SUT traffic and
+provided-API coverage. The HTML report can be explored by SUT API operation or
+test case and includes the captured request/response headers, trailers, and
+payloads. The workflow export uses Open Workflow Specification DSL 1.0.3;
+Postman remains an interoperability option.
+
+Generated OpenAPI contains inferred paths, parameters, bodies, content types,
+and responses from passing tests, but never captured values as examples. Review
+it before moving the file into `schemas` and using normal strict validation.
 
 ## Documentation
 
