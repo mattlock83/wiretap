@@ -81,8 +81,8 @@ type Recorder interface {
 type HTTPExchange struct {
 	SessionID string
 	// TraceID is injected by the proxy as X-Phrond-Trace-Id on the forwarded
-	// request. When the SUT propagates the header to its dependencies, the
-	// mock server records it, linking downstream calls to this exchange.
+	// request so applications can correlate captured traffic with their own
+	// traces and logs.
 	TraceID               string
 	Method                string
 	URL                   string

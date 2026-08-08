@@ -19,7 +19,6 @@ func TestTestCaseLifecycleWritesArtifact(t *testing.T) {
 	cfg.HTTP.ListenAddr = "127.0.0.1:0"
 	cfg.Proxy.ListenAddr = "127.0.0.1:0"
 	cfg.Proxy.CABaseDir = t.TempDir()
-	cfg.Mock.ListenAddr = "127.0.0.1:0"
 	cfg.Artifact.OutputDir = outputDir
 
 	store := NewTestCaseStore(cfg.Artifact.OutputDir)
@@ -27,9 +26,7 @@ func TestTestCaseLifecycleWritesArtifact(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new proxy component: %v", err)
 	}
-	mockComponent := NewMockComponent(cfg.Mock)
-
-	appInstance, err := New(Deps{Config: cfg, Proxy: proxyComponent, Mock: mockComponent})
+	appInstance, err := New(Deps{Config: cfg, Proxy: proxyComponent})
 	if err != nil {
 		t.Fatalf("new app: %v", err)
 	}

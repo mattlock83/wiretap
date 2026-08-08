@@ -24,22 +24,14 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [message, downstream]
+                required: [message, id, action]
                 properties:
                   message:
                     type: string
-                  downstream:
-                    type: array
-                    items:
-                      type: object
-                      required: [path, status, body]
-                      properties:
-                        path:
-                          type: string
-                        status:
-                          type: integer
-                        body:
-                          type: string
+                  id:
+                    type: string
+                  action:
+                    type: string
   /healthz:
     get:
       responses:

@@ -13,16 +13,13 @@ func TestLifecycleEndpointsStartComponents(t *testing.T) {
 	cfg.HTTP.ListenAddr = "127.0.0.1:0"
 	cfg.Proxy.ListenAddr = "127.0.0.1:0"
 	cfg.Proxy.CABaseDir = t.TempDir()
-	cfg.Mock.ListenAddr = "127.0.0.1:0"
 
 	store := NewTestCaseStore(cfg.Artifact.OutputDir)
 	proxyComponent, err := NewProxyComponent(cfg.Proxy, nil, store)
 	if err != nil {
 		t.Fatalf("new proxy component: %v", err)
 	}
-	mockComponent := NewMockComponent(cfg.Mock)
-
-	appInstance, err := New(Deps{Config: cfg, Proxy: proxyComponent, Mock: mockComponent})
+	appInstance, err := New(Deps{Config: cfg, Proxy: proxyComponent})
 	if err != nil {
 		t.Fatalf("new app: %v", err)
 	}
@@ -41,9 +38,6 @@ func TestLifecycleEndpointsStartComponents(t *testing.T) {
 
 	if proxyComponent.Info().ListenAddr == "" {
 		t.Fatalf("expected proxy to start and report listen address")
-	}
-	if mockComponent.Addr() == "" {
-		t.Fatalf("expected mock server to start and report address")
 	}
 
 	resp, err = http.Post(server.URL+"/v1/lifecycle/stop", "application/json", nil)

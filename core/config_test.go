@@ -18,7 +18,6 @@ func TestConfigValidateDefaults(t *testing.T) {
 func TestConfigValidateErrors(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.HTTP.ListenAddr = ""
-	cfg.Mock.ListenAddr = ""
 	cfg.Proxy.ListenAddr = ""
 	cfg.Artifact.OutputDir = ""
 	cfg.HTTP.ReadTimeout = -1

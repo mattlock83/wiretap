@@ -138,7 +138,7 @@ func validateSchemas(art *artifact.Artifact) []artifact.SchemaValidationError {
 		if flow.Request.HTTP == nil || flow.Response.HTTP == nil {
 			continue
 		}
-		role := roleForChannel(flow.Channel)
+		const role = "sut"
 		candidates := openapiByRole[role]
 		if len(candidates) == 0 {
 			issues = append(issues, artifact.SchemaValidationError{
@@ -320,19 +320,7 @@ func resolvePath(path string) string {
 	return filepath.Join(cwd, path)
 }
 
-func roleForChannel(channel string) string {
-	switch channel {
-	case "sut_to_mock":
-		return "fake"
-	default:
-		return "sut"
-	}
-}
-
 func roleToChannel(role string) string {
-	if role == "fake" {
-		return "sut_to_mock"
-	}
 	return "test_to_sut"
 }
 

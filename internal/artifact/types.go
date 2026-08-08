@@ -2,7 +2,6 @@ package artifact
 
 import (
 	"sort"
-	"strings"
 	"time"
 )
 
@@ -35,9 +34,6 @@ type Producer struct {
 func (a *Artifact) Normalize() {
 	if a == nil {
 		return
-	}
-	for i := range a.Schemas {
-		a.Schemas[i].fillAssetDefaults()
 	}
 	if len(a.Schemas) > 1 {
 		sort.SliceStable(a.Schemas, func(i, j int) bool {
@@ -76,7 +72,6 @@ type TestCase struct {
 type Environment struct {
 	SUTBaseURL  string `yaml:"sut_base_url,omitempty" json:"sut_base_url,omitempty"`
 	ProxyListen string `yaml:"proxy_listen,omitempty" json:"proxy_listen,omitempty"`
-	MockBaseURL string `yaml:"mock_base_url,omitempty" json:"mock_base_url,omitempty"`
 	ProxyMode   string `yaml:"proxy_mode,omitempty" json:"proxy_mode,omitempty"`
 }
 
@@ -87,28 +82,6 @@ type SchemaRef struct {
 	Type           string       `yaml:"type" json:"type"`
 	Source         SchemaSource `yaml:"source" json:"source"`
 	OpenAPIVersion string       `yaml:"openapi_version,omitempty" json:"openapi_version,omitempty"`
-
-	// Asset identity. AssetID is the stable, cross-repo key a broker uses to
-	// join a consumer's faked dependency (role: fake) to the provider that
-	// owns it (role: sut). AssetSHA fingerprints the asset version so drift
-	// between the modelled version and the live one can be detected.
-	AssetName string `yaml:"asset_name,omitempty" json:"asset_name,omitempty"`
-	AssetID   string `yaml:"asset_id,omitempty" json:"asset_id,omitempty"`
-	AssetSHA  string `yaml:"asset_sha,omitempty" json:"asset_sha,omitempty"`
-}
-
-// fillAssetDefaults derives asset identity from existing fields when the
-// caller did not supply it, so artifacts are always self-identifying.
-func (s *SchemaRef) fillAssetDefaults() {
-	if s == nil {
-		return
-	}
-	if strings.TrimSpace(s.AssetName) == "" {
-		s.AssetName = s.ID
-	}
-	if strings.TrimSpace(s.AssetSHA) == "" {
-		s.AssetSHA = s.Source.SHA256
-	}
 }
 
 // SchemaSource identifies where the schema came from.
@@ -124,75 +97,22 @@ type SchemaSource struct {
 
 // Flow captures one request/response exchange.
 type Flow struct {
-	ID            string    `yaml:"id" json:"id"`
-	Protocol      string    `yaml:"protocol" json:"protocol"`
-	Channel       string    `yaml:"channel" json:"channel"`
-	StartedAt     time.Time `yaml:"started_at,omitempty" json:"started_at,omitempty"`
-	DurationMS    int64     `yaml:"duration_ms,omitempty" json:"duration_ms,omitempty"`
-	Request       Message   `yaml:"request" json:"request"`
-	Response      Message   `yaml:"response" json:"response"`
-	AssertionIDs  []string  `yaml:"assertion_ids,omitempty" json:"assertion_ids,omitempty"`
-	MatchedStubID string    `yaml:"matched_stub_id,omitempty" json:"matched_stub_id,omitempty"`
-	// AssetID identifies the declared dependency a sut_to_mock flow was routed
-	// to. Ground truth for attribution — no spec inference required.
-	AssetID string `yaml:"asset_id,omitempty" json:"asset_id,omitempty"`
-	// TraceID links flows across channels: the proxy injects it on
-	// test_to_sut requests and the mock records it when the SUT propagates it.
+	ID           string    `yaml:"id" json:"id"`
+	Protocol     string    `yaml:"protocol" json:"protocol"`
+	Channel      string    `yaml:"channel" json:"channel"`
+	StartedAt    time.Time `yaml:"started_at,omitempty" json:"started_at,omitempty"`
+	DurationMS   int64     `yaml:"duration_ms,omitempty" json:"duration_ms,omitempty"`
+	Request      Message   `yaml:"request" json:"request"`
+	Response     Message   `yaml:"response" json:"response"`
+	AssertionIDs []string  `yaml:"assertion_ids,omitempty" json:"assertion_ids,omitempty"`
+	// TraceID correlates the captured exchange with application traces and logs.
 	TraceID string `yaml:"trace_id,omitempty" json:"trace_id,omitempty"`
-	// ParentFlowID names the test_to_sut flow that caused this sut_to_mock
-	// call, resolved by trace id when available, else by time-window nesting.
-	ParentFlowID string `yaml:"parent_flow_id,omitempty" json:"parent_flow_id,omitempty"`
 	// Fingerprint is a stable hash of the interaction shape (channel, method,
 	// path, status, JSON body key/type structure) for cross-run dedup.
 	Fingerprint string `yaml:"fingerprint,omitempty" json:"fingerprint,omitempty"`
-	// ConsumedFields lists response fields the test declared it depends on
-	// (via the verify API). Lets analysis distinguish breaking changes to
-	// consumed fields from harmless changes to ignored ones.
-	ConsumedFields []string `yaml:"consumed_fields,omitempty" json:"consumed_fields,omitempty"`
-	// MockStub is the consumer's assumption that produced a sut_to_mock
-	// response: the match rule plus the unrendered response template. This is
-	// the contract a broker compares against provider truth.
-	MockStub *MockStub `yaml:"mock_stub,omitempty" json:"mock_stub,omitempty"`
-	// MockMode identifies whether a sut_to_mock response was produced by
-	// Phrond's built-in mock or observed through an external mock gateway.
-	MockMode string `yaml:"mock_mode,omitempty" json:"mock_mode,omitempty"`
-	// TransportError preserves an upstream connection or TLS failure. External
-	// mock gateway failures are still represented by the recorded 502 response.
+	// TransportError preserves an upstream connection or TLS failure alongside
+	// the recorded 502 response.
 	TransportError string `yaml:"transport_error,omitempty" json:"transport_error,omitempty"`
-	// Unmatched is true when the SUT called the built-in mock but no stub
-	// matched. It remains false for external mocks because provider-specific
-	// unmatched behavior cannot be inferred from HTTP traffic.
-	Unmatched bool `yaml:"unmatched,omitempty" json:"unmatched,omitempty"`
-}
-
-// MockStub records a consumer's modelled assumption about a dependency.
-type MockStub struct {
-	ID               string           `yaml:"id,omitempty" json:"id,omitempty"`
-	Default          bool             `yaml:"default,omitempty" json:"default,omitempty"`
-	Source           string           `yaml:"source,omitempty" json:"source,omitempty"`
-	Match            StubMatch        `yaml:"match" json:"match"`
-	MatchedOn        []string         `yaml:"matched_on,omitempty" json:"matched_on,omitempty"`
-	ResponseTemplate StubResponseTmpl `yaml:"response_template" json:"response_template"`
-}
-
-// StubMatch is the match rule that selected a stub. Empty fields are ignored.
-type StubMatch struct {
-	Method       string            `yaml:"method,omitempty" json:"method,omitempty"`
-	Path         string            `yaml:"path,omitempty" json:"path,omitempty"`
-	Headers      map[string]string `yaml:"headers,omitempty" json:"headers,omitempty"`
-	Query        map[string]string `yaml:"query,omitempty" json:"query,omitempty"`
-	Body         string            `yaml:"body,omitempty" json:"body,omitempty"`
-	BodyContains string            `yaml:"body_contains,omitempty" json:"body_contains,omitempty"`
-}
-
-// StubResponseTmpl is the unrendered response template (the stable contract,
-// distinct from the rendered Response captured on the Flow).
-type StubResponseTmpl struct {
-	Status  int               `yaml:"status,omitempty" json:"status,omitempty"`
-	Headers map[string]string `yaml:"headers,omitempty" json:"headers,omitempty"`
-	Body    string            `yaml:"body,omitempty" json:"body,omitempty"`
-	DelayMS int               `yaml:"delay_ms,omitempty" json:"delay_ms,omitempty"`
-	Fault   string            `yaml:"fault,omitempty" json:"fault,omitempty"`
 }
 
 // Message wraps HTTP message payloads.

@@ -185,9 +185,6 @@ func CollectionFromReport(report *Report) (*PostmanCollection, error) {
 	for _, spec := range report.Provided.Specs {
 		specLookup[specLookupKey("sut", spec.SchemaID)] = spec
 	}
-	for _, spec := range report.Dependent.Specs {
-		specLookup[specLookupKey("fake", spec.SchemaID)] = spec
-	}
 	specFolderNames := buildSpecFolderNames(report)
 	specVariables := buildSpecVariables(report, specFolderNames)
 	collection.Variable = sortPostmanVariables(specVariables)
@@ -203,12 +200,6 @@ func CollectionFromReport(report *Report) (*PostmanCollection, error) {
 		appendPostmanSpecFolders(&testTraffic, "sut", tc.Provided, specLookup, specFolderNames, specVariables)
 		if len(testTraffic.Item) > 0 {
 			testFolder.Item = append(testFolder.Item, testTraffic)
-		}
-
-		mockTraffic := PostmanItem{Name: "mock traffic"}
-		appendPostmanSpecFolders(&mockTraffic, "fake", tc.Dependent, specLookup, specFolderNames, specVariables)
-		if len(mockTraffic.Item) > 0 {
-			testFolder.Item = append(testFolder.Item, mockTraffic)
 		}
 
 		if len(testFolder.Item) == 0 {
@@ -853,9 +844,8 @@ func ReportFromPostmanCollection(collection *PostmanCollection) (*Report, error)
 		Notes:         uniqueSorted(notes),
 	}
 	if len(entries) > 0 {
-		provided, dependent, testcases, coverageNotes := buildCoverage(entries)
+		provided, testcases, coverageNotes := buildCoverage(entries)
 		report.Provided = provided
-		report.Dependent = dependent
 		report.TestCases = testcases
 		report.Notes = uniqueSorted(append(report.Notes, coverageNotes...))
 	}

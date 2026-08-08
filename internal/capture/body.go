@@ -89,7 +89,7 @@ func ReadAll(reader io.Reader, maxBodyBytes int64) (Body, error) {
 }
 
 // FromBytes applies the same bounded representation to an already materialized
-// body, such as a literal built-in mock response.
+// body, such as a generated proxy error response.
 func FromBytes(data []byte, maxBodyBytes int64) Body {
 	writer := NewWriter(maxBodyBytes)
 	_, _ = writer.Write(data)

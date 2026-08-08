@@ -53,9 +53,6 @@ func applyEnv(cfg *core.Config) {
 	if v := strings.TrimSpace(os.Getenv("PHROND_HTTP_LISTEN")); v != "" {
 		cfg.HTTP.ListenAddr = v
 	}
-	if v := strings.TrimSpace(os.Getenv("PHROND_MOCK_LISTEN")); v != "" {
-		cfg.Mock.ListenAddr = v
-	}
 	if v := strings.TrimSpace(os.Getenv("PHROND_LOG_FORMAT")); v != "" {
 		cfg.Log.Format = strings.ToLower(v)
 	}

@@ -1,7 +1,4 @@
-# Demo Apps
+# Demo apps
 
-Executable demo services used by the example tests.
-
-- `basic-rest/sut`
-- `complex-rest/payment-sut`
-- `complex-rest/transaction-service`
+`basic-rest/sut` is the independently managed SUT used by the capture example.
+Phrond does not start or configure it.

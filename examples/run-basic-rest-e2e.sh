@@ -36,8 +36,6 @@ PHROND_PORT="${PHROND_PORT:-$(pick_unique_port "${USED_PORTS}")}"
 USED_PORTS="${USED_PORTS} ${PHROND_PORT}"
 PROXY_PORT="${PROXY_PORT:-$(pick_unique_port "${USED_PORTS}")}"
 USED_PORTS="${USED_PORTS} ${PROXY_PORT}"
-MOCK_PORT="${MOCK_PORT:-$(pick_unique_port "${USED_PORTS}")}"
-USED_PORTS="${USED_PORTS} ${MOCK_PORT}"
 SUT_PORT="${SUT_PORT:-$(pick_unique_port "${USED_PORTS}")}"
 
 BUILD_DIR="${BUILD_DIR:-$(mktemp -d)}"
@@ -61,16 +59,13 @@ mkdir -p "$ARTIFACT_DIR"
 
 export PHROND_HTTP_LISTEN="127.0.0.1:${PHROND_PORT}"
 export PHROND_PROXY_LISTEN="127.0.0.1:${PROXY_PORT}"
-export PHROND_MOCK_LISTEN="127.0.0.1:${MOCK_PORT}"
 export PHROND_ARTIFACT_DIR="$ARTIFACT_DIR"
 export PHROND_BASE_URL="http://127.0.0.1:${PHROND_PORT}"
-# Keep this example intentionally small so the bounded-capture test can show
-# full delivery alongside truncated artifact evidence.
+# Keep generated example artifacts intentionally small.
 export PHROND_MAX_CAPTURE_BYTES="${PHROND_MAX_CAPTURE_BYTES:-64}"
 
 export SUT_LISTEN="127.0.0.1:${SUT_PORT}"
 export SUT_BASE_URL="http://${SUT_LISTEN}"
-export DEPENDENCY_BASE_URL="http://${PHROND_MOCK_LISTEN}/__phrond/dep/basic-rest-dependency"
 
 pushd "$ROOT_DIR" >/dev/null
 

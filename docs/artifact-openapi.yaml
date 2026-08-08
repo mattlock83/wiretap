@@ -114,8 +114,6 @@ components:
           type: string
         proxy_listen:
           type: string
-        mock_base_url:
-          type: string
         proxy_mode:
           type: string
           enum: [mitm, passthrough]
@@ -133,7 +131,7 @@ components:
           type: string
         role:
           type: string
-          enum: [sut, fake]
+          enum: [sut]
         type:
           type: string
           enum: [openapi]
@@ -141,18 +139,6 @@ components:
           $ref: "#/components/schemas/SchemaSource"
         openapi_version:
           type: string
-        asset_name:
-          type: string
-          description: Human-friendly asset name; defaults to id when omitted.
-        asset_id:
-          type: string
-          description: >-
-            Stable, cross-repo identifier for the asset. A broker joins a
-            consumer's faked dependency (role: fake) to the provider that owns
-            the same asset_id (role: sut).
-        asset_sha:
-          type: string
-          description: Fingerprint of the asset version; defaults to source.sha256.
       additionalProperties: false
 
     SchemaSource:
@@ -195,7 +181,7 @@ components:
           enum: [http]
         channel:
           type: string
-          enum: [test_to_sut, sut_to_mock]
+          enum: [test_to_sut]
         started_at:
           type: string
           format: date-time
@@ -210,117 +196,21 @@ components:
           type: array
           items:
             type: string
-        matched_stub_id:
-          type: string
-        asset_id:
-          type: string
-          description: >-
-            Declared dependency this sut_to_mock flow was routed to. Ground
-            truth for attribution — no spec inference required.
         trace_id:
           type: string
           description: >-
-            Phrond trace id. Injected by the proxy on test_to_sut requests;
-            present on sut_to_mock flows when the SUT propagated the
-            X-Phrond-Trace-Id header.
-        parent_flow_id:
-          type: string
-          description: >-
-            The test_to_sut flow that caused this sut_to_mock call, resolved by
-            trace id when available, else by time-window nesting.
+            Phrond trace id attached to the captured request for correlation
+            with application traces and logs.
         fingerprint:
           type: string
           description: >-
             Stable hash of the interaction shape (channel, method, path,
             status, JSON body key/type structure) for cross-run dedup.
-        consumed_fields:
-          type: array
-          items:
-            type: string
-          description: >-
-            Response fields the test declared it depends on (via the verify
-            API). Distinguishes breaking changes from changes to ignored fields.
-        mock_stub:
-          $ref: "#/components/schemas/MockStub"
-        mock_mode:
-          type: string
-          enum: [builtin, external]
-          description: >-
-            Whether the response was served by Phrond's built-in mock or
-            observed through a configured external mock gateway.
         transport_error:
           type: string
           description: >-
             Original upstream connection or TLS error when the recorded
             response is a gateway-generated 502.
-        unmatched:
-          type: boolean
-          description: >-
-            True when the SUT called Phrond's built-in mock but no stub
-            matched. Omitted for external mocks because provider-specific
-            unmatched behavior cannot be inferred from HTTP traffic.
-      additionalProperties: false
-
-    MockStub:
-      type: object
-      description: >-
-        The consumer's modelled assumption that produced a sut_to_mock response:
-        the match rule plus the unrendered response template (the stable
-        contract, distinct from the rendered response captured on the flow).
-      properties:
-        id:
-          type: string
-        default:
-          type: boolean
-        source:
-          type: string
-        match:
-          $ref: "#/components/schemas/StubMatch"
-        matched_on:
-          type: array
-          items:
-            type: string
-          description: Which match criteria the stub constrained.
-        response_template:
-          $ref: "#/components/schemas/StubResponseTemplate"
-      additionalProperties: false
-
-    StubMatch:
-      type: object
-      properties:
-        method:
-          type: string
-        path:
-          type: string
-        headers:
-          type: object
-          additionalProperties:
-            type: string
-        query:
-          type: object
-          additionalProperties:
-            type: string
-        body:
-          type: string
-        body_contains:
-          type: string
-      additionalProperties: false
-
-    StubResponseTemplate:
-      type: object
-      properties:
-        status:
-          type: integer
-        headers:
-          type: object
-          additionalProperties:
-            type: string
-        body:
-          type: string
-        delay_ms:
-          type: integer
-        fault:
-          type: string
       additionalProperties: false
 
     HttpRequest:
@@ -423,7 +313,7 @@ components:
           type: string
         channel:
           type: string
-          enum: [test_to_sut, sut_to_mock]
+          enum: [test_to_sut]
         phase:
           type: string
           enum: [request, response]

@@ -23,7 +23,6 @@ import (
 
 	"github.com/phrond/evermock/internal/artifact"
 	"github.com/phrond/evermock/internal/capture"
-	"github.com/phrond/evermock/internal/mock"
 	"github.com/phrond/evermock/internal/proxy"
 	"github.com/phrond/evermock/internal/redact"
 )
@@ -116,9 +115,8 @@ type TestCaseStatus struct {
 	LastPath    string     `json:"last_path,omitempty"`
 }
 
-// FinishCase finalizes the active test case. consumedFields maps a response id
-// (matched stub id) to the fields the test declared it depends on.
-func (s *TestCaseStore) FinishCase(status string, env *artifact.Environment, mockExchanges []mock.Exchange, consumedFields map[string][]string) (*artifact.Artifact, string, error) {
+// FinishCase finalizes the active test case and writes its captured artifact.
+func (s *TestCaseStore) FinishCase(status string, env *artifact.Environment) (*artifact.Artifact, string, error) {
 	s.mu.Lock()
 	state := s.active
 	if state == nil {
@@ -134,18 +132,8 @@ func (s *TestCaseStore) FinishCase(status string, env *artifact.Environment, moc
 	state.status = status
 
 	flows := append([]artifact.Flow{}, state.flows...)
-	for _, exchange := range mockExchanges {
-		flow := s.flowFromMock(exchange)
-		flows = append(flows, flow)
-	}
-	linkCausality(flows)
 	for i := range flows {
 		flows[i].Fingerprint = flowFingerprint(flows[i])
-		if len(consumedFields) > 0 && flows[i].MatchedStubID != "" {
-			if fields, ok := consumedFields[flows[i].MatchedStubID]; ok {
-				flows[i].ConsumedFields = append([]string{}, fields...)
-			}
-		}
 	}
 
 	if env == nil {
@@ -237,8 +225,7 @@ func (s *TestCaseStore) AddSchema(ref artifact.SchemaRef) artifact.SchemaRef {
 }
 
 // fillSchemaSHA computes the content hash for file/inline schemas when the
-// caller did not provide one, so asset_sha (the asset version key) is always
-// populated for locally available specs.
+// caller did not provide one, making attached schema versions identifiable.
 func fillSchemaSHA(ref *artifact.SchemaRef) {
 	if ref == nil || strings.TrimSpace(ref.Source.SHA256) != "" {
 		return
@@ -311,12 +298,13 @@ func (s *TestCaseStore) flowFromProxy(exchange proxy.HTTPExchange) artifact.Flow
 	reqHeaders := cloneHeaders(exchange.RequestHeaders)
 	respHeaders := cloneHeaders(exchange.ResponseHeaders)
 	return artifact.Flow{
-		ID:         id,
-		Protocol:   "http",
-		Channel:    "test_to_sut",
-		TraceID:    exchange.TraceID,
-		StartedAt:  exchange.StartedAt,
-		DurationMS: exchange.Duration.Milliseconds(),
+		ID:             id,
+		Protocol:       "http",
+		Channel:        "test_to_sut",
+		TraceID:        exchange.TraceID,
+		StartedAt:      exchange.StartedAt,
+		DurationMS:     exchange.Duration.Milliseconds(),
+		TransportError: exchange.Error,
 		Request: artifact.Message{HTTP: &artifact.HttpMessage{
 			Method:   exchange.Method,
 			URL:      exchange.URL,
@@ -338,155 +326,6 @@ func (s *TestCaseStore) flowFromProxy(exchange proxy.HTTPExchange) artifact.Flow
 				exchange.ResponseBodyTruncated,
 			), s.maxBodyBytes),
 		}},
-	}
-}
-
-func (s *TestCaseStore) flowFromMock(exchange mock.Exchange) artifact.Flow {
-	s.mu.Lock()
-	id := s.nextFlowID()
-	s.mu.Unlock()
-
-	reqHeaders := cloneHeaders(exchange.Request.Headers)
-	respHeaders := cloneHeaders(exchange.Response.Headers)
-	return artifact.Flow{
-		ID:         id,
-		Protocol:   "http",
-		Channel:    "sut_to_mock",
-		AssetID:    exchange.AssetID,
-		TraceID:    exchange.TraceID,
-		StartedAt:  exchange.StartedAt,
-		DurationMS: exchange.FinishedAt.Sub(exchange.StartedAt).Milliseconds(),
-		Request: artifact.Message{HTTP: &artifact.HttpMessage{
-			Method:   exchange.Request.Method,
-			URL:      exchange.Request.URL,
-			Headers:  reqHeaders,
-			Trailers: cloneHeaders(exchange.Request.Trailers),
-			Body: bodyFromCapturedHTTP(reqHeaders, normalizedCapturedBody(
-				[]byte(exchange.Request.Body),
-				exchange.Request.BodyBytes,
-				exchange.Request.BodyTruncated,
-			), s.maxBodyBytes),
-		}},
-		Response: artifact.Message{HTTP: &artifact.HttpMessage{
-			Status:   exchange.Response.Status,
-			Headers:  respHeaders,
-			Trailers: cloneHeaders(exchange.Response.Trailers),
-			Body: bodyFromCapturedHTTP(respHeaders, normalizedCapturedBody(
-				[]byte(exchange.Response.Body),
-				exchange.Response.BodyBytes,
-				exchange.Response.BodyTruncated,
-			), s.maxBodyBytes),
-		}},
-		MatchedStubID:  exchange.MatchedStubID,
-		MockStub:       mockStubFromExchange(exchange),
-		MockMode:       exchange.MockMode,
-		TransportError: exchange.Error,
-		Unmatched:      exchange.MockMode != "external" && !exchange.Matched,
-	}
-}
-
-// mockStubFromExchange captures the consumer's assumption (match rule + the
-// response template) from the stub that served the exchange.
-func mockStubFromExchange(exchange mock.Exchange) *artifact.MockStub {
-	stub := exchange.MatchedStub
-	if stub == nil {
-		return nil
-	}
-	return &artifact.MockStub{
-		ID:        stub.ID,
-		Default:   stub.Default,
-		Source:    stub.Source,
-		MatchedOn: matchedOn(stub.Match),
-		Match: artifact.StubMatch{
-			Method:       stub.Match.Method,
-			Path:         stub.Match.Path,
-			Headers:      stub.Match.Headers,
-			Query:        stub.Match.Query,
-			Body:         stub.Match.Body,
-			BodyContains: stub.Match.BodyContains,
-		},
-		ResponseTemplate: artifact.StubResponseTmpl{
-			Status:  stub.Response.Status,
-			Headers: stub.Response.Headers,
-			Body:    stub.Response.Body,
-			DelayMS: stub.Response.DelayMS,
-			Fault:   stub.Response.Fault,
-		},
-	}
-}
-
-// matchedOn lists which match criteria the stub constrained, so a broker knows
-// how loose or strict the recorded assumption was.
-func matchedOn(match mock.StubMatch) []string {
-	var on []string
-	if strings.TrimSpace(match.Method) != "" {
-		on = append(on, "method")
-	}
-	if strings.TrimSpace(match.Path) != "" {
-		on = append(on, "path")
-	}
-	if len(match.Headers) > 0 {
-		on = append(on, "headers")
-	}
-	if len(match.Query) > 0 {
-		on = append(on, "query")
-	}
-	if match.Body != "" {
-		on = append(on, "body")
-	}
-	if match.BodyContains != "" {
-		on = append(on, "body_contains")
-	}
-	return on
-}
-
-// linkCausality resolves which test_to_sut flow caused each sut_to_mock flow.
-// Trace ids (propagated by the SUT) are authoritative; time-window nesting is
-// the best-effort fallback.
-func linkCausality(flows []artifact.Flow) {
-	type parent struct {
-		id    string
-		start time.Time
-		end   time.Time
-	}
-	byTrace := map[string]string{}
-	var parents []parent
-	for _, flow := range flows {
-		if flow.Channel != "test_to_sut" {
-			continue
-		}
-		if flow.TraceID != "" {
-			byTrace[flow.TraceID] = flow.ID
-		}
-		// DurationMS is floor-rounded; extend the window by one millisecond so
-		// downstream calls issued at the tail of the request still nest.
-		end := flow.StartedAt.Add(time.Duration(flow.DurationMS+1) * time.Millisecond)
-		parents = append(parents, parent{id: flow.ID, start: flow.StartedAt, end: end})
-	}
-	for i := range flows {
-		if flows[i].Channel != "sut_to_mock" {
-			continue
-		}
-		if flows[i].TraceID != "" {
-			if parentID, ok := byTrace[flows[i].TraceID]; ok {
-				flows[i].ParentFlowID = parentID
-				continue
-			}
-		}
-		// Fallback: latest-starting test_to_sut flow whose window contains
-		// this call's start.
-		best := ""
-		var bestStart time.Time
-		for _, candidate := range parents {
-			if flows[i].StartedAt.Before(candidate.start) || flows[i].StartedAt.After(candidate.end) {
-				continue
-			}
-			if best == "" || candidate.start.After(bestStart) {
-				best = candidate.id
-				bestStart = candidate.start
-			}
-		}
-		flows[i].ParentFlowID = best
 	}
 }
 

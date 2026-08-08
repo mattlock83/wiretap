@@ -84,15 +84,9 @@ type workflowTaskPhrondMetadata struct {
 	Operation              string                    `yaml:"operation,omitempty" json:"operation,omitempty"`
 	SchemaID               string                    `yaml:"schema_id,omitempty" json:"schema_id,omitempty"`
 	Role                   string                    `yaml:"role,omitempty" json:"role,omitempty"`
-	AssetID                string                    `yaml:"asset_id,omitempty" json:"asset_id,omitempty"`
 	TraceID                string                    `yaml:"trace_id,omitempty" json:"trace_id,omitempty"`
-	ParentFlowID           string                    `yaml:"parent_flow_id,omitempty" json:"parent_flow_id,omitempty"`
 	Fingerprint            string                    `yaml:"fingerprint,omitempty" json:"fingerprint,omitempty"`
-	ConsumedFields         []string                  `yaml:"consumed_fields,omitempty" json:"consumed_fields,omitempty"`
-	MockStub               *artifact.MockStub        `yaml:"mock_stub,omitempty" json:"mock_stub,omitempty"`
-	MockMode               string                    `yaml:"mock_mode,omitempty" json:"mock_mode,omitempty"`
 	TransportError         string                    `yaml:"transport_error,omitempty" json:"transport_error,omitempty"`
-	Unmatched              bool                      `yaml:"unmatched,omitempty" json:"unmatched,omitempty"`
 	RequestURL             string                    `yaml:"request_url,omitempty" json:"request_url,omitempty"`
 	RequestHeaders         artifact.Headers          `yaml:"request_headers,omitempty" json:"request_headers,omitempty"`
 	RequestTrailers        artifact.Headers          `yaml:"request_trailers,omitempty" json:"request_trailers,omitempty"`
@@ -158,18 +152,12 @@ func ServerlessWorkflowFromReport(report *Report) (*ServerlessWorkflow, error) {
 			if tasks := workflowCapturedTrafficTasks(testCase, "test_to_sut", "sut", baseURLs); len(tasks) > 0 {
 				groups = append(groups, namedWorkflowTask("test-traffic", WorkflowTaskDefinition{Do: tasks}))
 			}
-			if tasks := workflowCapturedTrafficTasks(testCase, "sut_to_mock", "fake", baseURLs); len(tasks) > 0 {
-				groups = append(groups, namedWorkflowTask("mock-traffic", WorkflowTaskDefinition{Do: tasks}))
-			}
 		} else {
 			// Reports reconstructed from older Postman collections do not have
 			// raw traffic, so retain the schema-sample projection as a
 			// compatibility fallback.
 			if tasks := workflowTrafficTasks(testCase.Provided, "sut", baseURLs); len(tasks) > 0 {
 				groups = append(groups, namedWorkflowTask("test-traffic", WorkflowTaskDefinition{Do: tasks}))
-			}
-			if tasks := workflowTrafficTasks(testCase.Dependent, "fake", baseURLs); len(tasks) > 0 {
-				groups = append(groups, namedWorkflowTask("mock-traffic", WorkflowTaskDefinition{Do: tasks}))
 			}
 		}
 		if len(groups) == 0 {
@@ -267,9 +255,6 @@ func workflowCapturedTrafficTasks(
 
 func workflowSampleMatch(testCase TestCaseCoverage, sample FlowSample, role string) (string, string) {
 	specs := testCase.Provided
-	if role == "fake" {
-		specs = testCase.Dependent
-	}
 	for _, spec := range specs {
 		for _, operation := range spec.Operations {
 			for _, candidate := range operation.Samples {
@@ -351,15 +336,9 @@ func workflowHTTPTaskDefinition(
 			Operation:              operation,
 			SchemaID:               schemaID,
 			Role:                   role,
-			AssetID:                sample.AssetID,
 			TraceID:                sample.TraceID,
-			ParentFlowID:           sample.ParentFlowID,
 			Fingerprint:            sample.Fingerprint,
-			ConsumedFields:         append([]string(nil), sample.ConsumedFields...),
-			MockStub:               sample.MockStub,
-			MockMode:               sample.MockMode,
 			TransportError:         sample.TransportError,
-			Unmatched:              sample.Unmatched,
 			RequestURL:             sample.Request.URL,
 			RequestHeaders:         cloneWorkflowHeaders(sample.Request.Headers),
 			RequestTrailers:        cloneWorkflowHeaders(sample.Request.Trailers),

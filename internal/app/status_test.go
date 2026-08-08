@@ -13,7 +13,6 @@ func TestTestCaseStatusEndpoint(t *testing.T) {
 	cfg.HTTP.ListenAddr = "127.0.0.1:0"
 	cfg.Proxy.ListenAddr = "127.0.0.1:0"
 	cfg.Proxy.CABaseDir = t.TempDir()
-	cfg.Mock.ListenAddr = "127.0.0.1:0"
 
 	appInstance, err := New(Deps{Config: cfg})
 	if err != nil {

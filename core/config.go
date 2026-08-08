@@ -11,7 +11,6 @@ type Config struct {
 	HTTP     HTTPConfig
 	Log      LogConfig
 	Proxy    ProxyConfig
-	Mock     MockConfig
 	Capture  CaptureConfig
 	Artifact ArtifactConfig
 }
@@ -32,10 +31,6 @@ type ProxyConfig struct {
 	ListenAddr string
 	Mode       string // "mitm" | "passthrough"
 	CABaseDir  string
-}
-
-type MockConfig struct {
-	ListenAddr string
 }
 
 type CaptureConfig struct {
@@ -64,9 +59,6 @@ func DefaultConfig() Config {
 			ListenAddr: "127.0.0.1:18080",
 			Mode:       "mitm",
 		},
-		Mock: MockConfig{
-			ListenAddr: "127.0.0.1:19090",
-		},
 		Capture: CaptureConfig{
 			MaxBodyBytes: 4 * 1024 * 1024,
 		},
@@ -80,9 +72,6 @@ func (c Config) Validate() error {
 	var errs []error
 	if c.HTTP.ListenAddr == "" {
 		errs = append(errs, errors.New("http.listen_addr must not be empty"))
-	}
-	if c.Mock.ListenAddr == "" {
-		errs = append(errs, errors.New("mock.listen_addr must not be empty"))
 	}
 	if c.Proxy.ListenAddr == "" {
 		errs = append(errs, errors.New("proxy.listen_addr must not be empty"))

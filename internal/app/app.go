@@ -16,7 +16,6 @@ type Deps struct {
 	Config core.Config
 	Logger *slog.Logger
 	Proxy  core.Component
-	Mock   core.Component
 }
 
 type App struct {
@@ -27,7 +26,6 @@ type App struct {
 	store     *TestCaseStore
 
 	proxyComponent *ProxyComponent
-	mockComponent  *MockComponent
 
 	producer artifact.Producer
 
@@ -38,7 +36,6 @@ type App struct {
 	// unlabeled traffic is attributed to ("" when none / explicit-only).
 	defaultSessionID string
 	sessionSeq       uint64
-	stackSize        int
 }
 
 func New(deps Deps) (*App, error) {
@@ -72,14 +69,8 @@ func New(deps Deps) (*App, error) {
 		}
 		proxy = component
 	}
-	mock := deps.Mock
-	if mock == nil {
-		mock = NewMockComponent(cfg.Mock, cfg.Capture.MaxBodyBytes)
-	}
-
 	lifecycle := &core.Lifecycle{
 		Proxy:  proxy,
-		Mock:   mock,
 		Logger: logger,
 	}
 
@@ -91,15 +82,11 @@ func New(deps Deps) (*App, error) {
 		producer:        producer,
 		sessionRecorder: sessionRecorder,
 		sessions:        map[string]*runtimeSession{},
-		stackSize:       100,
 	}
 	sessionRecorder.SetApp(app)
 
 	if component, ok := proxy.(*ProxyComponent); ok {
 		app.proxyComponent = component
-	}
-	if component, ok := mock.(*MockComponent); ok {
-		app.mockComponent = component
 	}
 
 	app.server = &http.Server{
