@@ -175,19 +175,7 @@ func WriteReport(w io.Writer, report *Report, format string) error {
 		enc.SetIndent("", "  ")
 		return enc.Encode(report)
 	case "html", "htm":
-		collection, err := CollectionFromReport(report)
-		if err != nil {
-			return err
-		}
-		payload, err := json.Marshal(collection)
-		if err != nil {
-			return err
-		}
-		parsedReport, err := ReportFromPostmanJSON(payload)
-		if err != nil {
-			return err
-		}
-		return writeHTMLReport(w, parsedReport)
+		return writeHTMLReport(w, report)
 	default:
 		return fmt.Errorf("unsupported format: %s", format)
 	}
@@ -215,7 +203,7 @@ func writeHTMLReport(w io.Writer, report *Report) error {
 		"prettyJSON":    prettyJSON,
 		"formatHeaders": formatHeaders,
 	})
-	parsed, err := tpl.Parse(captureReportHTMLTemplate)
+	parsed, err := tpl.Parse(reportHTMLTemplate)
 	if err != nil {
 		return err
 	}
@@ -493,10 +481,10 @@ const reportHTMLTemplate = `<!DOCTYPE html>
           <span>Provided Specs</span>
           <strong>{{ len .Provided.Specs }}</strong>
         </div>
-        <div class="summary-card">
+        {{ if .Dependent.Specs }}<div class="summary-card">
           <span>Dependent Specs</span>
           <strong>{{ len .Dependent.Specs }}</strong>
-        </div>
+        </div>{{ end }}
       </div>
       {{ if .Notes }}
       <div class="notes" style="margin-top: 16px;">
@@ -566,7 +554,7 @@ const reportHTMLTemplate = `<!DOCTYPE html>
       {{ end }}
     </section>
 
-    <section class="panel">
+    {{ if .Dependent.Specs }}<section class="panel">
       <h2>Dependent API Specs</h2>
       {{ range .Dependent.Specs }}
         {{ $spec := . }}
@@ -609,13 +597,44 @@ const reportHTMLTemplate = `<!DOCTYPE html>
           </div>
         </details>
       {{ end }}
-    </section>
+    </section>{{ end }}
     </div>
 
     <div id="tab-tests" class="tab-panel">
       {{ range .TestCases }}
         <section class="panel">
           <h2>Test Case: {{ .Name }}</h2>
+          <div class="op-group">
+            <h4>Captured Test → SUT Traffic</h4>
+            {{ if .Traffic }}
+              {{ range .Traffic }}
+                <details class="op" open>
+                  <summary>
+                    <span>{{ .Request.Method }} {{ .Request.URL }}</span>
+                    <span class="meta">{{ .FlowID }} · response {{ .Response.Status }}</span>
+                  </summary>
+                  <div class="sample">
+                    <div class="sample-title">{{ .Protocol }} · {{ .Channel }}{{ if .TraceID }} · trace {{ .TraceID }}{{ end }}</div>
+                    <div class="sample-body">
+                      {{ if .TransportError }}<div class="notes"><strong>Transport error:</strong> {{ .TransportError }}</div>{{ end }}
+                      <div><strong>Request:</strong> {{ .Request.Method }} {{ .Request.URL }}</div>
+                      {{ if .Request.Headers }}<div><strong>Request Headers:</strong></div><pre class="code-block">{{ formatHeaders .Request.Headers }}</pre>{{ end }}
+                      {{ if .Request.Trailers }}<div><strong>Request Trailers:</strong></div><pre class="code-block">{{ formatHeaders .Request.Trailers }}</pre>{{ end }}
+                      {{ with .Request.ArtifactBody }}<div class="meta">Request body: {{ .Encoding }}{{ if .ContentEncoding }} · content-encoding {{ .ContentEncoding }}{{ end }}{{ if .Truncated }} · truncated from {{ .OriginalBytes }} bytes{{ end }}</div>{{ end }}
+                      {{ if .Request.Body }}<div><strong>Request Body:</strong></div><pre class="code-block">{{ prettyJSON .Request.Body }}</pre>{{ end }}
+                      <div><strong>Response:</strong> {{ .Response.Status }}</div>
+                      {{ if .Response.Headers }}<div><strong>Response Headers:</strong></div><pre class="code-block">{{ formatHeaders .Response.Headers }}</pre>{{ end }}
+                      {{ if .Response.Trailers }}<div><strong>Response Trailers:</strong></div><pre class="code-block">{{ formatHeaders .Response.Trailers }}</pre>{{ end }}
+                      {{ with .Response.ArtifactBody }}<div class="meta">Response body: {{ .Encoding }}{{ if .ContentEncoding }} · content-encoding {{ .ContentEncoding }}{{ end }}{{ if .Truncated }} · truncated from {{ .OriginalBytes }} bytes{{ end }}</div>{{ end }}
+                      {{ if .Response.Body }}<div><strong>Response Body:</strong></div><pre class="code-block">{{ prettyJSON .Response.Body }}</pre>{{ end }}
+                    </div>
+                  </div>
+                </details>
+              {{ end }}
+            {{ else }}
+              <div class="meta">No captured traffic.</div>
+            {{ end }}
+          </div>
           <div class="op-group">
             <h4>Provided Specs</h4>
             {{ if .Provided }}
@@ -658,7 +677,7 @@ const reportHTMLTemplate = `<!DOCTYPE html>
             {{ end }}
           </div>
 
-          <div class="op-group">
+          {{ if .Dependent }}<div class="op-group">
             <h4>Dependent Specs</h4>
             {{ if .Dependent }}
               {{ range .Dependent }}
@@ -698,7 +717,7 @@ const reportHTMLTemplate = `<!DOCTYPE html>
             {{ else }}
               <div class="meta">No dependent interactions.</div>
             {{ end }}
-          </div>
+          </div>{{ end }}
         </section>
       {{ end }}
     </div>
@@ -720,23 +739,6 @@ const reportHTMLTemplate = `<!DOCTYPE html>
   </script>
 </body>
 </html>`
-
-const captureReportHTMLTemplate = `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Phrond Coverage Report</title>
-<style>body{font-family:system-ui,sans-serif;max-width:1100px;margin:2rem auto;padding:0 1rem;color:#17202a}h1,h2,h3{margin-bottom:.4rem}.meta{color:#5d6d7e}.card{border:1px solid #d5d8dc;border-radius:8px;padding:1rem;margin:1rem 0}code{background:#f4f6f7;padding:.1rem .3rem;border-radius:3px}ul{line-height:1.6}</style>
-</head><body>
-<h1>Phrond Coverage Report</h1>
-<p class="meta">{{ .SUTName }} · generated {{ formatTime .GeneratedAt }} · {{ .ArtifactCount }} artifacts</p>
-<h2>Provided API coverage</h2>
-{{ if .Provided.Specs }}{{ range .Provided.Specs }}<section class="card"><h3>{{ .SchemaID }}</h3><p class="meta">{{ .Source }}</p>
-<h4>Exercised</h4>{{ if .Exercised }}<ul>{{ range .Exercised }}<li><code>{{ .Operation }}</code> ({{ len .Samples }} samples)</li>{{ end }}</ul>{{ else }}<p>None.</p>{{ end }}
-<h4>Not covered</h4>{{ if .NotCovered }}<ul>{{ range .NotCovered }}<li><code>{{ .Operation }}</code></li>{{ end }}</ul>{{ else }}<p>None.</p>{{ end }}
-</section>{{ end }}{{ else }}<p>No SUT schemas attached.</p>{{ end }}
-<h2>Captured tests</h2>{{ range .TestCases }}<section class="card"><h3>{{ .Name }}</h3><p>{{ len .Traffic }} captured exchanges</p>
-{{ if .Traffic }}<ul>{{ range .Traffic }}<li><code>{{ .Request.Method }} {{ .Request.URL }}</code> → {{ .Response.Status }}</li>{{ end }}</ul>{{ end }}</section>{{ end }}
-{{ if .Notes }}<h2>Notes</h2><ul>{{ range .Notes }}<li>{{ . }}</li>{{ end }}</ul>{{ end }}
-</body></html>`
 
 type artifactEntry struct {
 	Path string
@@ -1139,24 +1141,15 @@ func bodyPreview(body *artifact.Body) string {
 		return ""
 	}
 	if body.Text != "" {
-		return truncateBody(body.Text)
+		return body.Text
 	}
 	if body.Decoded != nil && body.Decoded.Text != "" {
-		return truncateBody(body.Decoded.Text)
+		return body.Decoded.Text
 	}
 	if body.Bytes != "" {
-		return fmt.Sprintf("[binary payload %d bytes base64]", len(body.Bytes))
+		return "[base64]\n" + body.Bytes
 	}
 	return ""
-}
-
-func truncateBody(text string) string {
-	const limit = 360
-	clean := strings.TrimSpace(text)
-	if len(clean) <= limit {
-		return clean
-	}
-	return clean[:limit] + "…"
 }
 
 func schemaKey(schema artifact.SchemaRef) string {

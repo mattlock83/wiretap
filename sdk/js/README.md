@@ -4,6 +4,9 @@ The SDK makes Phrond a small capture fixture. Your existing test harness owns
 the SUT lifecycle and configuration; Phrond only proxies test calls, validates
 them against optional OpenAPI schemas, and writes reports.
 
+For a step-by-step migration that leaves an existing mock server unchanged,
+see [Getting started with existing tests and a mock server](../../docs/getting-started-existing-tests.md).
+
 ```js
 const assert = require("node:assert/strict");
 const { createNodeTestSuite } = require("@phrond/sdk");

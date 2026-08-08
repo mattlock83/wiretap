@@ -62,11 +62,14 @@ go run ./cmd/phrond-coverage --artifacts ./artifacts --sut-name "Example SUT" --
 ```
 
 All formats report captured test→SUT traffic and provided-API coverage. The
-workflow export uses Open Workflow Specification DSL 1.0.3; Postman remains an
-interoperability option.
+HTML report can be explored by SUT API operation or test case and includes the
+captured request/response headers, trailers, and payloads. The workflow export
+uses Open Workflow Specification DSL 1.0.3; Postman remains an interoperability
+option.
 
 ## Documentation
 
+- [Getting started with existing tests and a mock server](docs/getting-started-existing-tests.md)
 - [JavaScript SDK](sdk/js/README.md)
 - [Runtime HTTP API](docs/runtime-api.md)
 - [Artifact schema](docs/artifact-openapi.yaml)
