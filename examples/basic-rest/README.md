@@ -10,5 +10,9 @@ the correlated downstream inventory request.
 ./examples/run-basic-rest-e2e.sh
 ```
 
-The run writes the per-test artifact plus HTML, Postman, and Open Workflow YAML
-reports. Phrond never starts, configures, or simulates the SUT or dependency.
+The test also asserts `$.available` on the captured inventory response and
+declares the `product is available` Pact provider state. The run writes the
+per-test artifact plus HTML, Postman, Open Workflow YAML, and Pact V3 reports.
+The Pact contract includes only the asserted inventory response field while
+the artifact retains the complete response. Phrond never starts, configures,
+or simulates the SUT or dependency.

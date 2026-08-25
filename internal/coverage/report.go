@@ -25,12 +25,16 @@ import (
 type Report struct {
 	GeneratedAt   time.Time          `json:"generated_at" yaml:"generated_at"`
 	SUTName       string             `json:"sut_name" yaml:"sut_name"`
+	Producer      *artifact.Producer `json:"producer,omitempty" yaml:"producer,omitempty"`
 	ArtifactCount int                `json:"artifact_count" yaml:"artifact_count"`
 	Artifacts     []string           `json:"artifacts,omitempty" yaml:"artifacts,omitempty"`
 	Provided      SpecCoverageGroup  `json:"provided" yaml:"provided"`
 	Dependent     SpecCoverageGroup  `json:"dependent" yaml:"dependent"`
 	TestCases     []TestCaseCoverage `json:"testcases,omitempty" yaml:"testcases,omitempty"`
 	Notes         []string           `json:"notes,omitempty" yaml:"notes,omitempty"`
+
+	artifactEntries []artifactEntry
+	explicitSUTName bool
 }
 
 type SpecCoverageGroup struct {
@@ -135,6 +139,7 @@ func Generate(ctx context.Context, artifactsDir, sutName string, includeArtifact
 		return nil, errors.New("no artifact files found")
 	}
 
+	explicitSUTName := strings.TrimSpace(sutName) != ""
 	if sutName == "" {
 		sutName = inferSUTName(entries)
 	}
@@ -142,13 +147,22 @@ func Generate(ctx context.Context, artifactsDir, sutName string, includeArtifact
 	provided, dependent, testcases, notes := buildCoverage(entries)
 
 	report := &Report{
-		GeneratedAt:   time.Now().UTC(),
-		SUTName:       sutName,
-		ArtifactCount: len(entries),
-		Provided:      provided,
-		Dependent:     dependent,
-		TestCases:     testcases,
-		Notes:         notes,
+		GeneratedAt:     time.Now().UTC(),
+		SUTName:         sutName,
+		ArtifactCount:   len(entries),
+		Provided:        provided,
+		Dependent:       dependent,
+		TestCases:       testcases,
+		Notes:           notes,
+		artifactEntries: entries,
+		explicitSUTName: explicitSUTName,
+	}
+	for _, entry := range entries {
+		if entry.Doc != nil && entry.Doc.Producer != nil {
+			producer := *entry.Doc.Producer
+			report.Producer = &producer
+			break
+		}
 	}
 	if includeArtifacts {
 		for _, entry := range entries {
@@ -170,6 +184,15 @@ func WriteReport(w io.Writer, report *Report, format string) error {
 		return WritePostmanCollection(w, report)
 	case "workflow", "serverless-workflow", "serverless_workflow", "sw":
 		return WriteServerlessWorkflow(w, report)
+	case "pact":
+		contracts, err := PactsFromReport(report, PactOptions{})
+		if err != nil {
+			return err
+		}
+		if len(contracts.Contracts) != 1 {
+			return fmt.Errorf("pact format needs exactly one consumer-provider contract; use a Pact output directory for %d providers", len(contracts.Contracts))
+		}
+		return WritePact(w, contracts.Contracts[0])
 	case "yaml", "yml":
 		data, err := yaml.Marshal(report)
 		if err != nil {

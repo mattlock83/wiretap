@@ -158,6 +158,7 @@ class Runtime {
     this.client = client;
     this.runtimeInfo = runtimeInfo;
     this.defaultSutBaseUrl = config.sutBaseUrl || null;
+    this.defaultConsumerName = pickFirstString(config.consumerName, config.consumer_name);
     const schemaConfig = schemaConfiguration(config);
     this.defaultSchemas = [...schemaConfig.schemas];
     this.generatedSchemaConfig = schemaConfig.generateSchema;
@@ -213,14 +214,39 @@ class Runtime {
     for (const path of Object.keys(response)) {
       if (!/^\$(?:\.|\[)/.test(path)) throw new Error(`response assertion path "${path}" must be a JSONPath`);
     }
-    return this.client.assertDependency({
+    const requestedStates = options.providerStates ?? options.provider_states ??
+      (options.providerState === undefined ? [] : [options.providerState]);
+    if (!Array.isArray(requestedStates)) throw new Error("providerStates must be an array");
+    const providerStates = requestedStates.map((state) => {
+      if (typeof state === "string" && state.trim()) return { name: state.trim() };
+      if (state && typeof state === "object" && !Array.isArray(state) &&
+          typeof state.name === "string" && state.name.trim()) {
+        if (state.params !== undefined &&
+            (!state.params || typeof state.params !== "object" || Array.isArray(state.params))) {
+          throw new Error("provider state params must be an object");
+        }
+        return { name: state.name.trim(), ...(state.params ? { params: state.params } : {}) };
+      }
+      throw new Error("provider states require a non-empty name");
+    });
+    const payload = {
       session_id: this.activeSession.sessionId,
       asset_id: assetId.trim(),
       ...(options.method ? { method: String(options.method).toUpperCase() } : {}),
       ...(options.path ? { path: String(options.path) } : {}),
       ...(options.flowId || options.flow_id ? { flow_id: options.flowId || options.flow_id } : {}),
+      ...(providerStates.length > 0 ? { provider_states: providerStates } : {}),
       response
-    });
+    };
+    try {
+      return await this.client.assertDependency(payload);
+    } catch (err) {
+      if (err?.body && typeof err.body.error === "string") {
+        err.message = err.body.error;
+        if (Array.isArray(err.body.assertions)) err.assertions = err.body.assertions;
+      }
+      throw err;
+    }
   }
 
   async setupTest(options = {}) {
@@ -282,10 +308,13 @@ class Runtime {
     return this.client.report({
       artifacts_dir: options.artifactsDir || options.artifacts_dir,
       sut_name: options.sutName || options.sut_name,
+      consumer_name: options.consumerName || options.consumer_name || this.defaultConsumerName,
+      provider_names: options.providerNames || options.provider_names,
       include_artifacts: options.includeArtifacts || options.include_artifacts || false,
       collection_path: options.collectionPath || options.collection_path,
       workflow_path: options.workflowPath || options.workflow_path,
-      html_path: options.htmlPath || options.html_path
+      html_path: options.htmlPath || options.html_path,
+      pact_dir: options.pactDir || options.pact_dir
     });
   }
 

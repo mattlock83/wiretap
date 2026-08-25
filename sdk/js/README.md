@@ -65,6 +65,10 @@ asking Phrond to manage or verify the external mock server:
 await phrond.assertDependency("inventory", {
   method: "GET",
   path: "/inventory/product-123",
+  providerState: {
+    name: "product exists and is available",
+    params: { productId: "product-123" }
+  },
   response: {
     "$.productId": "product-123",
     "$.available": true
@@ -76,6 +80,29 @@ The latest matching captured dependency exchange is checked immediately. Failed
 assertions fail the owning test; passing field assertions are linked to their
 captured flow while the full request and response remain in the artifact.
 Nested fields and array indexes such as `$.items[0].sku` are supported.
+`providerState` accepts a state name or `{ name, params }`; use
+`providerStates` for multiple Pact provider prerequisites.
+
+Generate standard Pact V3 contracts from the captured downstream exchanges:
+
+```js
+const result = await phrond.report({
+  consumerName: "orders-service",
+  providerNames: { inventory: "inventory-service" },
+  pactDir: "artifacts/pacts"
+});
+
+console.log(result.pact_paths);
+console.log(result.consumer_version, result.branch);
+```
+
+Set `consumerName` once on `createNodeTestSuite` to reuse it across reports.
+When dependency traffic exists, reports generate `artifacts/pacts` by default.
+The exporter writes one contract per provider, excludes failing tests,
+deduplicates equivalent interactions, and includes only explicitly asserted
+response fields; without assertions, the full response and OpenAPI-derived
+type/format matchers are used. The existing Postman, workflow, and HTML reports
+are still generated. See [Pact export](../../docs/pact-export.md).
 
 Schemas are required by default. Teams without one can explicitly generate a
 standard OpenAPI 3.1 draft from all captures in the suite:
@@ -102,11 +129,11 @@ Lower-level API:
 - `startCapture({ baseUrl, timeoutMs, proxy, schemas, generateSchema, sutBaseUrl, dependencies })`
 - `runtime.setupTest({ name, tags, meta, schemas, generateSchema, sutBaseUrl, dependencies, explicitSession })`
 - `runtime.dependencyUrl(assetId)`
-- `runtime.assertDependency(assetId, { method, path, flowId, response })`
+- `runtime.assertDependency(assetId, { method, path, flowId, providerState, providerStates, response })`
 - `runtime.http.get/post/postJson/request(...)`
 - `runtime.teardownTest({ status })`
 - `runtime.generateSchema({ output, title, version, force })`
-- `runtime.report({ artifactsDir, sutName, collectionPath, workflowPath, htmlPath })`
+- `runtime.report({ artifactsDir, sutName, consumerName, providerNames, collectionPath, workflowPath, htmlPath, pactDir })`
 - `runtime.killServer()`
 - `bindTest(runtimeOrGetter, testFn, defaults)`
 

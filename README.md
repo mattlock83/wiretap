@@ -4,7 +4,7 @@ Phrond captures network traffic between tests and an already-running system
 under test (SUT), and between that SUT and its externally owned dependencies or
 mock servers. It writes one correlated YAML artifact per test, validates both
 traffic directions strictly against supplied OpenAPI schemas, and exports HTML,
-Postman, Open Workflow Specification, and generated OpenAPI documents.
+Postman, Open Workflow Specification, Pact V3, and generated OpenAPI documents.
 
 Phrond deliberately does not start or configure the SUT, and it is not a mock
 server. Use the application harness and mocking tools that already fit your
@@ -86,6 +86,7 @@ causal relationship are stored in one artifact.
 go run ./cmd/phrond-coverage --artifacts ./artifacts --sut-name "Example SUT" --format openapi --output generated.openapi.yaml
 go run ./cmd/phrond-coverage --artifacts ./artifacts --sut-name "Example SUT" --format workflow --output coverage.workflow.yaml
 go run ./cmd/phrond-coverage --artifacts ./artifacts --sut-name "Example SUT" --format postman --output coverage.postman_collection.json
+go run ./cmd/phrond-coverage --artifacts ./artifacts --consumer-name orders-service --format pact --output ./artifacts/pacts
 go run ./cmd/phrond-coverage --artifacts ./artifacts --sut-name "Example SUT" --format html --output coverage.html
 ```
 
@@ -96,6 +97,15 @@ request/response headers, trailers, payloads, dependency identity, and parent
 request. The workflow export uses Open Workflow Specification DSL 1.0.3;
 Postman remains an interoperability option.
 
+Pact export writes one deterministic Pact Specification V3 JSON file per
+consumer/provider pair from successful SUT→dependency exchanges. Optional
+`assertDependency` calls select the response fields that actually matter; when
+none are present, the full captured dependency response is included with
+OpenAPI-derived matchers. Identical interactions are deduplicated, sensitive
+and capture-specific headers are omitted, and provider states can be attached
+without giving Phrond ownership of the existing mock server. Publish the files
+with the standard Pact Broker CLI; see [Pact export](docs/pact-export.md).
+
 Generated OpenAPI contains inferred paths, parameters, bodies, content types,
 and responses from passing tests, but never captured values as examples. Review
 it before moving the file into `schemas` and using normal strict validation.
@@ -105,6 +115,7 @@ it before moving the file into `schemas` and using normal strict validation.
 - [Getting started with existing tests and a mock server](docs/getting-started-existing-tests.md)
 - [JavaScript SDK](sdk/js/README.md)
 - [Runtime HTTP API](docs/runtime-api.md)
+- [Pact export and Pact Broker publishing](docs/pact-export.md)
 - [Artifact schema](docs/artifact-openapi.yaml)
 - [Design](docs/testing-tool-requirements-and-design.md)
 - [Roadmap](docs/roadmap-capture-fidelity.md)

@@ -204,6 +204,19 @@ components:
           type: array
           items:
             type: string
+        provider_states:
+          type: array
+          description: Optional Pact-compatible provider verification prerequisites.
+          items:
+            type: object
+            required: [name]
+            properties:
+              name:
+                type: string
+              params:
+                type: object
+                additionalProperties: true
+            additionalProperties: false
         asset_id:
           type: string
           description: Declared externally owned dependency receiving this request.

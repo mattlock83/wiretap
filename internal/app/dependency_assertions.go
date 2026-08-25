@@ -15,12 +15,13 @@ import (
 )
 
 type dependencyAssertionRequest struct {
-	SessionID string         `json:"session_id"`
-	AssetID   string         `json:"asset_id"`
-	Method    string         `json:"method,omitempty"`
-	Path      string         `json:"path,omitempty"`
-	FlowID    string         `json:"flow_id,omitempty"`
-	Response  map[string]any `json:"response"`
+	SessionID      string                   `json:"session_id"`
+	AssetID        string                   `json:"asset_id"`
+	Method         string                   `json:"method,omitempty"`
+	Path           string                   `json:"path,omitempty"`
+	FlowID         string                   `json:"flow_id,omitempty"`
+	ProviderStates []artifact.ProviderState `json:"provider_states,omitempty"`
+	Response       map[string]any           `json:"response"`
 }
 
 func (a *App) handleAssertDependency(w http.ResponseWriter, r *http.Request) {
@@ -53,6 +54,13 @@ func (a *App) handleAssertDependency(w http.ResponseWriter, r *http.Request) {
 	for path := range request.Response {
 		if _, err := parseAssertionPath(path); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+	}
+	for i := range request.ProviderStates {
+		request.ProviderStates[i].Name = strings.TrimSpace(request.ProviderStates[i].Name)
+		if request.ProviderStates[i].Name == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "provider states require a non-empty name"})
 			return
 		}
 	}
@@ -113,6 +121,23 @@ func (s *TestCaseStore) AssertDependency(request dependencyAssertionRequest) ([]
 		}
 		selected = flow
 		break
+	}
+	if selected != nil {
+		for _, state := range request.ProviderStates {
+			found := false
+			for _, existing := range selected.ProviderStates {
+				if existing.Name == state.Name && reflect.DeepEqual(existing.Params, state.Params) {
+					found = true
+					break
+				}
+			}
+			if !found {
+				selected.ProviderStates = append(selected.ProviderStates, state)
+			}
+		}
+		sort.SliceStable(selected.ProviderStates, func(i, j int) bool {
+			return selected.ProviderStates[i].Name < selected.ProviderStates[j].Name
+		})
 	}
 
 	paths := make([]string, 0, len(request.Response))

@@ -11,10 +11,12 @@ owns:
 - isolated, named per-test capture sessions;
 - bounded request/response recording and redaction;
 - strict OpenAPI validation and opt-in OpenAPI bootstrapping;
+- optional flow-linked assertions against already captured dependency responses;
+- standards-compliant, deduplicated consumer-side Pact V3 export;
 - deterministic YAML artifacts and aggregate reports.
 
 It does not own application lifecycle, application configuration, dependency
-lifecycles, mocks, fixtures, or assertion APIs. Consumers can use WireMock,
+lifecycles, mocks, fixtures, or mock-server verification APIs. Consumers can use WireMock,
 Spring Boot test integrations, containers, deployed environments, or any other
 tool independently.
 
@@ -28,6 +30,7 @@ flowchart LR
   Proxy -->|forward unchanged| Dependency["Externally managed mock / dependency"]
   Proxy --> Store["Named test artifact"]
   Store --> Reports["HTML / Postman / Workflow YAML"]
+  Store --> Contracts["Pact V3 consumer contracts"]
   Store --> Generated["Generated OpenAPI 3.1 draft"]
 ```
 
@@ -43,8 +46,9 @@ request and response, timing, trace ID, shape fingerprint, and upstream
 2. Phrond starts its proxy and points it at the SUT base URL.
 3. The test creates a named session and declares external dependency URLs and schemas.
 4. Inbound and configured outbound traffic travel through Phrond's existing proxy.
-5. Teardown records pass/fail, validates schemas, and writes the artifact.
-6. Suite teardown generates aggregate reports and stops Phrond.
+5. Tests optionally assert the captured dependency response fields they consume.
+6. Teardown records pass/fail, validates schemas, and writes the artifact.
+7. Suite teardown generates aggregate reports and stops Phrond.
 
 Consumers normally attach a SUT schema and a schema for every declared
 dependency with no mode setting. Missing, unreadable, and invalid schemas fail
@@ -53,7 +57,7 @@ teardown. A consumer without a SUT schema can explicitly request generation,
 which aggregates all completed suite artifacts into a reviewable OpenAPI 3.1
 draft before shutdown. Generation never modifies a supplied schema.
 
-The JavaScript `createNodeTestSuite` facade pushes steps 2, 3, 5, and 6 behind
+The JavaScript `createNodeTestSuite` facade pushes steps 2, 3, 6, and 7 behind
 test-runner hooks while leaving step 1 explicitly outside Phrond.
 
 ## Fidelity requirements
@@ -68,9 +72,20 @@ test-runner hooks while leaving step 1 explicitly outside Phrond.
 
 ## Artifact and reporting contract
 
-YAML is the canonical per-test artifact. Postman JSON, Open Workflow YAML, and
-generated OpenAPI are derived exports, not storage formats. Reports cover
+YAML is the canonical per-test artifact. Postman JSON, Open Workflow YAML, Pact
+Specification V3 JSON, and generated OpenAPI are derived exports, not storage
+formats. Reports cover
 provided SUT and externally dependent operations that were exercised or not
 covered and include correlated captured examples grouped by test name.
 Generated OpenAPI models the provided SUT only, omits captured examples, and is
 a bootstrap draft that must be reviewed before enforcement.
+
+Pact contracts are generated only from passing SUT→dependency interactions.
+One document is written per stable consumer/provider participant pair. Exact
+field assertions narrow the expected response; otherwise all captured response
+fields are included with matchers derived from the dependency OpenAPI schema.
+Provider states are optional flow metadata. Interaction identity includes the
+request, selected response, matchers, and provider states, so genuinely
+equivalent interactions are deduplicated without merging distinct scenarios.
+Phrond does not publish to the Pact Broker or run provider verification; teams
+continue using the existing Pact CLI and provider-side verification tools.

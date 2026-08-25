@@ -108,6 +108,9 @@ type Flow struct {
 	Request      Message   `yaml:"request" json:"request"`
 	Response     Message   `yaml:"response" json:"response"`
 	AssertionIDs []string  `yaml:"assertion_ids,omitempty" json:"assertion_ids,omitempty"`
+	// ProviderStates are optional Pact-compatible prerequisites declared by
+	// the consumer for verifying this captured dependency interaction.
+	ProviderStates []ProviderState `yaml:"provider_states,omitempty" json:"provider_states,omitempty"`
 	// AssetID identifies the externally owned dependency receiving this flow.
 	AssetID string `yaml:"asset_id,omitempty" json:"asset_id,omitempty"`
 	// TraceID correlates the captured exchange with application traces and logs.
@@ -120,6 +123,12 @@ type Flow struct {
 	// TransportError preserves an upstream connection or TLS failure alongside
 	// the recorded 502 response.
 	TransportError string `yaml:"transport_error,omitempty" json:"transport_error,omitempty"`
+}
+
+// ProviderState describes the provider data required for an interaction.
+type ProviderState struct {
+	Name   string         `yaml:"name" json:"name"`
+	Params map[string]any `yaml:"params,omitempty" json:"params,omitempty"`
 }
 
 // Message wraps HTTP message payloads.

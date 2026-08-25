@@ -471,13 +471,16 @@ func (a *App) handleGenerateSchema(w http.ResponseWriter, r *http.Request) {
 }
 
 type runtimeReportRequest struct {
-	ArtifactsDir     string `json:"artifacts_dir,omitempty"`
-	SUTName          string `json:"sut_name,omitempty"`
-	IncludeArtifacts bool   `json:"include_artifacts,omitempty"`
-	CollectionPath   string `json:"collection_path,omitempty"`
-	YAMLPath         string `json:"yaml_path,omitempty"`
-	WorkflowPath     string `json:"workflow_path,omitempty"`
-	HTMLPath         string `json:"html_path,omitempty"`
+	ArtifactsDir     string            `json:"artifacts_dir,omitempty"`
+	SUTName          string            `json:"sut_name,omitempty"`
+	ConsumerName     string            `json:"consumer_name,omitempty"`
+	ProviderNames    map[string]string `json:"provider_names,omitempty"`
+	IncludeArtifacts bool              `json:"include_artifacts,omitempty"`
+	CollectionPath   string            `json:"collection_path,omitempty"`
+	YAMLPath         string            `json:"yaml_path,omitempty"`
+	WorkflowPath     string            `json:"workflow_path,omitempty"`
+	HTMLPath         string            `json:"html_path,omitempty"`
+	PactDir          string            `json:"pact_dir,omitempty"`
 }
 
 func (a *App) handleRuntimeReport(w http.ResponseWriter, r *http.Request) {
@@ -508,7 +511,32 @@ func (a *App) handleRuntimeReport(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"collection_path": collectionPath, "workflow_path": workflowPath, "html_path": htmlPath, "report": report})
+	response := map[string]any{
+		"collection_path": collectionPath, "workflow_path": workflowPath,
+		"html_path": htmlPath, "report": report,
+	}
+	if strings.TrimSpace(payload.PactDir) != "" || len(report.Dependent.Specs) > 0 {
+		pactDir := firstNonEmpty(payload.PactDir, filepath.Join(artifactsDir, "pacts"))
+		export, paths, err := coverage.WritePactDirectory(report, pactDir, coverage.PactOptions{
+			ConsumerName: payload.ConsumerName, ProviderNames: payload.ProviderNames,
+		})
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		response["pact_dir"] = pactDir
+		response["pact_paths"] = paths
+		if export != nil {
+			response["consumer_name"] = export.ConsumerName
+			if export.ConsumerVersion != "" {
+				response["consumer_version"] = export.ConsumerVersion
+			}
+			if export.Branch != "" {
+				response["branch"] = export.Branch
+			}
+		}
+	}
+	writeJSON(w, http.StatusOK, response)
 }
 
 func (a *App) handleKillServer(w http.ResponseWriter, r *http.Request) {

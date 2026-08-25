@@ -51,6 +51,7 @@ if (!RUN_E2E) {
     await phrond.assertDependency("inventory-service", {
       method: "POST",
       path: "/inventory/check",
+      providerState: { name: "product is available", params: { id: "123" } },
       response: { "$.available": true }
     });
   });

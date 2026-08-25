@@ -127,6 +127,95 @@ paths:
 	}
 }
 
+func TestRuntimeReportWritesPactContractsFromSuccessfulDependencyFlows(t *testing.T) {
+	outputDir := t.TempDir()
+	cfg := core.DefaultConfig()
+	cfg.Artifact.OutputDir = outputDir
+	appInstance, err := New(Deps{Config: cfg})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(appInstance.routes())
+	defer server.Close()
+
+	_, err = artifact.WriteFile(outputDir, &artifact.Artifact{
+		Version:  1,
+		Producer: &artifact.Producer{Repo: "acme/orders", CommitSHA: "abc123", Branch: "main"},
+		TestCase: artifact.TestCase{ID: "pact-report", Name: "orders check inventory", Status: "pass", StartedAt: time.Now().UTC()},
+		Schemas: []artifact.SchemaRef{{
+			ID: "inventory-api", Role: "dependency", Type: "openapi", AssetID: "inventory",
+			Source: artifact.SchemaSource{Type: "inline", Content: `openapi: 3.0.3
+info: {title: Inventory, version: 1.0.0}
+paths:
+  /inventory:
+    get:
+      responses:
+        '200':
+          description: available
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  available: {type: boolean}
+                  ignored: {type: string}
+`},
+		}},
+		Assertions: []artifact.Assertion{{
+			ID: "assertion-1", Channel: "sut_to_dependency", Phase: "response", FlowID: "flow-1",
+			Field: "$.available", PathLang: "jsonpath", Operator: "equals", Expected: true, Result: "pass",
+		}},
+		Traffic: []artifact.Flow{{
+			ID: "flow-1", Protocol: "http", Channel: "sut_to_dependency", AssetID: "inventory",
+			Request: artifact.Message{HTTP: &artifact.HttpMessage{Method: "GET", URL: "http://mock.test/inventory"}},
+			Response: artifact.Message{HTTP: &artifact.HttpMessage{
+				Status: http.StatusOK, Headers: artifact.Headers{"Content-Type": {"application/json"}},
+				Body: &artifact.Body{Encoding: "utf8", Text: `{"available":true,"ignored":"private"}`},
+			}},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	pactDir := filepath.Join(outputDir, "contracts")
+	payload, _ := json.Marshal(map[string]any{
+		"artifacts_dir": outputDir, "consumer_name": "orders-service", "pact_dir": pactDir,
+		"provider_names": map[string]string{"inventory": "inventory-service"},
+	})
+	response, err := http.Post(server.URL+"/v1/report", "application/json", bytes.NewReader(payload))
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(response.Body)
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("runtime Pact report status = %d: %s", response.StatusCode, body)
+	}
+	var result struct {
+		PactDir         string   `json:"pact_dir"`
+		PactPaths       []string `json:"pact_paths"`
+		ConsumerName    string   `json:"consumer_name"`
+		ConsumerVersion string   `json:"consumer_version"`
+		Branch          string   `json:"branch"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.PactDir != pactDir || result.ConsumerName != "orders-service" || result.ConsumerVersion != "abc123" ||
+		result.Branch != "main" || len(result.PactPaths) != 1 {
+		t.Fatalf("Pact publication identity or paths are incomplete: %#v", result)
+	}
+	contract, err := os.ReadFile(result.PactPaths[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(contract, []byte(`"provider"`)) || !bytes.Contains(contract, []byte(`"inventory-service"`)) ||
+		!bytes.Contains(contract, []byte(`"available": true`)) || bytes.Contains(contract, []byte(`"ignored"`)) {
+		t.Fatalf("runtime generated the wrong Pact contract: %s", contract)
+	}
+}
+
 func TestGenerateSchemaEndpointWritesStandardOpenAPIWithoutCapturedValues(t *testing.T) {
 	outputDir := t.TempDir()
 	cfg := core.DefaultConfig()

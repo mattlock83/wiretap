@@ -87,6 +87,10 @@ dependency response and links the resulting assertions to that flow:
   "asset_id": "inventory",
   "method": "GET",
   "path": "/inventory/product-123",
+  "provider_states": [{
+    "name": "product exists and is available",
+    "params": {"productId": "product-123"}
+  }],
   "response": {
     "$.productId": "product-123",
     "$.available": true
@@ -100,6 +104,8 @@ and array indexes. Success returns `status`, `flow_id`, and `assertions`. A
 mismatch returns HTTP 422, records the failed assertion, and marks the owning
 artifact as failed even if teardown requests `status: pass`. The complete
 captured response remains in the artifact.
+Optional `provider_states` are attached to that flow for standard Pact provider
+verification; they do not configure or change the existing upstream server.
 
 `POST /v1/teardownTest` finalizes and writes the artifact:
 
@@ -153,11 +159,21 @@ schema enforcement.
 {
   "artifacts_dir": "artifacts",
   "sut_name": "Hello SUT",
+  "consumer_name": "orders-service",
+  "provider_names": {"inventory": "inventory-service"},
   "collection_path": "artifacts/coverage.postman_collection.json",
   "workflow_path": "artifacts/coverage.workflow.yaml",
-  "html_path": "artifacts/coverage.html"
+  "html_path": "artifacts/coverage.html",
+  "pact_dir": "artifacts/pacts"
 }
 ```
+
+When captured dependency schemas are present, Pact V3 files are generated in
+`pact_dir` or the default `artifacts/pacts`. The response includes `pact_dir`,
+`pact_paths`, `consumer_name`, and detected `consumer_version`/`branch` when
+available. Each file contains one consumer/provider contract, deduplicated
+passing downstream interactions, and assertion-selected response fields. The
+normal Postman, Open Workflow, and HTML reports remain unchanged.
 
 ## Lower-level endpoints
 

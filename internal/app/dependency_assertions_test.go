@@ -34,7 +34,8 @@ func TestDependencyAssertionsRecordSelectedResponseFieldsAndFlowLinks(t *testing
 	result := postDependencyJSON(t, control.URL, "/v1/assertDependency", map[string]any{
 		"session_id": session["session_id"], "asset_id": "inventory",
 		"method": "get", "path": "/items",
-		"response": map[string]any{"$.available": true, "$.items[0].sku": "widget"},
+		"provider_states": []map[string]any{{"name": "widget exists", "params": map[string]any{"sku": "widget"}}},
+		"response":        map[string]any{"$.available": true, "$.items[0].sku": "widget"},
 	})
 	if result["status"] != "pass" || result["flow_id"] != "flow-1" {
 		t.Fatalf("unexpected assertion result: %#v", result)
@@ -48,6 +49,9 @@ func TestDependencyAssertionsRecordSelectedResponseFieldsAndFlowLinks(t *testing
 	}
 	if got := art.Traffic[0].AssertionIDs; len(got) != 2 || got[0] != "assertion-1" || got[1] != "assertion-2" {
 		t.Fatalf("assertions were not linked to their dependency flow: %#v", got)
+	}
+	if got := art.Traffic[0].ProviderStates; len(got) != 1 || got[0].Name != "widget exists" || got[0].Params["sku"] != "widget" {
+		t.Fatalf("provider verification state was not linked to the dependency flow: %#v", got)
 	}
 	if art.Assertions[0].Field != "$.available" || art.Assertions[1].Field != "$.items[0].sku" {
 		t.Fatalf("assertions were not recorded deterministically: %#v", art.Assertions)

@@ -8,7 +8,9 @@ Node's built-in test runner:
 - `createNodeTestSuite` starts Phrond's proxy and names each capture after its test;
 - test HTTP calls and downstream dependency calls go through the same proxy;
 - artifacts correlate `test_to_sut` and `sut_to_dependency` traffic;
-- Phrond writes an artifact, HTML coverage, Postman JSON, and Open Workflow YAML.
+- the test asserts the consumed dependency field and declares its provider state;
+- Phrond writes an artifact, HTML coverage, Postman JSON, Open Workflow YAML,
+  and a standard Pact V3 consumer contract.
 
 Run it with:
 
