@@ -17,6 +17,17 @@ Phrond capture proxy.
 ./examples/run-basic-rest-e2e.sh
 ```
 
+To exercise two real demo services, publish their captured Pact contract to an
+official local Pact Broker, and verify the provider using the official Pact
+verifier:
+
+```bash
+./examples/run-pact-broker-e2e.sh
+```
+
+The Pact example requires a running Docker daemon. Its disposable Broker uses
+SQLite locally, so a PostgreSQL installation is not required.
+
 The JavaScript consumer API is intentionally small:
 
 ```js
@@ -116,6 +127,7 @@ it before moving the file into `schemas` and using normal strict validation.
 - [JavaScript SDK](sdk/js/README.md)
 - [Runtime HTTP API](docs/runtime-api.md)
 - [Pact export and Pact Broker publishing](docs/pact-export.md)
+- [Orders/inventory Pact Broker demo](examples/pact-broker/README.md)
 - [Artifact schema](docs/artifact-openapi.yaml)
 - [Design](docs/testing-tool-requirements-and-design.md)
 - [Roadmap](docs/roadmap-capture-fidelity.md)

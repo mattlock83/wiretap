@@ -1,0 +1,50 @@
+openapi: 3.0.3
+info:
+  title: Orders Service API
+  version: 1.0.0
+paths:
+  /orders:
+    post:
+      operationId: createOrder
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [productId, quantity]
+              properties:
+                productId:
+                  type: string
+                quantity:
+                  type: integer
+                  minimum: 1
+      responses:
+        "201":
+          description: accepted order
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [orderId, productId, quantity, status]
+                properties:
+                  orderId:
+                    type: string
+                  productId:
+                    type: string
+                  quantity:
+                    type: integer
+                  status:
+                    type: string
+        "409":
+          description: product unavailable
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [error, productId]
+                properties:
+                  error:
+                    type: string
+                  productId:
+                    type: string

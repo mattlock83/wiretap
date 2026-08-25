@@ -27,6 +27,11 @@ those existing servers solely to capture and correlate the traffic.
   provider states, assertion-selected response fields, OpenAPI-derived
   matchers, credential filtering, deterministic interaction deduplication,
   and one broker-ready contract per consumer/provider pair.
+- E3: real Pact Broker import compatibility and an independently owned
+  orders/inventory consumer-provider demonstration, including disposable
+  SQLite-backed local Broker startup, duplicate-safe publication, standard
+  provider-state setup, official Pact V3 provider verification, and published
+  verification results.
 - F1: capture-only product simplification; all mock-serving code and public
   mock APIs removed.
 - F2: restore external-only dependency capture on the existing proxy listener,

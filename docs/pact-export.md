@@ -139,3 +139,43 @@ overwrite another shard or be rejected by the broker.
 Provider teams continue to fetch and verify contracts using their existing Pact
 provider tooling. Phrond neither starts the provider nor assumes ownership of
 Pact Broker.
+
+## Exercise a real Pact Broker and provider locally
+
+The repository includes two independent demo services: `pact-orders` consumes
+`pact-inventory`. Their example runner starts both services outside Phrond,
+routes the dependency calls through capture, exports a Pact V3 contract, and
+publishes it to the official open-source Pact Broker:
+
+```bash
+./examples/run-pact-broker-e2e.sh
+```
+
+The runner also executes `TestPactBrokerImportsExportedContract` against the
+real Broker. That test publishes the exported contract twice, retrieves the
+stored contract, and checks the V3 metadata, participants, provider state,
+asserted-only response, matching rule, and interaction deduplication.
+
+Three consumer tests exercise available stock twice and unavailable stock once;
+the repeated scenario is deduplicated into a single Pact interaction. The
+official Pact verifier then fetches both interactions from the Broker, invokes
+the inventory service's provider-state endpoint, verifies the actual HTTP
+provider, and publishes the verification result back to the Broker. The runner
+retrieves the published result and checks both its successful status and the
+provider application version.
+
+The official Broker runs in a disposable Docker container with its supported
+SQLite development configuration. This keeps the local example to one Broker
+container and avoids both PostgreSQL and new Go dependencies. SQLite is for
+local development only; a shared or production Pact Broker should use
+PostgreSQL.
+
+When a Broker is already running, run just the compatibility test with:
+
+```bash
+PACT_BROKER_BASE_URL=http://127.0.0.1:9292 \
+  go test ./internal/coverage -run '^TestPactBrokerImportsExportedContract$' -v
+```
+
+The test skips when `PACT_BROKER_BASE_URL` is unset, keeping the ordinary Go
+suite independent of Docker and external services.

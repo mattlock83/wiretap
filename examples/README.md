@@ -26,3 +26,16 @@ PHROND_GENERATE_SCHEMA=1 ./examples/run-basic-rest-e2e.sh
 ```
 
 That run writes `basic-rest.generated.openapi.yaml` beside its other artifacts.
+
+`pact-broker` demonstrates two independently owned orders and inventory
+services exchanging a captured consumer contract through the real, official
+Pact Broker. Its three named consumer tests produce two deduplicated Pact V3
+interactions; Pact's official verifier configures the inventory provider
+states, verifies the contract, and publishes the result back to the broker.
+
+```bash
+./examples/run-pact-broker-e2e.sh
+```
+
+The demo requires a running Docker daemon and uses one disposable,
+SQLite-backed Broker container. See [the Pact Broker example](pact-broker/README.md).
