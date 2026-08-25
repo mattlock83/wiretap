@@ -267,20 +267,22 @@ func (a *App) handleStartServer(w http.ResponseWriter, r *http.Request) {
 	}
 	info := mergeProxyInfo(a.proxyComponent)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"proxy":   info,
-		"sut_url": normalizeURL(info.ListenAddr),
+		"proxy":               info,
+		"sut_url":             normalizeURL(info.ListenAddr),
+		"dependency_base_url": normalizeURL(info.ListenAddr) + "/__phrond/dep",
 	})
 }
 
 type setupTestRequest struct {
-	Name            string               `json:"name,omitempty"`
-	Tags            []string             `json:"tags,omitempty"`
-	Meta            map[string]any       `json:"meta,omitempty"`
-	SUTBaseURL      string               `json:"sut_base_url,omitempty"`
-	Schemas         []artifact.SchemaRef `json:"schemas,omitempty"`
-	SUTSchemas      []artifact.SchemaRef `json:"sut_schemas,omitempty"`
-	GenerateSchema  bool                 `json:"generate_schema,omitempty"`
-	ExplicitSession bool                 `json:"explicit_session,omitempty"`
+	Name            string                   `json:"name,omitempty"`
+	Tags            []string                 `json:"tags,omitempty"`
+	Meta            map[string]any           `json:"meta,omitempty"`
+	SUTBaseURL      string                   `json:"sut_base_url,omitempty"`
+	Schemas         []artifact.SchemaRef     `json:"schemas,omitempty"`
+	SUTSchemas      []artifact.SchemaRef     `json:"sut_schemas,omitempty"`
+	Dependencies    []dependencyRegistration `json:"dependencies,omitempty"`
+	GenerateSchema  bool                     `json:"generate_schema,omitempty"`
+	ExplicitSession bool                     `json:"explicit_session,omitempty"`
 }
 
 func (a *App) handleSetupTest(w http.ResponseWriter, r *http.Request) {
@@ -303,6 +305,11 @@ func (a *App) handleSetupTest(w http.ResponseWriter, r *http.Request) {
 		schemas[i].Role = "sut"
 	}
 	if err := validateSchemaSetup(schemas, payload.GenerateSchema); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	dependencies, dependencySchemas, err := normalizeDependencies(payload.Dependencies)
+	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
@@ -342,7 +349,13 @@ func (a *App) handleSetupTest(w http.ResponseWriter, r *http.Request) {
 	for _, schema := range schemas {
 		store.AddSchema(schema)
 	}
-	session := &runtimeSession{ID: sessionID, Name: name, Store: store, SUTBaseURL: payload.SUTBaseURL, Explicit: payload.ExplicitSession, CreatedAt: time.Now().UTC()}
+	for _, schema := range dependencySchemas {
+		store.AddSchema(schema)
+	}
+	if payload.GenerateSchema {
+		store.SetSchemaGeneration(true)
+	}
+	session := &runtimeSession{ID: sessionID, Name: name, Store: store, SUTBaseURL: payload.SUTBaseURL, Dependencies: dependencies, Explicit: payload.ExplicitSession, CreatedAt: time.Now().UTC()}
 	a.sessions[sessionID] = session
 	if !payload.ExplicitSession {
 		a.defaultSessionID = sessionID
@@ -350,6 +363,14 @@ func (a *App) handleSetupTest(w http.ResponseWriter, r *http.Request) {
 	a.sessionsMu.Unlock()
 
 	proxyURL := normalizeURL(a.proxyComponent.ListenAddr())
+	dependencyURLs := make(map[string]string, len(dependencies))
+	for assetID := range dependencies {
+		if payload.ExplicitSession {
+			dependencyURLs[assetID] = proxyURL + "/__phrond/session/" + sessionID + "/dep/" + assetID
+		} else {
+			dependencyURLs[assetID] = proxyURL + "/__phrond/dep/" + assetID
+		}
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"session_id":   sessionID,
 		"name":         name,
@@ -357,6 +378,7 @@ func (a *App) handleSetupTest(w http.ResponseWriter, r *http.Request) {
 		"proxy_listen": proxyURL,
 		"sut_url":      proxyURL,
 		"sut_base_url": payload.SUTBaseURL,
+		"dependencies": dependencyURLs,
 	})
 }
 

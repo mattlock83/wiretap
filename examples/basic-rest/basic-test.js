@@ -27,6 +27,16 @@ if (!RUN_E2E) {
     baseUrl: process.env.PHROND_BASE_URL || `http://${process.env.PHROND_HTTP_LISTEN}`,
     proxy: process.env.PHROND_PROXY_LISTEN ? { listenAddr: process.env.PHROND_PROXY_LISTEN } : true,
     sutBaseUrl: process.env.SUT_BASE_URL || `http://${process.env.SUT_LISTEN || "127.0.0.1:18090"}`,
+    dependencies: [{
+      assetId: "inventory-service",
+      assetName: "Inventory Service",
+      upstreamUrl: process.env.DEPENDENCY_UPSTREAM_URL || "http://127.0.0.1:18091",
+      schema: {
+        id: "inventory-openapi",
+        type: "openapi",
+        source: { type: "file", path: "examples/basic-rest/schemas/inventory-openapi.yaml" }
+      }
+    }],
     ...schemaConfig
   });
 

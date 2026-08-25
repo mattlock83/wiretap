@@ -48,18 +48,27 @@ func (s *TestCaseStore) SetProducer(producer artifact.Producer) {
 }
 
 type testCaseState struct {
-	id          string
-	name        string
-	startedAt   time.Time
-	finishedAt  time.Time
-	status      string
-	tags        []string
-	meta        map[string]any
-	sutBaseURL  string
-	flows       []artifact.Flow
-	schemas     []artifact.SchemaRef
-	expectation []Expectation
-	redactions  []artifact.Redaction
+	id             string
+	name           string
+	startedAt      time.Time
+	finishedAt     time.Time
+	status         string
+	tags           []string
+	meta           map[string]any
+	sutBaseURL     string
+	flows          []artifact.Flow
+	schemas        []artifact.SchemaRef
+	expectation    []Expectation
+	redactions     []artifact.Redaction
+	generateSchema bool
+}
+
+func (s *TestCaseStore) SetSchemaGeneration(enabled bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.active != nil {
+		s.active.generateSchema = enabled
+	}
 }
 
 type Expectation struct {
@@ -132,6 +141,7 @@ func (s *TestCaseStore) FinishCase(status string, env *artifact.Environment) (*a
 	state.status = status
 
 	flows := append([]artifact.Flow{}, state.flows...)
+	linkCausality(flows)
 	for i := range flows {
 		flows[i].Fingerprint = flowFingerprint(flows[i])
 	}
@@ -159,6 +169,9 @@ func (s *TestCaseStore) FinishCase(status string, env *artifact.Environment) (*a
 
 	if len(state.expectation) > 0 {
 		art.Meta["expectations"] = state.expectation
+	}
+	if state.generateSchema {
+		art.Meta["schema_generation"] = true
 	}
 
 	applySchemaValidation(art)
@@ -220,6 +233,12 @@ func (s *TestCaseStore) AddSchema(ref artifact.SchemaRef) artifact.SchemaRef {
 		ref.ID = fmt.Sprintf("schema-%d", s.schemaSeq)
 	}
 	fillSchemaSHA(&ref)
+	if ref.AssetName == "" {
+		ref.AssetName = ref.ID
+	}
+	if ref.AssetSHA == "" {
+		ref.AssetSHA = ref.Source.SHA256
+	}
 	s.active.schemas = append(s.active.schemas, ref)
 	return ref
 }
@@ -295,12 +314,17 @@ func (s *TestCaseStore) flowFromProxy(exchange proxy.HTTPExchange) artifact.Flow
 		return artifact.Flow{}
 	}
 	id := s.nextFlowID()
+	channel := exchange.Channel
+	if channel == "" {
+		channel = "test_to_sut"
+	}
 	reqHeaders := cloneHeaders(exchange.RequestHeaders)
 	respHeaders := cloneHeaders(exchange.ResponseHeaders)
 	return artifact.Flow{
 		ID:             id,
 		Protocol:       "http",
-		Channel:        "test_to_sut",
+		Channel:        channel,
+		AssetID:        exchange.AssetID,
 		TraceID:        exchange.TraceID,
 		StartedAt:      exchange.StartedAt,
 		DurationMS:     exchange.Duration.Milliseconds(),
@@ -329,6 +353,50 @@ func (s *TestCaseStore) flowFromProxy(exchange proxy.HTTPExchange) artifact.Flow
 	}
 }
 
+// linkCausality identifies which inbound request caused each observed
+// dependency call. Propagated trace IDs are authoritative; request timing is
+// a useful fallback for applications that do not propagate tracing headers.
+func linkCausality(flows []artifact.Flow) {
+	type parent struct {
+		id    string
+		start time.Time
+		end   time.Time
+	}
+	byTrace := map[string]string{}
+	var parents []parent
+	for _, flow := range flows {
+		if flow.Channel != "test_to_sut" {
+			continue
+		}
+		if flow.TraceID != "" {
+			byTrace[flow.TraceID] = flow.ID
+		}
+		parents = append(parents, parent{
+			id: flow.ID, start: flow.StartedAt,
+			end: flow.StartedAt.Add(time.Duration(flow.DurationMS+1) * time.Millisecond),
+		})
+	}
+	for i := range flows {
+		if flows[i].Channel != "sut_to_dependency" {
+			continue
+		}
+		if parentID := byTrace[flows[i].TraceID]; parentID != "" {
+			flows[i].ParentFlowID = parentID
+			continue
+		}
+		var bestStart time.Time
+		for _, candidate := range parents {
+			if flows[i].StartedAt.Before(candidate.start) || flows[i].StartedAt.After(candidate.end) {
+				continue
+			}
+			if flows[i].ParentFlowID == "" || candidate.start.After(bestStart) {
+				flows[i].ParentFlowID = candidate.id
+				bestStart = candidate.start
+			}
+		}
+	}
+}
+
 // flowFingerprint hashes the interaction shape (not its values) so identical
 // interactions across runs and repos dedupe even when test data varies.
 func flowFingerprint(flow artifact.Flow) string {
@@ -347,8 +415,12 @@ func flowFingerprint(flow artifact.Flow) string {
 		status = flow.Response.HTTP.Status
 		respShape = bodyShape(flow.Response.HTTP.Body)
 	}
+	channel := flow.Channel
+	if flow.AssetID != "" {
+		channel += ":" + flow.AssetID
+	}
 	canonical := strings.Join([]string{
-		flow.Channel, reqMethod, reqPath, strconv.Itoa(status), reqShape, respShape,
+		channel, reqMethod, reqPath, strconv.Itoa(status), reqShape, respShape,
 	}, "|")
 	sum := sha256.Sum256([]byte(canonical))
 	return hex.EncodeToString(sum[:])[:16]

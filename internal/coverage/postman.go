@@ -138,23 +138,29 @@ type postmanCollectionMeta struct {
 }
 
 type postmanSpecMeta struct {
-	Kind     string                `json:"kind"`
-	SchemaID string                `json:"schema_id"`
-	Role     string                `json:"role"`
-	Type     string                `json:"type"`
-	Source   artifact.SchemaSource `json:"source,omitempty"`
+	Kind      string                `json:"kind"`
+	SchemaID  string                `json:"schema_id"`
+	Role      string                `json:"role"`
+	Type      string                `json:"type"`
+	Source    artifact.SchemaSource `json:"source,omitempty"`
+	AssetID   string                `json:"asset_id,omitempty"`
+	AssetName string                `json:"asset_name,omitempty"`
+	AssetSHA  string                `json:"asset_sha,omitempty"`
 }
 
 type postmanSampleMeta struct {
-	Kind       string `json:"kind"`
-	TestCase   string `json:"testcase,omitempty"`
-	FlowID     string `json:"flow_id,omitempty"`
-	Protocol   string `json:"protocol,omitempty"`
-	Channel    string `json:"channel,omitempty"`
-	Operation  string `json:"operation,omitempty"`
-	SchemaID   string `json:"schema_id,omitempty"`
-	Role       string `json:"role,omitempty"`
-	RequestURL string `json:"request_url,omitempty"`
+	Kind         string `json:"kind"`
+	TestCase     string `json:"testcase,omitempty"`
+	FlowID       string `json:"flow_id,omitempty"`
+	Protocol     string `json:"protocol,omitempty"`
+	Channel      string `json:"channel,omitempty"`
+	AssetID      string `json:"asset_id,omitempty"`
+	ParentFlowID string `json:"parent_flow_id,omitempty"`
+	TraceID      string `json:"trace_id,omitempty"`
+	Operation    string `json:"operation,omitempty"`
+	SchemaID     string `json:"schema_id,omitempty"`
+	Role         string `json:"role,omitempty"`
+	RequestURL   string `json:"request_url,omitempty"`
 }
 
 // CollectionFromReport converts a coverage report into a Postman collection.
@@ -185,6 +191,9 @@ func CollectionFromReport(report *Report) (*PostmanCollection, error) {
 	for _, spec := range report.Provided.Specs {
 		specLookup[specLookupKey("sut", spec.SchemaID)] = spec
 	}
+	for _, spec := range report.Dependent.Specs {
+		specLookup[specLookupKey("dependency", spec.SchemaID)] = spec
+	}
 	specFolderNames := buildSpecFolderNames(report)
 	specVariables := buildSpecVariables(report, specFolderNames)
 	collection.Variable = sortPostmanVariables(specVariables)
@@ -200,6 +209,11 @@ func CollectionFromReport(report *Report) (*PostmanCollection, error) {
 		appendPostmanSpecFolders(&testTraffic, "sut", tc.Provided, specLookup, specFolderNames, specVariables)
 		if len(testTraffic.Item) > 0 {
 			testFolder.Item = append(testFolder.Item, testTraffic)
+		}
+		dependencyTraffic := PostmanItem{Name: "dependency traffic"}
+		appendPostmanSpecFolders(&dependencyTraffic, "dependency", tc.Dependent, specLookup, specFolderNames, specVariables)
+		if len(dependencyTraffic.Item) > 0 {
+			testFolder.Item = append(testFolder.Item, dependencyTraffic)
 		}
 
 		if len(testFolder.Item) == 0 {
@@ -259,6 +273,11 @@ func appendPostmanSpecFolders(
 			Role:     role,
 			Type:     typeLabel,
 			Source:   inferSchemaSource(sourceLabel),
+			AssetID:  spec.AssetID,
+		}
+		if hasLookup {
+			specMeta.AssetName = lookupSpec.AssetName
+			specMeta.AssetSHA = lookupSpec.AssetSHA
 		}
 		specFolder := PostmanItem{
 			Name:        folderName,
@@ -273,15 +292,18 @@ func appendPostmanSpecFolders(
 					Request:  req,
 					Response: sampleToPostmanResponses(sample.Response, req),
 					Description: encodePostmanMeta(postmanSampleMeta{
-						Kind:       "sample",
-						TestCase:   sample.TestCase,
-						FlowID:     sample.FlowID,
-						Protocol:   sample.Protocol,
-						Channel:    sample.Channel,
-						Operation:  op.Operation,
-						SchemaID:   spec.SchemaID,
-						Role:       role,
-						RequestURL: strings.TrimSpace(sample.Request.URL),
+						Kind:         "sample",
+						TestCase:     sample.TestCase,
+						FlowID:       sample.FlowID,
+						Protocol:     sample.Protocol,
+						Channel:      sample.Channel,
+						AssetID:      sample.AssetID,
+						ParentFlowID: sample.ParentFlowID,
+						TraceID:      sample.TraceID,
+						Operation:    op.Operation,
+						SchemaID:     spec.SchemaID,
+						Role:         role,
+						RequestURL:   strings.TrimSpace(sample.Request.URL),
 					}),
 				}
 				specFolder.Item = append(specFolder.Item, item)
@@ -464,7 +486,7 @@ func buildSpecFolderNames(report *Report) map[string]string {
 		}
 	}
 	build("sut", report.Provided.Specs)
-	build("fake", report.Dependent.Specs)
+	build("dependency", report.Dependent.Specs)
 	return out
 }
 
@@ -537,7 +559,7 @@ func buildSpecVariables(report *Report, folderNames map[string]string) map[strin
 	}
 
 	addSpecs("sut", report.Provided.Specs)
-	addSpecs("fake", report.Dependent.Specs)
+	addSpecs("dependency", report.Dependent.Specs)
 	return out
 }
 
@@ -602,7 +624,7 @@ func sortPostmanVariables(vars map[string]PostmanVariable) []PostmanVariable {
 func inferBaseURLForSpec(testcases []TestCaseCoverage, role, schemaID string) string {
 	for _, tc := range testcases {
 		var specs []SpecOperationSamples
-		if strings.EqualFold(role, "fake") {
+		if strings.EqualFold(role, "dependency") || strings.EqualFold(role, "fake") {
 			specs = tc.Dependent
 		} else {
 			specs = tc.Provided
@@ -844,8 +866,9 @@ func ReportFromPostmanCollection(collection *PostmanCollection) (*Report, error)
 		Notes:         uniqueSorted(notes),
 	}
 	if len(entries) > 0 {
-		provided, testcases, coverageNotes := buildCoverage(entries)
+		provided, dependent, testcases, coverageNotes := buildCoverage(entries)
 		report.Provided = provided
+		report.Dependent = dependent
 		report.TestCases = testcases
 		report.Notes = uniqueSorted(append(report.Notes, coverageNotes...))
 	}
@@ -919,8 +942,14 @@ func postmanCollectionToArtifacts(collection *PostmanCollection) ([]artifactEntr
 						schemaRef.ID = id
 					}
 					if role := strings.TrimSpace(specMeta.Role); role != "" {
+						if role == "fake" {
+							role = "dependency"
+						}
 						schemaRef.Role = role
 					}
+					schemaRef.AssetID = specMeta.AssetID
+					schemaRef.AssetName = specMeta.AssetName
+					schemaRef.AssetSHA = specMeta.AssetSHA
 					if typ := strings.TrimSpace(specMeta.Type); typ != "" {
 						schemaRef.Type = typ
 					}
@@ -955,6 +984,9 @@ func postmanCollectionToArtifacts(collection *PostmanCollection) ([]artifactEntr
 							flowID = id
 						}
 						if ch := strings.TrimSpace(sampleMeta.Channel); ch != "" {
+							if ch == "sut_to_mock" {
+								ch = "sut_to_dependency"
+							}
 							channel = ch
 						}
 						if proto := strings.TrimSpace(sampleMeta.Protocol); proto != "" {
@@ -964,9 +996,12 @@ func postmanCollectionToArtifacts(collection *PostmanCollection) ([]artifactEntr
 					}
 
 					flow := artifact.Flow{
-						ID:       flowID,
-						Protocol: protocol,
-						Channel:  channel,
+						ID:           flowID,
+						Protocol:     protocol,
+						Channel:      channel,
+						AssetID:      sampleMeta.AssetID,
+						ParentFlowID: sampleMeta.ParentFlowID,
+						TraceID:      sampleMeta.TraceID,
 						Request: artifact.Message{
 							HTTP: postmanRequestToHTTP(sampleItem.Request, requestURL),
 						},
@@ -991,8 +1026,8 @@ func detectTrafficFolder(name string) (channel string, role string, ok bool) {
 	switch label {
 	case "test traffic", "provided traffic":
 		return "test_to_sut", "sut", true
-	case "mock traffic", "dependent traffic", "fake traffic":
-		return "sut_to_mock", "fake", true
+	case "dependency traffic", "mock traffic", "dependent traffic", "fake traffic":
+		return "sut_to_dependency", "dependency", true
 	default:
 		return "", "", false
 	}

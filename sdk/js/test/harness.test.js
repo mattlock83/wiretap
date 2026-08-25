@@ -70,6 +70,74 @@ test("report forwards all supported output paths", async () => {
   }
 });
 
+test("declared external dependencies retain strict schemas and session-scoped capture URLs", async () => {
+  const calls = [];
+  const server = await controlServer((path, body) => {
+    calls.push({ path, body });
+    if (path === "/v1/startServer") return { sut_url: "http://127.0.0.1:20010", proxy: { listen_addr: "127.0.0.1:20010" } };
+    if (path === "/v1/setupTest") {
+      return {
+        session_id: "session-1",
+        name: body.name,
+        explicit: true,
+        proxy_listen: "http://127.0.0.1:20010",
+        dependencies: { inventory: "http://127.0.0.1:20010/__phrond/session/session-1/dep/inventory" }
+      };
+    }
+    return { schema_validation: { status: "pass" } };
+  });
+  try {
+    const inventorySchema = { id: "inventory-api", type: "openapi", source: { type: "file", path: "inventory.yaml" } };
+    const runtime = await startCapture({
+      baseUrl: server.baseUrl,
+      sutBaseUrl: "http://sut.test",
+      schemas: [{ id: "sut-api" }],
+      dependencies: {
+        inventory: { assetName: "Inventory API", url: "http://wiremock.test", schema: inventorySchema }
+      }
+    });
+    assert.equal(runtime.dependencyUrl("inventory"), "http://127.0.0.1:20010/__phrond/dep/inventory");
+    const session = await runtime.setupTest({ name: "orders call inventory", explicitSession: true });
+    assert.deepEqual(calls[1].body.dependencies, [{
+      asset_id: "inventory",
+      asset_name: "Inventory API",
+      upstream_url: "http://wiremock.test",
+      schemas: [inventorySchema]
+    }]);
+    assert.equal(session.dependencyUrls.inventory, "http://127.0.0.1:20010/__phrond/session/session-1/dep/inventory");
+    assert.equal(runtime.dependencyUrl("inventory"), session.dependencyUrls.inventory);
+    assert.throws(() => runtime.dependencyUrl("payments"), /not configured/);
+    assert.equal(JSON.stringify(calls).includes('"mock"'), false);
+  } finally {
+    await server.close();
+  }
+});
+
+test("external dependencies always require their own schema", async () => {
+  await assert.rejects(
+    () => startCapture({
+      baseUrl: "http://127.0.0.1:1",
+      schemas: [{ id: "sut-api" }],
+      dependencies: [{ assetId: "inventory", upstreamUrl: "http://wiremock.test" }]
+    }),
+    /dependency "inventory" requires an OpenAPI schema/
+  );
+  assert.throws(
+    () => createNodeTestSuite({
+      generateSchema: true,
+      dependencies: [{ assetId: "inventory", upstreamUrl: "http://wiremock.test" }]
+    }),
+    /dependency "inventory" requires an OpenAPI schema/
+  );
+  assert.throws(
+    () => createNodeTestSuite({
+      schemas: [{ id: "sut-api" }],
+      dependencies: [{ assetId: "bad/name", upstreamUrl: "http://wiremock.test", schema: { id: "inventory" } }]
+    }),
+    /valid assetId/
+  );
+});
+
 test("bindTest records the test name and preserves failures", async () => {
   const calls = [];
   const runtime = {
@@ -84,7 +152,7 @@ test("bindTest records the test name and preserves failures", async () => {
   assert.equal(calls[1][1].status, "fail");
 });
 
-test("createNodeTestSuite exposes only capture, HTTP, and reporting", () => {
+test("createNodeTestSuite exposes capture, dependency forwarding, HTTP, and reporting", () => {
   const hooks = {};
   const suite = createNodeTestSuite({
     autoHooks: true,
@@ -100,7 +168,7 @@ test("createNodeTestSuite exposes only capture, HTTP, and reporting", () => {
   assert.equal(typeof suite.generateSchema, "function");
   assert.equal(suite.queueResponse, undefined);
   assert.equal(suite.verify, undefined);
-  assert.equal(suite.dependencyUrl, undefined);
+	assert.equal(typeof suite.dependencyUrl, "function");
   assert.equal(typeof hooks.before, "function");
   assert.equal(typeof hooks.after, "function");
 });

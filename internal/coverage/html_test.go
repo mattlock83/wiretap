@@ -47,7 +47,7 @@ func TestHTMLReportIncludesCompleteCapturedRequestAndResponsePayloads(t *testing
 	for _, expected := range []string{
 		"By API Spec",
 		"By Test Case",
-		"Captured Test → SUT Traffic",
+		"Captured Test → SUT and SUT → Dependency Traffic",
 		"Test Case: payload happy flow",
 		"POST http://sut.test/messages",
 		"Request Headers:",
@@ -68,6 +68,25 @@ func TestHTMLReportIncludesCompleteCapturedRequestAndResponsePayloads(t *testing
 		}
 	}
 	if strings.Contains(html, "Dependent API Specs") || strings.Contains(html, "mock traffic") {
-		t.Fatalf("HTML report contains removed dependency/mock sections:\n%s", html)
+		t.Fatalf("HTML report unexpectedly includes undeclared dependencies or mock-serving concepts:\n%s", html)
+	}
+}
+
+func TestHTMLReportIncludesCorrelatedExternalDependencyPayloads(t *testing.T) {
+	var output bytes.Buffer
+	if err := WriteReport(&output, sampleDualCaptureReport(), "html"); err != nil {
+		t.Fatal(err)
+	}
+	html := output.String()
+	for _, expected := range []string{
+		"Dependent API Specs", "inventory-openapi", "sut_to_dependency", "dependency inventory-service",
+		"parent flow-1", "POST http://wiremock.test/inventory", "widget", "available",
+	} {
+		if !strings.Contains(html, expected) {
+			t.Fatalf("HTML report missing %q:\n%s", expected, html)
+		}
+	}
+	if strings.Contains(html, ">Faked<") || strings.Contains(html, "mock traffic") {
+		t.Fatalf("HTML report reintroduced mock-serving concepts:\n%s", html)
 	}
 }

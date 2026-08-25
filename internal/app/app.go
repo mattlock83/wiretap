@@ -87,6 +87,7 @@ func New(deps Deps) (*App, error) {
 
 	if component, ok := proxy.(*ProxyComponent); ok {
 		app.proxyComponent = component
+		component.SetDependencyResolver(app.resolveDependencyRoute)
 	}
 
 	app.server = &http.Server{

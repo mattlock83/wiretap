@@ -131,7 +131,7 @@ components:
           type: string
         role:
           type: string
-          enum: [sut]
+          enum: [sut, dependency]
         type:
           type: string
           enum: [openapi]
@@ -139,6 +139,14 @@ components:
           $ref: "#/components/schemas/SchemaSource"
         openapi_version:
           type: string
+        asset_id:
+          type: string
+          description: Stable identity of the provided or externally owned dependency API.
+        asset_name:
+          type: string
+        asset_sha:
+          type: string
+          description: Content fingerprint of the API schema version.
       additionalProperties: false
 
     SchemaSource:
@@ -181,7 +189,7 @@ components:
           enum: [http]
         channel:
           type: string
-          enum: [test_to_sut]
+          enum: [test_to_sut, sut_to_dependency]
         started_at:
           type: string
           format: date-time
@@ -196,16 +204,23 @@ components:
           type: array
           items:
             type: string
+        asset_id:
+          type: string
+          description: Declared externally owned dependency receiving this request.
         trace_id:
           type: string
           description: >-
             Phrond trace id attached to the captured request for correlation
             with application traces and logs.
+        parent_flow_id:
+          type: string
+          description: Inbound test-to-SUT flow that caused this dependency call.
         fingerprint:
           type: string
           description: >-
-            Stable hash of the interaction shape (channel, method, path,
-            status, JSON body key/type structure) for cross-run dedup.
+            Stable hash of the interaction shape (channel, dependency asset,
+            method, path, status, JSON body key/type structure) for cross-run
+            dedup.
         transport_error:
           type: string
           description: >-
@@ -313,7 +328,7 @@ components:
           type: string
         channel:
           type: string
-          enum: [test_to_sut]
+          enum: [test_to_sut, sut_to_dependency]
         phase:
           type: string
           enum: [request, response]

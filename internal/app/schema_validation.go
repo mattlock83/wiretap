@@ -159,9 +159,21 @@ func validateSchemas(art *artifact.Artifact) []artifact.SchemaValidationError {
 		if flow.Request.HTTP == nil || flow.Response.HTTP == nil {
 			continue
 		}
-		const role = "sut"
-		candidates := openapiByRole[role]
+		role := "sut"
+		if flow.Channel == "sut_to_dependency" {
+			role = "dependency"
+		}
+		var candidates []openapiSpec
+		for _, spec := range openapiByRole[role] {
+			if role == "dependency" && spec.ref.AssetID != "" && spec.ref.AssetID != flow.AssetID {
+				continue
+			}
+			candidates = append(candidates, spec)
+		}
 		if len(candidates) == 0 {
+			if generating, _ := art.Meta["schema_generation"].(bool); generating && role == "sut" {
+				continue
+			}
 			issues = append(issues, artifact.SchemaValidationError{
 				FlowID:   flow.ID,
 				Channel:  flow.Channel,
@@ -272,8 +284,9 @@ func validateHTTPAgainstSpec(flow artifact.Flow, spec openapiSpec) (error, error
 		Header:                 toHTTPHeader(respMsg.Headers),
 		Body:                   io.NopCloser(bytes.NewReader(respBody)),
 		Options: &openapi3filter.Options{
-			MultiError:          true,
-			ExcludeResponseBody: respMsg.Body != nil && respMsg.Body.Truncated,
+			MultiError:            true,
+			IncludeResponseStatus: true,
+			ExcludeResponseBody:   respMsg.Body != nil && respMsg.Body.Truncated,
 		},
 	}
 	if err := openapi3filter.ValidateResponse(context.Background(), resp); err != nil {
@@ -342,6 +355,9 @@ func resolvePath(path string) string {
 }
 
 func roleToChannel(role string) string {
+	if strings.EqualFold(role, "dependency") {
+		return "sut_to_dependency"
+	}
 	return "test_to_sut"
 }
 

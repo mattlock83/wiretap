@@ -23,16 +23,14 @@ import (
 )
 
 type Report struct {
-	GeneratedAt   time.Time         `json:"generated_at" yaml:"generated_at"`
-	SUTName       string            `json:"sut_name" yaml:"sut_name"`
-	ArtifactCount int               `json:"artifact_count" yaml:"artifact_count"`
-	Artifacts     []string          `json:"artifacts,omitempty" yaml:"artifacts,omitempty"`
-	Provided      SpecCoverageGroup `json:"provided" yaml:"provided"`
-	// Deprecated compatibility field for importing historical reports. New
-	// capture-only reports never populate or serialize it.
-	Dependent SpecCoverageGroup  `json:"-" yaml:"-"`
-	TestCases []TestCaseCoverage `json:"testcases,omitempty" yaml:"testcases,omitempty"`
-	Notes     []string           `json:"notes,omitempty" yaml:"notes,omitempty"`
+	GeneratedAt   time.Time          `json:"generated_at" yaml:"generated_at"`
+	SUTName       string             `json:"sut_name" yaml:"sut_name"`
+	ArtifactCount int                `json:"artifact_count" yaml:"artifact_count"`
+	Artifacts     []string           `json:"artifacts,omitempty" yaml:"artifacts,omitempty"`
+	Provided      SpecCoverageGroup  `json:"provided" yaml:"provided"`
+	Dependent     SpecCoverageGroup  `json:"dependent" yaml:"dependent"`
+	TestCases     []TestCaseCoverage `json:"testcases,omitempty" yaml:"testcases,omitempty"`
+	Notes         []string           `json:"notes,omitempty" yaml:"notes,omitempty"`
 }
 
 type SpecCoverageGroup struct {
@@ -42,11 +40,13 @@ type SpecCoverageGroup struct {
 type SpecCoverage struct {
 	SchemaID   string             `json:"schema_id" yaml:"schema_id"`
 	Role       string             `json:"role" yaml:"role"`
+	AssetID    string             `json:"asset_id,omitempty" yaml:"asset_id,omitempty"`
+	AssetName  string             `json:"asset_name,omitempty" yaml:"asset_name,omitempty"`
+	AssetSHA   string             `json:"asset_sha,omitempty" yaml:"asset_sha,omitempty"`
 	Type       string             `json:"type" yaml:"type"`
 	Source     string             `json:"source" yaml:"source"`
 	Exercised  []OperationSamples `json:"exercised,omitempty" yaml:"exercised,omitempty"`
 	NotCovered []OperationSamples `json:"not_covered,omitempty" yaml:"not_covered,omitempty"`
-	Faked      []OperationSamples `json:"-" yaml:"-"`
 }
 
 type OperationSamples struct {
@@ -58,11 +58,12 @@ type TestCaseCoverage struct {
 	Name      string                 `json:"name" yaml:"name"`
 	Traffic   []FlowSample           `json:"traffic,omitempty" yaml:"traffic,omitempty"`
 	Provided  []SpecOperationSamples `json:"provided,omitempty" yaml:"provided,omitempty"`
-	Dependent []SpecOperationSamples `json:"-" yaml:"-"`
+	Dependent []SpecOperationSamples `json:"dependent,omitempty" yaml:"dependent,omitempty"`
 }
 
 type SpecOperationSamples struct {
 	SchemaID   string             `json:"schema_id" yaml:"schema_id"`
+	AssetID    string             `json:"asset_id,omitempty" yaml:"asset_id,omitempty"`
 	Type       string             `json:"type" yaml:"type"`
 	Source     string             `json:"source" yaml:"source"`
 	Operations []OperationSamples `json:"operations,omitempty" yaml:"operations,omitempty"`
@@ -74,7 +75,9 @@ type FlowSample struct {
 	FlowID         string             `json:"flow_id,omitempty" yaml:"flow_id,omitempty"`
 	Protocol       string             `json:"protocol,omitempty" yaml:"protocol,omitempty"`
 	Channel        string             `json:"channel,omitempty" yaml:"channel,omitempty"`
+	AssetID        string             `json:"asset_id,omitempty" yaml:"asset_id,omitempty"`
 	TraceID        string             `json:"trace_id,omitempty" yaml:"trace_id,omitempty"`
+	ParentFlowID   string             `json:"parent_flow_id,omitempty" yaml:"parent_flow_id,omitempty"`
 	Fingerprint    string             `json:"fingerprint,omitempty" yaml:"fingerprint,omitempty"`
 	TransportError string             `json:"transport_error,omitempty" yaml:"transport_error,omitempty"`
 	Request        InteractionMessage `json:"request,omitempty" yaml:"request,omitempty"`
@@ -97,7 +100,6 @@ type loadedSchema struct {
 	Operations []string
 	OpenAPI    *openapiSpec
 	Exercised  map[string]struct{}
-	Faked      map[string]struct{}
 }
 
 type openapiSpec struct {
@@ -137,13 +139,14 @@ func Generate(ctx context.Context, artifactsDir, sutName string, includeArtifact
 		sutName = inferSUTName(entries)
 	}
 
-	provided, testcases, notes := buildCoverage(entries)
+	provided, dependent, testcases, notes := buildCoverage(entries)
 
 	report := &Report{
 		GeneratedAt:   time.Now().UTC(),
 		SUTName:       sutName,
 		ArtifactCount: len(entries),
 		Provided:      provided,
+		Dependent:     dependent,
 		TestCases:     testcases,
 		Notes:         notes,
 	}
@@ -570,9 +573,9 @@ const reportHTMLTemplate = `<!DOCTYPE html>
           <div class="spec-body">
             <div class="meta">Source: {{ $spec.Source }}</div>
             <div class="op-group">
-              <h4>Faked</h4>
-              {{ if $spec.Faked }}
-                {{ range $spec.Faked }}
+              <h4>Exercised</h4>
+              {{ if $spec.Exercised }}
+                {{ range $spec.Exercised }}
                   <details class="op">
                     <summary>{{ .Operation }}</summary>
                     {{ if .Samples }}
@@ -595,7 +598,7 @@ const reportHTMLTemplate = `<!DOCTYPE html>
                   </details>
                 {{ end }}
               {{ else }}
-                <div class="meta">No faked operations recorded.</div>
+                <div class="meta">No dependency operations recorded.</div>
               {{ end }}
             </div>
           </div>
@@ -609,7 +612,7 @@ const reportHTMLTemplate = `<!DOCTYPE html>
         <section class="panel">
           <h2>Test Case: {{ .Name }}</h2>
           <div class="op-group">
-            <h4>Captured Test → SUT Traffic</h4>
+            <h4>Captured Test → SUT and SUT → Dependency Traffic</h4>
             {{ if .Traffic }}
               {{ range .Traffic }}
                 <details class="op" open>
@@ -618,7 +621,7 @@ const reportHTMLTemplate = `<!DOCTYPE html>
                     <span class="meta">{{ .FlowID }} · response {{ .Response.Status }}</span>
                   </summary>
                   <div class="sample">
-                    <div class="sample-title">{{ .Protocol }} · {{ .Channel }}{{ if .TraceID }} · trace {{ .TraceID }}{{ end }}</div>
+                    <div class="sample-title">{{ .Protocol }} · {{ .Channel }}{{ if .AssetID }} · dependency {{ .AssetID }}{{ end }}{{ if .TraceID }} · trace {{ .TraceID }}{{ end }}{{ if .ParentFlowID }} · parent {{ .ParentFlowID }}{{ end }}</div>
                     <div class="sample-body">
                       {{ if .TransportError }}<div class="notes"><strong>Transport error:</strong> {{ .TransportError }}</div>{{ end }}
                       <div><strong>Request:</strong> {{ .Request.Method }} {{ .Request.URL }}</div>
@@ -830,7 +833,7 @@ func inferSUTName(entries []artifactEntry) string {
 	return "SUT"
 }
 
-func buildCoverage(entries []artifactEntry) (SpecCoverageGroup, []TestCaseCoverage, []string) {
+func buildCoverage(entries []artifactEntry) (SpecCoverageGroup, SpecCoverageGroup, []TestCaseCoverage, []string) {
 	var notes []string
 	flows := []artifact.Flow{}
 	flowEntries := []flowEntry{}
@@ -853,15 +856,20 @@ func buildCoverage(entries []artifactEntry) (SpecCoverageGroup, []TestCaseCovera
 
 	providedSchemas, providedNotes := loadSchemas(filterSchemas(schemas, "sut"))
 	notes = append(notes, providedNotes...)
+	dependentSchemas, dependentNotes := loadSchemas(filterSchemas(schemas, "dependency"))
+	notes = append(notes, dependentNotes...)
 
 	markCoverage(flows, providedSchemas, "test_to_sut")
+	markCoverage(flows, dependentSchemas, "sut_to_dependency")
 
 	providedSamples := buildOperationSamples(flowEntries, providedSchemas, "test_to_sut")
+	dependentSamples := buildOperationSamples(flowEntries, dependentSchemas, "sut_to_dependency")
 
-	providedGroup := SpecCoverageGroup{Specs: exportSpecs(providedSchemas, true, providedSamples, false)}
-	testcases := buildTestCaseCoverage(flowEntries, providedSchemas)
+	providedGroup := SpecCoverageGroup{Specs: exportSpecs(providedSchemas, true, providedSamples)}
+	dependentGroup := SpecCoverageGroup{Specs: exportSpecs(dependentSchemas, true, dependentSamples)}
+	testcases := buildTestCaseCoverage(flowEntries, providedSchemas, dependentSchemas)
 
-	return providedGroup, testcases, notes
+	return providedGroup, dependentGroup, testcases, notes
 }
 
 func filterSchemas(schemas []artifact.SchemaRef, role string) []artifact.SchemaRef {
@@ -886,7 +894,6 @@ func loadSchemas(schemas []artifact.SchemaRef) ([]*loadedSchema, []string) {
 			Ref:       schema,
 			Source:    schemaSourceLabel(schema),
 			Exercised: map[string]struct{}{},
-			Faked:     map[string]struct{}{},
 		}
 		if strings.EqualFold(schema.Type, "openapi") {
 			if spec, err := loadOpenAPISpec(schema); err == nil {
@@ -916,43 +923,41 @@ func markCoverage(flows []artifact.Flow, schemas []*loadedSchema, channel string
 			continue
 		}
 		for _, schema := range schemas {
+			if schema.Ref.AssetID != "" && flow.AssetID != "" && schema.Ref.AssetID != flow.AssetID {
+				continue
+			}
 			if schema.OpenAPI != nil && flow.Protocol == "http" {
 				if op, ok := openapiOperationFromFlow(flow, schema.OpenAPI); ok {
-					if channel == "sut_to_mock" {
-						schema.Faked[op] = struct{}{}
-					} else {
-						schema.Exercised[op] = struct{}{}
-					}
+					schema.Exercised[op] = struct{}{}
 				}
 			}
 		}
 	}
 }
 
-func exportSpecs(schemas []*loadedSchema, includeNotCovered bool, samples map[string]map[string][]FlowSample, includeFaked bool) []SpecCoverage {
+func exportSpecs(schemas []*loadedSchema, includeNotCovered bool, samples map[string]map[string][]FlowSample) []SpecCoverage {
 	var specs []SpecCoverage
 	for _, schema := range schemas {
 		sampleMap := samples[schema.Ref.ID]
 		exercisedOps := uniqueSorted(setToList(schema.Exercised))
-		fakedOps := uniqueSorted(setToList(schema.Faked))
 		notCoveredOps := []string{}
 		if includeNotCovered {
 			notCoveredOps = uniqueSorted(diffOps(schema.Operations, schema.Exercised))
 		}
 		coverage := SpecCoverage{
-			SchemaID: schema.Ref.ID,
-			Role:     schema.Ref.Role,
-			Type:     schema.Ref.Type,
-			Source:   schema.Source,
+			SchemaID:  schema.Ref.ID,
+			Role:      schema.Ref.Role,
+			AssetID:   schema.Ref.AssetID,
+			AssetName: schema.Ref.AssetName,
+			AssetSHA:  schema.Ref.AssetSHA,
+			Type:      schema.Ref.Type,
+			Source:    schema.Source,
 		}
 		if len(exercisedOps) > 0 {
 			coverage.Exercised = operationSamplesList(exercisedOps, sampleMap)
 		}
 		if len(notCoveredOps) > 0 {
 			coverage.NotCovered = operationSamplesList(notCoveredOps, nil)
-		}
-		if includeFaked && len(fakedOps) > 0 {
-			coverage.Faked = operationSamplesList(fakedOps, sampleMap)
 		}
 		specs = append(specs, coverage)
 	}
@@ -992,6 +997,9 @@ func buildOperationSamples(entries []flowEntry, schemas []*loadedSchema, channel
 			continue
 		}
 		for _, schema := range schemas {
+			if schema.Ref.AssetID != "" && flow.AssetID != "" && schema.Ref.AssetID != flow.AssetID {
+				continue
+			}
 			switch {
 			case schema.OpenAPI != nil && flow.Protocol == "http":
 				op, ok := openapiOperationFromFlow(flow, schema.OpenAPI)
@@ -1016,7 +1024,7 @@ func addSample(target map[string]map[string][]FlowSample, schemaID, operation st
 	return target
 }
 
-func buildTestCaseCoverage(entries []flowEntry, providedSchemas []*loadedSchema) []TestCaseCoverage {
+func buildTestCaseCoverage(entries []flowEntry, providedSchemas, dependentSchemas []*loadedSchema) []TestCaseCoverage {
 	buckets := map[string]*TestCaseCoverage{}
 	for _, entry := range entries {
 		flow := entry.Flow
@@ -1031,13 +1039,21 @@ func buildTestCaseCoverage(entries []flowEntry, providedSchemas []*loadedSchema)
 		}
 		tc.Traffic = append(tc.Traffic, flowSampleFromFlow(entry))
 
-		if flow.Channel != "test_to_sut" {
+		var schemas []*loadedSchema
+		var target *[]SpecOperationSamples
+		switch flow.Channel {
+		case "test_to_sut":
+			schemas, target = providedSchemas, &tc.Provided
+		case "sut_to_dependency":
+			schemas, target = dependentSchemas, &tc.Dependent
+		default:
 			continue
 		}
-		schemas := providedSchemas
-		target := &tc.Provided
 
 		for _, schema := range schemas {
+			if schema.Ref.AssetID != "" && flow.AssetID != "" && schema.Ref.AssetID != flow.AssetID {
+				continue
+			}
 			op := ""
 			if schema.OpenAPI != nil && flow.Protocol == "http" {
 				if matched, ok := openapiOperationFromFlow(flow, schema.OpenAPI); ok {
@@ -1059,8 +1075,12 @@ func buildTestCaseCoverage(entries []flowEntry, providedSchemas []*loadedSchema)
 			sortSamples(tc.Traffic)
 		}
 		sort.Slice(tc.Provided, func(i, j int) bool { return tc.Provided[i].SchemaID < tc.Provided[j].SchemaID })
+		sort.Slice(tc.Dependent, func(i, j int) bool { return tc.Dependent[i].SchemaID < tc.Dependent[j].SchemaID })
 		for i := range tc.Provided {
 			sortOperationSamples(tc.Provided[i].Operations)
+		}
+		for i := range tc.Dependent {
+			sortOperationSamples(tc.Dependent[i].Operations)
 		}
 		out = append(out, *tc)
 	}
@@ -1076,6 +1096,7 @@ func findOrCreateSpec(target *[]SpecOperationSamples, schema *loadedSchema) *Spe
 	}
 	entry := SpecOperationSamples{
 		SchemaID: schema.Ref.ID,
+		AssetID:  schema.Ref.AssetID,
 		Type:     schema.Ref.Type,
 		Source:   schema.Source,
 	}
@@ -1111,7 +1132,9 @@ func flowSampleFromFlow(entry flowEntry) FlowSample {
 		FlowID:         flow.ID,
 		Protocol:       flow.Protocol,
 		Channel:        flow.Channel,
+		AssetID:        flow.AssetID,
 		TraceID:        flow.TraceID,
+		ParentFlowID:   flow.ParentFlowID,
 		Fingerprint:    flow.Fingerprint,
 		TransportError: flow.TransportError,
 	}
@@ -1158,7 +1181,7 @@ func bodyPreview(body *artifact.Body) string {
 }
 
 func schemaKey(schema artifact.SchemaRef) string {
-	return fmt.Sprintf("%s|%s|%s|%s|%s|%s", schema.ID, schema.Role, schema.Type, schema.Source.Path, schema.Source.URL, schema.Source.Format)
+	return fmt.Sprintf("%s|%s|%s|%s|%s|%s|%s", schema.ID, schema.Role, schema.AssetID, schema.Type, schema.Source.Path, schema.Source.URL, schema.Source.Format)
 }
 
 func schemaSourceLabel(schema artifact.SchemaRef) string {

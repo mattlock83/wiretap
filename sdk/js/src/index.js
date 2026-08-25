@@ -67,6 +67,50 @@ function schemaConfiguration(config = {}) {
   return { schemas, generateSchema };
 }
 
+function normalizeDependencies(value) {
+  if (value === undefined || value === null) return [];
+  let entries;
+  if (Array.isArray(value)) {
+    entries = value;
+  } else if (typeof value === "object") {
+    entries = Object.entries(value).map(([assetId, dependency]) => ({ assetId, ...(dependency || {}) }));
+  } else {
+    throw new Error("dependencies must be an array or an object keyed by dependency asset ID");
+  }
+  const seen = new Set();
+  return entries.map((dependency, index) => {
+    if (!dependency || typeof dependency !== "object" || Array.isArray(dependency)) {
+      throw new Error(`dependency ${index + 1} must be an object`);
+    }
+    const assetId = pickFirstString(dependency.assetId, dependency.asset_id, dependency.id, dependency.name);
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(assetId)) {
+      throw new Error(`dependency ${index + 1} requires a valid assetId`);
+    }
+    if (seen.has(assetId)) throw new Error(`dependency assetId "${assetId}" is declared more than once`);
+    seen.add(assetId);
+    const upstreamUrl = pickFirstString(
+      dependency.upstreamUrl, dependency.upstream_url, dependency.url, dependency.targetUrl, dependency.target_url
+    );
+    let parsed;
+    try { parsed = new URL(upstreamUrl); } catch (_) { /* validated below */ }
+    if (!parsed || !["http:", "https:"].includes(parsed.protocol)) {
+      throw new Error(`dependency "${assetId}" requires an absolute http or https upstreamUrl`);
+    }
+    const schemas = Array.isArray(dependency.schemas) ? [...dependency.schemas] : [];
+    if (dependency.schema) schemas.push(dependency.schema);
+    if (schemas.length === 0) {
+      throw new Error(`dependency "${assetId}" requires an OpenAPI schema`);
+    }
+    const assetName = pickFirstString(dependency.assetName, dependency.asset_name);
+    return {
+      asset_id: assetId,
+      ...(assetName ? { asset_name: assetName } : {}),
+      upstream_url: upstreamUrl,
+      ...(schemas.length > 0 ? { schemas } : {})
+    };
+  });
+}
+
 class CoreClient {
   constructor(config = {}) {
     this.baseUrl = config.baseUrl || DEFAULT_BASE_URL;
@@ -116,6 +160,7 @@ class Runtime {
     const schemaConfig = schemaConfiguration(config);
     this.defaultSchemas = [...schemaConfig.schemas];
     this.generatedSchemaConfig = schemaConfig.generateSchema;
+    this.defaultDependencies = normalizeDependencies(config.dependencies);
     this.schemaGenerated = false;
     this.pendingScenarioName = "";
     this.sutUrl = runtimeInfo.sut_url || null;
@@ -140,6 +185,20 @@ class Runtime {
     return this.pendingScenarioName;
   }
 
+  dependencyUrl(assetId) {
+    if (typeof assetId !== "string" || !assetId.trim()) throw new Error("dependency assetId is required");
+    const selected = assetId.trim();
+    const dependencies = this.activeSession?.dependencyUrls;
+    if (dependencies && dependencies[selected]) return dependencies[selected];
+    if (!this.defaultDependencies.some((dependency) => dependency.asset_id === selected)) {
+      throw new Error(`dependency "${selected}" is not configured`);
+    }
+    const proxyBase = this.sutUrl || this.runtimeInfo?.proxy?.listen_addr;
+    if (!proxyBase) throw new Error("proxy listen address is not available");
+    const base = proxyBase.startsWith("http") ? proxyBase : `http://${proxyBase}`;
+    return `${base.replace(/\/$/, "")}/__phrond/dep/${encodeURIComponent(selected)}`;
+  }
+
   async setupTest(options = {}) {
     if (this.activeSession) throw new Error("a capture session is already active");
     const selectedSchemas = Array.isArray(options.schemas) ? options.schemas : this.defaultSchemas;
@@ -147,6 +206,9 @@ class Runtime {
       ? this.generatedSchemaConfig
       : normalizeGenerateSchema(options.generateSchema ?? options.generate_schema);
     const schemaConfig = schemaConfiguration({ schemas: selectedSchemas, generateSchema: selectedGeneration });
+    const dependencies = options.dependencies === undefined
+      ? this.defaultDependencies
+      : normalizeDependencies(options.dependencies);
     const payload = {
       name: pickFirstString(options.name, options.scenarioName, this.pendingScenarioName) || undefined,
       tags: options.tags,
@@ -155,6 +217,7 @@ class Runtime {
       explicit_session: Boolean(options.explicitSession ?? options.explicit_session),
       schemas: schemaConfig.schemas
     };
+    if (dependencies.length > 0) payload.dependencies = dependencies;
     if (schemaConfig.generateSchema) payload.generate_schema = true;
     const session = await this.client.setupTest(payload);
     this.activeSession = {
@@ -164,6 +227,10 @@ class Runtime {
       sutBaseUrl: payload.sut_base_url,
       proxyListen: session.proxy_listen || this.runtimeInfo?.proxy?.listen_addr,
       sutUrl: session.sut_url || this.sutUrl,
+      dependencyUrls: session.dependencies || Object.fromEntries(dependencies.map((dependency) => [
+        dependency.asset_id,
+        `${String(session.proxy_listen || this.sutUrl || "").replace(/\/$/, "")}/__phrond/dep/${encodeURIComponent(dependency.asset_id)}`
+      ])),
       generateSchema: schemaConfig.generateSchema
     };
     this.pendingScenarioName = "";
@@ -302,7 +369,8 @@ class Runtime {
 async function startCapture(config = {}) {
   if (!config || typeof config !== "object" || Array.isArray(config)) throw new Error("startCapture config must be an object");
   const schemaConfig = schemaConfiguration(config);
-  const runtimeConfig = { ...config, schemas: schemaConfig.schemas, generateSchema: schemaConfig.generateSchema };
+  const dependencies = normalizeDependencies(config.dependencies);
+  const runtimeConfig = { ...config, schemas: schemaConfig.schemas, generateSchema: schemaConfig.generateSchema, dependencies };
   const client = new CoreClient({ baseUrl: config.baseUrl, timeoutMs: config.timeoutMs });
   const runtimeInfo = await client.startServer({ proxy: normalizeProxyConfig(config) });
   return new Runtime(client, runtimeConfig, runtimeInfo);
@@ -335,6 +403,7 @@ function bindTest(runtimeOrGetter, testFn, defaults = {}) {
 
 function createNodeTestSuite(config = {}) {
   schemaConfiguration(config);
+  normalizeDependencies(config.dependencies);
   const testApi = config.testApi || require("node:test");
   if (!testApi || typeof testApi.test !== "function" || typeof testApi.before !== "function" || typeof testApi.after !== "function") {
     throw new Error("createNodeTestSuite testApi must provide test, before, and after functions");
@@ -361,6 +430,7 @@ function createNodeTestSuite(config = {}) {
     get runtime() { if (!runtime) throw new Error("Phrond capture runtime is not started yet"); return runtime; },
     get sutUrl() { return this.runtime.sutUrl; },
     get http() { return this.runtime.http; },
+    dependencyUrl(assetId) { return this.runtime.dependencyUrl(assetId); },
     generateSchema(options) { return this.runtime.generateSchema(options); },
     report(options) { return this.runtime.report(options); }
   };

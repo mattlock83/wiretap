@@ -54,6 +54,32 @@ func main() {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
 			return
 		}
+		if dependencyURL := os.Getenv("DEPENDENCY_BASE_URL"); dependencyURL != "" {
+			data, err := json.Marshal(request)
+			if err != nil {
+				writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+				return
+			}
+			outbound, err := http.NewRequestWithContext(r.Context(), http.MethodPost, dependencyURL+"/inventory/check", bytes.NewReader(data))
+			if err != nil {
+				writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+				return
+			}
+			outbound.Header.Set("Content-Type", "application/json")
+			if traceID := r.Header.Get("X-Phrond-Trace-Id"); traceID != "" {
+				outbound.Header.Set("X-Phrond-Trace-Id", traceID)
+			}
+			response, err := http.DefaultClient.Do(outbound)
+			if err != nil {
+				writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+				return
+			}
+			defer response.Body.Close()
+			if response.StatusCode != http.StatusOK {
+				writeJSON(w, http.StatusBadGateway, map[string]string{"error": "inventory dependency request failed"})
+				return
+			}
+		}
 		payload := responsePayload{Message: "processed", ID: request.ID, Action: request.Action}
 		writeJSON(w, http.StatusOK, payload)
 	})

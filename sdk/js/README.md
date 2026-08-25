@@ -1,8 +1,9 @@
 # JavaScript SDK
 
 The SDK makes Phrond a small capture fixture. Your existing test harness owns
-the SUT lifecycle and configuration; Phrond only proxies test calls, validates
-them strictly against supplied OpenAPI schemas, and writes reports.
+the SUT and mock-server lifecycles and configuration; Phrond proxies inbound
+test calls and optional outbound dependency calls, validates both against their
+OpenAPI schemas, and writes correlated reports.
 
 For a step-by-step migration that leaves an existing mock server unchanged,
 see [Getting started with existing tests and a mock server](../../docs/getting-started-existing-tests.md).
@@ -32,6 +33,31 @@ phrond.test("hello world happy flow", async () => {
 literal test name is stored in `artifact.testcase.name`, and failures are
 recorded with `status: fail` before being rethrown.
 
+To capture calls from the SUT to an existing WireMock, MockServer, or dependency,
+declare its real upstream URL and OpenAPI schema:
+
+```js
+const phrond = createNodeTestSuite({
+  baseUrl: process.env.PHROND_BASE_URL,
+  sutBaseUrl: process.env.SUT_BASE_URL,
+  schemas: [ordersOpenAPI],
+  dependencies: {
+    inventory: {
+      upstreamUrl: process.env.WIREMOCK_BASE_URL,
+      schema: inventoryOpenAPI
+    }
+  }
+});
+```
+
+External orchestration configures the SUT's inventory base URL to
+`http://<phrond-proxy>/__phrond/dep/inventory`. After suite startup,
+`phrond.dependencyUrl("inventory")` returns this address; explicit parallel
+sessions receive isolated session-scoped addresses. Phrond forwards requests
+and responses but never creates stubs, verifies mock calls, owns the mock
+server, or changes its responses. Every dependency requires its own valid
+OpenAPI schema.
+
 Schemas are required by default. Teams without one can explicitly generate a
 standard OpenAPI 3.1 draft from all captures in the suite:
 
@@ -54,8 +80,9 @@ unless `force: true` is set.
 
 Lower-level API:
 
-- `startCapture({ baseUrl, timeoutMs, proxy, schemas, generateSchema, sutBaseUrl })`
-- `runtime.setupTest({ name, tags, meta, schemas, generateSchema, sutBaseUrl, explicitSession })`
+- `startCapture({ baseUrl, timeoutMs, proxy, schemas, generateSchema, sutBaseUrl, dependencies })`
+- `runtime.setupTest({ name, tags, meta, schemas, generateSchema, sutBaseUrl, dependencies, explicitSession })`
+- `runtime.dependencyUrl(assetId)`
 - `runtime.http.get/post/postJson/request(...)`
 - `runtime.teardownTest({ status })`
 - `runtime.generateSchema({ output, title, version, force })`

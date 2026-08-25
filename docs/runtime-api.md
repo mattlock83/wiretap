@@ -1,6 +1,7 @@
 # Runtime API
 
-The SDK uses this capture-only HTTP API. External orchestration owns the SUT.
+The SDK uses this capture-only HTTP API. External orchestration owns the SUT and
+any dependency or mock-server lifecycles.
 
 ## Suite lifecycle
 
@@ -15,7 +16,8 @@ The SDK uses this capture-only HTTP API. External orchestration owns the SUT.
 }
 ```
 
-The response contains `sut_url`, the reverse proxy address tests should call.
+The response contains `sut_url`, the reverse proxy address tests should call,
+and `dependency_base_url`, the reserved dependency gateway on that same proxy.
 `target_url` is only a routing destination; Phrond never starts, configures,
 waits for, or stops that application.
 
@@ -40,16 +42,41 @@ the session starts.
     "role": "sut",
     "type": "openapi",
     "source": {"type": "file", "path": "schemas/hello.openapi.yaml"}
+  }],
+  "dependencies": [{
+    "asset_id": "inventory",
+    "asset_name": "Inventory Service",
+    "upstream_url": "http://127.0.0.1:9090",
+    "schema": {
+      "id": "inventory-openapi",
+      "type": "openapi",
+      "source": {"type": "file", "path": "schemas/inventory.openapi.yaml"}
+    }
   }]
 }
 ```
 
-The response includes `session_id`, `sut_url`, and `proxy_listen`. Send calls
-to `sut_url`. SDK helpers attach `X-Phrond-Session-Id` automatically.
+The response includes `session_id`, `sut_url`, `proxy_listen`, and a
+`dependencies` object mapping asset IDs to their capture URLs. Send inbound
+calls to `sut_url`. Configure the SUT's existing dependency base URL to the
+returned inventory URL, for example:
+
+```text
+http://127.0.0.1:19000/__phrond/dep/inventory
+```
+
+Requests to `/__phrond/dep/inventory/products/123` are forwarded to
+`http://127.0.0.1:9090/products/123`. Request methods, headers, bodies, query
+parameters, responses, and trailers retain the existing proxy's bounded-capture
+semantics. Phrond does not start, configure, stub, or verify the upstream.
+Every dependency requires a readable, valid OpenAPI schema. SDK helpers attach
+`X-Phrond-Session-Id` to inbound test requests automatically.
 
 Only one unlabeled zero-configuration session can be active. Set
 `explicit_session: true` and attach the returned session ID header for parallel
-tests.
+tests. Explicit sessions return
+`/__phrond/session/<session-id>/dep/<asset-id>` dependency URLs to prevent
+cross-test attribution.
 
 `POST /v1/teardownTest` finalizes and writes the artifact:
 
@@ -118,5 +145,7 @@ schema enforcement.
 - `GET /v1/proxy/ca`
 - `POST /v1/lifecycle/start`, `/v1/lifecycle/stop`
 
-There are no response queue, stub, dependency gateway, or verification
-endpoints. Mocking belongs to consumer-selected tools outside Phrond.
+There are no response queue, stub, mock lifecycle, or verification endpoints.
+The dependency gateway is a reserved forwarding route on the existing capture
+proxy, not a mock server or a separate control API. Mocking belongs to
+consumer-selected tools outside Phrond.

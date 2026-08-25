@@ -11,6 +11,14 @@ Send test calls to `sut_url` / `runtime.sutUrl`, not directly to the SUT. Check
 that `sutBaseUrl` points to the already-running application. SDK HTTP helpers
 perform both steps automatically.
 
+## Downstream dependency traffic is missing
+
+Declare the dependency with its existing upstream URL and valid OpenAPI schema,
+then configure the SUT's dependency base URL to
+`http://<phrond-proxy>/__phrond/dep/<asset-id>`. Calls sent directly to the mock
+server bypass capture. `runtime.dependencyUrl(assetId)` returns the configured
+gateway; parallel tests must use the session-scoped address returned by setup.
+
 ## HTTPS fails
 
 Trust Phrond's CA and use `PHROND_PROXY_MODE=mitm`; see `https-trust.md`. In
@@ -31,7 +39,8 @@ explicit and cannot be combined with a supplied schema.
 ## An artifact contains HTTP 502
 
 Phrond returns 502 when it cannot reach or establish TLS with the configured
-SUT. The flow's `transport_error` contains the original upstream failure.
+SUT or a declared external dependency. The flow's `transport_error` contains the
+original upstream failure; `asset_id` identifies a failed dependency route.
 
 ## Bodies are truncated in artifacts
 

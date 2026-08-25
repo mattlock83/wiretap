@@ -81,6 +81,8 @@ type workflowTaskPhrondMetadata struct {
 	FlowID                 string                    `yaml:"flow_id,omitempty" json:"flow_id,omitempty"`
 	Protocol               string                    `yaml:"protocol,omitempty" json:"protocol,omitempty"`
 	Channel                string                    `yaml:"channel,omitempty" json:"channel,omitempty"`
+	AssetID                string                    `yaml:"asset_id,omitempty" json:"asset_id,omitempty"`
+	ParentFlowID           string                    `yaml:"parent_flow_id,omitempty" json:"parent_flow_id,omitempty"`
 	Operation              string                    `yaml:"operation,omitempty" json:"operation,omitempty"`
 	SchemaID               string                    `yaml:"schema_id,omitempty" json:"schema_id,omitempty"`
 	Role                   string                    `yaml:"role,omitempty" json:"role,omitempty"`
@@ -152,12 +154,18 @@ func ServerlessWorkflowFromReport(report *Report) (*ServerlessWorkflow, error) {
 			if tasks := workflowCapturedTrafficTasks(testCase, "test_to_sut", "sut", baseURLs); len(tasks) > 0 {
 				groups = append(groups, namedWorkflowTask("test-traffic", WorkflowTaskDefinition{Do: tasks}))
 			}
+			if tasks := workflowCapturedTrafficTasks(testCase, "sut_to_dependency", "dependency", baseURLs); len(tasks) > 0 {
+				groups = append(groups, namedWorkflowTask("dependency-traffic", WorkflowTaskDefinition{Do: tasks}))
+			}
 		} else {
 			// Reports reconstructed from older Postman collections do not have
 			// raw traffic, so retain the schema-sample projection as a
 			// compatibility fallback.
 			if tasks := workflowTrafficTasks(testCase.Provided, "sut", baseURLs); len(tasks) > 0 {
 				groups = append(groups, namedWorkflowTask("test-traffic", WorkflowTaskDefinition{Do: tasks}))
+			}
+			if tasks := workflowTrafficTasks(testCase.Dependent, "dependency", baseURLs); len(tasks) > 0 {
+				groups = append(groups, namedWorkflowTask("dependency-traffic", WorkflowTaskDefinition{Do: tasks}))
 			}
 		}
 		if len(groups) == 0 {
@@ -255,6 +263,9 @@ func workflowCapturedTrafficTasks(
 
 func workflowSampleMatch(testCase TestCaseCoverage, sample FlowSample, role string) (string, string) {
 	specs := testCase.Provided
+	if role == "dependency" {
+		specs = testCase.Dependent
+	}
 	for _, spec := range specs {
 		for _, operation := range spec.Operations {
 			for _, candidate := range operation.Samples {
@@ -333,6 +344,8 @@ func workflowHTTPTaskDefinition(
 			FlowID:                 sample.FlowID,
 			Protocol:               sample.Protocol,
 			Channel:                sample.Channel,
+			AssetID:                sample.AssetID,
+			ParentFlowID:           sample.ParentFlowID,
 			Operation:              operation,
 			SchemaID:               schemaID,
 			Role:                   role,

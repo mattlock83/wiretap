@@ -1,0 +1,32 @@
+openapi: 3.0.0
+info:
+  title: External Inventory API
+  version: 1.0.0
+paths:
+  /inventory/check:
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, action]
+              properties:
+                id:
+                  type: string
+                action:
+                  type: string
+      responses:
+        "200":
+          description: inventory availability
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, available]
+                properties:
+                  id:
+                    type: string
+                  available:
+                    type: boolean

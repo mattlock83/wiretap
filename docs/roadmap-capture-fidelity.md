@@ -1,13 +1,13 @@
 # Phrond product roadmap
 
 Status: active
-Last reviewed: 2026-08-09
+Last reviewed: 2026-08-25
 
-Phrond's product focus is now exclusively test→SUT traffic capture, schema
-validation, and reporting. The built-in mock server, response stack, dependency
-gateway (including BYO forwarding), mock verification APIs, SDK helpers, and
-mock-specific artifact/report fields were removed on 2026-08-08. Consumers use
-their preferred mock tooling independently.
+Phrond focuses on correlated test→SUT and SUT→dependency traffic capture,
+strict schema validation, and reporting. The built-in mock server, response
+stack, mock verification APIs, and mock-serving artifact fields remain removed.
+Consumers keep their preferred mock tooling independently; Phrond forwards to
+those existing servers solely to capture and correlate the traffic.
 
 ## Completed capture work
 
@@ -22,6 +22,9 @@ their preferred mock tooling independently.
 - E1: Postman JSON and Open Workflow Specification YAML exports.
 - F1: capture-only product simplification; all mock-serving code and public
   mock APIs removed.
+- F2: restore external-only dependency capture on the existing proxy listener,
+  with strict dependency schemas, stable asset identity, per-test isolation,
+  parent-flow correlation, and dual-channel HTML/Postman/Workflow reporting.
 
 ## Next: B3 transport and RPC capture
 
@@ -41,7 +44,8 @@ Acceptance criteria:
 - Protocol, method, status/trailers, timing, and bounded payload evidence are
   available in artifacts and exports.
 - No service startup, workflow execution, dependency simulation, or
-  proprietary RPC schema format is introduced.
+  proprietary RPC schema format is introduced; externally owned dependencies
+  remain capture-only forwarding targets.
 
 ## Later capture improvements
 

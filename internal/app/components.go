@@ -111,6 +111,13 @@ func (p *ProxyComponent) SetReverseTarget(target string) error {
 	return p.server.SetReverseTarget(target)
 }
 
+func (p *ProxyComponent) SetDependencyResolver(resolver proxy.DependencyResolver) {
+	if p == nil || p.server == nil {
+		return
+	}
+	p.server.SetDependencyResolver(resolver)
+}
+
 func captureLimit(values []int64) int64 {
 	if len(values) == 0 {
 		return capture.DefaultMaxBodyBytes

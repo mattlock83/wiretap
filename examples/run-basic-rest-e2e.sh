@@ -37,6 +37,8 @@ USED_PORTS="${USED_PORTS} ${PHROND_PORT}"
 PROXY_PORT="${PROXY_PORT:-$(pick_unique_port "${USED_PORTS}")}"
 USED_PORTS="${USED_PORTS} ${PROXY_PORT}"
 SUT_PORT="${SUT_PORT:-$(pick_unique_port "${USED_PORTS}")}"
+USED_PORTS="${USED_PORTS} ${SUT_PORT}"
+DEPENDENCY_PORT="${DEPENDENCY_PORT:-$(pick_unique_port "${USED_PORTS}")}"
 
 BUILD_DIR="${BUILD_DIR:-$(mktemp -d)}"
 
@@ -48,6 +50,10 @@ cleanup() {
   if [[ -n "${PHROND_PID:-}" ]]; then
     kill "${PHROND_PID}" 2>/dev/null || true
     wait "${PHROND_PID}" 2>/dev/null || true
+  fi
+  if [[ -n "${DEPENDENCY_PID:-}" ]]; then
+    kill "${DEPENDENCY_PID}" 2>/dev/null || true
+    wait "${DEPENDENCY_PID}" 2>/dev/null || true
   fi
   if [[ -n "${BUILD_DIR:-}" && -d "${BUILD_DIR}" ]]; then
     rm -rf "${BUILD_DIR}" || true
@@ -69,6 +75,9 @@ export PHROND_MAX_CAPTURE_BYTES="${PHROND_MAX_CAPTURE_BYTES:-64}"
 
 export SUT_LISTEN="127.0.0.1:${SUT_PORT}"
 export SUT_BASE_URL="http://${SUT_LISTEN}"
+export DEPENDENCY_LISTEN="127.0.0.1:${DEPENDENCY_PORT}"
+export DEPENDENCY_UPSTREAM_URL="http://${DEPENDENCY_LISTEN}"
+export DEPENDENCY_BASE_URL="http://127.0.0.1:${PROXY_PORT}/__phrond/dep/inventory-service"
 
 pushd "$ROOT_DIR" >/dev/null
 
@@ -76,6 +85,8 @@ GOFLAGS=${GOFLAGS:-}
 go build ${GOFLAGS} -o "${BUILD_DIR}/phrond-core" ./cmd/phrond
 GOFLAGS=${GOFLAGS:-}
 go build ${GOFLAGS} -o "${BUILD_DIR}/basic-rest-sut" ./examples/demo-apps/basic-rest/sut
+GOFLAGS=${GOFLAGS:-}
+go build ${GOFLAGS} -o "${BUILD_DIR}/basic-rest-dependency" ./examples/demo-apps/basic-rest/dependency
 
 nohup "${BUILD_DIR}/phrond-core" > /tmp/phrond-core.log 2>&1 &
 PHROND_PID=$!
@@ -97,8 +108,19 @@ if ! wait_for "http://127.0.0.1:${PHROND_PORT}/healthz"; then
   exit 1
 fi
 
+# The runner owns this dependency exactly as a consumer owns WireMock or
+# another existing mock server. Phrond never starts or configures it.
+nohup "${BUILD_DIR}/basic-rest-dependency" > /tmp/phrond-basic-rest-dependency.log 2>&1 &
+DEPENDENCY_PID=$!
+
+if ! wait_for "${DEPENDENCY_UPSTREAM_URL}/healthz"; then
+  echo "Basic REST dependency failed to start. See /tmp/phrond-basic-rest-dependency.log"
+  tail -n 50 /tmp/phrond-basic-rest-dependency.log || true
+  exit 1
+fi
+
 # The runner owns the SUT lifecycle and configuration. The test suite only
-# connects Phrond's capture proxy to this already-running target.
+# connects Phrond's capture proxy to this already-running target and dependency.
 nohup "${BUILD_DIR}/basic-rest-sut" > /tmp/phrond-basic-rest-sut.log 2>&1 &
 SUT_PID=$!
 

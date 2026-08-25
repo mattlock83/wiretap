@@ -1,13 +1,15 @@
 # Phrond Recorder
 
 Phrond captures network traffic between tests and an already-running system
-under test (SUT). It writes one YAML artifact per test, validates captured HTTP
-strictly against supplied OpenAPI schemas, and exports HTML, Postman, Open
-Workflow Specification, and generated OpenAPI documents.
+under test (SUT), and between that SUT and its externally owned dependencies or
+mock servers. It writes one correlated YAML artifact per test, validates both
+traffic directions strictly against supplied OpenAPI schemas, and exports HTML,
+Postman, Open Workflow Specification, and generated OpenAPI documents.
 
 Phrond deliberately does not start or configure the SUT, and it is not a mock
 server. Use the application harness and mocking tools that already fit your
-stack; route only the test→SUT traffic you want recorded through Phrond.
+stack; route test→SUT and optional SUT→dependency traffic through the same
+Phrond capture proxy.
 
 ## Quick start
 
@@ -29,7 +31,17 @@ const phrond = createNodeTestSuite({
     role: "sut",
     type: "openapi",
     source: { type: "file", path: "schemas/hello.openapi.yaml" }
-  }]
+  }],
+  dependencies: {
+    inventory: {
+      upstreamUrl: process.env.WIREMOCK_BASE_URL,
+      schema: {
+        id: "inventory-api",
+        type: "openapi",
+        source: { type: "file", path: "schemas/inventory.openapi.yaml" }
+      }
+    }
+  }
 });
 
 phrond.test("hello world happy flow", async () => {
@@ -38,12 +50,21 @@ phrond.test("hello world happy flow", async () => {
 });
 ```
 
-The SUT must already be running. `sutBaseUrl` is only the reverse proxy target.
-The exact test name and truthful pass/fail status are stored in the artifact.
+The SUT and mock server must already be running. Configure the SUT's inventory
+base URL to `http://<phrond-proxy>/__phrond/dep/inventory`; Phrond forwards
+those calls unchanged to `WIREMOCK_BASE_URL`. `phrond.dependencyUrl("inventory")`
+returns the same capture URL once the suite has started. Dependencies are
+optional; omit `dependencies` when only inbound traffic is needed. The exact
+test name, pass/fail status, inbound request, downstream request, and their
+causal relationship are stored in one artifact.
 
 ## Capture behavior
 
 - HTTP reverse and forward proxy capture are supported.
+- Existing mock servers and dependencies remain independently owned; declaring
+  a dependency adds capture-only forwarding on the existing proxy listener.
+- Downstream flows use `channel: sut_to_dependency`, include their stable
+  `asset_id`, and point to the originating inbound flow with `parent_flow_id`.
 - HTTPS capture uses a locally generated MITM CA; see
   [HTTPS trust setup](docs/https-trust.md).
 - Request and response bodies stream through unchanged. Artifacts retain at
@@ -53,7 +74,8 @@ The exact test name and truthful pass/fail status are stored in the artifact.
   with the original failure in `transport_error`.
 - OpenAPI schemas are required and enforced by default. Teams without one can
   explicitly opt into `generateSchema` to create a standard OpenAPI 3.1 draft
-  from their captured tests.
+  from their captured SUT tests. Each declared dependency always supplies its
+  own OpenAPI schema, including when the SUT schema is being generated.
 
 ## Reports
 
@@ -64,10 +86,11 @@ go run ./cmd/phrond-coverage --artifacts ./artifacts --sut-name "Example SUT" --
 go run ./cmd/phrond-coverage --artifacts ./artifacts --sut-name "Example SUT" --format html --output coverage.html
 ```
 
-HTML, Postman, and Workflow formats report captured test→SUT traffic and
-provided-API coverage. The HTML report can be explored by SUT API operation or
-test case and includes the captured request/response headers, trailers, and
-payloads. The workflow export uses Open Workflow Specification DSL 1.0.3;
+HTML, Postman, and Workflow formats report both test→SUT and SUT→dependency
+traffic, together with provided and dependent API coverage. The HTML report
+can be explored by API operation or test case and includes the captured
+request/response headers, trailers, payloads, dependency identity, and parent
+request. The workflow export uses Open Workflow Specification DSL 1.0.3;
 Postman remains an interoperability option.
 
 Generated OpenAPI contains inferred paths, parameters, bodies, content types,

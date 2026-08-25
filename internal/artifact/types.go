@@ -82,6 +82,9 @@ type SchemaRef struct {
 	Type           string       `yaml:"type" json:"type"`
 	Source         SchemaSource `yaml:"source" json:"source"`
 	OpenAPIVersion string       `yaml:"openapi_version,omitempty" json:"openapi_version,omitempty"`
+	AssetName      string       `yaml:"asset_name,omitempty" json:"asset_name,omitempty"`
+	AssetID        string       `yaml:"asset_id,omitempty" json:"asset_id,omitempty"`
+	AssetSHA       string       `yaml:"asset_sha,omitempty" json:"asset_sha,omitempty"`
 }
 
 // SchemaSource identifies where the schema came from.
@@ -105,8 +108,12 @@ type Flow struct {
 	Request      Message   `yaml:"request" json:"request"`
 	Response     Message   `yaml:"response" json:"response"`
 	AssertionIDs []string  `yaml:"assertion_ids,omitempty" json:"assertion_ids,omitempty"`
+	// AssetID identifies the externally owned dependency receiving this flow.
+	AssetID string `yaml:"asset_id,omitempty" json:"asset_id,omitempty"`
 	// TraceID correlates the captured exchange with application traces and logs.
 	TraceID string `yaml:"trace_id,omitempty" json:"trace_id,omitempty"`
+	// ParentFlowID identifies the inbound test request that caused a dependency call.
+	ParentFlowID string `yaml:"parent_flow_id,omitempty" json:"parent_flow_id,omitempty"`
 	// Fingerprint is a stable hash of the interaction shape (channel, method,
 	// path, status, JSON body key/type structure) for cross-run dedup.
 	Fingerprint string `yaml:"fingerprint,omitempty" json:"fingerprint,omitempty"`
