@@ -119,6 +119,7 @@ class CoreClient {
 
   startServer(payload) { return this._request("POST", "/v1/startServer", payload || {}); }
   setupTest(payload) { return this._request("POST", "/v1/setupTest", payload || {}); }
+  assertDependency(payload) { return this._request("POST", "/v1/assertDependency", payload || {}); }
   teardownTest(payload) { return this._request("POST", "/v1/teardownTest", payload || {}); }
   generateSchema(payload) { return this._request("POST", "/v1/generateSchema", payload || {}); }
   report(payload) { return this._request("POST", "/v1/report", payload || {}); }
@@ -197,6 +198,29 @@ class Runtime {
     if (!proxyBase) throw new Error("proxy listen address is not available");
     const base = proxyBase.startsWith("http") ? proxyBase : `http://${proxyBase}`;
     return `${base.replace(/\/$/, "")}/__phrond/dep/${encodeURIComponent(selected)}`;
+  }
+
+  async assertDependency(assetId, options = {}) {
+    if (typeof assetId !== "string" || !assetId.trim()) throw new Error("dependency assetId is required");
+    if (!this.activeSession) throw new Error("an active capture session is required to assert dependency traffic");
+    if (!options || typeof options !== "object" || Array.isArray(options)) {
+      throw new Error("dependency assertion options must be an object");
+    }
+    const response = options.response;
+    if (!response || typeof response !== "object" || Array.isArray(response) || Object.keys(response).length === 0) {
+      throw new Error("at least one response field assertion is required");
+    }
+    for (const path of Object.keys(response)) {
+      if (!/^\$(?:\.|\[)/.test(path)) throw new Error(`response assertion path "${path}" must be a JSONPath`);
+    }
+    return this.client.assertDependency({
+      session_id: this.activeSession.sessionId,
+      asset_id: assetId.trim(),
+      ...(options.method ? { method: String(options.method).toUpperCase() } : {}),
+      ...(options.path ? { path: String(options.path) } : {}),
+      ...(options.flowId || options.flow_id ? { flow_id: options.flowId || options.flow_id } : {}),
+      response
+    });
   }
 
   async setupTest(options = {}) {
@@ -431,6 +455,7 @@ function createNodeTestSuite(config = {}) {
     get sutUrl() { return this.runtime.sutUrl; },
     get http() { return this.runtime.http; },
     dependencyUrl(assetId) { return this.runtime.dependencyUrl(assetId); },
+    assertDependency(assetId, options) { return this.runtime.assertDependency(assetId, options); },
     generateSchema(options) { return this.runtime.generateSchema(options); },
     report(options) { return this.runtime.report(options); }
   };

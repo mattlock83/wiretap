@@ -58,6 +58,25 @@ and responses but never creates stubs, verifies mock calls, owns the mock
 server, or changes its responses. Every dependency requires its own valid
 OpenAPI schema.
 
+Tests can assert the dependency response fields they actually consume without
+asking Phrond to manage or verify the external mock server:
+
+```js
+await phrond.assertDependency("inventory", {
+  method: "GET",
+  path: "/inventory/product-123",
+  response: {
+    "$.productId": "product-123",
+    "$.available": true
+  }
+});
+```
+
+The latest matching captured dependency exchange is checked immediately. Failed
+assertions fail the owning test; passing field assertions are linked to their
+captured flow while the full request and response remain in the artifact.
+Nested fields and array indexes such as `$.items[0].sku` are supported.
+
 Schemas are required by default. Teams without one can explicitly generate a
 standard OpenAPI 3.1 draft from all captures in the suite:
 
@@ -83,6 +102,7 @@ Lower-level API:
 - `startCapture({ baseUrl, timeoutMs, proxy, schemas, generateSchema, sutBaseUrl, dependencies })`
 - `runtime.setupTest({ name, tags, meta, schemas, generateSchema, sutBaseUrl, dependencies, explicitSession })`
 - `runtime.dependencyUrl(assetId)`
+- `runtime.assertDependency(assetId, { method, path, flowId, response })`
 - `runtime.http.get/post/postJson/request(...)`
 - `runtime.teardownTest({ status })`
 - `runtime.generateSchema({ output, title, version, force })`

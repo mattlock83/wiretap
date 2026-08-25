@@ -78,6 +78,29 @@ tests. Explicit sessions return
 `/__phrond/session/<session-id>/dep/<asset-id>` dependency URLs to prevent
 cross-test attribution.
 
+`POST /v1/assertDependency` checks selected fields on an already captured
+dependency response and links the resulting assertions to that flow:
+
+```json
+{
+  "session_id": "session-...",
+  "asset_id": "inventory",
+  "method": "GET",
+  "path": "/inventory/product-123",
+  "response": {
+    "$.productId": "product-123",
+    "$.available": true
+  }
+}
+```
+
+`method`, `path`, and `flow_id` are optional selectors; the latest matching
+captured dependency exchange is used. Response fields use JSONPath properties
+and array indexes. Success returns `status`, `flow_id`, and `assertions`. A
+mismatch returns HTTP 422, records the failed assertion, and marks the owning
+artifact as failed even if teardown requests `status: pass`. The complete
+captured response remains in the artifact.
+
 `POST /v1/teardownTest` finalizes and writes the artifact:
 
 ```json

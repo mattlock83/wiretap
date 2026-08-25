@@ -70,6 +70,47 @@ test("report forwards all supported output paths", async () => {
   }
 });
 
+test("assertDependency records selected response fields against the active session", async () => {
+  let assertionPayload;
+  const server = await controlServer((path, body) => {
+    if (path === "/v1/startServer") return { sut_url: "http://127.0.0.1:20010", proxy: { listen_addr: "127.0.0.1:20010" } };
+    if (path === "/v1/setupTest") return { session_id: "session-1", name: body.name, proxy_listen: "http://127.0.0.1:20010" };
+    if (path === "/v1/assertDependency") {
+      assertionPayload = body;
+      return { status: "pass", flow_id: "flow-2", assertions: [{ field: "$.available", result: "pass" }] };
+    }
+    return {};
+  });
+  try {
+    const runtime = await startCapture({ baseUrl: server.baseUrl, generateSchema: true });
+    await assert.rejects(
+      () => runtime.assertDependency("inventory", { response: { "$.available": true } }),
+      /active capture session/
+    );
+    await runtime.setupTest({ name: "inventory response contains consumed fields" });
+    const result = await runtime.assertDependency("inventory", {
+      method: "get",
+      path: "/items",
+      response: { "$.available": true, "$.items[0].sku": "widget" }
+    });
+    assert.equal(result.flow_id, "flow-2");
+    assert.deepEqual(assertionPayload, {
+      session_id: "session-1",
+      asset_id: "inventory",
+      method: "GET",
+      path: "/items",
+      response: { "$.available": true, "$.items[0].sku": "widget" }
+    });
+    await assert.rejects(() => runtime.assertDependency("inventory", { response: {} }), /at least one response field/);
+    await assert.rejects(
+      () => runtime.assertDependency("inventory", { response: { available: true } }),
+      /must be a JSONPath/
+    );
+  } finally {
+    await server.close();
+  }
+});
+
 test("declared external dependencies retain strict schemas and session-scoped capture URLs", async () => {
   const calls = [];
   const server = await controlServer((path, body) => {
@@ -166,6 +207,7 @@ test("createNodeTestSuite exposes capture, dependency forwarding, HTTP, and repo
   assert.equal(typeof suite.test, "function");
   assert.equal(typeof suite.report, "function");
   assert.equal(typeof suite.generateSchema, "function");
+  assert.equal(typeof suite.assertDependency, "function");
   assert.equal(suite.queueResponse, undefined);
   assert.equal(suite.verify, undefined);
 	assert.equal(typeof suite.dependencyUrl, "function");

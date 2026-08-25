@@ -88,6 +88,11 @@ phrond.test("creates an order", async () => {
   });
 
   assert.equal(response.status, 201);
+  await phrond.assertDependency("inventory", {
+    method: "GET",
+    path: "/inventory/product-123",
+    response: { "$.available": true }
+  });
   await existingMock.verifyOrderLookup("product-123");
 });
 ```
@@ -109,6 +114,11 @@ Both entries also contain their complete bounded request/response evidence and
 shared trace ID when the SUT propagates `X-Phrond-Trace-Id`. If it does not,
 Phrond uses request timing to infer the parent request. The downstream exchange
 normally finishes first, so its flow ID may precede the parent ID.
+
+`assertDependency` is optional. It checks fields on traffic Phrond has already
+captured and records exactly which dependency response fields the test relied
+on; it never configures or verifies the external mock server. Failed assertions
+fail the test, while unasserted response fields remain visible in the artifact.
 
 If the tests already have an HTTP client, keep it and change only its base URL:
 

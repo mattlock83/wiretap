@@ -47,5 +47,11 @@ if (!RUN_E2E) {
     const result = await phrond.http.postJson("/process", { id: "123", action: "process" });
     assert.equal(result.status, 200);
     assert.deepEqual(result.body, { message: "processed", id: "123", action: "process" });
+
+    await phrond.assertDependency("inventory-service", {
+      method: "POST",
+      path: "/inventory/check",
+      response: { "$.available": true }
+    });
   });
 }

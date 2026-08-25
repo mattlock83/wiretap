@@ -36,6 +36,7 @@ type TestCaseStore struct {
 	flowSeq      int
 	schemaSeq    int
 	expectSeq    int
+	assertSeq    int
 	maxBodyBytes int64
 }
 
@@ -57,6 +58,7 @@ type testCaseState struct {
 	meta           map[string]any
 	sutBaseURL     string
 	flows          []artifact.Flow
+	assertions     []artifact.Assertion
 	schemas        []artifact.SchemaRef
 	expectation    []Expectation
 	redactions     []artifact.Redaction
@@ -110,6 +112,7 @@ func (s *TestCaseStore) StartCase(name string, tags []string, meta map[string]an
 	s.flowSeq = 0
 	s.schemaSeq = 0
 	s.expectSeq = 0
+	s.assertSeq = 0
 
 	return &artifact.TestCase{ID: id, Name: name, StartedAt: startedAt, Tags: tags, Meta: meta}, nil
 }
@@ -138,6 +141,12 @@ func (s *TestCaseStore) FinishCase(status string, env *artifact.Environment) (*a
 
 	finishedAt := time.Now().UTC()
 	state.finishedAt = finishedAt
+	for _, assertion := range state.assertions {
+		if assertion.Result == "fail" {
+			status = "fail"
+			break
+		}
+	}
 	state.status = status
 
 	flows := append([]artifact.Flow{}, state.flows...)
@@ -159,6 +168,7 @@ func (s *TestCaseStore) FinishCase(status string, env *artifact.Environment) (*a
 		Env:        env,
 		Schemas:    append([]artifact.SchemaRef{}, state.schemas...),
 		Traffic:    flows,
+		Assertions: append([]artifact.Assertion{}, state.assertions...),
 		Redactions: append([]artifact.Redaction{}, state.redactions...),
 		Meta:       map[string]any{},
 	}

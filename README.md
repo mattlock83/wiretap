@@ -65,6 +65,9 @@ causal relationship are stored in one artifact.
   a dependency adds capture-only forwarding on the existing proxy listener.
 - Downstream flows use `channel: sut_to_dependency`, include their stable
   `asset_id`, and point to the originating inbound flow with `parent_flow_id`.
+- Optional `phrond.assertDependency(assetId, { method, path, response })`
+  checks selected captured downstream response fields and records precise
+  flow-linked assertions without managing the existing mock server.
 - HTTPS capture uses a locally generated MITM CA; see
   [HTTPS trust setup](docs/https-trust.md).
 - Request and response bodies stream through unchanged. Artifacts retain at
