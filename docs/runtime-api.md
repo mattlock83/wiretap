@@ -21,7 +21,10 @@ and `dependency_base_url`, the reserved dependency gateway on that same proxy.
 `target_url` is only a routing destination; Phrond never starts, configures,
 waits for, or stops that application.
 
-`POST /v1/killServer` clears active capture sessions and stops the proxy.
+`POST /v1/killServer` stops the proxy after all tests are torn down. It returns
+409 while any session (including a legacy test case) is active. One orchestration
+owner must control shutdown when suites/workers share a runtime. The reverse SUT
+target cannot be changed while sessions are active.
 
 ## Test lifecycle
 
@@ -72,11 +75,45 @@ semantics. Phrond does not start, configure, stub, or verify the upstream.
 Every dependency requires a readable, valid OpenAPI schema. SDK helpers attach
 `X-Phrond-Session-Id` to inbound test requests automatically.
 
-Only one unlabeled zero-configuration session can be active. Set
-`explicit_session: true` and attach the returned session ID header for parallel
-tests. Explicit sessions return
-`/__phrond/session/<session-id>/dep/<asset-id>` dependency URLs to prevent
-cross-test attribution.
+Only one implicit session can be active. Unlabeled traffic falls back to it
+only when it is the sole active session. Optional standard trace registration:
+
+```json
+{
+  "trace_context": {
+    "traceparent": "00-11111111111111111111111111111111-2222222222222222-00",
+    "tracestate": "vendor=value"
+  }
+}
+```
+
+This is the serialized **test root span** context. Supply a fresh trace for every
+attempt; the fixed value above is illustrative. Setup returns the accepted
+`trace_context`. Invalid/zero IDs or invalid tracestate return 400; reusing an
+active or finished test trace returns 409. Sampling flags do not affect capture.
+
+For parallel tests, set `explicit_session: true` and supply `trace_context`.
+Traced sessions return stable `/__phrond/dep/<asset-id>` dependency URLs, selected
+by propagated trace **before** resolving the session's upstream and schema.
+Untraced explicit sessions retain `/__phrond/session/<session-id>/dep/<asset-id>`
+URLs and require independent routing/isolation; they cannot make a shared SUT
+propagate context. `X-Phrond-Session-Id` remains an optional selector on incoming
+requests and is stripped before forwarding. It never needs to pass through the SUT.
+
+Conflicting header, URL, or registered trace selectors return 409 before
+forwarding. Unknown valid traces are preserved and require another unambiguous
+selector or the single implicit fallback; they are not automatically registered.
+A root mismatch is recorded in `capture_diagnostics`. Closed trace IDs are
+rejected until a successful `killServer` or lifecycle stop clears the routing
+state, even if a newer default test is active. While requests from a timed-out
+attempt remain in flight, new implicit sessions and unlabeled fallback traffic
+return 409; explicit traced sessions can still run.
+
+Missing/invalid inbound context may be replaced by the registered root when
+ownership is independently known. The flow says `trace_context_source: injected`
+and keeps its original `test_correlation` method. Phrond never injects test
+context into an untraced dependency request. Ambiguous unlabeled traffic returns
+409. Legacy `/v1/testcases/*` capture and session capture are mutually exclusive.
 
 `POST /v1/assertDependency` checks selected fields on an already captured
 dependency response and links the resulting assertions to that flow:
@@ -110,11 +147,15 @@ verification; they do not configure or change the existing upstream server.
 `POST /v1/teardownTest` finalizes and writes the artifact:
 
 ```json
-{"session_id": "session-...", "status": "pass"}
+{"session_id": "session-...", "status": "pass", "drain_timeout_ms": 5000}
 ```
 
 The response contains `artifact`, `path`, and `schema_validation`. OpenAPI
-violations change an otherwise passing artifact to `fail`.
+violations change an otherwise passing artifact to `fail`. Teardown stops new
+admission and waits for accepted exchanges, up to `drain_timeout_ms` (default
+5000, range 0–60000). Timeout/cancellation writes `capture_incomplete: true`,
+`capture_diagnostics`, and failed status. Completion after finalization cannot
+mutate the artifact or enter another session. Await background work first.
 
 ## Schema generation
 

@@ -13,7 +13,7 @@ func TestOrdersServiceUsesInventoryAndPropagatesCaptureTrace(t *testing.T) {
 		if r.Method != http.MethodGet || r.URL.Path != "/inventory/products/coffee-beans" || r.URL.Query().Get("quantity") != "2" {
 			t.Errorf("unexpected provider request: %s %s", r.Method, r.URL)
 		}
-		if r.Header.Get("X-Phrond-Trace-Id") != "trace-123" {
+		if r.Header.Get("traceparent") != "00-11111111111111111111111111111111-2222222222222222-00" {
 			t.Errorf("capture correlation header was not propagated: %#v", r.Header)
 		}
 		writeJSON(w, http.StatusOK, inventoryResponse{ProductID: "coffee-beans", Available: true, Quantity: 12})
@@ -21,7 +21,7 @@ func TestOrdersServiceUsesInventoryAndPropagatesCaptureTrace(t *testing.T) {
 	t.Cleanup(provider.Close)
 
 	request := httptest.NewRequest(http.MethodPost, "/orders", strings.NewReader(`{"productId":"coffee-beans","quantity":2}`))
-	request.Header.Set("X-Phrond-Trace-Id", "trace-123")
+	request.Header.Set("traceparent", "00-11111111111111111111111111111111-2222222222222222-00")
 	response := httptest.NewRecorder()
 	newOrdersHandler(provider.URL, provider.Client()).ServeHTTP(response, request)
 	if response.Code != http.StatusCreated {

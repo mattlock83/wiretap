@@ -59,6 +59,7 @@ type OperationSamples struct {
 }
 
 type TestCaseCoverage struct {
+	Attempts  []artifact.TestCase    `json:"attempts,omitempty" yaml:"attempts,omitempty"`
 	Name      string                 `json:"name" yaml:"name"`
 	Traffic   []FlowSample           `json:"traffic,omitempty" yaml:"traffic,omitempty"`
 	Provided  []SpecOperationSamples `json:"provided,omitempty" yaml:"provided,omitempty"`
@@ -74,6 +75,14 @@ type SpecOperationSamples struct {
 }
 
 type FlowSample struct {
+	RequestSpanID      string `json:"request_span_id,omitempty" yaml:"request_span_id,omitempty"`
+	TraceContextSource string `json:"trace_context_source,omitempty" yaml:"trace_context_source,omitempty"`
+	TestCorrelation    string `json:"test_correlation,omitempty" yaml:"test_correlation,omitempty"`
+	ParentCorrelation  string `json:"parent_correlation,omitempty" yaml:"parent_correlation,omitempty"`
+	TestCaseID         string `json:"testcase_id,omitempty" yaml:"testcase_id,omitempty"`
+	TestTraceID        string `json:"test_trace_id,omitempty" yaml:"test_trace_id,omitempty"`
+	RootSpanID         string `json:"root_span_id,omitempty" yaml:"root_span_id,omitempty"`
+
 	TestCase       string             `json:"testcase" yaml:"testcase"`
 	TestStatus     string             `json:"test_status,omitempty" yaml:"test_status,omitempty"`
 	FlowID         string             `json:"flow_id,omitempty" yaml:"flow_id,omitempty"`
@@ -112,6 +121,7 @@ type openapiSpec struct {
 }
 
 type flowEntry struct {
+	Case     artifact.TestCase
 	Flow     artifact.Flow
 	TestCase string
 	Status   string
@@ -634,6 +644,7 @@ const reportHTMLTemplate = `<!DOCTYPE html>
       {{ range .TestCases }}
         <section class="panel">
           <h2>Test Case: {{ .Name }}</h2>
+          {{ range .Attempts }}<p class="meta">Attempt {{ .ID }} · {{ .Status }}{{ if .TraceID }} · trace {{ .TraceID }} · root span {{ .RootSpanID }}{{ end }}</p>{{ end }}
           <div class="op-group">
             <h4>Captured Test → SUT and SUT → Dependency Traffic</h4>
             {{ if .Traffic }}
@@ -644,7 +655,7 @@ const reportHTMLTemplate = `<!DOCTYPE html>
                     <span class="meta">{{ .FlowID }} · response {{ .Response.Status }}</span>
                   </summary>
                   <div class="sample">
-                    <div class="sample-title">{{ .Protocol }} · {{ .Channel }}{{ if .AssetID }} · dependency {{ .AssetID }}{{ end }}{{ if .TraceID }} · trace {{ .TraceID }}{{ end }}{{ if .ParentFlowID }} · parent {{ .ParentFlowID }}{{ end }}</div>
+                    <div class="sample-title">{{ .Protocol }} · {{ .Channel }}{{ if .AssetID }} · dependency {{ .AssetID }}{{ end }}{{ if .TraceID }} · trace {{ .TraceID }}{{ end }}{{ if .TestCaseID }} · attempt {{ .TestCaseID }}{{ end }}{{ if .TestCorrelation }} · test matched by {{ .TestCorrelation }}{{ end }}{{ if .ParentFlowID }} · parent {{ .ParentFlowID }}{{ end }}{{ if .ParentCorrelation }} · parent inference: {{ .ParentCorrelation }}{{ end }}{{ if .TraceContextSource }} · context {{ .TraceContextSource }}{{ end }}</div>
                     <div class="sample-body">
                       {{ if .TransportError }}<div class="notes"><strong>Transport error:</strong> {{ .TransportError }}</div>{{ end }}
                       <div><strong>Request:</strong> {{ .Request.Method }} {{ .Request.URL }}</div>
@@ -872,7 +883,7 @@ func buildCoverage(entries []artifactEntry) (SpecCoverageGroup, SpecCoverageGrou
 		}
 		for _, flow := range entry.Doc.Traffic {
 			flows = append(flows, flow)
-			flowEntries = append(flowEntries, flowEntry{Flow: flow, TestCase: tcName, Status: entry.Doc.TestCase.Status})
+			flowEntries = append(flowEntries, flowEntry{Case: entry.Doc.TestCase, Flow: flow, TestCase: tcName, Status: entry.Doc.TestCase.Status})
 		}
 		schemas = append(schemas, entry.Doc.Schemas...)
 	}
@@ -891,6 +902,39 @@ func buildCoverage(entries []artifactEntry) (SpecCoverageGroup, SpecCoverageGrou
 	providedGroup := SpecCoverageGroup{Specs: exportSpecs(providedSchemas, true, providedSamples)}
 	dependentGroup := SpecCoverageGroup{Specs: exportSpecs(dependentSchemas, true, dependentSamples)}
 	testcases := buildTestCaseCoverage(flowEntries, providedSchemas, dependentSchemas)
+	// Retain attempts with no traffic (e.g. early failure or drain timeout).
+	for _, entry := range entries {
+		name := strings.TrimSpace(entry.Doc.TestCase.Name)
+		if name == "" {
+			name = "unknown"
+		}
+		index := -1
+		for i := range testcases {
+			if testcases[i].Name == name {
+				index = i
+				break
+			}
+		}
+		if index == -1 {
+			testcases = append(testcases, TestCaseCoverage{Name: name})
+			index = len(testcases) - 1
+		}
+		tc := &testcases[index]
+		found := false
+		for _, attempt := range tc.Attempts {
+			if attempt.ID == entry.Doc.TestCase.ID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			tc.Attempts = append(tc.Attempts, entry.Doc.TestCase)
+		}
+		for _, diagnostic := range entry.Doc.CaptureDiagnostics {
+			notes = append(notes, entry.Doc.TestCase.ID+": "+diagnostic)
+		}
+	}
+	sort.Slice(testcases, func(i, j int) bool { return testcases[i].Name < testcases[j].Name })
 
 	return providedGroup, dependentGroup, testcases, notes
 }
@@ -1060,6 +1104,16 @@ func buildTestCaseCoverage(entries []flowEntry, providedSchemas, dependentSchema
 			tc = &TestCaseCoverage{Name: tcName}
 			buckets[tcName] = tc
 		}
+		foundAttempt := false
+		for _, attempt := range tc.Attempts {
+			if attempt.ID == entry.Case.ID {
+				foundAttempt = true
+				break
+			}
+		}
+		if !foundAttempt && entry.Case.ID != "" {
+			tc.Attempts = append(tc.Attempts, entry.Case)
+		}
 		tc.Traffic = append(tc.Traffic, flowSampleFromFlow(entry))
 
 		var schemas []*loadedSchema
@@ -1150,13 +1204,18 @@ func sortOperationSamples(ops []OperationSamples) {
 func flowSampleFromFlow(entry flowEntry) FlowSample {
 	flow := entry.Flow
 	sample := FlowSample{
-		TestCase:       entry.TestCase,
-		TestStatus:     entry.Status,
-		FlowID:         flow.ID,
-		Protocol:       flow.Protocol,
-		Channel:        flow.Channel,
-		AssetID:        flow.AssetID,
-		TraceID:        flow.TraceID,
+		TestCase:           entry.TestCase,
+		TestStatus:         entry.Status,
+		FlowID:             flow.ID,
+		Protocol:           flow.Protocol,
+		Channel:            flow.Channel,
+		AssetID:            flow.AssetID,
+		TraceID:            flow.TraceID,
+		RequestSpanID:      flow.RequestSpanID,
+		TraceContextSource: flow.TraceContextSource,
+		TestCorrelation:    flow.TestCorrelation,
+		ParentCorrelation:  flow.ParentCorrelation,
+		TestCaseID:         entry.Case.ID, TestTraceID: entry.Case.TraceID, RootSpanID: entry.Case.RootSpanID,
 		ParentFlowID:   flow.ParentFlowID,
 		Fingerprint:    flow.Fingerprint,
 		TransportError: flow.TransportError,

@@ -8,6 +8,11 @@ OpenAPI schemas, and writes correlated reports.
 For a step-by-step migration that leaves an existing mock server unchanged,
 see [Getting started with existing tests and a mock server](../../docs/getting-started-existing-tests.md).
 
+Install dependencies with `npm ci` from this directory. Preload instrumentation
+with `node --require @phrond/sdk/tracing --test test/*.test.js`. See
+[tracing and Jest setup](../../docs/otel-adoption.md) for parallel tests and
+existing OpenTelemetry providers.
+
 ```js
 const assert = require("node:assert/strict");
 const { createNodeTestSuite } = require("@phrond/sdk");
@@ -53,7 +58,9 @@ const phrond = createNodeTestSuite({
 External orchestration configures the SUT's inventory base URL to
 `http://<phrond-proxy>/__phrond/dep/inventory`. After suite startup,
 `phrond.dependencyUrl("inventory")` returns this address; explicit parallel
-sessions receive isolated session-scoped addresses. Phrond forwards requests
+sessions with registered traces use the same stable address and are selected by
+the propagated trace. Untraced explicit API sessions receive session-scoped
+addresses. Phrond forwards requests
 and responses but never creates stubs, verifies mock calls, owns the mock
 server, or changes its responses. Every dependency requires its own valid
 OpenAPI schema.
@@ -131,7 +138,8 @@ Lower-level API:
 - `runtime.dependencyUrl(assetId)`
 - `runtime.assertDependency(assetId, { method, path, flowId, providerState, providerStates, response })`
 - `runtime.http.get/post/postJson/request(...)`
-- `runtime.teardownTest({ status })`
+- `runtime.runTest(name, callback, { explicitSession, onSession, drainTimeoutMs })`
+- `runtime.teardownTest({ status, drainTimeoutMs })`
 - `runtime.generateSchema({ output, title, version, force })`
 - `runtime.report({ artifactsDir, sutName, consumerName, providerNames, collectionPath, workflowPath, htmlPath, pactDir })`
 - `runtime.killServer()`
@@ -139,3 +147,33 @@ Lower-level API:
 
 `startServer` remains an alias for `startCapture`. Phrond never launches,
 waits for, configures, or stops the SUT.
+
+The `node:test` adapter requires Node 20.12+ and includes callback, subtest,
+`t.after`, and timeout outcomes in capture cleanup. Keep ordinary tests and
+hooks; no extra nested test is introduced. Other promise-based integrations
+can use `runTest`, which observes only the callback outcome.
+
+## Test traces and parallel execution
+
+Each wrapped attempt creates a fresh OTel root span and capture session. Native
+`fetch` and Node HTTP/HTTPS clients use standard instrumentation; no special
+Phrond HTTP client is required. The default is serial capture. Set
+`explicitSession: true` only when the SUT propagates W3C context or each explicit
+session has a separately isolated dependency route.
+
+`manageRuntime: false` keeps suite shutdown from stopping a shared runtime or
+running suite-wide schema generation. Use one owner to generate reports/schemas
+and stop Phrond after all suites/workers complete. Shutdown rejects active
+sessions. Teardown drains accepted exchanges (default 5000ms, allowed 0–60000ms)
+and fails on incomplete capture or schema errors. The original callback error
+wins over a secondary cleanup error.
+
+Use `@phrond/sdk/jest` with `@phrond/sdk/jest-environment` for Jest 30.
+The adapter wraps async test callbacks and supports `.concurrent`, `.each`,
+`.only`, `.skip`, and retries. Runner timeouts and hook/assertion failures
+also finalize capture. Ordinary tests default to serial sessions; use
+`--runInBand` for an uninstrumented shared SUT. Concurrent tests use explicit
+sessions; set `explicitSession: true` for multiple workers sharing a traced SUT.
+It always shares an externally managed runtime.
+See the [adoption guide](../../docs/otel-adoption.md) for full examples, hook
+boundaries, and the instrumented-client support matrix.

@@ -86,7 +86,7 @@ func TestExternalDependencyCaptureCorrelatesBothTrafficDirections(t *testing.T) 
 		if r.Header.Get("X-Consumer") != "orders" {
 			t.Errorf("consumer header was not forwarded: %#v", r.Header)
 		}
-		observedTrace = r.Header.Get("X-Phrond-Trace-Id")
+		observedTrace = r.Header.Get("traceparent")
 		body, _ := io.ReadAll(r.Body)
 		if string(body) != `{"sku":"widget"}` {
 			t.Errorf("forwarded dependency body = %q", body)
@@ -101,7 +101,7 @@ func TestExternalDependencyCaptureCorrelatesBothTrafficDirections(t *testing.T) 
 		request, _ := http.NewRequest(http.MethodPost, dependencyURL+"/items?include=stock", strings.NewReader(`{"sku":"widget"}`))
 		request.Header.Set("Content-Type", "application/json")
 		request.Header.Set("X-Consumer", "orders")
-		request.Header.Set("X-Phrond-Trace-Id", r.Header.Get("X-Phrond-Trace-Id"))
+		request.Header.Set("traceparent", r.Header.Get("traceparent"))
 		response, err := http.DefaultClient.Do(request)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadGateway)
@@ -121,8 +121,9 @@ func TestExternalDependencyCaptureCorrelatesBothTrafficDirections(t *testing.T) 
 	dependencyURL = proxyURL + "/__phrond/dep/inventory"
 
 	setup := postDependencyJSON(t, control.URL, "/v1/setupTest", map[string]any{
-		"name":         "creates an order through an existing mock",
-		"sut_base_url": sut.URL,
+		"name":          "creates an order through an existing mock",
+		"trace_context": map[string]string{"traceparent": "00-11111111111111111111111111111111-2222222222222222-00"},
+		"sut_base_url":  sut.URL,
 		"schemas": []artifact.SchemaRef{{ID: "orders-api", Type: "openapi", Source: artifact.SchemaSource{
 			Type: "inline", Content: dependencyCaptureSUTSchema,
 		}}},
@@ -168,7 +169,7 @@ func TestExternalDependencyCaptureCorrelatesBothTrafficDirections(t *testing.T) 
 	if downstream.AssetID != "inventory" || downstream.ParentFlowID != inbound.ID {
 		t.Fatalf("dependency identity or causality missing: %#v", downstream)
 	}
-	if inbound.TraceID == "" || downstream.TraceID != inbound.TraceID || observedTrace != inbound.TraceID {
+	if inbound.TraceID == "" || downstream.TraceID != inbound.TraceID || !strings.Contains(observedTrace, inbound.TraceID) {
 		t.Fatalf("trace correlation failed: inbound=%q dependency=%q upstream=%q", inbound.TraceID, downstream.TraceID, observedTrace)
 	}
 	if downstream.Request.HTTP.URL != upstream.URL+"/api/items?fixed=yes&include=stock" {
@@ -240,8 +241,8 @@ func TestExplicitDependencyCaptureSessionsStayIsolated(t *testing.T) {
 		t.Fatal(err)
 	}
 	response.Body.Close()
-	if response.StatusCode != http.StatusBadGateway {
-		t.Fatalf("unscoped parallel dependency response = %d, want 502", response.StatusCode)
+	if response.StatusCode != http.StatusConflict {
+		t.Fatalf("unscoped parallel dependency response = %d, want 409", response.StatusCode)
 	}
 	for _, session := range []map[string]any{firstSession, secondSession} {
 		art := dependencyArtifact(t, postDependencyJSON(t, control.URL, "/v1/teardownTest", map[string]any{
@@ -269,7 +270,7 @@ func TestDependencyUpstreamFailureRecords502AndTransportError(t *testing.T) {
 	}
 	response.Body.Close()
 	if response.StatusCode != http.StatusBadGateway {
-		t.Fatalf("dependency failure status = %d, want 502", response.StatusCode)
+		t.Fatalf("dependency failure status = %d, want 409", response.StatusCode)
 	}
 	art := dependencyArtifact(t, postDependencyJSON(t, control.URL, "/v1/teardownTest", map[string]any{
 		"session_id": session["session_id"], "status": "fail",
@@ -327,7 +328,7 @@ func TestDependencyCaptureAlwaysRequiresItsOwnReadableSchema(t *testing.T) {
 func TestDependencyCausalityFallsBackToRequestTiming(t *testing.T) {
 	started := time.Now()
 	flows := []artifact.Flow{
-		{ID: "flow-1", Channel: "sut_to_dependency", TraceID: "unpropagated", StartedAt: started.Add(time.Millisecond)},
+		{ID: "flow-1", Channel: "sut_to_dependency", StartedAt: started.Add(time.Millisecond)},
 		{ID: "flow-2", Channel: "test_to_sut", TraceID: "inbound", StartedAt: started, DurationMS: 5},
 	}
 	linkCausality(flows)

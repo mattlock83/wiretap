@@ -1,11 +1,15 @@
 package app
 
 import (
+	"context"
 	"fmt"
+	"github.com/phrond/evermock/internal/tracecontext"
+	"go.opentelemetry.io/otel/trace"
 	"net/http"
 	"net/url"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/phrond/evermock/internal/artifact"
@@ -25,6 +29,11 @@ type dependencyRegistration struct {
 // runtimeSession owns the capture state for one consumer test. Phrond does
 // not own the SUT lifecycle; it only records traffic routed through its proxy.
 type runtimeSession struct {
+	CaseID       string
+	Root         trace.SpanContext
+	pending      int
+	closing      bool
+	drained      chan struct{}
 	ID           string
 	Name         string
 	Store        *TestCaseStore
@@ -154,17 +163,162 @@ func (a *App) nextSessionID() string {
 	return fmt.Sprintf("session-%d-%d", time.Now().UTC().UnixNano(), a.sessionSeq)
 }
 
-func (a *App) recordProxyForSession(exchange proxy.HTTPExchange) {
-	sessionID := strings.TrimSpace(exchange.SessionID)
-
+// admitRequest resolves all independent selectors before routing dependencies.
+// Closed trace IDs stay reserved for the lifetime of this runtime.
+func (a *App) admitRequest(request *http.Request, headerSession string) (*proxy.Admission, error) {
 	a.sessionsMu.Lock()
-	if sessionID == "" {
-		sessionID = a.defaultSessionID
+	defer a.sessionsMu.Unlock()
+	selected := headerSession
+	explicit := selected != ""
+	if strings.HasPrefix(request.URL.Path, "/__phrond/session/") {
+		parts := strings.SplitN(strings.TrimPrefix(request.URL.Path, "/__phrond/session/"), "/", 4)
+		if len(parts) < 3 || parts[1] != "dep" {
+			return nil, fmt.Errorf("invalid session-scoped dependency URL")
+		}
+		if selected != "" && selected != parts[0] {
+			return nil, fmt.Errorf("conflicting session selectors")
+		}
+		selected, explicit = parts[0], true
 	}
-	session := a.sessions[sessionID]
-	a.sessionsMu.Unlock()
+	sc := tracecontext.Extract(request.Header)
+	correlation := ""
+	if sc.IsValid() {
+		owner, known := a.traceOwners[sc.TraceID().String()]
+		if known {
+			if owner == "" {
+				return nil, fmt.Errorf("trace belongs to a closed capture session")
+			}
+			if selected != "" && selected != owner {
+				return nil, fmt.Errorf("trace and session selectors conflict")
+			}
+			selected, correlation = owner, "trace"
+		}
+	}
+	if explicit && correlation == "" {
+		correlation = "explicit_session"
+	}
+	if selected == "" && len(a.sessions) == 1 && a.defaultSessionID != "" && !a.hasRetiredWorkLocked() {
+		selected, correlation = a.defaultSessionID, "active_session"
+	}
+	session := a.sessions[selected]
+	if selected == "" && a.legacySession != nil {
+		session, correlation = a.legacySession, "active_session"
+	}
+	if session == nil {
+		if selected != "" || len(a.sessions) > 0 || strings.HasPrefix(request.URL.Path, "/__phrond/") {
+			return nil, fmt.Errorf("no unambiguous capture session; propagate W3C trace context or use an explicit session")
+		}
+		// Traffic outside any test remains usable but must never be recorded later.
+		return &proxy.Admission{Record: func(proxy.HTTPExchange) {}}, nil
+	}
+	if session.closing {
+		return nil, fmt.Errorf("capture session is closing")
+	}
+	if sc.IsValid() && session.Root.IsValid() && sc.TraceID() != session.Root.TraceID() {
+		session.Store.AddCaptureDiagnostic("received trace does not match the registered test trace; ownership used " + correlation)
+	}
+	session.pending++
+	a.inFlight++
+	var once sync.Once
+	return &proxy.Admission{
+		SessionID: session.ID, CaseID: session.CaseID, Root: session.Root, TestCorrelation: correlation,
+		Record: session.Store.RecordHTTP,
+		Release: func() {
+			once.Do(func() {
+				a.sessionsMu.Lock()
+				defer a.sessionsMu.Unlock()
+				session.pending--
+				a.inFlight--
+				if session.closing && session.pending == 0 {
+					close(session.drained)
+				}
+			})
+		},
+	}, nil
+}
 
-	if session != nil && session.Store != nil {
-		session.Store.RecordHTTP(exchange)
+// beginDrain must run while the control lock prevents setup/shutdown changes.
+func (a *App) beginDrain(session *runtimeSession) bool {
+	a.sessionsMu.Lock()
+	defer a.sessionsMu.Unlock()
+	if session.closing {
+		return false
+	}
+	session.closing = true
+	if session.Root.IsValid() {
+		a.traceOwners[session.Root.TraceID().String()] = ""
+	}
+	if a.defaultSessionID == session.ID {
+		a.defaultSessionID = ""
+	}
+	if session.pending == 0 {
+		close(session.drained)
+	}
+	return true
+}
+
+func (a *App) waitForDrain(ctx context.Context, session *runtimeSession, timeout time.Duration) {
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case <-session.drained:
+		return
+	default:
+	}
+	select {
+	case <-session.drained:
+	case <-timer.C:
+		session.Store.MarkCaptureIncomplete("capture drain timed out; in-flight exchanges were omitted")
+	case <-ctx.Done():
+		session.Store.MarkCaptureIncomplete("capture drain cancelled; in-flight exchanges were omitted")
+	}
+}
+
+func (a *App) hasActiveSessions() bool {
+	a.sessionsMu.Lock()
+	defer a.sessionsMu.Unlock()
+	return len(a.sessions) != 0 || a.legacySession != nil || a.inFlight != 0
+}
+
+// Control requests are serialized; traffic admission uses a separate lock.
+func (a *App) setReverseTarget(target string) error {
+	target = strings.TrimRight(strings.TrimSpace(target), "/")
+	if a.hasActiveSessions() && target != a.reverseTarget {
+		return fmt.Errorf("cannot change the SUT target while capture sessions are active")
+	}
+	if err := a.proxyComponent.SetReverseTarget(target); err != nil {
+		return err
+	}
+	a.reverseTarget = target
+	return nil
+}
+
+// Call with sessionsMu held. Unlabeled traffic cannot be safely assigned while
+// a retired attempt can still produce dependency requests.
+func (a *App) hasRetiredWorkLocked() bool {
+	active := 0
+	for _, session := range a.sessions {
+		if session.closing {
+			return true
+		}
+		active += session.pending
+	}
+	if a.legacySession != nil {
+		active += a.legacySession.pending
+	}
+	return a.inFlight > active
+}
+
+// Called under controlMu only after all captures and admitted requests stop.
+func (a *App) resetCaptureRouting() {
+	a.sessionsMu.Lock()
+	a.traceOwners = map[string]string{}
+	a.sessions = map[string]*runtimeSession{}
+	a.defaultSessionID = ""
+	a.legacySession = nil
+	a.sessionsMu.Unlock()
+	a.reverseTarget = ""
+	if a.proxyComponent != nil {
+		_ = a.proxyComponent.SetReverseTarget("")
 	}
 }

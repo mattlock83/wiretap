@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel/propagation"
 	"log"
 	"net/http"
 	"net/url"
@@ -43,6 +45,10 @@ func main() {
 }
 
 func newOrdersHandler(inventoryURL string, client *http.Client) http.Handler {
+	clone := *client
+	clone.Transport = otelhttp.NewTransport(client.Transport, otelhttp.WithPropagators(propagation.TraceContext{}))
+	client = &clone
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte("ok"))
@@ -72,7 +78,7 @@ func newOrdersHandler(inventoryURL string, client *http.Client) http.Handler {
 			"quantity": order.Quantity, "status": "accepted",
 		})
 	})
-	return mux
+	return otelhttp.NewHandler(mux, "orders", otelhttp.WithPropagators(propagation.TraceContext{}))
 }
 
 func fetchInventory(r *http.Request, client *http.Client, base string, order orderRequest) (inventoryResponse, error) {
@@ -88,9 +94,7 @@ func fetchInventory(r *http.Request, client *http.Client, base string, order ord
 		return inventoryResponse{}, err
 	}
 	request.Header.Set("Accept", "application/json")
-	if traceID := r.Header.Get("X-Phrond-Trace-Id"); traceID != "" {
-		request.Header.Set("X-Phrond-Trace-Id", traceID)
-	}
+
 	response, err := client.Do(request)
 	if err != nil {
 		return inventoryResponse{}, err

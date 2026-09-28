@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,6 +15,8 @@ import (
 	"github.com/phrond/evermock/internal/artifact"
 	"github.com/phrond/evermock/internal/coverage"
 	"github.com/phrond/evermock/internal/proxy"
+	"github.com/phrond/evermock/internal/tracecontext"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type testCaseStartRequest struct {
@@ -43,6 +46,10 @@ func (a *App) handleTestCaseStart(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "capture runtime not configured"})
 		return
 	}
+	if a.hasActiveSessions() {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "capture sessions are already active"})
+		return
+	}
 	for i := range req.Schemas {
 		req.Schemas[i].Role = "sut"
 	}
@@ -51,7 +58,7 @@ func (a *App) handleTestCaseStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if target := strings.TrimSpace(req.SUTBaseURL); target != "" {
-		if err := a.proxyComponent.SetReverseTarget(target); err != nil {
+		if err := a.setReverseTarget(target); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("invalid sut_base_url: %v", err)})
 			return
 		}
@@ -68,6 +75,9 @@ func (a *App) handleTestCaseStart(w http.ResponseWriter, r *http.Request) {
 	for _, schema := range req.Schemas {
 		a.store.AddSchema(schema)
 	}
+	a.sessionsMu.Lock()
+	a.legacySession = &runtimeSession{CaseID: tc.ID, Store: a.store, drained: make(chan struct{})}
+	a.sessionsMu.Unlock()
 	writeJSON(w, http.StatusOK, tc)
 }
 
@@ -85,13 +95,26 @@ func (a *App) handleTestCaseFinish(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "store not configured"})
 		return
 	}
+	a.sessionsMu.Lock()
+	legacy := a.legacySession
+	a.sessionsMu.Unlock()
+	if legacy != nil {
+		a.beginDrain(legacy)
+		a.waitForDrain(r.Context(), legacy, 5*time.Second)
+	}
+	a.sessionsMu.Lock()
+	a.legacySession = nil
+	a.sessionsMu.Unlock()
 	artifactDoc, path, err := a.store.FinishCase(defaultStatus(req.Status), a.environmentSnapshot())
 	if err != nil {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 		return
 	}
 	if a.proxyComponent != nil {
-		_ = a.proxyComponent.Stop(r.Context())
+		// A legacy drain timeout must not become an unbounded server shutdown.
+		stopCtx, cancel := context.WithTimeout(r.Context(), time.Second)
+		defer cancel()
+		_ = a.proxyComponent.Stop(stopCtx)
 	}
 	logFinishedCase(a, artifactDoc, path)
 	writeArtifactResponse(w, artifactDoc, path, "")
@@ -190,7 +213,7 @@ func (a *App) handleProxyStart(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
 		return
 	}
-	if err := configureProxy(a.proxyComponent, payload); err != nil {
+	if err := a.configureProxy(payload); err != nil {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 		return
 	}
@@ -257,7 +280,7 @@ func (a *App) handleStartServer(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
 		return
 	}
-	if err := configureProxy(a.proxyComponent, payload.Proxy); err != nil {
+	if err := a.configureProxy(payload.Proxy); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
@@ -283,6 +306,7 @@ type setupTestRequest struct {
 	Dependencies    []dependencyRegistration `json:"dependencies,omitempty"`
 	GenerateSchema  bool                     `json:"generate_schema,omitempty"`
 	ExplicitSession bool                     `json:"explicit_session,omitempty"`
+	TraceContext    *tracecontext.Context    `json:"trace_context,omitempty"`
 }
 
 func (a *App) handleSetupTest(w http.ResponseWriter, r *http.Request) {
@@ -297,6 +321,28 @@ func (a *App) handleSetupTest(w http.ResponseWriter, r *http.Request) {
 	var payload setupTestRequest
 	if err := decodeStrictJSON(r, &payload); err != nil && !errors.Is(err, io.EOF) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
+		return
+	}
+	var root trace.SpanContext
+	if payload.TraceContext != nil {
+		var err error
+		root, err = payload.TraceContext.Validate()
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+	}
+	a.sessionsMu.Lock()
+	_, reused := a.traceOwners[root.TraceID().String()]
+	conflict := a.legacySession != nil || (root.IsValid() && reused) || (!payload.ExplicitSession && a.hasRetiredWorkLocked())
+	for _, existing := range a.sessions {
+		if !payload.ExplicitSession && !existing.Explicit {
+			conflict = true
+		}
+	}
+	a.sessionsMu.Unlock()
+	if conflict {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "capture session or test trace conflicts, or a retired capture is still draining"})
 		return
 	}
 	schemas := append([]artifact.SchemaRef{}, payload.Schemas...)
@@ -314,7 +360,7 @@ func (a *App) handleSetupTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if target := strings.TrimSpace(payload.SUTBaseURL); target != "" {
-		if err := a.proxyComponent.SetReverseTarget(target); err != nil {
+		if err := a.setReverseTarget(target); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("invalid sut_base_url: %v", err)})
 			return
 		}
@@ -341,7 +387,8 @@ func (a *App) handleSetupTest(w http.ResponseWriter, r *http.Request) {
 	sessionID := a.nextSessionID()
 	store := NewTestCaseStore(a.cfg.Artifact.OutputDir, a.cfg.Capture.MaxBodyBytes)
 	store.SetProducer(a.producer)
-	if _, err := store.StartCase(name, payload.Tags, payload.Meta, payload.SUTBaseURL); err != nil {
+	tc, err := store.StartCase(name, payload.Tags, payload.Meta, payload.SUTBaseURL)
+	if err != nil {
 		a.sessionsMu.Unlock()
 		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 		return
@@ -355,8 +402,12 @@ func (a *App) handleSetupTest(w http.ResponseWriter, r *http.Request) {
 	if payload.GenerateSchema {
 		store.SetSchemaGeneration(true)
 	}
-	session := &runtimeSession{ID: sessionID, Name: name, Store: store, SUTBaseURL: payload.SUTBaseURL, Dependencies: dependencies, Explicit: payload.ExplicitSession, CreatedAt: time.Now().UTC()}
+	store.SetTraceContext(root)
+	session := &runtimeSession{Root: root, CaseID: tc.ID, drained: make(chan struct{}), ID: sessionID, Name: name, Store: store, SUTBaseURL: payload.SUTBaseURL, Dependencies: dependencies, Explicit: payload.ExplicitSession, CreatedAt: time.Now().UTC()}
 	a.sessions[sessionID] = session
+	if root.IsValid() {
+		a.traceOwners[root.TraceID().String()] = sessionID
+	}
 	if !payload.ExplicitSession {
 		a.defaultSessionID = sessionID
 	}
@@ -365,26 +416,28 @@ func (a *App) handleSetupTest(w http.ResponseWriter, r *http.Request) {
 	proxyURL := normalizeURL(a.proxyComponent.ListenAddr())
 	dependencyURLs := make(map[string]string, len(dependencies))
 	for assetID := range dependencies {
-		if payload.ExplicitSession {
+		if payload.ExplicitSession && !root.IsValid() {
 			dependencyURLs[assetID] = proxyURL + "/__phrond/session/" + sessionID + "/dep/" + assetID
 		} else {
 			dependencyURLs[assetID] = proxyURL + "/__phrond/dep/" + assetID
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"session_id":   sessionID,
-		"name":         name,
-		"explicit":     payload.ExplicitSession,
-		"proxy_listen": proxyURL,
-		"sut_url":      proxyURL,
-		"sut_base_url": payload.SUTBaseURL,
-		"dependencies": dependencyURLs,
+		"trace_context": payload.TraceContext,
+		"session_id":    sessionID,
+		"name":          name,
+		"explicit":      payload.ExplicitSession,
+		"proxy_listen":  proxyURL,
+		"sut_url":       proxyURL,
+		"sut_base_url":  payload.SUTBaseURL,
+		"dependencies":  dependencyURLs,
 	})
 }
 
 type teardownTestRequest struct {
-	SessionID string `json:"session_id"`
-	Status    string `json:"status,omitempty"`
+	SessionID      string `json:"session_id"`
+	Status         string `json:"status,omitempty"`
+	DrainTimeoutMS *int64 `json:"drain_timeout_ms,omitempty"`
 }
 
 func (a *App) handleTeardownTest(w http.ResponseWriter, r *http.Request) {
@@ -397,27 +450,45 @@ func (a *App) handleTeardownTest(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
 		return
 	}
+	timeout := 5 * time.Second
+	if payload.DrainTimeoutMS != nil {
+		if *payload.DrainTimeoutMS < 0 || *payload.DrainTimeoutMS > 60000 {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "drain_timeout_ms must be between 0 and 60000"})
+			return
+		}
+		timeout = time.Duration(*payload.DrainTimeoutMS) * time.Millisecond
+	}
 	sessionID := strings.TrimSpace(payload.SessionID)
 	if sessionID == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "session_id is required"})
 		return
 	}
+	// The configured write timeout covers ordinary calls. A bounded drain
+	// needs its own deadline plus time to validate and write the artifact.
+	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(timeout + max(a.cfg.HTTP.WriteTimeout, 10*time.Second)))
+	a.controlMu.Lock()
 	a.sessionsMu.Lock()
 	session := a.sessions[sessionID]
+	a.sessionsMu.Unlock()
 	if session == nil {
-		a.sessionsMu.Unlock()
+		a.controlMu.Unlock()
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "session not found"})
 		return
 	}
-	delete(a.sessions, sessionID)
-	if a.defaultSessionID == sessionID {
-		a.defaultSessionID = ""
+	if !a.beginDrain(session) {
+		a.controlMu.Unlock()
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "capture session is already closing"})
+		return
 	}
-	a.sessionsMu.Unlock()
-
 	env := a.environmentSnapshot()
 	env.SUTBaseURL = session.SUTBaseURL
+	a.controlMu.Unlock()
+
+	a.waitForDrain(r.Context(), session, timeout)
 	artifactDoc, path, err := session.Store.FinishCase(defaultStatus(payload.Status), env)
+	a.sessionsMu.Lock()
+	delete(a.sessions, sessionID)
+	a.sessionsMu.Unlock()
 	if err != nil {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 		return
@@ -544,25 +615,26 @@ func (a *App) handleKillServer(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 		return
 	}
-	a.sessionsMu.Lock()
-	a.sessions = map[string]*runtimeSession{}
-	a.defaultSessionID = ""
-	a.sessionsMu.Unlock()
+	if a.hasActiveSessions() {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "capture sessions are still active; teardown tests before stopping the runtime"})
+		return
+	}
 	if err := a.lifecycle.Stop(r.Context()); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
+	a.resetCaptureRouting()
 	writeJSON(w, http.StatusOK, map[string]string{"status": "killed"})
 }
 
-func configureProxy(component *ProxyComponent, payload proxyStartRequest) error {
-	if listen := strings.TrimSpace(payload.ListenAddr); listen != "" {
-		if err := component.SetListenAddr(listen); err != nil {
+func (a *App) configureProxy(payload proxyStartRequest) error {
+	if listen := strings.TrimSpace(payload.ListenAddr); listen != "" && listen != a.proxyComponent.ListenAddr() {
+		if err := a.proxyComponent.SetListenAddr(listen); err != nil {
 			return err
 		}
 	}
 	if target := strings.TrimSpace(payload.TargetURL); target != "" {
-		if err := component.SetReverseTarget(target); err != nil {
+		if err := a.setReverseTarget(target); err != nil {
 			return fmt.Errorf("invalid proxy target_url: %w", err)
 		}
 	}

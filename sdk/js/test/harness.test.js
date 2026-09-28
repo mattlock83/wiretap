@@ -38,7 +38,9 @@ test("startCapture and named test session send capture-only payloads", async () 
       path: "/v1/startServer",
       body: { proxy: { target_url: "http://sut.test" } }
     });
-    assert.deepEqual(calls[1].body, {
+    assert.match(calls[1].body.trace_context.traceparent, /^00-[0-9a-f]{32}-[0-9a-f]{16}-0[01]$/);
+    const { trace_context, ...setupPayload } = calls[1].body;
+    assert.deepEqual(setupPayload, {
       name: "hello world happy flow",
       sut_base_url: "http://sut.test",
       explicit_session: false,

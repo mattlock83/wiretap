@@ -25,6 +25,7 @@ import (
 	"github.com/phrond/evermock/internal/capture"
 	"github.com/phrond/evermock/internal/proxy"
 	"github.com/phrond/evermock/internal/redact"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type TestCaseStore struct {
@@ -49,20 +50,23 @@ func (s *TestCaseStore) SetProducer(producer artifact.Producer) {
 }
 
 type testCaseState struct {
-	id             string
-	name           string
-	startedAt      time.Time
-	finishedAt     time.Time
-	status         string
-	tags           []string
-	meta           map[string]any
-	sutBaseURL     string
-	flows          []artifact.Flow
-	assertions     []artifact.Assertion
-	schemas        []artifact.SchemaRef
-	expectation    []Expectation
-	redactions     []artifact.Redaction
-	generateSchema bool
+	root               trace.SpanContext
+	captureIncomplete  bool
+	captureDiagnostics []string
+	id                 string
+	name               string
+	startedAt          time.Time
+	finishedAt         time.Time
+	status             string
+	tags               []string
+	meta               map[string]any
+	sutBaseURL         string
+	flows              []artifact.Flow
+	assertions         []artifact.Assertion
+	schemas            []artifact.SchemaRef
+	expectation        []Expectation
+	redactions         []artifact.Redaction
+	generateSchema     bool
 }
 
 func (s *TestCaseStore) SetSchemaGeneration(enabled bool) {
@@ -147,6 +151,9 @@ func (s *TestCaseStore) FinishCase(status string, env *artifact.Environment) (*a
 			break
 		}
 	}
+	if state.captureIncomplete {
+		status = "fail"
+	}
 	state.status = status
 
 	flows := append([]artifact.Flow{}, state.flows...)
@@ -163,7 +170,8 @@ func (s *TestCaseStore) FinishCase(status string, env *artifact.Environment) (*a
 	}
 
 	art := &artifact.Artifact{
-		Version:    1,
+		Version:           1,
+		CaptureIncomplete: state.captureIncomplete, CaptureDiagnostics: state.captureDiagnostics,
 		TestCase:   artifact.TestCase{ID: state.id, Name: state.name, StartedAt: state.startedAt, FinishedAt: finishedAt, Status: status, Tags: state.tags, Meta: state.meta},
 		Env:        env,
 		Schemas:    append([]artifact.SchemaRef{}, state.schemas...),
@@ -171,6 +179,10 @@ func (s *TestCaseStore) FinishCase(status string, env *artifact.Environment) (*a
 		Assertions: append([]artifact.Assertion{}, state.assertions...),
 		Redactions: append([]artifact.Redaction{}, state.redactions...),
 		Meta:       map[string]any{},
+	}
+	if state.root.IsValid() {
+		art.TestCase.TraceID = state.root.TraceID().String()
+		art.TestCase.RootSpanID = state.root.SpanID().String()
 	}
 	if producer != (artifact.Producer{}) {
 		p := producer
@@ -306,7 +318,7 @@ func (s *TestCaseStore) RecordHTTP(exchange proxy.HTTPExchange) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.active == nil {
+	if s.active == nil || (exchange.CaseID != "" && exchange.CaseID != s.active.id) {
 		return
 	}
 	s.active.flows = append(s.active.flows, flow)
@@ -320,7 +332,7 @@ func (s *TestCaseStore) nextFlowID() string {
 func (s *TestCaseStore) flowFromProxy(exchange proxy.HTTPExchange) artifact.Flow {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.active == nil {
+	if s.active == nil || (exchange.CaseID != "" && exchange.CaseID != s.active.id) {
 		return artifact.Flow{}
 	}
 	id := s.nextFlowID()
@@ -331,11 +343,12 @@ func (s *TestCaseStore) flowFromProxy(exchange proxy.HTTPExchange) artifact.Flow
 	reqHeaders := cloneHeaders(exchange.RequestHeaders)
 	respHeaders := cloneHeaders(exchange.ResponseHeaders)
 	return artifact.Flow{
-		ID:             id,
-		Protocol:       "http",
-		Channel:        channel,
-		AssetID:        exchange.AssetID,
-		TraceID:        exchange.TraceID,
+		ID:            id,
+		Protocol:      "http",
+		Channel:       channel,
+		AssetID:       exchange.AssetID,
+		TraceID:       exchange.TraceID,
+		RequestSpanID: exchange.RequestSpanID, TraceContextSource: exchange.TraceContextSource, TestCorrelation: exchange.TestCorrelation,
 		StartedAt:      exchange.StartedAt,
 		DurationMS:     exchange.Duration.Milliseconds(),
 		TransportError: exchange.Error,
@@ -363,47 +376,63 @@ func (s *TestCaseStore) flowFromProxy(exchange proxy.HTTPExchange) artifact.Flow
 	}
 }
 
-// linkCausality identifies which inbound request caused each observed
-// dependency call. Propagated trace IDs are authoritative; request timing is
-// a useful fallback for applications that do not propagate tracing headers.
+// linkCausality reports inference strength; a shared trace is not an exact parent span.
 func linkCausality(flows []artifact.Flow) {
-	type parent struct {
-		id    string
-		start time.Time
-		end   time.Time
-	}
-	byTrace := map[string]string{}
-	var parents []parent
-	for _, flow := range flows {
-		if flow.Channel != "test_to_sut" {
-			continue
-		}
-		if flow.TraceID != "" {
-			byTrace[flow.TraceID] = flow.ID
-		}
-		parents = append(parents, parent{
-			id: flow.ID, start: flow.StartedAt,
-			end: flow.StartedAt.Add(time.Duration(flow.DurationMS+1) * time.Millisecond),
-		})
-	}
 	for i := range flows {
-		if flows[i].Channel != "sut_to_dependency" {
+		dep := &flows[i]
+		if dep.Channel != "sut_to_dependency" {
 			continue
 		}
-		if parentID := byTrace[flows[i].TraceID]; parentID != "" {
-			flows[i].ParentFlowID = parentID
-			continue
-		}
-		var bestStart time.Time
-		for _, candidate := range parents {
-			if flows[i].StartedAt.Before(candidate.start) || flows[i].StartedAt.After(candidate.end) {
+		dep.ParentFlowID, dep.ParentCorrelation = "", "unmatched"
+		var candidates, overlapping []string
+		for _, parent := range flows {
+			if parent.Channel != "test_to_sut" || parent.StartedAt.After(dep.StartedAt) {
 				continue
 			}
-			if flows[i].ParentFlowID == "" || candidate.start.After(bestStart) {
-				flows[i].ParentFlowID = candidate.id
-				bestStart = candidate.start
+			if dep.TraceID != "" && (parent.TraceID == "" || parent.TraceID != dep.TraceID) {
+				continue
+			}
+			candidates = append(candidates, parent.ID)
+			if !dep.StartedAt.After(parent.StartedAt.Add(time.Duration(parent.DurationMS+1) * time.Millisecond)) {
+				overlapping = append(overlapping, parent.ID)
 			}
 		}
+		if dep.TestCorrelation == "trace" && dep.TraceContextSource == "received" && dep.TraceID != "" && len(candidates) == 1 {
+			dep.ParentFlowID, dep.ParentCorrelation = candidates[0], "trace_unique"
+		} else if len(overlapping) == 1 {
+			dep.ParentFlowID, dep.ParentCorrelation = overlapping[0], "timing"
+		} else if len(overlapping) > 1 || (dep.TraceID != "" && len(candidates) > 1) {
+			dep.ParentCorrelation = "ambiguous"
+		}
+	}
+}
+
+func (s *TestCaseStore) SetTraceContext(root trace.SpanContext) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.active != nil {
+		s.active.root = root
+	}
+}
+func (s *TestCaseStore) AddCaptureDiagnostic(message string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.active == nil {
+		return
+	}
+	for _, existing := range s.active.captureDiagnostics {
+		if existing == message {
+			return
+		}
+	}
+	s.active.captureDiagnostics = append(s.active.captureDiagnostics, message)
+}
+func (s *TestCaseStore) MarkCaptureIncomplete(message string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.active != nil {
+		s.active.captureIncomplete = true
+		s.active.captureDiagnostics = append(s.active.captureDiagnostics, message)
 	}
 }
 

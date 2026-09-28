@@ -6,9 +6,30 @@
   "type": "commonjs",
   "license": "UNLICENSED",
   "engines": {
-    "node": ">=18"
+    "node": "^18.19.0 || >=20.6.0"
   },
   "scripts": {
-    "test": "node --test"
+    "test": "node --test test/*.test.js && jest --config jest.config.cjs"
+  },
+  "dependencies": {
+    "@opentelemetry/api": "^1.9.1",
+    "@opentelemetry/context-async-hooks": "^2.11.0",
+    "@opentelemetry/core": "^2.11.0",
+    "@opentelemetry/instrumentation": "^0.222.0",
+    "@opentelemetry/instrumentation-http": "^0.222.0",
+    "@opentelemetry/instrumentation-undici": "^0.32.0",
+    "@opentelemetry/sdk-trace-base": "^2.11.0",
+    "jest-each": "^30.5.2"
+  },
+  "devDependencies": {
+    "jest": "^30.5.2"
+  },
+  "peerDependencies": {
+    "jest-environment-node": "^30.0.0"
+  },
+  "peerDependenciesMeta": {
+    "jest-environment-node": {
+      "optional": true
+    }
   }
 }

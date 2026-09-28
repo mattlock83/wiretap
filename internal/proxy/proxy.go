@@ -14,7 +14,6 @@ import (
 	"net/url"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/phrond/evermock/internal/capture"
@@ -83,7 +82,7 @@ type Server struct {
 	reverseTarget      string
 	dependencyResolver DependencyResolver
 
-	traceSeq atomic.Uint64
+	admissionResolver AdmissionResolver
 }
 
 // Recorder receives captured HTTP exchanges.
@@ -96,9 +95,11 @@ type HTTPExchange struct {
 	SessionID string
 	Channel   string
 	AssetID   string
-	// TraceID is injected by the proxy as X-Phrond-Trace-Id on the forwarded
-	// request so applications can correlate captured traffic with their own
-	// traces and logs.
+	// TraceID and RequestSpanID identify the received W3C sender context.
+	CaseID                string
+	RequestSpanID         string
+	TraceContextSource    string
+	TestCorrelation       string
 	TraceID               string
 	Method                string
 	URL                   string
@@ -178,10 +179,6 @@ func (s *Server) resolveDependency(r *http.Request, sessionID string) (Dependenc
 	return resolver(r, sessionID)
 }
 
-func (s *Server) nextTraceID() string {
-	return fmt.Sprintf("phtr-%d-%d", time.Now().UTC().UnixNano(), s.traceSeq.Add(1))
-}
-
 // Start begins listening for proxy traffic.
 func (s *Server) Start(ctx context.Context) (Info, error) {
 	if s.server != nil {
@@ -205,8 +202,9 @@ func (s *Server) Start(ctx context.Context) (Info, error) {
 	}
 
 	shutdownCh := s.shutdownCh
+	server := s.server
 	go func() {
-		if err := s.server.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		if err := server.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			if s.cfg.Logger != nil {
 				s.cfg.Logger.Printf("proxy serve error: %v", err)
 			}
@@ -250,6 +248,9 @@ func (s *Server) ListenAddr() string {
 
 // SetListenAddr updates the bind address before the server starts.
 func (s *Server) SetListenAddr(addr string) error {
+	if strings.TrimSpace(addr) == s.cfg.ListenAddr {
+		return nil
+	}
 	if s.server != nil {
 		return ErrAlreadyStarted
 	}
@@ -296,14 +297,21 @@ func (s *Server) handleHTTP(w http.ResponseWriter, r *http.Request) {
 	req := r.Clone(r.Context())
 	var reqCapture *capture.Writer
 	req.Body, reqCapture = capture.WrapReadCloser(r.Body, s.cfg.MaxBodyBytes)
-	sessionID := req.Header.Get("X-Phrond-Session-Id")
-	req.Header.Del("X-Phrond-Session-Id")
+	admission, err := s.admit(req)
+	if err != nil {
+		writeProxyError(w, http.StatusConflict, err)
+		return
+	}
+	if admission.Release != nil {
+		defer admission.Release()
+	}
+	sessionID := admission.SessionID
 	channel := "test_to_sut"
 	assetID := ""
 
 	route, isDependency, resolveErr := s.resolveDependency(req, sessionID)
 	if resolveErr != nil {
-		writeProxyError(w, http.StatusBadGateway, resolveErr)
+		writeProxyError(w, http.StatusConflict, resolveErr)
 		return
 	}
 	if isDependency {
@@ -365,23 +373,15 @@ func (s *Server) handleHTTP(w http.ResponseWriter, r *http.Request) {
 	req.RequestURI = ""
 	req.Header.Del("Proxy-Connection")
 
-	traceID := ""
-	if isDependency {
-		traceID = strings.TrimSpace(req.Header.Get("X-Phrond-Trace-Id"))
-	}
-	if traceID == "" {
-		traceID = s.nextTraceID()
-	}
-	req.Header.Set("X-Phrond-Trace-Id", traceID)
+	record := s.exchangeRecorder(req, admission, isDependency)
 
 	resp, err := transport.RoundTrip(req)
 	if err != nil {
 		capturedRequest := reqCapture.Body()
-		s.recordHTTP(HTTPExchange{
+		record(HTTPExchange{
 			SessionID:            sessionID,
 			Channel:              channel,
 			AssetID:              assetID,
-			TraceID:              traceID,
 			Method:               req.Method,
 			URL:                  req.URL.String(),
 			RequestHeaders:       cloneHeader(req.Header),
@@ -419,7 +419,6 @@ func (s *Server) handleHTTP(w http.ResponseWriter, r *http.Request) {
 		SessionID:             sessionID,
 		Channel:               channel,
 		AssetID:               assetID,
-		TraceID:               traceID,
 		Method:                req.Method,
 		URL:                   req.URL.String(),
 		RequestHeaders:        cloneHeader(req.Header),
@@ -439,7 +438,7 @@ func (s *Server) handleHTTP(w http.ResponseWriter, r *http.Request) {
 	if copyErr != nil {
 		exchange.Error = copyErr.Error()
 	}
-	s.recordHTTP(exchange)
+	record(exchange)
 }
 
 func (s *Server) handleConnect(w http.ResponseWriter, r *http.Request) {
@@ -518,88 +517,125 @@ func (s *Server) proxyTLSRequests(clientTLS net.Conn) {
 			return
 		}
 
-		started := time.Now()
-		var reqCapture *capture.Writer
-		req.Body, reqCapture = capture.WrapReadCloser(req.Body, s.cfg.MaxBodyBytes)
-
-		sessionID := req.Header.Get("X-Phrond-Session-Id")
-		req.Header.Del("X-Phrond-Session-Id")
-		req.URL.Scheme = "https"
-		if req.URL.Host == "" {
-			req.URL.Host = req.Host
-		}
-		req.RequestURI = ""
-		req.Header.Del("Proxy-Connection")
-
-		traceID := s.nextTraceID()
-		req.Header.Set("X-Phrond-Trace-Id", traceID)
-
-		resp, err := s.httpTransport(s.upstreamTLSConfig(req.URL.Host)).RoundTrip(req)
-		if err != nil {
-			capturedRequest := reqCapture.Body()
-			s.recordHTTP(HTTPExchange{
-				SessionID:            sessionID,
-				Channel:              "test_to_sut",
-				TraceID:              traceID,
-				Method:               req.Method,
-				URL:                  req.URL.String(),
-				RequestHeaders:       cloneHeader(req.Header),
-				RequestTrailers:      cloneHeader(req.Trailer),
-				RequestBody:          capturedRequest.Bytes,
-				RequestBodyBytes:     capturedRequest.OriginalBytes,
-				RequestBodyTruncated: capturedRequest.Truncated,
-				Status:               http.StatusBadGateway,
-				StartedAt:            started,
-				Duration:             time.Since(started),
-				Error:                err.Error(),
-			})
-			writeTunnelProxyError(clientTLS, http.StatusBadGateway, err)
-			return
-		}
-
-		respCapture := capture.NewWriter(s.cfg.MaxBodyBytes)
-		originalBody := resp.Body
-		resp.Body = &capturingResponseBody{
-			Reader: io.TeeReader(originalBody, respCapture),
-			Closer: originalBody,
-		}
-		writeErr := resp.Write(clientTLS)
-		_ = resp.Body.Close()
-
-		capturedRequest := reqCapture.Body()
-		capturedResponse := respCapture.Body()
-		exchange := HTTPExchange{
-			SessionID:             sessionID,
-			Channel:               "test_to_sut",
-			TraceID:               traceID,
-			Method:                req.Method,
-			URL:                   req.URL.String(),
-			RequestHeaders:        cloneHeader(req.Header),
-			RequestTrailers:       cloneHeader(req.Trailer),
-			RequestBody:           capturedRequest.Bytes,
-			RequestBodyBytes:      capturedRequest.OriginalBytes,
-			RequestBodyTruncated:  capturedRequest.Truncated,
-			Status:                resp.StatusCode,
-			ResponseHeaders:       cloneHeader(resp.Header),
-			ResponseTrailers:      cloneHeader(resp.Trailer),
-			ResponseBody:          capturedResponse.Bytes,
-			ResponseBodyBytes:     capturedResponse.OriginalBytes,
-			ResponseBodyTruncated: capturedResponse.Truncated,
-			StartedAt:             started,
-			Duration:              time.Since(started),
-		}
-		if writeErr != nil {
-			exchange.Error = writeErr.Error()
-		}
-		s.recordHTTP(exchange)
-		if writeErr != nil {
-			return
-		}
-
-		if req.Close || resp.Close {
+		if !s.proxyTLSRequest(clientTLS, req) {
 			return
 		}
 	}
+}
+
+func (s *Server) proxyTLSRequest(clientTLS net.Conn, req *http.Request) bool {
+	started := time.Now()
+	var reqCapture *capture.Writer
+	req.Body, reqCapture = capture.WrapReadCloser(req.Body, s.cfg.MaxBodyBytes)
+
+	admission, err := s.admit(req)
+	if err != nil {
+		writeTunnelProxyError(clientTLS, http.StatusConflict, err)
+		return false
+	}
+	if admission.Release != nil {
+		defer admission.Release()
+	}
+	sessionID := admission.SessionID
+	req.URL.Scheme = "https"
+	if req.URL.Host == "" {
+		req.URL.Host = req.Host
+	}
+	req.RequestURI = ""
+	req.Header.Del("Proxy-Connection")
+
+	route, isDependency, err := s.resolveDependency(req, sessionID)
+	if err != nil {
+		writeTunnelProxyError(clientTLS, http.StatusConflict, err)
+		return false
+	}
+	channel, assetID := "test_to_sut", ""
+	if isDependency {
+		target, err := url.Parse(route.UpstreamURL)
+		if err != nil {
+			writeTunnelProxyError(clientTLS, http.StatusBadGateway, err)
+			return false
+		}
+		req.URL.Scheme, req.URL.Host, req.Host = target.Scheme, target.Host, target.Host
+		req.URL.Path = strings.TrimSuffix(target.Path, "/") + route.Path
+		req.URL.RawPath = strings.TrimSuffix(target.EscapedPath(), "/") + route.RawPath
+		if target.RawQuery != "" {
+			if req.URL.RawQuery != "" {
+				req.URL.RawQuery = target.RawQuery + "&" + req.URL.RawQuery
+			} else {
+				req.URL.RawQuery = target.RawQuery
+			}
+		}
+		channel, assetID = "sut_to_dependency", route.AssetID
+	}
+	record := s.exchangeRecorder(req, admission, isDependency)
+
+	resp, err := s.httpTransport(s.upstreamTLSConfig(req.URL.Host)).RoundTrip(req)
+	if err != nil {
+		capturedRequest := reqCapture.Body()
+		record(HTTPExchange{
+			SessionID:            sessionID,
+			Channel:              channel,
+			AssetID:              assetID,
+			Method:               req.Method,
+			URL:                  req.URL.String(),
+			RequestHeaders:       cloneHeader(req.Header),
+			RequestTrailers:      cloneHeader(req.Trailer),
+			RequestBody:          capturedRequest.Bytes,
+			RequestBodyBytes:     capturedRequest.OriginalBytes,
+			RequestBodyTruncated: capturedRequest.Truncated,
+			Status:               http.StatusBadGateway,
+			StartedAt:            started,
+			Duration:             time.Since(started),
+			Error:                err.Error(),
+		})
+		writeTunnelProxyError(clientTLS, http.StatusBadGateway, err)
+		return false
+	}
+
+	respCapture := capture.NewWriter(s.cfg.MaxBodyBytes)
+	originalBody := resp.Body
+	resp.Body = &capturingResponseBody{
+		Reader: io.TeeReader(originalBody, respCapture),
+		Closer: originalBody,
+	}
+	writeErr := resp.Write(clientTLS)
+	_ = resp.Body.Close()
+
+	capturedRequest := reqCapture.Body()
+	capturedResponse := respCapture.Body()
+	exchange := HTTPExchange{
+		SessionID:             sessionID,
+		Channel:               channel,
+		AssetID:               assetID,
+		Method:                req.Method,
+		URL:                   req.URL.String(),
+		RequestHeaders:        cloneHeader(req.Header),
+		RequestTrailers:       cloneHeader(req.Trailer),
+		RequestBody:           capturedRequest.Bytes,
+		RequestBodyBytes:      capturedRequest.OriginalBytes,
+		RequestBodyTruncated:  capturedRequest.Truncated,
+		Status:                resp.StatusCode,
+		ResponseHeaders:       cloneHeader(resp.Header),
+		ResponseTrailers:      cloneHeader(resp.Trailer),
+		ResponseBody:          capturedResponse.Bytes,
+		ResponseBodyBytes:     capturedResponse.OriginalBytes,
+		ResponseBodyTruncated: capturedResponse.Truncated,
+		StartedAt:             started,
+		Duration:              time.Since(started),
+	}
+	if writeErr != nil {
+		exchange.Error = writeErr.Error()
+	}
+	record(exchange)
+	if writeErr != nil {
+		return false
+	}
+
+	if req.Close || resp.Close {
+		return false
+	}
+	return true
 }
 
 type capturingResponseBody struct {

@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel/propagation"
 	"log"
 	"net/http"
 	"os"
@@ -18,6 +20,7 @@ type responsePayload struct {
 func main() {
 	listen := envOr("SUT_LISTEN", "127.0.0.1:18090")
 	mux := http.NewServeMux()
+	client := &http.Client{Transport: otelhttp.NewTransport(http.DefaultTransport, otelhttp.WithPropagators(propagation.TraceContext{}))}
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
@@ -66,10 +69,8 @@ func main() {
 				return
 			}
 			outbound.Header.Set("Content-Type", "application/json")
-			if traceID := r.Header.Get("X-Phrond-Trace-Id"); traceID != "" {
-				outbound.Header.Set("X-Phrond-Trace-Id", traceID)
-			}
-			response, err := http.DefaultClient.Do(outbound)
+
+			response, err := client.Do(outbound)
 			if err != nil {
 				writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
 				return
@@ -84,9 +85,14 @@ func main() {
 		writeJSON(w, http.StatusOK, payload)
 	})
 
+	var handler http.Handler = otelhttp.NewHandler(mux, "sut", otelhttp.WithPropagators(propagation.TraceContext{}))
+	if os.Getenv("DEMO_DISABLE_OTEL") == "1" {
+		handler = mux
+		client.Transport = http.DefaultTransport
+	}
 	server := &http.Server{
 		Addr:         listen,
-		Handler:      mux,
+		Handler:      handler,
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  60 * time.Second,

@@ -30,6 +30,12 @@ components:
         version:
           type: integer
           minimum: 1
+        capture_incomplete:
+          type: boolean
+          description: Capture drain timed out or was cancelled; the test is failed.
+        capture_diagnostics:
+          type: array
+          items: {type: string}
         producer:
           $ref: "#/components/schemas/Producer"
         testcase:
@@ -89,6 +95,12 @@ components:
           type: string
         name:
           type: string
+        trace_id:
+          type: string
+          description: W3C trace ID of this test attempt.
+        root_span_id:
+          type: string
+          description: Registered test root span ID.
         started_at:
           type: string
           format: date-time
@@ -97,7 +109,7 @@ components:
           format: date-time
         status:
           type: string
-          enum: [pass, fail, error]
+          enum: [pass, fail, error, skip]
         tags:
           type: array
           items:
@@ -223,11 +235,23 @@ components:
         trace_id:
           type: string
           description: >-
-            Phrond trace id attached to the captured request for correlation
-            with application traces and logs.
+            W3C trace ID extracted from this request. Legacy artifacts may contain
+            opaque IDs; consumers must continue to accept them.
+        request_span_id:
+          type: string
+          description: Sender span ID in the request header, not the SUT internal parent span.
+        trace_context_source:
+          type: string
+          enum: [received, injected]
+        test_correlation:
+          type: string
+          enum: [trace, explicit_session, active_session]
+        parent_correlation:
+          type: string
+          enum: [trace_unique, timing, ambiguous, unmatched]
         parent_flow_id:
           type: string
-          description: Inbound test-to-SUT flow that caused this dependency call.
+          description: Inferred inbound parent; omitted when ambiguous or unmatched.
         fingerprint:
           type: string
           description: >-

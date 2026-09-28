@@ -50,7 +50,12 @@ mock server.
 
 ## 3. Route test calls through Phrond
 
-With Node's built-in test runner and `@phrond/sdk`:
+With Node's built-in test runner and `@phrond/sdk`, install SDK dependencies
+and preload standard instrumentation before HTTP client modules:
+
+```bash
+node --require @phrond/sdk/tracing --test test/*.test.js
+```
 
 ```js
 const assert = require("node:assert/strict");
@@ -112,8 +117,10 @@ traffic:
 ```
 
 Both entries also contain their complete bounded request/response evidence and
-shared trace ID when the SUT propagates `X-Phrond-Trace-Id`. If it does not,
-Phrond uses request timing to infer the parent request. The downstream exchange
+shared W3C trace ID when the SUT propagates `traceparent` through its server and
+outbound clients. If it does not, run tests sequentially: Phrond records
+`test_correlation: active_session` and uses timing for an inferred parent. If
+several requests overlap, the parent can be ambiguous and is left unset. The downstream exchange
 normally finishes first, so its flow ID may precede the parent ID.
 
 `assertDependency` is optional. It checks fields on traffic Phrond has already
@@ -227,4 +234,6 @@ examples.
 - Do provide an OpenAPI schema for every declared dependency.
 - Do send test→SUT calls through `phrond.sutUrl`; direct calls are not captured.
 - For HTTPS SUTs, follow the [HTTPS trust setup](https-trust.md).
-- Run tests serially by default. Parallel tests need explicit capture sessions.
+- Run tests serially by default. Shared-SUT parallel tests need independent test
+  traces, `explicitSession: true`, and working inbound-to-outbound W3C propagation.
+  See [test tracing, Jest, Go, and isolation options](otel-adoption.md).

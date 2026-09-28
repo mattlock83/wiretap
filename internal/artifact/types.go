@@ -7,16 +7,18 @@ import (
 
 // Artifact is the top-level test artifact written per test case.
 type Artifact struct {
-	Version          int               `yaml:"version" json:"version"`
-	Producer         *Producer         `yaml:"producer,omitempty" json:"producer,omitempty"`
-	TestCase         TestCase          `yaml:"testcase" json:"testcase"`
-	Env              *Environment      `yaml:"environment,omitempty" json:"environment,omitempty"`
-	Schemas          []SchemaRef       `yaml:"schemas,omitempty" json:"schemas,omitempty"`
-	Traffic          []Flow            `yaml:"traffic" json:"traffic"`
-	Assertions       []Assertion       `yaml:"assertions,omitempty" json:"assertions,omitempty"`
-	SchemaValidation *SchemaValidation `yaml:"schema_validation,omitempty" json:"schema_validation,omitempty"`
-	Redactions       []Redaction       `yaml:"redactions,omitempty" json:"redactions,omitempty"`
-	Meta             map[string]any    `yaml:"meta,omitempty" json:"meta,omitempty"`
+	CaptureIncomplete  bool              `yaml:"capture_incomplete,omitempty" json:"capture_incomplete,omitempty"`
+	CaptureDiagnostics []string          `yaml:"capture_diagnostics,omitempty" json:"capture_diagnostics,omitempty"`
+	Version            int               `yaml:"version" json:"version"`
+	Producer           *Producer         `yaml:"producer,omitempty" json:"producer,omitempty"`
+	TestCase           TestCase          `yaml:"testcase" json:"testcase"`
+	Env                *Environment      `yaml:"environment,omitempty" json:"environment,omitempty"`
+	Schemas            []SchemaRef       `yaml:"schemas,omitempty" json:"schemas,omitempty"`
+	Traffic            []Flow            `yaml:"traffic" json:"traffic"`
+	Assertions         []Assertion       `yaml:"assertions,omitempty" json:"assertions,omitempty"`
+	SchemaValidation   *SchemaValidation `yaml:"schema_validation,omitempty" json:"schema_validation,omitempty"`
+	Redactions         []Redaction       `yaml:"redactions,omitempty" json:"redactions,omitempty"`
+	Meta               map[string]any    `yaml:"meta,omitempty" json:"meta,omitempty"`
 }
 
 // Producer identifies the repository and build that produced the artifact.
@@ -59,6 +61,8 @@ func (a *Artifact) Normalize() {
 
 // TestCase metadata.
 type TestCase struct {
+	TraceID    string         `yaml:"trace_id,omitempty" json:"trace_id,omitempty"`
+	RootSpanID string         `yaml:"root_span_id,omitempty" json:"root_span_id,omitempty"`
 	ID         string         `yaml:"id" json:"id"`
 	Name       string         `yaml:"name" json:"name"`
 	StartedAt  time.Time      `yaml:"started_at" json:"started_at"`
@@ -114,7 +118,11 @@ type Flow struct {
 	// AssetID identifies the externally owned dependency receiving this flow.
 	AssetID string `yaml:"asset_id,omitempty" json:"asset_id,omitempty"`
 	// TraceID correlates the captured exchange with application traces and logs.
-	TraceID string `yaml:"trace_id,omitempty" json:"trace_id,omitempty"`
+	TraceID            string `yaml:"trace_id,omitempty" json:"trace_id,omitempty"`
+	RequestSpanID      string `yaml:"request_span_id,omitempty" json:"request_span_id,omitempty"`
+	TraceContextSource string `yaml:"trace_context_source,omitempty" json:"trace_context_source,omitempty"`
+	TestCorrelation    string `yaml:"test_correlation,omitempty" json:"test_correlation,omitempty"`
+	ParentCorrelation  string `yaml:"parent_correlation,omitempty" json:"parent_correlation,omitempty"`
 	// ParentFlowID identifies the inbound test request that caused a dependency call.
 	ParentFlowID string `yaml:"parent_flow_id,omitempty" json:"parent_flow_id,omitempty"`
 	// Fingerprint is a stable hash of the interaction shape (channel, method,

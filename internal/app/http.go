@@ -39,7 +39,15 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("/v1/proxy/start", a.handleProxyStart)
 	mux.HandleFunc("/v1/proxy/mode", a.handleProxyMode)
 	mux.HandleFunc("/v1/proxy/ca", a.handleProxyCA)
-	return loggingMiddleware(a.logger, mux)
+	return loggingMiddleware(a.logger, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Teardown owns its short critical section and drains outside the
+		// control lock so parallel tests and health checks remain responsive.
+		if r.URL.Path != "/v1/teardownTest" && r.URL.Path != "/healthz" {
+			a.controlMu.Lock()
+			defer a.controlMu.Unlock()
+		}
+		mux.ServeHTTP(w, r)
+	}))
 }
 
 func (a *App) handleHealthz(w http.ResponseWriter, r *http.Request) {
@@ -67,10 +75,15 @@ func (a *App) handleLifecycleStop(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 		return
 	}
+	if a.hasActiveSessions() {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "capture sessions are still active"})
+		return
+	}
 	if err := a.lifecycle.Stop(r.Context()); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
+	a.resetCaptureRouting()
 	writeJSON(w, http.StatusOK, map[string]string{"status": "stopped"})
 }
 

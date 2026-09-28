@@ -1,3 +1,5 @@
+const { AsyncLocalStorage } = require("node:async_hooks");
+const tracing = require("./tracing");
 const DEFAULT_BASE_URL = "http://127.0.0.1:18000";
 
 function toURL(value, baseUrl) {
@@ -137,11 +139,11 @@ class CoreClient {
       timeout.unref?.();
     }
     try {
-      const res = await fetch(new URL(path, this.baseUrl), options);
+      const res = await tracing.withoutTracing(() => fetch(new URL(path, this.baseUrl), options));
       const text = await res.text();
       const body = text && (res.headers.get("content-type") || "").includes("application/json") ? JSON.parse(text) : (text || null);
       if (!res.ok) {
-        const err = new Error(`request failed: ${res.status}`);
+        const err = new Error(`request failed: ${res.status}${body?.error ? `: ${body.error}` : ""}`);
         err.status = res.status;
         err.body = body;
         throw err;
@@ -164,9 +166,15 @@ class Runtime {
     this.generatedSchemaConfig = schemaConfig.generateSchema;
     this.defaultDependencies = normalizeDependencies(config.dependencies);
     this.schemaGenerated = false;
-    this.pendingScenarioName = "";
+    this.manualScenarioName = "";
     this.sutUrl = runtimeInfo.sut_url || null;
-    this.activeSession = null;
+    this.sessions = new AsyncLocalStorage();
+    this.manualSession = null;
+    this.manageRuntime = config.manageRuntime !== false;
+    this.explicitSession = Boolean(config.explicitSession);
+    this.tracerProvider = config.tracerProvider;
+    this.openSessions = new Set();
+    this.pendingCleanup = new Set();
     this.http = {
       request: (options) => this._httpRequest(options),
       get: (path, options) => this._httpRequest({ ...options, method: "GET", path }),
@@ -179,6 +187,59 @@ class Runtime {
         headers: { "Content-Type": "application/json", ...(options.headers || {}) }
       })
     };
+  }
+
+  get pendingScenarioName() { return this.sessions.getStore()?.pendingScenarioName || (this.sessions.getStore() ? "" : this.manualScenarioName); }
+  set pendingScenarioName(value) { const scope = this.sessions.getStore(); if (scope) scope.pendingScenarioName = value; else this.manualScenarioName = value; }
+
+  get activeSession() { return this.sessions.getStore()?.session ?? (this.sessions.getStore() ? null : this.manualSession); }
+  set activeSession(value) {
+    const scope = this.sessions.getStore();
+    if (scope) scope.session = value; else this.manualSession = value;
+  }
+
+  // Adapters own completion so runner timeouts, hooks, and assertion failures
+  // can close the same attempt even when its callback never settles.
+  _createTestAttempt(name, options = {}) {
+    const scope = { session: null, closed: false };
+    const ready = this.sessions.run(scope, () => this.setupTest({ ...options, name }));
+    // A runner may execute hooks before invoking run/finish. Observe setup
+    // rejection immediately while preserving it for those awaited paths.
+    ready.catch(() => {});
+    let finishing;
+    return {
+      run: async (fn) => {
+        const session = await ready;
+        if (scope.closed) throw new Error("capture attempt is already closed");
+        return this.sessions.run(scope, () => tracing.api.context.with(
+          tracing.api.trace.setSpan(tracing.api.ROOT_CONTEXT, session.span),
+          async () => {
+            if (typeof options.onSession === "function") await options.onSession(session);
+            return fn(session);
+          }
+        ));
+      },
+      finish: (outcome = {}) => {
+        if (!finishing) {
+          scope.closed = true;
+          finishing = ready.then(() => this.sessions.run(scope, () => this.teardownTest({
+            ...outcome, drainTimeoutMs: options.drainTimeoutMs
+          })));
+        }
+        return finishing;
+      }
+    };
+  }
+
+  async runTest(name, fn, options = {}) {
+    const attempt = this._createTestAttempt(name, options);
+    let result, failure, failed = false;
+    try { result = await attempt.run(fn); }
+    catch (err) { failed = true; failure = err; }
+    try { await attempt.finish({ status: failed ? "fail" : "pass", error: failure }); }
+    catch (err) { if (!failed) { failed = true; failure = err; } }
+    if (failed) throw failure;
+    return result;
   }
 
   scenarioName(name) {
@@ -250,7 +311,9 @@ class Runtime {
   }
 
   async setupTest(options = {}) {
-    if (this.activeSession) throw new Error("a capture session is already active");
+    const owner = this.sessions.getStore() || this;
+    if (owner.closed) throw new Error("capture attempt is already closed");
+    if (this.activeSession || owner.setupPending) throw new Error("a capture session is already active");
     const selectedSchemas = Array.isArray(options.schemas) ? options.schemas : this.defaultSchemas;
     const selectedGeneration = options.generateSchema === undefined && options.generate_schema === undefined
       ? this.generatedSchemaConfig
@@ -264,13 +327,22 @@ class Runtime {
       tags: options.tags,
       meta: options.meta,
       sut_base_url: options.sutBaseUrl || options.sut_base_url || this.defaultSutBaseUrl,
-      explicit_session: Boolean(options.explicitSession ?? options.explicit_session),
+      explicit_session: Boolean(options.explicitSession ?? options.explicit_session ?? this.explicitSession),
       schemas: schemaConfig.schemas
     };
     if (dependencies.length > 0) payload.dependencies = dependencies;
     if (schemaConfig.generateSchema) payload.generate_schema = true;
-    const session = await this.client.setupTest(payload);
+    const span = tracing.newTestSpan(payload.name || "test", this.tracerProvider);
+    payload.trace_context = tracing.serialize(span);
+    let session;
+    owner.setupPending = true;
+    try { session = await this.client.setupTest(payload); }
+    catch (err) { tracing.finish(span, err); throw err; }
+    finally { owner.setupPending = false; }
+    this.openSessions.add(session.session_id);
     this.activeSession = {
+      span,
+      traceContext: payload.trace_context,
       sessionId: session.session_id,
       name: session.name,
       explicit: Boolean(session.explicit),
@@ -290,18 +362,33 @@ class Runtime {
   async teardownTest(options = {}) {
     const sessionId = options.sessionId || options.session_id || this.activeSession?.sessionId;
     if (!sessionId) return { status: "idle" };
-    const generation = this.activeSession?.generateSchema || this.generatedSchemaConfig;
-    const response = await this.client.teardownTest({ session_id: sessionId, status: options.status || "pass" });
-    if (this.activeSession?.sessionId === sessionId) this.activeSession = null;
-    const validationStatus = response?.schema_validation?.status;
-    if (validationStatus && validationStatus !== "pass" && (!generation || validationStatus === "fail")) {
-      const errors = Array.isArray(response.schema_validation.errors) ? response.schema_validation.errors : [];
-      const err = new Error(errors.map((entry) => entry.message || "schema violation").join("; ") || "schema validation failed");
-      err.schemaValidation = response.schema_validation;
-      err.response = response;
-      throw err;
+    const session = this.activeSession;
+    if (session?.sessionId === sessionId && this.sessions.getStore()) this.sessions.getStore().closed = true;
+    const generation = session?.generateSchema || this.generatedSchemaConfig;
+    let failure;
+    try {
+      const response = await this.client.teardownTest({ session_id: sessionId, status: options.status || "pass",
+        ...(options.drainTimeoutMs !== undefined ? { drain_timeout_ms: options.drainTimeoutMs } : {}) });
+      this.openSessions.delete(sessionId);
+      if (session?.sessionId === sessionId) this.activeSession = null;
+      const validationStatus = response?.schema_validation?.status;
+      if (validationStatus && validationStatus !== "pass" && (!generation || validationStatus === "fail")) {
+        const errors = response.schema_validation.errors || [];
+        const err = new Error(errors.map((entry) => entry.message || "schema violation").join("; ") || "schema validation failed");
+        err.schemaValidation = response.schema_validation;
+        err.response = response;
+        throw err;
+      }
+      if (response?.artifact?.capture_incomplete || (response?.artifact?.testcase?.status === "fail" && options.status !== "fail")) {
+        const err = new Error(response.artifact.capture_diagnostics?.join("; ") || "captured test failed");
+        err.response = response;
+        throw err;
+      }
+      return response;
+    } catch (err) { failure = err; throw err; }
+    finally {
+      if (session?.sessionId === sessionId) tracing.finish(session.span, failure || options.error || (options.status === "fail" ? new Error("test failed") : null));
     }
-    return response;
   }
 
   report(options = {}) {
@@ -333,7 +420,9 @@ class Runtime {
   }
 
   async killServer() {
-    this.activeSession = null;
+    await Promise.all(this.pendingCleanup);
+    if (this.openSessions.size) throw new Error("teardown all capture sessions before closing the runtime");
+    if (!this.manageRuntime) return { status: "shared" };
     let generationResult;
     let generationError;
     if (this.generatedSchemaConfig && !this.schemaGenerated) {
@@ -355,6 +444,7 @@ class Runtime {
   }
 
   async _ensureSession(options = {}) {
+    if (this.sessions.getStore()?.closed) throw new Error("capture attempt is already closed");
     return this.activeSession || this.setupTest(options);
   }
 
@@ -370,9 +460,9 @@ class Runtime {
     const targetUrl = forward ? toURL(options.path, overrideTarget) : toURL(options.path, proxyUrl.href);
     const headers = { ...(options.headers || {}), "X-Phrond-Session-Id": session.sessionId };
     if (forward) headers.Host = targetUrl.host;
-    return this._requestViaProxy(proxyUrl, targetUrl, {
+    return tracing.api.context.with(tracing.api.trace.setSpan(tracing.api.ROOT_CONTEXT, session.span), () => this._requestViaProxy(proxyUrl, targetUrl, {
       method: String(options.method || "GET").toUpperCase(), headers, body: options.body, forward
-    });
+    }));
   }
 
   _requestViaProxy(proxyUrl, targetUrl, options) {
@@ -421,6 +511,7 @@ class Runtime {
 
 async function startCapture(config = {}) {
   if (!config || typeof config !== "object" || Array.isArray(config)) throw new Error("startCapture config must be an object");
+  tracing.initializeTracing({ instrumentation: config.instrumentation !== false });
   const schemaConfig = schemaConfiguration(config);
   const dependencies = normalizeDependencies(config.dependencies);
   const runtimeConfig = { ...config, schemas: schemaConfig.schemas, generateSchema: schemaConfig.generateSchema, dependencies };
@@ -440,9 +531,13 @@ function bindTest(runtimeOrGetter, testFn, defaults = {}) {
     const run = async (t) => {
       const runtime = resolveRuntime();
       if (!runtime) throw new Error("bindTest could not resolve a Phrond runtime");
+      if (runtime._createTestAttempt && typeof t?.test === "function" && typeof t?.after === "function") {
+        return require("./node-test").runNodeTest(runtime, t, name, fn, defaults);
+      }
+      if (runtime.runTest) return runtime.runTest(name, (session) => fn(t, session), defaults);
       const session = await runtime.setupTest({ ...defaults, name });
-      if (typeof defaults.onSession === "function") await defaults.onSession(session);
       try {
+        if (typeof defaults.onSession === "function") await defaults.onSession(session);
         await fn(t, session);
       } catch (err) {
         try { await runtime.teardownTest({ status: "fail" }); } catch (_) { /* preserve test failure */ }
@@ -496,4 +591,4 @@ function createNodeTestSuite(config = {}) {
   return suite;
 }
 
-module.exports = { startCapture, startServer, bindTest, createNodeTestSuite };
+module.exports = { startCapture, startServer, bindTest, createNodeTestSuite, initializeTracing: tracing.initializeTracing };

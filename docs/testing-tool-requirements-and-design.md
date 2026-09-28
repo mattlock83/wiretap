@@ -1,5 +1,11 @@
 # Capture and reporting design
 
+The accepted next tracing design is documented in
+[one standard trace per test attempt](otel-test-tracing.md), with
+[adoption notes](otel-adoption.md) and an
+[implementation handoff](otel-implementation-plan.md). That work is planned;
+the runtime behavior described below remains the current implementation.
+
 ## Product boundary
 
 Phrond records traffic initiated by a test and handled by its system under

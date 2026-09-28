@@ -164,7 +164,7 @@ func TestDependencyGatewayPreservesPathQueryTraceTrailersAndBoundedBodies(t *tes
 		t.Fatal(err)
 	}
 	request.Header.Set("X-Phrond-Session-Id", "session-one")
-	request.Header.Set("X-Phrond-Trace-Id", "trace-from-sut")
+	request.Header.Set("traceparent", "00-11111111111111111111111111111111-2222222222222222-00")
 	response, err := http.DefaultClient.Do(request)
 	if err != nil {
 		t.Fatal(err)
@@ -181,7 +181,7 @@ func TestDependencyGatewayPreservesPathQueryTraceTrailersAndBoundedBodies(t *tes
 	if forwarded.URL.EscapedPath() != "/base/items%2Fidentifier" || forwarded.URL.RawQuery != "fixed=yes&expand=true" {
 		t.Fatalf("dependency target fidelity lost: %s", forwarded.URL.String())
 	}
-	if forwarded.Header.Get("X-Phrond-Session-Id") != "" || forwarded.Header.Get("X-Phrond-Trace-Id") != "trace-from-sut" {
+	if forwarded.Header.Get("X-Phrond-Session-Id") != "" || forwarded.Header.Get("traceparent") != "00-11111111111111111111111111111111-2222222222222222-00" {
 		t.Fatalf("dependency capture headers incorrect: %#v", forwarded.Header)
 	}
 	if body := <-upstreamBodies; !bytes.Equal(body, requestBody) {
@@ -189,7 +189,7 @@ func TestDependencyGatewayPreservesPathQueryTraceTrailersAndBoundedBodies(t *tes
 	}
 	select {
 	case exchange := <-recorder.exchanges:
-		if exchange.Channel != "sut_to_dependency" || exchange.AssetID != "inventory" || exchange.SessionID != "session-one" || exchange.TraceID != "trace-from-sut" {
+		if exchange.Channel != "sut_to_dependency" || exchange.AssetID != "inventory" || exchange.SessionID != "session-one" || exchange.TraceID != "11111111111111111111111111111111" {
 			t.Fatalf("dependency exchange attribution lost: %#v", exchange)
 		}
 		if !exchange.RequestBodyTruncated || !exchange.ResponseBodyTruncated || string(exchange.RequestBody) != string(requestBody[:8]) || string(exchange.ResponseBody) != string(responseBody[:8]) {

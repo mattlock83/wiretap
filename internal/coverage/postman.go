@@ -137,6 +137,11 @@ type postmanCollectionMeta struct {
 	Notes         []string  `json:"notes,omitempty"`
 }
 
+type postmanTestCaseMeta struct {
+	Kind     string              `json:"kind"`
+	Attempts []artifact.TestCase `json:"attempts,omitempty"`
+}
+
 type postmanSpecMeta struct {
 	Kind      string                `json:"kind"`
 	SchemaID  string                `json:"schema_id"`
@@ -149,6 +154,16 @@ type postmanSpecMeta struct {
 }
 
 type postmanSampleMeta struct {
+	RequestHeaders     artifact.Headers `json:"request_headers,omitempty"`
+	RequestSpanID      string           `json:"request_span_id,omitempty" yaml:"request_span_id,omitempty"`
+	TraceContextSource string           `json:"trace_context_source,omitempty" yaml:"trace_context_source,omitempty"`
+	TestCorrelation    string           `json:"test_correlation,omitempty" yaml:"test_correlation,omitempty"`
+	ParentCorrelation  string           `json:"parent_correlation,omitempty" yaml:"parent_correlation,omitempty"`
+	TestCaseID         string           `json:"testcase_id,omitempty" yaml:"testcase_id,omitempty"`
+	TestStatus         string           `json:"test_status,omitempty"`
+	TestTraceID        string           `json:"test_trace_id,omitempty" yaml:"test_trace_id,omitempty"`
+	RootSpanID         string           `json:"root_span_id,omitempty" yaml:"root_span_id,omitempty"`
+
 	Kind         string `json:"kind"`
 	TestCase     string `json:"testcase,omitempty"`
 	FlowID       string `json:"flow_id,omitempty"`
@@ -204,7 +219,7 @@ func CollectionFromReport(report *Report) (*PostmanCollection, error) {
 			tcName = "unnamed-test"
 		}
 
-		testFolder := PostmanItem{Name: tcName}
+		testFolder := PostmanItem{Name: tcName, Description: encodePostmanMeta(postmanTestCaseMeta{Kind: "testcase", Attempts: tc.Attempts})}
 		testTraffic := PostmanItem{Name: "test traffic"}
 		appendPostmanSpecFolders(&testTraffic, "sut", tc.Provided, specLookup, specFolderNames, specVariables)
 		if len(testTraffic.Item) > 0 {
@@ -216,7 +231,7 @@ func CollectionFromReport(report *Report) (*PostmanCollection, error) {
 			testFolder.Item = append(testFolder.Item, dependencyTraffic)
 		}
 
-		if len(testFolder.Item) == 0 {
+		if len(testFolder.Item) == 0 && len(tc.Attempts) == 0 {
 			continue
 		}
 		collection.Item = append(collection.Item, testFolder)
@@ -292,18 +307,28 @@ func appendPostmanSpecFolders(
 					Request:  req,
 					Response: sampleToPostmanResponses(sample.Response, req),
 					Description: encodePostmanMeta(postmanSampleMeta{
-						Kind:         "sample",
-						TestCase:     sample.TestCase,
-						FlowID:       sample.FlowID,
-						Protocol:     sample.Protocol,
-						Channel:      sample.Channel,
-						AssetID:      sample.AssetID,
-						ParentFlowID: sample.ParentFlowID,
-						TraceID:      sample.TraceID,
-						Operation:    op.Operation,
-						SchemaID:     spec.SchemaID,
-						Role:         role,
-						RequestURL:   strings.TrimSpace(sample.Request.URL),
+						Kind:               "sample",
+						TestCase:           sample.TestCase,
+						FlowID:             sample.FlowID,
+						Protocol:           sample.Protocol,
+						Channel:            sample.Channel,
+						AssetID:            sample.AssetID,
+						ParentFlowID:       sample.ParentFlowID,
+						TraceID:            sample.TraceID,
+						RequestSpanID:      sample.RequestSpanID,
+						TraceContextSource: sample.TraceContextSource,
+						TestCorrelation:    sample.TestCorrelation,
+						ParentCorrelation:  sample.ParentCorrelation,
+						TestCaseID:         sample.TestCaseID,
+						TestStatus:         sample.TestStatus,
+						TestTraceID:        sample.TestTraceID,
+						RootSpanID:         sample.RootSpanID,
+
+						Operation:      op.Operation,
+						SchemaID:       spec.SchemaID,
+						Role:           role,
+						RequestURL:     strings.TrimSpace(sample.Request.URL),
+						RequestHeaders: sample.Request.Headers,
 					}),
 				}
 				specFolder.Item = append(specFolder.Item, item)
@@ -336,7 +361,7 @@ func sampleToPostmanRequest(msg InteractionMessage, variableKey string) *Postman
 	postmanURL := buildPostmanURL(msg.URL, variableKey)
 	req := &PostmanRequest{
 		Method: strings.TrimSpace(msg.Method),
-		Header: headersToPostman(msg.Headers),
+		Header: headersToPostman(replayHeaders(msg.Headers)),
 		URL:    postmanURL,
 	}
 	if body := prettyJSONBody(msg.Body); body != "" {
@@ -846,6 +871,7 @@ func ReportFromPostmanCollection(collection *PostmanCollection) (*Report, error)
 	}
 
 	entries, parseNotes := postmanCollectionToArtifacts(collection)
+	notes = append(notes, meta.Notes...)
 	notes = append(notes, parseNotes...)
 
 	sutName := strings.TrimSpace(meta.SUTName)
@@ -903,22 +929,40 @@ func postmanCollectionToArtifacts(collection *PostmanCollection) ([]artifactEntr
 	)
 
 	for idx, testFolder := range collection.Item {
-		if len(testFolder.Item) == 0 {
+		var testMeta postmanTestCaseMeta
+		if parsed, err := decodePostmanMeta(testFolder.Description, &testMeta); err != nil && parsed {
+			notes = append(notes, fmt.Sprintf("testcase metadata parse error in %q: %v", testFolder.Name, err))
+		}
+		if len(testFolder.Item) == 0 && len(testMeta.Attempts) == 0 {
 			continue
 		}
 		testName := strings.TrimSpace(testFolder.Name)
 		if testName == "" {
 			testName = fmt.Sprintf("testcase-%d", idx+1)
 		}
-		doc := &artifact.Artifact{
-			Version: 1,
-			TestCase: artifact.TestCase{
-				ID:   testName,
-				Name: testName,
-			},
-			Schemas: []artifact.SchemaRef{},
-			Traffic: []artifact.Flow{},
+		// A folder groups a display name, but every retry keeps its own artifact
+		// identity. Flow IDs are only unique within that attempt.
+		documents := map[string]*artifact.Artifact{}
+		var documentIDs []string
+		ensureDocument := func(testCase artifact.TestCase) *artifact.Artifact {
+			if testCase.ID == "" {
+				testCase.ID = testName
+			}
+			if existing := documents[testCase.ID]; existing != nil {
+				return existing
+			}
+			if testCase.Name == "" {
+				testCase.Name = testName
+			}
+			doc := &artifact.Artifact{Version: 1, TestCase: testCase, Traffic: []artifact.Flow{}}
+			documents[testCase.ID] = doc
+			documentIDs = append(documentIDs, testCase.ID)
+			return doc
 		}
+		for _, attempt := range testMeta.Attempts {
+			ensureDocument(attempt)
+		}
+		var schemas []artifact.SchemaRef
 
 		seenSchemas := map[string]struct{}{}
 		flowCounter := 0
@@ -962,7 +1006,7 @@ func postmanCollectionToArtifacts(collection *PostmanCollection) ([]artifactEntr
 
 				key := schemaKey(schemaRef)
 				if _, exists := seenSchemas[key]; !exists {
-					doc.Schemas = append(doc.Schemas, schemaRef)
+					schemas = append(schemas, schemaRef)
 					seenSchemas[key] = struct{}{}
 				}
 
@@ -996,12 +1040,17 @@ func postmanCollectionToArtifacts(collection *PostmanCollection) ([]artifactEntr
 					}
 
 					flow := artifact.Flow{
-						ID:           flowID,
-						Protocol:     protocol,
-						Channel:      channel,
-						AssetID:      sampleMeta.AssetID,
-						ParentFlowID: sampleMeta.ParentFlowID,
-						TraceID:      sampleMeta.TraceID,
+						ID:                 flowID,
+						Protocol:           protocol,
+						Channel:            channel,
+						AssetID:            sampleMeta.AssetID,
+						ParentFlowID:       sampleMeta.ParentFlowID,
+						TraceID:            sampleMeta.TraceID,
+						RequestSpanID:      sampleMeta.RequestSpanID,
+						TraceContextSource: sampleMeta.TraceContextSource,
+						TestCorrelation:    sampleMeta.TestCorrelation,
+						ParentCorrelation:  sampleMeta.ParentCorrelation,
+
 						Request: artifact.Message{
 							HTTP: postmanRequestToHTTP(sampleItem.Request, requestURL),
 						},
@@ -1009,14 +1058,32 @@ func postmanCollectionToArtifacts(collection *PostmanCollection) ([]artifactEntr
 							HTTP: postmanResponseToHTTP(sampleItem.Response),
 						},
 					}
+					if sampleMeta.RequestHeaders != nil && flow.Request.HTTP != nil {
+						flow.Request.HTTP.Headers = sampleMeta.RequestHeaders
+					}
+					caseID := sampleMeta.TestCaseID
+					if caseID == "" && len(testMeta.Attempts) == 1 {
+						caseID = testMeta.Attempts[0].ID
+					}
+					doc := ensureDocument(artifact.TestCase{
+						ID: caseID, Name: testName, Status: sampleMeta.TestStatus,
+						TraceID: sampleMeta.TestTraceID, RootSpanID: sampleMeta.RootSpanID,
+					})
 					doc.Traffic = append(doc.Traffic, flow)
 				}
 			}
 		}
-		entries = append(entries, artifactEntry{
-			Path: fmt.Sprintf("postman://%s", testName),
-			Doc:  doc,
-		})
+		if len(documentIDs) == 0 {
+			ensureDocument(artifact.TestCase{ID: testName, Name: testName})
+		}
+		for _, id := range documentIDs {
+			doc := documents[id]
+			doc.Schemas = append([]artifact.SchemaRef(nil), schemas...)
+			entries = append(entries, artifactEntry{
+				Path: fmt.Sprintf("postman://%s/%s", testName, id),
+				Doc:  doc,
+			})
+		}
 	}
 	return entries, notes
 }

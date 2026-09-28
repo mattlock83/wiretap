@@ -76,6 +76,14 @@ type workflowTaskMetadata struct {
 }
 
 type workflowTaskPhrondMetadata struct {
+	RequestSpanID      string `json:"request_span_id,omitempty" yaml:"request_span_id,omitempty"`
+	TraceContextSource string `json:"trace_context_source,omitempty" yaml:"trace_context_source,omitempty"`
+	TestCorrelation    string `json:"test_correlation,omitempty" yaml:"test_correlation,omitempty"`
+	ParentCorrelation  string `json:"parent_correlation,omitempty" yaml:"parent_correlation,omitempty"`
+	TestCaseID         string `json:"testcase_id,omitempty" yaml:"testcase_id,omitempty"`
+	TestTraceID        string `json:"test_trace_id,omitempty" yaml:"test_trace_id,omitempty"`
+	RootSpanID         string `json:"root_span_id,omitempty" yaml:"root_span_id,omitempty"`
+
 	Kind                   string                    `yaml:"kind" json:"kind"`
 	TestCase               string                    `yaml:"testcase,omitempty" json:"testcase,omitempty"`
 	FlowID                 string                    `yaml:"flow_id,omitempty" json:"flow_id,omitempty"`
@@ -269,7 +277,7 @@ func workflowSampleMatch(testCase TestCaseCoverage, sample FlowSample, role stri
 	for _, spec := range specs {
 		for _, operation := range spec.Operations {
 			for _, candidate := range operation.Samples {
-				if candidate.FlowID == sample.FlowID && candidate.TestCase == sample.TestCase {
+				if candidate.FlowID == sample.FlowID && candidate.TestCase == sample.TestCase && candidate.TestCaseID == sample.TestCaseID {
 					return operation.Operation, spec.SchemaID
 				}
 			}
@@ -339,17 +347,25 @@ func workflowHTTPTaskDefinition(
 			Output:   "response",
 		},
 		Metadata: &workflowTaskMetadata{Phrond: workflowTaskPhrondMetadata{
-			Kind:                   "captured-flow",
-			TestCase:               sample.TestCase,
-			FlowID:                 sample.FlowID,
-			Protocol:               sample.Protocol,
-			Channel:                sample.Channel,
-			AssetID:                sample.AssetID,
-			ParentFlowID:           sample.ParentFlowID,
-			Operation:              operation,
-			SchemaID:               schemaID,
-			Role:                   role,
-			TraceID:                sample.TraceID,
+			Kind:               "captured-flow",
+			TestCase:           sample.TestCase,
+			FlowID:             sample.FlowID,
+			Protocol:           sample.Protocol,
+			Channel:            sample.Channel,
+			AssetID:            sample.AssetID,
+			ParentFlowID:       sample.ParentFlowID,
+			Operation:          operation,
+			SchemaID:           schemaID,
+			Role:               role,
+			TraceID:            sample.TraceID,
+			RequestSpanID:      sample.RequestSpanID,
+			TraceContextSource: sample.TraceContextSource,
+			TestCorrelation:    sample.TestCorrelation,
+			ParentCorrelation:  sample.ParentCorrelation,
+			TestCaseID:         sample.TestCaseID,
+			TestTraceID:        sample.TestTraceID,
+			RootSpanID:         sample.RootSpanID,
+
 			Fingerprint:            sample.Fingerprint,
 			TransportError:         sample.TransportError,
 			RequestURL:             sample.Request.URL,
@@ -381,6 +397,7 @@ func workflowEndpoint(raw, baseURL string) string {
 }
 
 func workflowHeaders(headers artifact.Headers) map[string]string {
+	headers = replayHeaders(headers)
 	if len(headers) == 0 {
 		return nil
 	}

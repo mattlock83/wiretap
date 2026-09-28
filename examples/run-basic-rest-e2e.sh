@@ -130,7 +130,11 @@ if ! wait_for "${SUT_BASE_URL}/healthz"; then
   exit 1
 fi
 
-node --test ./examples/basic-rest/basic-test.js
+if [[ "${PHROND_TEST_RUNNER:-node}" == "jest" ]]; then
+  ./sdk/js/node_modules/.bin/jest --projects ./examples/basic-rest/jest.config.cjs
+else
+  node --require ./sdk/js/tracing.js --test ./examples/basic-rest/basic-test.js
+fi
 
 go run ./cmd/phrond-coverage \
   --artifacts "${ARTIFACT_DIR}" \

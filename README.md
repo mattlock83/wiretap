@@ -14,6 +14,7 @@ Phrond capture proxy.
 ## Quick start
 
 ```bash
+npm ci --prefix sdk/js
 ./examples/run-basic-rest-e2e.sh
 ```
 
@@ -67,7 +68,12 @@ those calls unchanged to `WIREMOCK_BASE_URL`. `phrond.dependencyUrl("inventory")
 returns the same capture URL once the suite has started. Dependencies are
 optional; omit `dependencies` when only inbound traffic is needed. The exact
 test name, pass/fail status, inbound request, downstream request, and their
-causal relationship are stored in one artifact.
+test trace and inferred request relationships are stored in one artifact.
+
+Phrond uses W3C `traceparent`/`tracestate`, with a fresh root per test attempt.
+Ordinary HTTP clients work with standard test-side instrumentation; shared-SUT
+parallel capture requires the SUT to propagate context. See the
+[adoption guide](docs/otel-adoption.md) for Node, Jest, Go, and serial fallback.
 
 ## Capture behavior
 
@@ -123,6 +129,9 @@ it before moving the file into `schemas` and using normal strict validation.
 
 ## Documentation
 
+- [Standard test tracing: design decision](docs/otel-test-tracing.md)
+- [Test tracing: user adoption notes](docs/otel-adoption.md)
+- [Standard test tracing: implementation handoff](docs/otel-implementation-plan.md)
 - [Getting started with existing tests and a mock server](docs/getting-started-existing-tests.md)
 - [JavaScript SDK](sdk/js/README.md)
 - [Runtime HTTP API](docs/runtime-api.md)

@@ -29,13 +29,17 @@ type App struct {
 
 	producer artifact.Producer
 
-	sessionRecorder *SessionProxyRecorder
-	sessionsMu      sync.Mutex
-	sessions        map[string]*runtimeSession
+	controlMu     sync.Mutex
+	traceOwners   map[string]string
+	legacySession *runtimeSession
+	reverseTarget string
+	sessionsMu    sync.Mutex
+	sessions      map[string]*runtimeSession
 	// defaultSessionID names the single active zero-config session that
 	// unlabeled traffic is attributed to ("" when none / explicit-only).
 	defaultSessionID string
 	sessionSeq       uint64
+	inFlight         int
 }
 
 func New(deps Deps) (*App, error) {
@@ -55,15 +59,10 @@ func New(deps Deps) (*App, error) {
 	producer := identity.Detect()
 	store := NewTestCaseStore(cfg.Artifact.OutputDir, cfg.Capture.MaxBodyBytes)
 	store.SetProducer(producer)
-	sessionRecorder := NewSessionProxyRecorder()
-	proxyRecorder := &ProxyFanoutRecorder{recorders: []proxyRecorder{
-		store,
-		sessionRecorder,
-	}}
 
 	proxy := deps.Proxy
 	if proxy == nil {
-		component, err := NewProxyComponent(cfg.Proxy, logger, proxyRecorder, cfg.Capture.MaxBodyBytes)
+		component, err := NewProxyComponent(cfg.Proxy, logger, nil, cfg.Capture.MaxBodyBytes)
 		if err != nil {
 			return nil, err
 		}
@@ -75,19 +74,19 @@ func New(deps Deps) (*App, error) {
 	}
 
 	app := &App{
-		cfg:             cfg,
-		logger:          logger,
-		lifecycle:       lifecycle,
-		store:           store,
-		producer:        producer,
-		sessionRecorder: sessionRecorder,
-		sessions:        map[string]*runtimeSession{},
+		cfg:         cfg,
+		logger:      logger,
+		lifecycle:   lifecycle,
+		store:       store,
+		producer:    producer,
+		sessions:    map[string]*runtimeSession{},
+		traceOwners: map[string]string{},
 	}
-	sessionRecorder.SetApp(app)
 
 	if component, ok := proxy.(*ProxyComponent); ok {
 		app.proxyComponent = component
 		component.SetDependencyResolver(app.resolveDependencyRoute)
+		component.server.SetAdmissionResolver(app.admitRequest)
 	}
 
 	app.server = &http.Server{
