@@ -29,6 +29,10 @@ type Runtime struct {
 }
 
 type TestOptions struct {
+	APIID           string         `json:"api_id,omitempty"`
+	SUTTargetKind   string         `json:"sut_target_kind,omitempty"`
+	TestSource      map[string]any `json:"test_source,omitempty"`
+	SUTSource       map[string]any `json:"sut_source,omitempty"`
 	SUTBaseURL      string         `json:"sut_base_url,omitempty"`
 	Schemas         []any          `json:"schemas,omitempty"`
 	Dependencies    []any          `json:"dependencies,omitempty"`
@@ -44,6 +48,10 @@ type Session struct {
 	ID           string            `json:"session_id"`
 	SUTURL       string            `json:"sut_url"`
 	Dependencies map[string]string `json:"dependencies"`
+	RunID        string            `json:"run_id"`
+	BundlePath   string            `json:"bundle_path"`
+	IndexPath    string            `json:"index_path"`
+	ViewerPath   string            `json:"viewer_path"`
 	Context      context.Context   `json:"-"`
 }
 

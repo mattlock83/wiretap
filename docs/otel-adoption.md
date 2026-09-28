@@ -214,19 +214,21 @@ to standard context or use the isolation/sequential fallback. Remove custom
 Phrond-header forwarding from application code when it is no longer needed.
 No replacement Phrond-specific propagation code should be added to the SUT.
 
-Artifacts remain version 1. Existing artifacts with opaque trace IDs are still
-readable. New artifacts add `testcase.trace_id`, `testcase.root_span_id`, sender
+Historical YAML artifacts remain readable through the explicit legacy import.
+New runs write a versioned OKF bundle with JSON attempts and generated pages.
+Attempts retain `testcase.trace_id`, `testcase.root_span_id`, sender
 `request_span_id`, `trace_context_source`, `test_correlation`, and
 `parent_correlation`. A trace match identifies the test; `trace_unique` and
 `timing` parent relationships are inferences. `ambiguous`/`unmatched` flows omit
-`parent_flow_id`. HTML reports show these distinctions and preserve retry IDs.
-Executable Postman/workflow requests omit old trace/session headers; captured
+`parent_flow_id`. The bundle's test pages show these distinctions and preserve
+retry IDs; HTML remains an explicit optional export.
+Executable Workflow requests omit old trace/session headers; captured
 evidence retains the received W3C context.
 
 Await all expected activity before finishing a test. Teardown stops new
 admission and waits up to five seconds for accepted requests; `drainTimeoutMs`
 (JS) or `drain_timeout_ms` (API) changes that bound, from 0 to 60000 milliseconds.
-A timeout writes a failed artifact with `capture_incomplete` and diagnostics;
+A timeout writes a failed attempt with `capture_incomplete` and diagnostics;
 it does not silently claim a complete capture. Closed trace IDs cannot be reused
 until a successful runtime shutdown (`killServer` or lifecycle stop). If a
 timed-out attempt still has accepted requests in flight, Phrond rejects new

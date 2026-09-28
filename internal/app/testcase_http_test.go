@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/phrond/evermock/internal/core"
 	"github.com/phrond/evermock/internal/artifact"
+	"github.com/phrond/evermock/internal/core"
 )
 
 func TestTestCaseLifecycleWritesArtifact(t *testing.T) {
@@ -82,14 +82,18 @@ func TestTestCaseLifecycleWritesArtifact(t *testing.T) {
 	}
 
 	var finishResp struct {
-		Path     string            `json:"path"`
-		Artifact artifact.Artifact `json:"artifact"`
+		Path       string            `json:"path"`
+		ViewerPath string            `json:"viewer_path"`
+		Artifact   artifact.Artifact `json:"artifact"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&finishResp); err != nil {
 		t.Fatalf("decode finish response: %v", err)
 	}
 	if finishResp.Path == "" {
 		t.Fatalf("expected artifact path")
+	}
+	if _, err := os.Stat(finishResp.ViewerPath); err != nil {
+		t.Fatalf("bundled HTML viewer missing at %q: %v", finishResp.ViewerPath, err)
 	}
 	if len(finishResp.Artifact.Redactions) != 1 {
 		t.Fatalf("expected redactions to be recorded")

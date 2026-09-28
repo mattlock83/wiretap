@@ -2,6 +2,7 @@ package coverage
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -19,6 +20,7 @@ import (
 	"github.com/getkin/kin-openapi/routers"
 	"github.com/getkin/kin-openapi/routers/legacy"
 	"github.com/phrond/evermock/internal/artifact"
+	"github.com/phrond/evermock/internal/bundle"
 	"gopkg.in/yaml.v3"
 )
 
@@ -41,15 +43,17 @@ type SpecCoverageGroup struct {
 }
 
 type SpecCoverage struct {
-	SchemaID   string             `json:"schema_id" yaml:"schema_id"`
-	Role       string             `json:"role" yaml:"role"`
-	AssetID    string             `json:"asset_id,omitempty" yaml:"asset_id,omitempty"`
-	AssetName  string             `json:"asset_name,omitempty" yaml:"asset_name,omitempty"`
-	AssetSHA   string             `json:"asset_sha,omitempty" yaml:"asset_sha,omitempty"`
-	Type       string             `json:"type" yaml:"type"`
-	Source     string             `json:"source" yaml:"source"`
-	Exercised  []OperationSamples `json:"exercised,omitempty" yaml:"exercised,omitempty"`
-	NotCovered []OperationSamples `json:"not_covered,omitempty" yaml:"not_covered,omitempty"`
+	DenominatorKnown bool               `json:"denominator_known" yaml:"denominator_known"`
+	SchemaSet        string             `json:"schema_set,omitempty" yaml:"schema_set,omitempty"`
+	SchemaID         string             `json:"schema_id" yaml:"schema_id"`
+	Role             string             `json:"role" yaml:"role"`
+	AssetID          string             `json:"asset_id,omitempty" yaml:"asset_id,omitempty"`
+	AssetName        string             `json:"asset_name,omitempty" yaml:"asset_name,omitempty"`
+	AssetSHA         string             `json:"asset_sha,omitempty" yaml:"asset_sha,omitempty"`
+	Type             string             `json:"type" yaml:"type"`
+	Source           string             `json:"source" yaml:"source"`
+	Exercised        []OperationSamples `json:"exercised,omitempty" yaml:"exercised,omitempty"`
+	NotCovered       []OperationSamples `json:"not_covered,omitempty" yaml:"not_covered,omitempty"`
 }
 
 type OperationSamples struct {
@@ -67,6 +71,7 @@ type TestCaseCoverage struct {
 
 type SpecOperationSamples struct {
 	SchemaID   string             `json:"schema_id" yaml:"schema_id"`
+	SchemaSet  string             `json:"schema_set,omitempty" yaml:"schema_set,omitempty"`
 	AssetID    string             `json:"asset_id,omitempty" yaml:"asset_id,omitempty"`
 	Type       string             `json:"type" yaml:"type"`
 	Source     string             `json:"source" yaml:"source"`
@@ -74,6 +79,7 @@ type SpecOperationSamples struct {
 }
 
 type FlowSample struct {
+	CaptureIncomplete  bool   `json:"capture_incomplete,omitempty" yaml:"capture_incomplete,omitempty"`
 	RequestSpanID      string `json:"request_span_id,omitempty" yaml:"request_span_id,omitempty"`
 	TraceContextSource string `json:"trace_context_source,omitempty" yaml:"trace_context_source,omitempty"`
 	TestCorrelation    string `json:"test_correlation,omitempty" yaml:"test_correlation,omitempty"`
@@ -120,10 +126,12 @@ type openapiSpec struct {
 }
 
 type flowEntry struct {
-	Case     artifact.TestCase
-	Flow     artifact.Flow
-	TestCase string
-	Status   string
+	Case              artifact.TestCase
+	Flow              artifact.Flow
+	SchemaKeys        map[string]bool
+	TestCase          string
+	Status            string
+	CaptureIncomplete bool
 }
 
 // Generate builds a coverage report from artifact files in a directory.
@@ -131,6 +139,13 @@ func Generate(ctx context.Context, artifactsDir, sutName string, includeArtifact
 	_ = ctx
 	if strings.TrimSpace(artifactsDir) == "" {
 		artifactsDir = "artifacts"
+	}
+	if _, err := os.Stat(filepath.Join(artifactsDir, "evidence", "run.json")); err == nil {
+		run, captures, err := bundle.Load(artifactsDir)
+		if err != nil {
+			return nil, err
+		}
+		return GenerateBundleSnapshot(artifactsDir, run, captures, sutName, includeArtifacts)
 	}
 	paths, err := listArtifactFiles(artifactsDir)
 	if err != nil {
@@ -148,15 +163,94 @@ func Generate(ctx context.Context, artifactsDir, sutName string, includeArtifact
 		return nil, errors.New("no artifact files found")
 	}
 
+	return generateFromEntries(entries, nil, sutName, includeArtifacts, time.Now().UTC())
+}
+
+// GenerateBundleSnapshot derives coverage from one already-verified inventory
+// snapshot. View refresh uses this to avoid loading payloads twice.
+func GenerateBundleSnapshot(artifactsDir string, run *bundle.Run, captures []*artifact.Artifact, sutName string, includeArtifacts bool) (*Report, error) {
+	if run == nil {
+		return nil, errors.New("bundle inventory is nil")
+	}
+	if len(run.Attempts) != len(captures) {
+		return nil, errors.New("bundle inventory and captures disagree")
+	}
+	entries := make([]artifactEntry, 0, len(captures))
+	for i, capture := range captures {
+		entries = append(entries, artifactEntry{Path: filepath.Join(artifactsDir, filepath.FromSlash(run.Attempts[i].Path)), Doc: capture})
+	}
+	report, err := generateFromEntries(entries, run.Schemas, sutName, includeArtifacts, run.UpdatedAt)
+	if err != nil {
+		return nil, err
+	}
+	root, err := filepath.Abs(artifactsDir)
+	if err != nil {
+		return nil, err
+	}
+	root, err = filepath.EvalSymlinks(root)
+	if err != nil {
+		return nil, err
+	}
+	portable := func(value string) string {
+		if !filepath.IsAbs(value) {
+			return value
+		}
+		rel, err := filepath.Rel(root, value)
+		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return value
+		}
+		return filepath.ToSlash(rel)
+	}
+	for _, group := range []*SpecCoverageGroup{&report.Provided, &report.Dependent} {
+		for i := range group.Specs {
+			group.Specs[i].Source = portable(group.Specs[i].Source)
+		}
+	}
+	for i := range report.TestCases {
+		for j := range report.TestCases[i].Provided {
+			report.TestCases[i].Provided[j].Source = portable(report.TestCases[i].Provided[j].Source)
+		}
+		for j := range report.TestCases[i].Dependent {
+			report.TestCases[i].Dependent[j].Source = portable(report.TestCases[i].Dependent[j].Source)
+		}
+	}
+	for i := range report.Artifacts {
+		report.Artifacts[i] = portable(report.Artifacts[i])
+	}
+	return report, nil
+}
+
+// ReadLegacy loads only explicitly selected historical artifact files. Bundle
+// import uses this read-only adapter and never scans an active output root.
+func ReadLegacy(path string) ([]*artifact.Artifact, error) {
+	paths, err := listArtifactFiles(path)
+	if err != nil {
+		return nil, err
+	}
+	entries, err := loadArtifacts(paths)
+	if err != nil {
+		return nil, err
+	}
+	if len(entries) == 0 {
+		return nil, errors.New("no legacy artifacts found")
+	}
+	out := make([]*artifact.Artifact, 0, len(entries))
+	for _, entry := range entries {
+		out = append(out, entry.Doc)
+	}
+	return out, nil
+}
+
+func generateFromEntries(entries []artifactEntry, extraSchemas []artifact.SchemaRef, sutName string, includeArtifacts bool, generatedAt time.Time) (*Report, error) {
 	explicitSUTName := strings.TrimSpace(sutName) != ""
 	if sutName == "" {
 		sutName = inferSUTName(entries)
 	}
 
-	provided, dependent, testcases, notes := buildCoverage(entries)
+	provided, dependent, testcases, notes := buildCoverageWithSchemas(entries, extraSchemas)
 
 	report := &Report{
-		GeneratedAt:     time.Now().UTC(),
+		GeneratedAt:     generatedAt,
 		SUTName:         sutName,
 		ArtifactCount:   len(entries),
 		Provided:        provided,
@@ -183,7 +277,7 @@ func WriteReport(w io.Writer, report *Report, format string) error {
 	case "openapi", "openapi-yaml", "openapi_yaml":
 		return WriteGeneratedOpenAPI(w, report, GeneratedOpenAPIOptions{})
 	case "postman", "collection":
-		return WritePostmanCollection(w, report)
+		return errors.New("Postman export has been removed; use the OKF bundle or an explicit workflow export")
 	case "workflow", "serverless-workflow", "serverless_workflow", "sw":
 		return WriteServerlessWorkflow(w, report)
 	case "yaml", "yml":
@@ -851,10 +945,13 @@ func inferSUTName(entries []artifactEntry) string {
 }
 
 func buildCoverage(entries []artifactEntry) (SpecCoverageGroup, SpecCoverageGroup, []TestCaseCoverage, []string) {
+	return buildCoverageWithSchemas(entries, nil)
+}
+
+func buildCoverageWithSchemas(entries []artifactEntry, extraSchemas []artifact.SchemaRef) (SpecCoverageGroup, SpecCoverageGroup, []TestCaseCoverage, []string) {
 	var notes []string
-	flows := []artifact.Flow{}
 	flowEntries := []flowEntry{}
-	schemas := []artifact.SchemaRef{}
+	schemas := append([]artifact.SchemaRef{}, extraSchemas...)
 
 	for _, entry := range entries {
 		if entry.Doc == nil {
@@ -865,8 +962,11 @@ func buildCoverage(entries []artifactEntry) (SpecCoverageGroup, SpecCoverageGrou
 			tcName = entry.Doc.TestCase.ID
 		}
 		for _, flow := range entry.Doc.Traffic {
-			flows = append(flows, flow)
-			flowEntries = append(flowEntries, flowEntry{Case: entry.Doc.TestCase, Flow: flow, TestCase: tcName, Status: entry.Doc.TestCase.Status})
+			keys := make(map[string]bool, len(entry.Doc.Schemas))
+			for _, schema := range entry.Doc.Schemas {
+				keys[schemaKey(schema)] = true
+			}
+			flowEntries = append(flowEntries, flowEntry{Case: entry.Doc.TestCase, Flow: flow, SchemaKeys: keys, TestCase: tcName, Status: entry.Doc.TestCase.Status, CaptureIncomplete: entry.Doc.CaptureIncomplete})
 		}
 		schemas = append(schemas, entry.Doc.Schemas...)
 	}
@@ -876,8 +976,8 @@ func buildCoverage(entries []artifactEntry) (SpecCoverageGroup, SpecCoverageGrou
 	dependentSchemas, dependentNotes := loadSchemas(filterSchemas(schemas, "dependency"))
 	notes = append(notes, dependentNotes...)
 
-	markCoverage(flows, providedSchemas, "test_to_sut")
-	markCoverage(flows, dependentSchemas, "sut_to_dependency")
+	markCoverage(flowEntries, providedSchemas, "test_to_sut")
+	markCoverage(flowEntries, dependentSchemas, "sut_to_dependency")
 
 	providedSamples := buildOperationSamples(flowEntries, providedSchemas, "test_to_sut")
 	dependentSamples := buildOperationSamples(flowEntries, dependentSchemas, "sut_to_dependency")
@@ -964,15 +1064,19 @@ func loadSchemas(schemas []artifact.SchemaRef) ([]*loadedSchema, []string) {
 	return out, notes
 }
 
-func markCoverage(flows []artifact.Flow, schemas []*loadedSchema, channel string) {
+func markCoverage(entries []flowEntry, schemas []*loadedSchema, channel string) {
 	if len(schemas) == 0 {
 		return
 	}
-	for _, flow := range flows {
+	for _, entry := range entries {
+		flow := entry.Flow
 		if flow.Channel != channel {
 			continue
 		}
 		for _, schema := range schemas {
+			if !entry.SchemaKeys[schemaKey(schema.Ref)] {
+				continue
+			}
 			if schema.Ref.AssetID != "" && flow.AssetID != "" && schema.Ref.AssetID != flow.AssetID {
 				continue
 			}
@@ -988,20 +1092,22 @@ func markCoverage(flows []artifact.Flow, schemas []*loadedSchema, channel string
 func exportSpecs(schemas []*loadedSchema, includeNotCovered bool, samples map[string]map[string][]FlowSample) []SpecCoverage {
 	var specs []SpecCoverage
 	for _, schema := range schemas {
-		sampleMap := samples[schema.Ref.ID]
+		sampleMap := samples[schemaKey(schema.Ref)]
 		exercisedOps := uniqueSorted(setToList(schema.Exercised))
 		notCoveredOps := []string{}
 		if includeNotCovered {
 			notCoveredOps = uniqueSorted(diffOps(schema.Operations, schema.Exercised))
 		}
 		coverage := SpecCoverage{
-			SchemaID:  schema.Ref.ID,
-			Role:      schema.Ref.Role,
-			AssetID:   schema.Ref.AssetID,
-			AssetName: schema.Ref.AssetName,
-			AssetSHA:  schema.Ref.AssetSHA,
-			Type:      schema.Ref.Type,
-			Source:    schema.Source,
+			DenominatorKnown: schema.OpenAPI != nil,
+			SchemaSet:        schemaRevision(schema.Ref),
+			SchemaID:         schema.Ref.ID,
+			Role:             schema.Ref.Role,
+			AssetID:          schema.Ref.AssetID,
+			AssetName:        schema.Ref.AssetName,
+			AssetSHA:         schema.Ref.AssetSHA,
+			Type:             schema.Ref.Type,
+			Source:           schema.Source,
 		}
 		if len(exercisedOps) > 0 {
 			coverage.Exercised = operationSamplesList(exercisedOps, sampleMap)
@@ -1011,7 +1117,15 @@ func exportSpecs(schemas []*loadedSchema, includeNotCovered bool, samples map[st
 		}
 		specs = append(specs, coverage)
 	}
-	sort.Slice(specs, func(i, j int) bool { return specs[i].SchemaID < specs[j].SchemaID })
+	sort.Slice(specs, func(i, j int) bool {
+		if specs[i].SchemaID != specs[j].SchemaID {
+			return specs[i].SchemaID < specs[j].SchemaID
+		}
+		if specs[i].Source != specs[j].Source {
+			return specs[i].Source < specs[j].Source
+		}
+		return specs[i].SchemaSet < specs[j].SchemaSet
+	})
 	return specs
 }
 
@@ -1047,6 +1161,9 @@ func buildOperationSamples(entries []flowEntry, schemas []*loadedSchema, channel
 			continue
 		}
 		for _, schema := range schemas {
+			if !entry.SchemaKeys[schemaKey(schema.Ref)] {
+				continue
+			}
 			if schema.Ref.AssetID != "" && flow.AssetID != "" && schema.Ref.AssetID != flow.AssetID {
 				continue
 			}
@@ -1059,7 +1176,7 @@ func buildOperationSamples(entries []flowEntry, schemas []*loadedSchema, channel
 				if !containsOp(schema.Operations, op) {
 					continue
 				}
-				raw = addSample(raw, schema.Ref.ID, op, flowSampleFromFlow(entry))
+				raw = addSample(raw, schemaKey(schema.Ref), op, flowSampleFromFlow(entry))
 			}
 		}
 	}
@@ -1111,6 +1228,9 @@ func buildTestCaseCoverage(entries []flowEntry, providedSchemas, dependentSchema
 		}
 
 		for _, schema := range schemas {
+			if !entry.SchemaKeys[schemaKey(schema.Ref)] {
+				continue
+			}
 			if schema.Ref.AssetID != "" && flow.AssetID != "" && schema.Ref.AssetID != flow.AssetID {
 				continue
 			}
@@ -1134,8 +1254,18 @@ func buildTestCaseCoverage(entries []flowEntry, providedSchemas, dependentSchema
 		if len(tc.Traffic) > 1 {
 			sortSamples(tc.Traffic)
 		}
-		sort.Slice(tc.Provided, func(i, j int) bool { return tc.Provided[i].SchemaID < tc.Provided[j].SchemaID })
-		sort.Slice(tc.Dependent, func(i, j int) bool { return tc.Dependent[i].SchemaID < tc.Dependent[j].SchemaID })
+		sort.Slice(tc.Provided, func(i, j int) bool {
+			if tc.Provided[i].SchemaID != tc.Provided[j].SchemaID {
+				return tc.Provided[i].SchemaID < tc.Provided[j].SchemaID
+			}
+			return tc.Provided[i].SchemaSet < tc.Provided[j].SchemaSet
+		})
+		sort.Slice(tc.Dependent, func(i, j int) bool {
+			if tc.Dependent[i].SchemaID != tc.Dependent[j].SchemaID {
+				return tc.Dependent[i].SchemaID < tc.Dependent[j].SchemaID
+			}
+			return tc.Dependent[i].SchemaSet < tc.Dependent[j].SchemaSet
+		})
 		for i := range tc.Provided {
 			sortOperationSamples(tc.Provided[i].Operations)
 		}
@@ -1150,15 +1280,16 @@ func buildTestCaseCoverage(entries []flowEntry, providedSchemas, dependentSchema
 
 func findOrCreateSpec(target *[]SpecOperationSamples, schema *loadedSchema) *SpecOperationSamples {
 	for i := range *target {
-		if (*target)[i].SchemaID == schema.Ref.ID {
+		if (*target)[i].SchemaID == schema.Ref.ID && (*target)[i].SchemaSet == schemaRevision(schema.Ref) {
 			return &(*target)[i]
 		}
 	}
 	entry := SpecOperationSamples{
-		SchemaID: schema.Ref.ID,
-		AssetID:  schema.Ref.AssetID,
-		Type:     schema.Ref.Type,
-		Source:   schema.Source,
+		SchemaID:  schema.Ref.ID,
+		SchemaSet: schemaRevision(schema.Ref),
+		AssetID:   schema.Ref.AssetID,
+		Type:      schema.Ref.Type,
+		Source:    schema.Source,
 	}
 	*target = append(*target, entry)
 	return &(*target)[len(*target)-1]
@@ -1187,6 +1318,7 @@ func sortOperationSamples(ops []OperationSamples) {
 func flowSampleFromFlow(entry flowEntry) FlowSample {
 	flow := entry.Flow
 	sample := FlowSample{
+		CaptureIncomplete:  entry.CaptureIncomplete,
 		TestCase:           entry.TestCase,
 		TestStatus:         entry.Status,
 		FlowID:             flow.ID,
@@ -1246,7 +1378,25 @@ func bodyPreview(body *artifact.Body) string {
 }
 
 func schemaKey(schema artifact.SchemaRef) string {
-	return fmt.Sprintf("%s|%s|%s|%s|%s|%s|%s", schema.ID, schema.Role, schema.AssetID, schema.Type, schema.Source.Path, schema.Source.URL, schema.Source.Format)
+	contentHash := sha256.Sum256([]byte(schema.Source.Content))
+	return fmt.Sprintf("%s|%s|%s|%s|%s|%s|%s|%s|%s|%x", schema.ID, schema.Role, schema.AssetID, schema.Type, schema.Source.Path, schema.Source.URL, schema.Source.Format, schema.Source.SHA256, schema.AssetSHA, contentHash)
+}
+
+func schemaRevision(schema artifact.SchemaRef) string {
+	if schema.Source.Path != "" {
+		parent := filepath.Base(filepath.Dir(schema.Source.Path))
+		if len(parent) == 64 {
+			return parent
+		}
+	}
+	if schema.Source.Content != "" {
+		sum := sha256.Sum256([]byte(schema.Source.Content))
+		return fmt.Sprintf("%x", sum)
+	}
+	if schema.Source.SHA256 != "" {
+		return schema.Source.SHA256
+	}
+	return schema.AssetSHA
 }
 
 func schemaSourceLabel(schema artifact.SchemaRef) string {

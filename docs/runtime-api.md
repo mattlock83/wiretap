@@ -18,6 +18,8 @@ any dependency or mock-server lifecycles.
 
 The response contains `sut_url`, the reverse proxy address tests should call,
 and `dependency_base_url`, the reserved dependency gateway on that same proxy.
+It also returns `run_id`, `bundle_path`, `index_path`, and `viewer_path`. A new run gets a
+fresh bundle under `PHROND_OUTPUT_DIR` (default `./artifacts`).
 `target_url` is only a routing destination; Phrond never starts, configures,
 waits for, or stops that application.
 
@@ -36,6 +38,8 @@ the session starts.
 ```json
 {
   "name": "hello world happy flow",
+  "api_id": "orders",
+  "sut_target_kind": "service",
   "tags": ["smoke"],
   "meta": {"suite": "hello"},
   "sut_base_url": "http://127.0.0.1:18090",
@@ -49,6 +53,7 @@ the session starts.
   "dependencies": [{
     "asset_id": "inventory",
     "asset_name": "Inventory Service",
+    "upstream_kind": "mock",
     "upstream_url": "http://127.0.0.1:9090",
     "schema": {
       "id": "inventory-openapi",
@@ -59,7 +64,8 @@ the session starts.
 }
 ```
 
-The response includes `session_id`, `sut_url`, `proxy_listen`, and a
+The response includes `session_id`, `sut_url`, `proxy_listen`, `run_id`,
+`bundle_path`, `index_path`, `viewer_path`, and a
 `dependencies` object mapping asset IDs to their capture URLs. Send inbound
 calls to `sut_url`. Configure the SUT's existing dependency base URL to the
 returned inventory URL, for example:
@@ -115,18 +121,22 @@ and keeps its original `test_correlation` method. Phrond never injects test
 context into an untraced dependency request. Ambiguous unlabeled traffic returns
 409. Legacy `/v1/testcases/*` capture and session capture are mutually exclusive.
 
-`POST /v1/teardownTest` finalizes and writes the artifact:
+`POST /v1/teardownTest` finalizes and commits the attempt to the bundle:
 
 ```json
 {"session_id": "session-...", "status": "pass", "drain_timeout_ms": 5000}
 ```
 
-The response contains `artifact`, `path`, and `schema_validation`. OpenAPI
+The response contains inline compatibility fields `artifact` and
+`schema_validation`, plus `attempt_path` (canonical JSON), `attempt_page_path`
+(readable Markdown), `bundle_path`, `index_path`, and `viewer_path`. `path` temporarily aliases
+`attempt_path`. These paths are on the Phrond server's filesystem; a remote SDK
+cannot open them locally without copying/mounting that directory. OpenAPI
 violations change an otherwise passing artifact to `fail`. Teardown stops new
 admission and waits for accepted exchanges, up to `drain_timeout_ms` (default
 5000, range 0–60000). Timeout/cancellation writes `capture_incomplete: true`,
 `capture_diagnostics`, and failed status. Completion after finalization cannot
-mutate the artifact or enter another session. Await background work first.
+mutate the attempt or enter another session. Await background work first.
 
 ## Schema generation
 
@@ -140,12 +150,12 @@ Teams without an OpenAPI document must explicitly mark each bootstrap session:
 }
 ```
 
-After the final test, `POST /v1/generateSchema` combines the captured artifacts
+After the final test, `POST /v1/generateSchema` combines the captured attempts
 into a deterministic standard OpenAPI 3.1 document:
 
 ```json
 {
-  "artifacts_dir": "artifacts",
+  "bundle_path": "artifacts/<run-id>",
   "output_path": "artifacts/hello.generated.openapi.yaml",
   "title": "Hello API",
   "version": "1.0.0",
@@ -165,21 +175,21 @@ schema enforcement.
 
 ## Reports
 
-`POST /v1/report` reads an artifact directory and writes all report formats:
+`POST /v1/report` refreshes the current run's OKF pages and returns
+`run_id`, `bundle_path`, `index_path`, `viewer_path`, `run_state`, `snapshot_revision`, and a
+coverage summary. A copied bundle can be selected with `bundle_path`:
 
 ```json
 {
-  "artifacts_dir": "artifacts",
-  "sut_name": "Hello SUT",
-  "collection_path": "artifacts/coverage.postman_collection.json",
-  "workflow_path": "artifacts/coverage.workflow.yaml",
-  "html_path": "artifacts/coverage.html"
+  "bundle_path": "artifacts/<run-id>"
 }
 ```
 
-The response includes the Postman collection, Open Workflow, and HTML paths
-alongside the aggregate coverage report. All three include captured dependency
-traffic where present.
+The bundle's `viewer/index.html` is written automatically. Supply an explicit
+`workflow_path` or `html_path` when a separate export file is wanted; both read the same
+bundle evidence. Postman export has been removed; `collection_path` and its
+old `yaml_path` alias return a migration error. `artifacts_dir` remains available only when explicitly
+reading a historical artifact directory. See [capture bundles](okf-bundles.md).
 
 ## Lower-level endpoints
 
@@ -191,6 +201,9 @@ traffic where present.
 - `POST /v1/lifecycle/start`, `/v1/lifecycle/stop`
 
 There are no response queue, stub, mock lifecycle, or verification endpoints.
+`GET /v1/artifact` continues to return the last inline capture for legacy
+clients, now as `application/json` with an `artifact.json` filename. Its bytes
+do not represent an independently persisted YAML file.
 The dependency gateway is a reserved forwarding route on the existing capture
 proxy, not a mock server or a separate control API. Mocking belongs to
 consumer-selected tools outside Phrond.

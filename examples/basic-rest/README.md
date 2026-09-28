@@ -2,17 +2,18 @@
 
 The runner starts the demo SUT and an external inventory dependency separately.
 The SUT is configured to reach that dependency through Phrond's existing capture
-proxy; the test also calls the SUT through the same proxy. One artifact named
-`hello world happy flow` therefore contains both the inbound test request and
-the correlated downstream inventory request.
+proxy; the test also calls the SUT through the same proxy. The test attempt
+named `hello world happy flow` therefore contains both the inbound test request
+and the correlated downstream inventory request.
 
 ```bash
 ./examples/run-basic-rest-e2e.sh
 ```
 
-The run writes the per-test artifact plus HTML, Postman, and Open Workflow
-YAML reports. The artifact retains the captured inventory response. Phrond
-never starts, configures, or simulates the SUT or dependency.
+The run writes a bundle under `artifacts/<run-id>/`. Open `viewer/index.html` for
+the offline HTML dashboard or `index.md` for the OKF pages. Inspect `evidence/` for the exact captured
+attempts. The retained evidence includes the inventory response. Phrond never
+starts, configures, or simulates the SUT or dependency.
 
 ## Ordinary clients and parallel test traces
 
@@ -26,7 +27,7 @@ PHROND_TEST_RUNNER=jest ./examples/run-basic-rest-e2e.sh
 Two overlapping Jest tests use native `fetch` and one stable dependency URL.
 The demo SUT uses standard `otelhttp` server/client instrumentation; it contains
 no Phrond header forwarding. The tests check separate traces and captured
-inbound and downstream payloads in their own artifacts.
+inbound and downstream payloads in their own test-attempt evidence.
 The shell harness owns all process lifecycles; Jest workers do not stop Phrond.
 
 For an uninstrumented SUT with serial capture:

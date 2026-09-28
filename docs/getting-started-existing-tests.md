@@ -15,7 +15,7 @@ tests  →  Phrond capture proxy  →  SUT
                         Phrond capture proxy  →  existing mock server
 ```
 
-One artifact records and correlates the test→SUT and SUT→mock requests and
+One run bundle records and correlates the test→SUT and SUT→mock requests and
 responses. Your existing mock tooling still owns stubs, responses,
 verification, configuration, and lifecycle.
 
@@ -40,7 +40,7 @@ server. The mock server itself does not need to know that Phrond exists.
 ```bash
 PHROND_HTTP_LISTEN=127.0.0.1:18000 \
 PHROND_PROXY_LISTEN=127.0.0.1:18080 \
-PHROND_ARTIFACT_DIR=./artifacts \
+PHROND_OUTPUT_DIR=./artifacts \
 go run ./cmd/phrond
 ```
 
@@ -97,8 +97,8 @@ phrond.test("creates an order", async () => {
 });
 ```
 
-`phrond.test(...)` preserves the test name in the artifact and records whether
-the test passed or failed. The artifact includes:
+`phrond.test(...)` preserves the test name in the bundle and records whether
+the test passed or failed. The attempt evidence includes:
 
 ```yaml
 traffic:
@@ -161,21 +161,23 @@ downstream contract validation remains strict during SUT onboarding.
 Supplying neither option fails setup with a useful error. Supplying both is
 rejected so Phrond never silently changes an enforced contract.
 
-## 5. Generate a report
+## 5. Review the bundle
 
-Each test writes a YAML artifact under `./artifacts`. Generate an HTML report
-containing the captured request and response payloads with:
+The runtime creates `./artifacts/<run-id>/viewer/index.html` as an offline HTML
+dashboard and `index.md` as the OKF entry point. Both show API coverage, test
+attempts, and observed dependency behaviour. The SDK and HTTP API return the
+exact `bundle_path` and `viewer_path`. Open either view, or rebuild them later:
 
 ```bash
-go run ./cmd/phrond-coverage \
-  --artifacts ./artifacts \
-  --sut-name "Orders Service" \
-  --format html \
-  --output ./artifacts/coverage.html
+go run ./cmd/phrond-coverage --bundle ./artifacts/<run-id>
 ```
 
-The same command can export generated OpenAPI, Postman JSON, or Open Workflow
-YAML by changing `--format` to `openapi`, `postman`, or `workflow`.
+The command prints the OKF entry page path. JSON evidence and retained body
+attachments remain inside the same directory.
+
+Generated OpenAPI, standalone HTML, and Workflow YAML are also explicit `--format`
+choices. [Bundle details](okf-bundles.md) explain what coverage and dependency
+assumptions can establish.
 
 ## Other languages and test frameworks
 

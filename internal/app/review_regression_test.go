@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"github.com/phrond/evermock/internal/bundle"
 	"github.com/phrond/evermock/internal/core"
-	"github.com/phrond/evermock/internal/artifact"
 	phrond "github.com/phrond/evermock/sdk/go"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel/propagation"
@@ -13,8 +13,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -190,19 +188,11 @@ func TestGoSDKCapturesParallelTestsThroughRealRuntime(t *testing.T) {
 			})
 		}
 	})
-	files, err := filepath.Glob(filepath.Join(app.cfg.Artifact.OutputDir, "*.yaml"))
-	if err != nil || len(files) != 2 {
-		t.Fatalf("expected two artifacts: %v %v", files, err)
+	_, captures, err := bundle.Load(app.currentBundle().Path())
+	if err != nil || len(captures) != 2 {
+		t.Fatalf("expected two committed attempts: %d %v", len(captures), err)
 	}
-	for _, file := range files {
-		data, err := os.ReadFile(file)
-		if err != nil {
-			t.Fatal(err)
-		}
-		var doc artifact.Artifact
-		if err := json.Unmarshal(data, &doc); err != nil {
-			t.Fatal(err)
-		}
+	for _, doc := range captures {
 		if doc.TestCase.Status != "pass" || len(doc.Traffic) != 2 || doc.TestCase.TraceID != expected[doc.TestCase.Name] {
 			t.Fatalf("incorrect SDK artifact: %#v", doc)
 		}

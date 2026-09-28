@@ -153,26 +153,22 @@ func ServerlessWorkflowFromReport(report *Report) (*ServerlessWorkflow, error) {
 		workflow.Document.Metadata.Phrond.GeneratedAt = report.GeneratedAt.UTC().Format("2006-01-02T15:04:05Z07:00")
 	}
 
-	folderNames := buildSpecFolderNames(report)
-	baseURLs := buildSpecVariables(report, folderNames)
 	testNames := newWorkflowNameAllocator()
 	for _, testCase := range report.TestCases {
 		var groups []WorkflowTask
 		if len(testCase.Traffic) > 0 {
-			if tasks := workflowCapturedTrafficTasks(testCase, "test_to_sut", "sut", baseURLs); len(tasks) > 0 {
+			if tasks := workflowCapturedTrafficTasks(testCase, "test_to_sut", "sut"); len(tasks) > 0 {
 				groups = append(groups, namedWorkflowTask("test-traffic", WorkflowTaskDefinition{Do: tasks}))
 			}
-			if tasks := workflowCapturedTrafficTasks(testCase, "sut_to_dependency", "dependency", baseURLs); len(tasks) > 0 {
+			if tasks := workflowCapturedTrafficTasks(testCase, "sut_to_dependency", "dependency"); len(tasks) > 0 {
 				groups = append(groups, namedWorkflowTask("dependency-traffic", WorkflowTaskDefinition{Do: tasks}))
 			}
 		} else {
-			// Reports reconstructed from older Postman collections do not have
-			// raw traffic, so retain the schema-sample projection as a
-			// compatibility fallback.
-			if tasks := workflowTrafficTasks(testCase.Provided, "sut", baseURLs); len(tasks) > 0 {
+			// A caller can provide a report with schema samples but no raw traffic.
+			if tasks := workflowTrafficTasks(testCase.Provided, "sut"); len(tasks) > 0 {
 				groups = append(groups, namedWorkflowTask("test-traffic", WorkflowTaskDefinition{Do: tasks}))
 			}
-			if tasks := workflowTrafficTasks(testCase.Dependent, "dependency", baseURLs); len(tasks) > 0 {
+			if tasks := workflowTrafficTasks(testCase.Dependent, "dependency"); len(tasks) > 0 {
 				groups = append(groups, namedWorkflowTask("dependency-traffic", WorkflowTaskDefinition{Do: tasks}))
 			}
 		}
@@ -220,7 +216,6 @@ func workflowCapturedTrafficTasks(
 	testCase TestCaseCoverage,
 	channel string,
 	role string,
-	baseURLs map[string]PostmanVariable,
 ) []WorkflowTask {
 	var groups []*workflowCallGroup
 	groupIndex := map[string]int{}
@@ -242,8 +237,7 @@ func workflowCapturedTrafficTasks(
 				names: newWorkflowNameAllocator(),
 			})
 		}
-		baseURL := baseURLs[specLookupKey(role, schemaID)].Value
-		definition, ok := workflowHTTPTaskDefinition(sample, operation, schemaID, role, baseURL)
+		definition, ok := workflowHTTPTaskDefinition(sample, operation, schemaID, role, "")
 		if !ok {
 			continue
 		}
@@ -291,17 +285,15 @@ func workflowSampleMatch(testCase TestCaseCoverage, sample FlowSample, role stri
 func workflowTrafficTasks(
 	specs []SpecOperationSamples,
 	role string,
-	baseURLs map[string]PostmanVariable,
 ) []WorkflowTask {
 	specNames := newWorkflowNameAllocator()
 	var out []WorkflowTask
 	for _, spec := range specs {
 		var calls []WorkflowTask
 		callNames := newWorkflowNameAllocator()
-		baseURL := baseURLs[specLookupKey(role, spec.SchemaID)].Value
 		for _, operation := range spec.Operations {
 			for _, sample := range operation.Samples {
-				definition, ok := workflowHTTPTaskDefinition(sample, operation.Operation, spec.SchemaID, role, baseURL)
+				definition, ok := workflowHTTPTaskDefinition(sample, operation.Operation, spec.SchemaID, role, "")
 				if !ok {
 					continue
 				}
@@ -394,6 +386,43 @@ func workflowEndpoint(raw, baseURL string) string {
 		base = "http://localhost"
 	}
 	return base + requestPathAndQuery(value)
+}
+
+func requestPathAndQuery(raw string) string {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return "/"
+	}
+	parsed, err := url.Parse(value)
+	if err == nil {
+		if parsed.Scheme != "" {
+			path := parsed.EscapedPath()
+			if path == "" {
+				path = "/"
+			}
+			if parsed.RawQuery != "" {
+				path += "?" + parsed.RawQuery
+			}
+			return path
+		}
+		if strings.HasPrefix(value, "/") {
+			return value
+		}
+		if parsed.Path != "" {
+			path := parsed.Path
+			if !strings.HasPrefix(path, "/") {
+				path = "/" + path
+			}
+			if parsed.RawQuery != "" {
+				path += "?" + parsed.RawQuery
+			}
+			return path
+		}
+	}
+	if strings.HasPrefix(value, "/") {
+		return value
+	}
+	return "/" + value
 }
 
 func workflowHeaders(headers artifact.Headers) map[string]string {

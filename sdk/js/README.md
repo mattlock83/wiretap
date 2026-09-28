@@ -35,7 +35,7 @@ phrond.test("hello world happy flow", async () => {
 ```
 
 `phrond.test` creates and finalizes the capture session automatically. The
-literal test name is stored in `artifact.testcase.name`, and failures are
+literal test name is stored in each bundle attempt's `testcase.name`, and failures are
 recorded with `status: fail` before being rethrown.
 
 To capture calls from the SUT to an existing WireMock, MockServer, or dependency,
@@ -49,6 +49,7 @@ const phrond = createNodeTestSuite({
   dependencies: {
     inventory: {
       upstreamUrl: process.env.WIREMOCK_BASE_URL,
+      upstreamKind: "mock",
       schema: inventoryOpenAPI
     }
   }
@@ -87,19 +88,30 @@ unless `force: true` is set.
 
 Lower-level API:
 
-- `startCapture({ baseUrl, timeoutMs, proxy, schemas, generateSchema, sutBaseUrl, dependencies })`
+- `startCapture({ baseUrl, timeoutMs, proxy, schemas, generateSchema, sutBaseUrl, apiId, sutTargetKind, testSource, sutSource, dependencies })`
 - `runtime.setupTest({ name, tags, meta, schemas, generateSchema, sutBaseUrl, dependencies, explicitSession })`
 - `runtime.dependencyUrl(assetId)`
 - `runtime.http.get/post/postJson/request(...)`
 - `runtime.runTest(name, callback, { explicitSession, onSession, drainTimeoutMs })`
 - `runtime.teardownTest({ status, drainTimeoutMs })`
 - `runtime.generateSchema({ output, title, version, force })`
-- `runtime.report({ artifactsDir, sutName, collectionPath, workflowPath, htmlPath })`
+- `runtime.report({ bundlePath, workflowPath, htmlPath })`
 - `runtime.killServer()`
 - `bindTest(runtimeOrGetter, testFn, defaults)`
 
 `startServer` remains an alias for `startCapture`. Phrond never launches,
 waits for, configures, or stops the SUT.
+
+Capture automatically creates one OKF bundle per runtime run. Setup returns
+`run_id`, `bundle_path`, `index_path`, and `viewer_path`; teardown adds `attempt_path` for the
+canonical JSON and `attempt_page_path` for the readable test page. `report()`
+refreshes the bundle's OKF pages and offline HTML dashboard, and writes separate
+exports only for explicitly supplied paths. The active session exposes
+`viewerPath` for opening the dashboard on the runtime host.
+`apiId` can match a provider's API identity across repositories. Dependency
+`assetId` identifies its corresponding API; `upstreamKind` records whether the
+declared upstream is `mock`, `service`, or `unknown`. The
+[bundle guide](../../docs/okf-bundles.md) explains what those observations mean.
 
 The `node:test` adapter requires Node 20.12+ and includes callback, subtest,
 `t.after`, and timeout outcomes in capture cleanup. Keep ordinary tests and

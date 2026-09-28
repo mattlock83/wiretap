@@ -24,7 +24,7 @@ test("startCapture and named test session send capture-only payloads", async () 
   const server = await controlServer((path, body) => {
     calls.push({ path, body });
     if (path === "/v1/startServer") return { sut_url: "http://127.0.0.1:20010", proxy: { listen_addr: "127.0.0.1:20010" } };
-    if (path === "/v1/setupTest") return { session_id: "session-1", name: body.name, proxy_listen: "http://127.0.0.1:20010" };
+    if (path === "/v1/setupTest") return { session_id: "session-1", name: body.name, proxy_listen: "http://127.0.0.1:20010", viewer_path: "/bundle/viewer/index.html" };
     if (path === "/v1/teardownTest") return { schema_validation: { status: "pass" } };
     return { status: "ok" };
   });
@@ -33,6 +33,7 @@ test("startCapture and named test session send capture-only payloads", async () 
     runtime.scenarioName("hello world happy flow");
     const session = await runtime.setupTest();
     assert.equal(session.name, "hello world happy flow");
+    assert.equal(session.viewerPath, "/bundle/viewer/index.html");
     await runtime.teardownTest({ status: "pass" });
     assert.deepEqual(calls[0], {
       path: "/v1/startServer",
@@ -64,11 +65,9 @@ test("report forwards all supported output paths", async () => {
   try {
     const runtime = await startCapture({ baseUrl: server.baseUrl, generateSchema: true });
     await runtime.report({
-      collectionPath: "capture.postman.json",
       workflowPath: "capture.workflow.yaml",
       htmlPath: "capture.html"
     });
-    assert.equal(reportPayload.collection_path, "capture.postman.json");
     assert.equal(reportPayload.workflow_path, "capture.workflow.yaml");
     assert.equal(reportPayload.html_path, "capture.html");
   } finally {
@@ -107,6 +106,7 @@ test("declared external dependencies retain strict schemas and session-scoped ca
     assert.deepEqual(calls[1].body.dependencies, [{
       asset_id: "inventory",
       asset_name: "Inventory API",
+      upstream_kind: "unknown",
       upstream_url: "http://wiremock.test",
       schemas: [inventorySchema]
     }]);

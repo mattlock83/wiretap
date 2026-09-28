@@ -1,6 +1,7 @@
 # Implementation handoff: standard test traces
 
-Status: **work not started; documentation only**  
+Status: **historical handoff; tracing has been implemented.** The Postman
+references below describe an export that has since been removed.
 Prepared: 2026-09-27  
 Repository root: the `phrond/` repository containing `go.mod`, `cmd/`, and `sdk/`
 (in this workspace: `/Users/matt/Source/phrond/phrond`, not its parent directory).

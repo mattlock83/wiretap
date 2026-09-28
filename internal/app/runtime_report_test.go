@@ -12,11 +12,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/phrond/evermock/internal/core"
 	"github.com/phrond/evermock/internal/artifact"
+	"github.com/phrond/evermock/internal/core"
 )
 
-func TestRuntimeReportWritesPostmanWorkflowAndHTML(t *testing.T) {
+func TestRuntimeReportWritesWorkflowAndHTML(t *testing.T) {
 	outputDir := t.TempDir()
 	cfg := core.DefaultConfig()
 	cfg.Artifact.OutputDir = outputDir
@@ -84,15 +84,13 @@ paths:
 		t.Fatalf("write artifact: %v", err)
 	}
 
-	collectionPath := filepath.Join(outputDir, "custom.postman.json")
 	workflowPath := filepath.Join(outputDir, "custom.workflow.yaml")
 	htmlPath := filepath.Join(outputDir, "custom.html")
 	payload, err := json.Marshal(map[string]any{
-		"artifacts_dir":   outputDir,
-		"sut_name":        "Example SUT",
-		"collection_path": collectionPath,
-		"workflow_path":   workflowPath,
-		"html_path":       htmlPath,
+		"artifacts_dir": outputDir,
+		"sut_name":      "Example SUT",
+		"workflow_path": workflowPath,
+		"html_path":     htmlPath,
 	})
 	if err != nil {
 		t.Fatalf("encode report request: %v", err)
@@ -114,9 +112,6 @@ paths:
 	if err := json.Unmarshal(body, &response); err != nil {
 		t.Fatalf("decode report response: %v", err)
 	}
-	if response["collection_path"] != collectionPath {
-		t.Fatalf("collection_path = %v", response["collection_path"])
-	}
 	if response["workflow_path"] != workflowPath {
 		t.Fatalf("workflow_path = %v", response["workflow_path"])
 	}
@@ -129,13 +124,6 @@ paths:
 		t.Fatalf("unexpected automatic contract export: %v", err)
 	}
 
-	postman, err := os.ReadFile(collectionPath)
-	if err != nil {
-		t.Fatalf("read Postman output: %v", err)
-	}
-	if !bytes.Contains(postman, []byte("schema.getpostman.com")) {
-		t.Fatalf("unexpected Postman output: %s", postman)
-	}
 	workflow, err := os.ReadFile(workflowPath)
 	if err != nil {
 		t.Fatalf("read workflow output: %v", err)
@@ -146,6 +134,14 @@ paths:
 	}
 	if _, err := os.Stat(htmlPath); err != nil {
 		t.Fatalf("stat HTML output: %v", err)
+	}
+	removedExport, err := http.Post(server.URL+"/v1/report", "application/json", bytes.NewReader([]byte(`{"collection_path":"unused.json"}`)))
+	if err != nil {
+		t.Fatalf("removed export request: %v", err)
+	}
+	removedExport.Body.Close()
+	if removedExport.StatusCode != http.StatusBadRequest {
+		t.Fatalf("removed export status = %d, want 400", removedExport.StatusCode)
 	}
 	removedEndpoint, err := http.Post(server.URL+"/v1/assertDependency", "application/json", bytes.NewReader([]byte(`{}`)))
 	if err != nil {
@@ -199,9 +195,10 @@ func TestGenerateSchemaEndpointWritesStandardOpenAPIWithoutCapturedValues(t *tes
 
 	schemaPath := filepath.Join(outputDir, "orders.generated.openapi.yaml")
 	payload, _ := json.Marshal(map[string]any{
-		"output_path": schemaPath,
-		"title":       "Orders Service",
-		"version":     "1.0.0",
+		"artifacts_dir": outputDir,
+		"output_path":   schemaPath,
+		"title":         "Orders Service",
+		"version":       "1.0.0",
 	})
 	resp, err := http.Post(server.URL+"/v1/generateSchema", "application/json", bytes.NewReader(payload))
 	if err != nil {

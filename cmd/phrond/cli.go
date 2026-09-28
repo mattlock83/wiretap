@@ -3,7 +3,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"os"
 
 	"github.com/phrond/evermock/internal/core"
 )
@@ -16,10 +15,6 @@ func parseCLI(cfg *core.Config) cliConfig {
 	var cli cliConfig
 	flag.BoolVar(&cli.printCA, "print-ca", false, "print proxy CA certificate and exit")
 	flag.Parse()
-
-	if v := os.Getenv("PHROND_ARTIFACT_DIR"); v != "" {
-		cfg.Artifact.OutputDir = v
-	}
 
 	return cli
 }

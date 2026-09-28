@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-ARTIFACT_DIR="${ARTIFACT_DIR:-$ROOT_DIR/artifacts/run-$(date +%s)-$RANDOM}"
+ARTIFACT_DIR="${ARTIFACT_DIR:-$ROOT_DIR/artifacts}"
 
 pick_port() {
   local base=20000
@@ -65,7 +65,8 @@ mkdir -p "$ARTIFACT_DIR"
 
 export PHROND_HTTP_LISTEN="127.0.0.1:${PHROND_PORT}"
 export PHROND_PROXY_LISTEN="127.0.0.1:${PROXY_PORT}"
-export PHROND_ARTIFACT_DIR="$ARTIFACT_DIR"
+export PHROND_OUTPUT_DIR="$ARTIFACT_DIR"
+unset PHROND_ARTIFACT_DIR
 export PHROND_BASE_URL="http://127.0.0.1:${PHROND_PORT}"
 if [[ -n "${PHROND_GENERATE_SCHEMA:-}" ]]; then
   export PHROND_GENERATED_SCHEMA_PATH="${PHROND_GENERATED_SCHEMA_PATH:-${ARTIFACT_DIR}/basic-rest.generated.openapi.yaml}"
@@ -136,30 +137,18 @@ else
   node --require ./sdk/js/tracing.js --test ./examples/basic-rest/basic-test.js
 fi
 
-go run ./cmd/phrond-coverage \
-  --artifacts "${ARTIFACT_DIR}" \
-  --sut-name "Basic REST SUT" \
-  --format workflow \
-  --output "${ARTIFACT_DIR}/coverage.workflow.yaml"
-
-go run ./cmd/phrond-coverage \
-  --artifacts "${ARTIFACT_DIR}" \
-  --sut-name "Basic REST SUT" \
-  --format postman \
-  --output "${ARTIFACT_DIR}/coverage.postman_collection.json"
-
-go run ./cmd/phrond-coverage \
-  --artifacts "${ARTIFACT_DIR}" \
-  --sut-name "Basic REST SUT" \
-  --format html \
-  --output "${ARTIFACT_DIR}/coverage.html"
+curl -fsS -X POST "${PHROND_BASE_URL}/v1/killServer" >/dev/null
+BUNDLE_DIR="$(find "${ARTIFACT_DIR}" -mindepth 1 -maxdepth 1 -type d -name 'run-*' -print | sort | tail -n 1)"
+if [[ -z "${BUNDLE_DIR}" || ! -f "${BUNDLE_DIR}/evidence/run.json" || ! -f "${BUNDLE_DIR}/viewer/index.html" ]]; then
+  echo "Phrond did not produce a bundle under ${ARTIFACT_DIR}" >&2
+  exit 1
+fi
+go run ./cmd/phrond-coverage --bundle "${BUNDLE_DIR}"
 
 popd >/dev/null
 
-echo "Artifacts written to ${ARTIFACT_DIR}"
-echo "Coverage report (Workflow): ${ARTIFACT_DIR}/coverage.workflow.yaml"
-echo "Coverage report (Postman): ${ARTIFACT_DIR}/coverage.postman_collection.json"
-echo "Coverage report (HTML): ${ARTIFACT_DIR}/coverage.html"
+echo "OKF bundle: ${BUNDLE_DIR}/index.md"
+echo "HTML dashboard: ${BUNDLE_DIR}/viewer/index.html"
 if [[ -n "${PHROND_GENERATE_SCHEMA:-}" ]]; then
   echo "Generated OpenAPI: ${PHROND_GENERATED_SCHEMA_PATH}"
 fi

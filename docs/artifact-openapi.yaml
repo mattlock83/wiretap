@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
-  title: Test Artifact Schema
+  title: Legacy Test Artifact Schema
   version: 1.0.0
-  description: Schema for YAML artifacts produced by the recorder.
+  description: Historical loose YAML/JSON capture artifact schema. Current runs write versioned JSON evidence inside an OKF bundle; see bundle-evidence.schema.json.
 paths:
   /artifact:
     get:

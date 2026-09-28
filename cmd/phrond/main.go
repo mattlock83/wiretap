@@ -10,8 +10,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/phrond/evermock/internal/core"
 	"github.com/phrond/evermock/internal/app"
+	"github.com/phrond/evermock/internal/core"
 )
 
 func main() {
@@ -20,6 +20,10 @@ func main() {
 	cli := parseCLI(&cfg)
 
 	logger := appLogger(cfg.Log)
+	if output, legacy := strings.TrimSpace(os.Getenv("PHROND_OUTPUT_DIR")), strings.TrimSpace(os.Getenv("PHROND_ARTIFACT_DIR")); output != "" && legacy != "" && output != legacy {
+		logger.Error("PHROND_OUTPUT_DIR and PHROND_ARTIFACT_DIR disagree")
+		os.Exit(1)
+	}
 	if handleCLI(cli, cfg) {
 		return
 	}
@@ -68,7 +72,9 @@ func applyEnv(cfg *core.Config) {
 	if v := strings.TrimSpace(os.Getenv("PHROND_PROXY_CA_DIR")); v != "" {
 		cfg.Proxy.CABaseDir = v
 	}
-	if v := strings.TrimSpace(os.Getenv("PHROND_ARTIFACT_DIR")); v != "" {
+	if v := strings.TrimSpace(os.Getenv("PHROND_OUTPUT_DIR")); v != "" {
+		cfg.Artifact.OutputDir = v
+	} else if v := strings.TrimSpace(os.Getenv("PHROND_ARTIFACT_DIR")); v != "" {
 		cfg.Artifact.OutputDir = v
 	}
 	if v := strings.TrimSpace(os.Getenv("PHROND_MAX_CAPTURE_BYTES")); v != "" {

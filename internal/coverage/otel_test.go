@@ -36,10 +36,6 @@ func TestTraceMetadataSurvivesReportsWithoutReplayingIdentity(t *testing.T) {
 	if len(task.With.Headers) != 1 || task.Metadata.Phrond.RequestHeaders["Traceparent"][0] != "old" {
 		t.Fatal("workflow replay/evidence headers mixed")
 	}
-	request := sampleToPostmanRequest(sample.Request, "sut")
-	if len(request.Header) != 1 {
-		t.Fatalf("stale replay headers: %#v", request.Header)
-	}
 	var html bytes.Buffer
 	if err := WriteReport(&html, report, "html"); err != nil {
 		t.Fatal(err)

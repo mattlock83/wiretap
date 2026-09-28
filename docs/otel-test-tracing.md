@@ -1,7 +1,8 @@
 # Decision: one standard trace per test attempt
 
 Date: 2026-09-27  
-Status: **accepted direction; implementation pending**
+Status: **implemented direction**. The older Postman references in this design
+are superseded by the [OKF bundle output](okf-bundles.md).
 
 This records the agreed product direction. It does not describe functionality
 already shipped. The concrete API and field names below are the recommended
@@ -182,8 +183,8 @@ Reports show test membership and correlation evidence separately, with payloads
 visible even when parentage is unknown. Include trace/root metadata in per-test
 report output; retain attempt identities even when aggregate reports group names.
 Raw captured headers remain evidence subject to normal redaction. Do not replay
-stale `traceparent`, `tracestate`, or Phrond session headers in executable Postman
-or workflow requests. Keep trace IDs out of interaction fingerprints.
+stale `traceparent`, `tracestate`, or Phrond session headers in executable
+Workflow requests. Keep trace IDs out of interaction fingerprints.
 
 ## Scope and limitations
 

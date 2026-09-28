@@ -114,7 +114,18 @@ type Flow struct {
 	Fingerprint string `yaml:"fingerprint,omitempty" json:"fingerprint,omitempty"`
 	// TransportError preserves an upstream connection or TLS failure alongside
 	// the recorded 502 response.
-	TransportError string `yaml:"transport_error,omitempty" json:"transport_error,omitempty"`
+	TransportError string                `yaml:"transport_error,omitempty" json:"transport_error,omitempty"`
+	Assumption     *DependencyAssumption `yaml:"assumption,omitempty" json:"assumption,omitempty"`
+}
+
+// DependencyAssumption qualifies an observed outbound exchange. Presence of a
+// field in a mock response is not evidence that the consumer required it.
+type DependencyAssumption struct {
+	EvidenceBasis  string `yaml:"evidence_basis" json:"evidence_basis"`
+	ConsumedFields string `yaml:"consumed_fields" json:"consumed_fields"`
+	ProviderCheck  struct {
+		Status string `yaml:"status" json:"status"`
+	} `yaml:"provider_check" json:"provider_check"`
 }
 
 // Message wraps HTTP message payloads.

@@ -19,12 +19,13 @@ those existing servers solely to capture and correlate the traffic.
 - C1: consumer-owned SUT lifecycle and low-ceremony named Node test API.
 - C2: strict-by-default OpenAPI enforcement with explicit, deterministic
   OpenAPI 3.1 generation for teams bootstrapping a contract.
-- E1: Postman JSON and Open Workflow Specification YAML exports.
+- E1: Open Workflow Specification YAML export. Historical Postman export was
+  removed when OKF bundles became the primary output.
 - F1: capture-only product simplification; all mock-serving code and public
   mock APIs removed.
 - F2: restore external-only dependency capture on the existing proxy listener,
   with strict dependency schemas, stable asset identity, per-test isolation,
-  parent-flow correlation, and dual-channel HTML/Postman/Workflow reporting.
+  parent-flow correlation, and dual-channel HTML/Workflow reporting.
 
 ## Next: B3 transport and RPC capture
 

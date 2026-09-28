@@ -42,15 +42,15 @@ opt in with the SDK's `generateSchema` configuration or set
 `generate_schema: true` through the runtime API. Generation is intentionally
 explicit and cannot be combined with a supplied schema.
 
-## An artifact contains HTTP 502
+## An attempt contains HTTP 502
 
 Phrond returns 502 when it cannot reach or establish TLS with the configured
 SUT or a declared external dependency. The flow's `transport_error` contains the
 original upstream failure; `asset_id` identifies a failed dependency route.
 
-## Bodies are truncated in artifacts
+## Bodies are truncated in a bundle
 
-Complete bodies are still delivered. The artifact retains 4 MiB by default and
+Complete bodies are still delivered. The bundle retains 4 MiB by default and
 sets `truncated: true` plus `original_bytes`. Adjust
 `PHROND_MAX_CAPTURE_BYTES`; `0` means unlimited and should be used cautiously.
 
@@ -81,8 +81,17 @@ bridge for native clients. The adapter covers async test callbacks, including
 ## Teardown reports incomplete capture or shutdown returns 409
 
 Await expected requests and background activity before teardown. Accepted
-requests drain for five seconds by default. A timeout produces a failed artifact
+requests drain for five seconds by default. A timeout produces a failed attempt
 with `capture_incomplete` and diagnostics; increasing `drainTimeoutMs` can help
 with deliberately slow requests. Late completions are never added to a later
 test. Use one lifecycle owner for shared suites and `manageRuntime: false` in
 workers; stop Phrond only after every test is torn down.
+
+## A bundle page is missing or has a broken link
+
+The JSON files under `evidence/` and the referenced schema/payload files are
+the source of truth. Regenerate Phrond's pages with
+`go run ./cmd/phrond-coverage --bundle <run-directory>`. A missing Markdown
+page does not make a successful evidence read or Workflow export empty. If the
+command reports an integrity error, restore the missing or corrupted evidence
+file from the original bundle; page regeneration cannot invent it.

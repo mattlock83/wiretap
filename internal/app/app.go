@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"sync"
 
+	"github.com/phrond/evermock/internal/bundle"
+	"github.com/phrond/evermock/internal/bundlereport"
 	"github.com/phrond/evermock/internal/core"
 )
 
@@ -22,6 +24,8 @@ type App struct {
 	lifecycle *core.Lifecycle
 	server    *http.Server
 	store     *TestCaseStore
+	bundleMu  sync.Mutex
+	bundle    *bundle.Writer
 
 	proxyComponent *ProxyComponent
 
@@ -36,6 +40,44 @@ type App struct {
 	defaultSessionID string
 	sessionSeq       uint64
 	inFlight         int
+}
+
+func (a *App) ensureBundle() (*bundle.Writer, error) {
+	a.bundleMu.Lock()
+	defer a.bundleMu.Unlock()
+	if a.bundle != nil {
+		return a.bundle, nil
+	}
+	w, err := bundle.New(a.cfg.Artifact.OutputDir)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := bundlereport.Refresh(w.Path()); err != nil {
+		return nil, err
+	}
+	a.bundle = w
+	a.store.SetSink(w)
+	return w, nil
+}
+
+func (a *App) currentBundle() *bundle.Writer {
+	a.bundleMu.Lock()
+	defer a.bundleMu.Unlock()
+	return a.bundle
+}
+
+func (a *App) closeBundle(state string) error {
+	a.bundleMu.Lock()
+	defer a.bundleMu.Unlock()
+	if a.bundle == nil {
+		return nil
+	}
+	if err := a.bundle.Finalize(state); err != nil {
+		return err
+	}
+	a.bundle = nil
+	a.store.SetSink(nil)
+	return nil
 }
 
 func New(deps Deps) (*App, error) {
@@ -108,6 +150,14 @@ func (a *App) Run(ctx context.Context) error {
 	case <-ctx.Done():
 		a.logger.Info("http server shutting down")
 		_ = a.server.Shutdown(context.Background())
+		closed := a.currentBundle()
+		if err := a.closeBundle("interrupted"); err != nil {
+			a.logger.Error("failed to finalize interrupted bundle", "error", err)
+		} else if closed != nil {
+			if _, err := bundlereport.Refresh(closed.Path()); err != nil {
+				a.logger.Error("failed to refresh interrupted bundle view", "error", err)
+			}
+		}
 		return ctx.Err()
 	case err := <-errCh:
 		if errors.Is(err, http.ErrServerClosed) {

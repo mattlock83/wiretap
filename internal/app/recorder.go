@@ -31,12 +31,51 @@ import (
 type TestCaseStore struct {
 	mu           sync.Mutex
 	outputDir    string
+	sink         CaptureSink
 	active       *testCaseState
 	last         *artifact.Artifact
+	pending      *artifact.Artifact
+	lastPath     string
 	flowSeq      int
 	schemaSeq    int
 	expectSeq    int
 	maxBodyBytes int64
+}
+
+// CaptureSink stores registered attempts in a runtime-owned run.
+type CaptureSink interface {
+	Register(artifact.TestCase, []artifact.SchemaRef) ([]artifact.SchemaRef, error)
+	Commit(*artifact.Artifact) (string, error)
+}
+
+func (s *TestCaseStore) SetSink(sink CaptureSink) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.sink = sink
+}
+
+func (s *TestCaseStore) RegisterActive() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.active == nil {
+		return errors.New("no active test case")
+	}
+	if s.sink == nil {
+		return nil
+	}
+	tc := artifact.TestCase{ID: s.active.id, Name: s.active.name, StartedAt: s.active.startedAt, Tags: s.active.tags, Meta: s.active.meta}
+	frozen, err := s.sink.Register(tc, s.active.schemas)
+	if err != nil {
+		return err
+	}
+	s.active.schemas = frozen
+	return nil
+}
+
+func (s *TestCaseStore) AbortCase() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.active = nil
 }
 
 type testCaseState struct {
@@ -87,6 +126,9 @@ func (s *TestCaseStore) StartCase(name string, tags []string, meta map[string]an
 	if s.active != nil {
 		return nil, errors.New("test case already active")
 	}
+	if s.pending != nil {
+		return nil, errors.New("previous test attempt has a pending persistence failure")
+	}
 	if strings.TrimSpace(name) == "" {
 		return nil, errors.New("test case name is required")
 	}
@@ -102,11 +144,19 @@ func (s *TestCaseStore) StartCase(name string, tags []string, meta map[string]an
 		sutBaseURL: sutBaseURL,
 	}
 	s.last = nil
+	s.pending = nil
+	s.lastPath = ""
 	s.flowSeq = 0
 	s.schemaSeq = 0
 	s.expectSeq = 0
 
 	return &artifact.TestCase{ID: id, Name: name, StartedAt: startedAt, Tags: tags, Meta: meta}, nil
+}
+
+func (s *TestCaseStore) HasPendingCommit() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.pending != nil
 }
 
 type TestCaseStatus struct {
@@ -124,6 +174,15 @@ func (s *TestCaseStore) FinishCase(status string, env *artifact.Environment) (*a
 	s.mu.Lock()
 	state := s.active
 	if state == nil {
+		if s.pending != nil && s.sink != nil {
+			art := s.pending
+			path, err := s.sink.Commit(art)
+			if err == nil {
+				s.last, s.pending, s.lastPath = art, nil, path
+			}
+			s.mu.Unlock()
+			return art, path, err
+		}
 		s.mu.Unlock()
 		return nil, "", errors.New("no active test case")
 	}
@@ -141,6 +200,10 @@ func (s *TestCaseStore) FinishCase(status string, env *artifact.Environment) (*a
 	linkCausality(flows)
 	for i := range flows {
 		flows[i].Fingerprint = flowFingerprint(flows[i])
+		if flows[i].Channel == "sut_to_dependency" {
+			flows[i].Assumption = &artifact.DependencyAssumption{EvidenceBasis: "observed_exchange", ConsumedFields: "unknown"}
+			flows[i].Assumption.ProviderCheck.Status = "not_checked"
+		}
 	}
 
 	if env == nil {
@@ -180,13 +243,23 @@ func (s *TestCaseStore) FinishCase(status string, env *artifact.Environment) (*a
 		}
 	}
 
-	path, err := artifact.WriteFile(s.outputDir, art)
+	var path string
+	var err error
+	if s.sink != nil {
+		path, err = s.sink.Commit(art)
+	} else {
+		path, err = artifact.WriteFile(s.outputDir, art)
+	}
 	if err != nil {
-		return nil, "", err
+		s.mu.Lock()
+		s.pending = art
+		s.mu.Unlock()
+		return art, "", err
 	}
 
 	s.mu.Lock()
 	s.last = art
+	s.lastPath = path
 	s.mu.Unlock()
 
 	return art, path, nil
@@ -206,6 +279,7 @@ func (s *TestCaseStore) Status() TestCaseStatus {
 	if s.last != nil {
 		status.LastID = s.last.TestCase.ID
 		status.LastStatus = s.last.TestCase.Status
+		status.LastPath = s.lastPath
 	}
 	return status
 }

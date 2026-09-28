@@ -1,6 +1,7 @@
 # CI Example
 
-This is a minimal GitHub Actions workflow that runs Go tests, JS SDK tests, and uploads artifacts.
+This is a minimal GitHub Actions workflow that runs Go tests, JS SDK tests,
+and the capture example, then uploads its OKF bundle.
 
 ```yaml
 name: ci
@@ -20,29 +21,34 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.22"
+          go-version-file: go.mod
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: "18"
+          node-version: "20"
 
       - name: Go tests
         run: go test ./...
 
       - name: JS SDK tests
         working-directory: sdk/js
-        run: npm test
+        run: npm ci && npm test
+
+      - name: Capture example
+        run: ./examples/run-basic-rest-e2e.sh
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: test-artifacts
-          path: artifacts/*.yaml
+          path: artifacts/
 ```
 
 Notes:
-- The core service writes artifacts to `./artifacts` by default. Override with `PHROND_ARTIFACT_DIR` in CI.
+- The service writes a bundle to `./artifacts/<run-id>/` by default. Override
+  the output root with `PHROND_OUTPUT_DIR` in CI. Upload the whole bundle so
+  `index.md`, `viewer/index.html`, `evidence/`, `schemas/`, and `payloads/` remain together.
 - Body capture defaults to 4 MiB per request or response. Set
   `PHROND_MAX_CAPTURE_BYTES` to another non-negative byte count when CI
   artifact size requires a different bound; `0` means unlimited.

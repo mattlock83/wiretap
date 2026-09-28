@@ -2,9 +2,10 @@
 
 Phrond captures network traffic between tests and an already-running system
 under test (SUT), and between that SUT and its externally owned dependencies or
-mock servers. It writes one correlated YAML artifact per test, validates both
-traffic directions strictly against supplied OpenAPI schemas, and exports HTML,
-Postman, Open Workflow Specification, and generated OpenAPI documents.
+mock servers. It writes one portable OKF bundle per run, with versioned JSON
+evidence and readable API, dependency, test, and coverage pages. It validates
+both traffic directions against supplied OpenAPI schemas. HTML,
+Open Workflow Specification, and generated OpenAPI remain explicit exports.
 
 Phrond deliberately does not start or configure the SUT, and it is not a mock
 server. Use the application harness and mocking tools that already fit your
@@ -36,6 +37,7 @@ const phrond = createNodeTestSuite({
   dependencies: {
     inventory: {
       upstreamUrl: process.env.WIREMOCK_BASE_URL,
+      upstreamKind: "mock",
       schema: {
         id: "inventory-api",
         type: "openapi",
@@ -57,7 +59,7 @@ those calls unchanged to `WIREMOCK_BASE_URL`. `phrond.dependencyUrl("inventory")
 returns the same capture URL once the suite has started. Dependencies are
 optional; omit `dependencies` when only inbound traffic is needed. The exact
 test name, pass/fail status, inbound request, downstream request, and their
-test trace and inferred request relationships are stored in one artifact.
+test trace and inferred request relationships are stored in the run bundle.
 
 Phrond uses W3C `traceparent`/`tracestate`, with a fresh root per test attempt.
 Ordinary HTTP clients work with standard test-side instrumentation; shared-SUT
@@ -73,7 +75,7 @@ parallel capture requires the SUT to propagate context. See the
   `asset_id`, and point to the originating inbound flow with `parent_flow_id`.
 - HTTPS capture uses a locally generated MITM CA; see
   [HTTPS trust setup](docs/https-trust.md).
-- Request and response bodies stream through unchanged. Artifacts retain at
+- Request and response bodies stream through unchanged. The bundle retains at
   most 4 MiB per body by default; set `PHROND_MAX_CAPTURE_BYTES=0` for unlimited
   capture.
 - Upstream connection and TLS failures return and record HTTP 502 responses,
@@ -83,21 +85,21 @@ parallel capture requires the SUT to propagate context. See the
   from their captured SUT tests. Each declared dependency always supplies its
   own OpenAPI schema, including when the SUT schema is being generated.
 
-## Reports
+## Bundle and optional exports
 
 ```bash
-go run ./cmd/phrond-coverage --artifacts ./artifacts --sut-name "Example SUT" --format openapi --output generated.openapi.yaml
-go run ./cmd/phrond-coverage --artifacts ./artifacts --sut-name "Example SUT" --format workflow --output coverage.workflow.yaml
-go run ./cmd/phrond-coverage --artifacts ./artifacts --sut-name "Example SUT" --format postman --output coverage.postman_collection.json
-go run ./cmd/phrond-coverage --artifacts ./artifacts --sut-name "Example SUT" --format html --output coverage.html
+go run ./cmd/phrond-coverage --bundle ./artifacts/<run-id>
+go run ./cmd/phrond-coverage --bundle ./artifacts/<run-id> --format openapi --output generated.openapi.yaml
 ```
 
-HTML, Postman, and Workflow formats report both test→SUT and SUT→dependency
-traffic, together with provided and dependent API coverage. The HTML report
-can be explored by API operation or test case and includes the captured
-request/response headers, trailers, payloads, dependency identity, and parent
-request. The workflow export uses Open Workflow Specification DSL 1.0.3;
-Postman remains an interoperability option.
+The runtime creates `./artifacts/<run-id>/viewer/index.html` and `index.md`
+automatically; set `PHROND_OUTPUT_DIR` to choose the parent directory. Open the
+HTML dashboard directly in a browser, or use the OKF pages. The first command
+rebuilds both views from JSON evidence and prints the OKF entry path. Standalone
+HTML and Workflow remain available with explicit `--format html` and
+`--format workflow` exports.
+The [bundle guide](docs/okf-bundles.md) explains coverage and dependency
+assumptions.
 
 Generated OpenAPI contains inferred paths, parameters, bodies, content types,
 and responses from passing tests, but never captured values as examples. Review
@@ -105,12 +107,15 @@ it before moving the file into `schemas` and using normal strict validation.
 
 ## Documentation
 
+- [Capture bundles and reports](docs/okf-bundles.md)
+- [OKF bundle design and implementation notes](docs/okf-bundle-implementation-plan.md)
 - [Standard test tracing: design decision](docs/otel-test-tracing.md)
 - [Test tracing: user adoption notes](docs/otel-adoption.md)
 - [Standard test tracing: implementation handoff](docs/otel-implementation-plan.md)
 - [Getting started with existing tests and a mock server](docs/getting-started-existing-tests.md)
 - [JavaScript SDK](sdk/js/README.md)
 - [Runtime HTTP API](docs/runtime-api.md)
-- [Artifact schema](docs/artifact-openapi.yaml)
+- [Bundle evidence schema](docs/bundle-evidence.schema.json)
+- [Legacy artifact schema](docs/artifact-openapi.yaml)
 - [Design](docs/testing-tool-requirements-and-design.md)
 - [Roadmap](docs/roadmap-capture-fidelity.md)

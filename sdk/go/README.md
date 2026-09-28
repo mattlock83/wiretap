@@ -10,6 +10,8 @@ runtime := phrond.Runtime{BaseURL: os.Getenv("PHROND_BASE_URL")}
 t.Run("creates an order", func(t *testing.T) {
     t.Parallel() // only with working SUT propagation / isolated runtimes
     session := runtime.StartTest(t, phrond.TestOptions{
+        APIID: "orders",
+        SUTTargetKind: "service",
         SUTBaseURL: sut.URL, // shared httptest.NewServer or existing service
         Schemas: []any{map[string]any{
             "type": "openapi",
@@ -44,11 +46,18 @@ one, the global provider is used, with a local fallback for a no-op global setup
 No exporter or collector is needed; unsampled contexts work.
 
 `TestOptions.Dependencies` accepts the API dependency registration objects
-(`asset_id`, `upstream_url`, `schema`/`schemas`). The returned `Dependencies` map
+(`asset_id`, `upstream_url`, optional `upstream_kind`, `schema`/`schemas`). The returned `Dependencies` map
 contains capture URLs. Configure the SUT's dependency endpoints once to stable
 `/__phrond/dep/<asset-id>` URLs for traced sessions. `GenerateSchema: true` is the
 explicit alternative to SUT schemas; dependencies still require their schemas.
 `DrainTimeout` defaults to five seconds; use a positive duration up to one minute.
+
+Each runtime run writes an OKF bundle automatically. `Session.RunID`,
+`Session.BundlePath`, `Session.IndexPath`, and `Session.ViewerPath` identify it.
+Open `ViewerPath` for the offline HTML dashboard. Test cleanup commits the
+attempt's JSON evidence and regenerates both views. Set
+`PHROND_OUTPUT_DIR` on the runtime process to choose the output parent. See
+the [bundle guide](../../docs/okf-bundles.md) for coverage and optional exports.
 
 One runtime has one reverse SUT target. Distinct per-test `httptest.NewServer`
 instances need distinct runtimes if they overlap. Direct handler tests using

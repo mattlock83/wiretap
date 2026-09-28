@@ -19,16 +19,18 @@ import (
 var validDependencyAssetID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
 
 type dependencyRegistration struct {
-	AssetID     string               `json:"asset_id"`
-	AssetName   string               `json:"asset_name,omitempty"`
-	UpstreamURL string               `json:"upstream_url"`
-	Schema      *artifact.SchemaRef  `json:"schema,omitempty"`
-	Schemas     []artifact.SchemaRef `json:"schemas,omitempty"`
+	AssetID      string               `json:"asset_id"`
+	AssetName    string               `json:"asset_name,omitempty"`
+	UpstreamKind string               `json:"upstream_kind,omitempty"`
+	UpstreamURL  string               `json:"upstream_url"`
+	Schema       *artifact.SchemaRef  `json:"schema,omitempty"`
+	Schemas      []artifact.SchemaRef `json:"schemas,omitempty"`
 }
 
 // runtimeSession owns the capture state for one consumer test. Phrond does
 // not own the SUT lifecycle; it only records traffic routed through its proxy.
 type runtimeSession struct {
+	finishMu     sync.Mutex
 	CaseID       string
 	Root         trace.SpanContext
 	pending      int
@@ -63,6 +65,12 @@ func normalizeDependencies(dependencies []dependencyRegistration) (map[string]de
 			return nil, nil, fmt.Errorf("dependency %q upstream_url must not contain a fragment", dependency.AssetID)
 		}
 		dependency.AssetName = strings.TrimSpace(dependency.AssetName)
+		if dependency.UpstreamKind == "" {
+			dependency.UpstreamKind = "unknown"
+		}
+		if dependency.UpstreamKind != "unknown" && dependency.UpstreamKind != "mock" && dependency.UpstreamKind != "service" {
+			return nil, nil, fmt.Errorf("dependency %q upstream_kind must be mock, service, or unknown", dependency.AssetID)
+		}
 		if dependency.AssetName == "" {
 			dependency.AssetName = dependency.AssetID
 		}

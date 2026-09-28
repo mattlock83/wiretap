@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "okf-profile.schema.json",
+  "title": "Phrond OKF profile 1.0 concept frontmatter",
+  "type": "object",
+  "required": ["type", "title", "description", "generated", "phrond"],
+  "properties": {
+    "type": { "type": "string", "minLength": 1 },
+    "title": { "type": "string", "minLength": 1 },
+    "description": { "type": "string", "minLength": 1 },
+    "generated": {
+      "type": "object",
+      "required": ["by", "at"],
+      "properties": {
+        "by": { "const": "phrond/1.0" },
+        "at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "sources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["resource"],
+        "properties": {
+          "id": { "type": "string" },
+          "resource": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "phrond": {
+      "type": "object",
+      "required": ["profile_version", "kind", "run_id", "snapshot_revision"],
+      "properties": {
+        "profile_version": { "const": "1.0" },
+        "kind": { "enum": ["run", "coverage", "api", "operation", "assumptions", "attempt"] },
+        "run_id": { "type": "string", "minLength": 1 },
+        "snapshot_revision": { "type": "integer", "minimum": 1 },
+        "evidence": {
+          "oneOf": [
+            { "type": "string", "minLength": 1 },
+            {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["attempt_id", "flow_id", "path"],
+                "properties": {
+                  "attempt_id": { "type": "string", "minLength": 1 },
+                  "flow_id": { "type": "string", "minLength": 1 },
+                  "path": { "type": "string", "minLength": 1 }
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}

@@ -43,11 +43,13 @@ function normalizeGenerateSchema(value) {
   }
   const outputPath = pickFirstString(value.outputPath, value.output_path, value.output, value.path);
   const artifactsDir = pickFirstString(value.artifactsDir, value.artifacts_dir);
+  const bundlePath = pickFirstString(value.bundlePath, value.bundle_path);
   const title = pickFirstString(value.title);
   const version = pickFirstString(value.version);
   return {
     ...(outputPath ? { outputPath } : {}),
     ...(artifactsDir ? { artifactsDir } : {}),
+    ...(bundlePath ? { bundlePath } : {}),
     ...(title ? { title } : {}),
     ...(version ? { version } : {}),
     force: Boolean(value.force)
@@ -104,9 +106,14 @@ function normalizeDependencies(value) {
       throw new Error(`dependency "${assetId}" requires an OpenAPI schema`);
     }
     const assetName = pickFirstString(dependency.assetName, dependency.asset_name);
+    const upstreamKind = pickFirstString(dependency.upstreamKind, dependency.upstream_kind) || "unknown";
+    if (!["mock", "service", "unknown"].includes(upstreamKind)) {
+      throw new Error(`dependency "${assetId}" upstreamKind must be mock, service, or unknown`);
+    }
     return {
       asset_id: assetId,
       ...(assetName ? { asset_name: assetName } : {}),
+      upstream_kind: upstreamKind,
       upstream_url: upstreamUrl,
       ...(schemas.length > 0 ? { schemas } : {})
     };
@@ -163,6 +170,10 @@ class Runtime {
     this.defaultSchemas = [...schemaConfig.schemas];
     this.generatedSchemaConfig = schemaConfig.generateSchema;
     this.defaultDependencies = normalizeDependencies(config.dependencies);
+    this.apiId = pickFirstString(config.apiId, config.api_id);
+    this.sutTargetKind = pickFirstString(config.sutTargetKind, config.sut_target_kind);
+    this.testSource = config.testSource || config.test_source;
+    this.sutSource = config.sutSource || config.sut_source;
     this.schemaGenerated = false;
     this.manualScenarioName = "";
     this.sutUrl = runtimeInfo.sut_url || null;
@@ -276,6 +287,10 @@ class Runtime {
       name: pickFirstString(options.name, options.scenarioName, this.pendingScenarioName) || undefined,
       tags: options.tags,
       meta: options.meta,
+      api_id: pickFirstString(options.apiId, options.api_id, this.apiId) || undefined,
+      sut_target_kind: pickFirstString(options.sutTargetKind, options.sut_target_kind, this.sutTargetKind) || undefined,
+      test_source: options.testSource || options.test_source || this.testSource,
+      sut_source: options.sutSource || options.sut_source || this.sutSource,
       sut_base_url: options.sutBaseUrl || options.sut_base_url || this.defaultSutBaseUrl,
       explicit_session: Boolean(options.explicitSession ?? options.explicit_session ?? this.explicitSession),
       schemas: schemaConfig.schemas
@@ -299,6 +314,10 @@ class Runtime {
       sutBaseUrl: payload.sut_base_url,
       proxyListen: session.proxy_listen || this.runtimeInfo?.proxy?.listen_addr,
       sutUrl: session.sut_url || this.sutUrl,
+      runId: session.run_id,
+      bundlePath: session.bundle_path,
+      indexPath: session.index_path,
+      viewerPath: session.viewer_path,
       dependencyUrls: session.dependencies || Object.fromEntries(dependencies.map((dependency) => [
         dependency.asset_id,
         `${String(session.proxy_listen || this.sutUrl || "").replace(/\/$/, "")}/__phrond/dep/${encodeURIComponent(dependency.asset_id)}`
@@ -343,10 +362,10 @@ class Runtime {
 
   report(options = {}) {
     return this.client.report({
+      bundle_path: options.bundlePath || options.bundle_path,
       artifacts_dir: options.artifactsDir || options.artifacts_dir,
       sut_name: options.sutName || options.sut_name,
       include_artifacts: options.includeArtifacts || options.include_artifacts || false,
-      collection_path: options.collectionPath || options.collection_path,
       workflow_path: options.workflowPath || options.workflow_path,
       html_path: options.htmlPath || options.html_path
     });
@@ -356,6 +375,7 @@ class Runtime {
     const config = options === undefined ? this.generatedSchemaConfig : normalizeGenerateSchema(options);
     if (!config) throw new Error("generateSchema was not enabled for this capture runtime");
     const response = await this.client.generateSchema({
+      bundle_path: config.bundlePath,
       artifacts_dir: config.artifactsDir,
       output_path: config.outputPath,
       title: config.title,

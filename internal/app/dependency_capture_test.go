@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/phrond/evermock/internal/core"
 	"github.com/phrond/evermock/internal/artifact"
+	"github.com/phrond/evermock/internal/core"
 	"github.com/phrond/evermock/internal/coverage"
 )
 
@@ -193,7 +193,7 @@ func TestExternalDependencyCaptureCorrelatesBothTrafficDirections(t *testing.T) 
 	if appInstance.proxyComponent == nil {
 		t.Fatal("expected dependency capture to reuse the existing proxy")
 	}
-	report, err := coverage.Generate(t.Context(), appInstance.cfg.Artifact.OutputDir, "Orders API", true)
+	report, err := coverage.Generate(t.Context(), appInstance.currentBundle().Path(), "Orders API", true)
 	if err != nil {
 		t.Fatal(err)
 	}

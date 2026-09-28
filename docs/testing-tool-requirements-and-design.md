@@ -1,5 +1,8 @@
 # Capture and reporting design
 
+Historical design note. Current capture output is the [OKF bundle](okf-bundles.md),
+and the Postman export described below has been removed.
+
 The accepted next tracing design is documented in
 [one standard trace per test attempt](otel-test-tracing.md), with
 [adoption notes](otel-adoption.md) and an

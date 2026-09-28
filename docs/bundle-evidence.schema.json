@@ -1,0 +1,147 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "bundle-evidence.schema.json",
+  "title": "Phrond bundle evidence 1.x",
+  "oneOf": [
+    { "$ref": "#/$defs/run" },
+    { "$ref": "#/$defs/attempt" }
+  ],
+  "$defs": {
+    "version": { "type": "string", "pattern": "^1\\.[0-9]+$" },
+    "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$" },
+    "hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "relativePath": { "type": "string", "minLength": 1, "pattern": "^(?!/)(?![A-Za-z]:)(?!.*(?:^|/)\\.\\.(?:/|$)).+$" },
+    "fileRef": {
+      "type": "object",
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": { "$ref": "#/$defs/relativePath" },
+        "sha256": { "$ref": "#/$defs/hash" }
+      }
+    },
+    "schemaRef": {
+      "type": "object",
+      "required": ["id", "role", "type", "source"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "role": { "type": "string" },
+        "type": { "type": "string" },
+        "source": {
+          "type": "object",
+          "required": ["type"],
+          "properties": {
+            "type": { "enum": ["file", "unavailable"] },
+            "path": { "$ref": "#/$defs/relativePath" },
+            "sha256": { "$ref": "#/$defs/hash" }
+          }
+        }
+      }
+    },
+    "run": {
+      "type": "object",
+      "required": ["evidence_version", "run_id", "revision", "run_state", "started_at", "updated_at"],
+      "properties": {
+        "evidence_version": { "$ref": "#/$defs/version" },
+        "run_id": { "$ref": "#/$defs/id" },
+        "revision": { "type": "integer", "minimum": 1 },
+        "run_state": { "enum": ["open", "complete", "interrupted"] },
+        "started_at": { "type": "string", "format": "date-time" },
+        "updated_at": { "type": "string", "format": "date-time" },
+        "finished_at": { "type": "string", "format": "date-time" },
+        "api_id": { "type": "string" },
+        "sut_target_kind": { "enum": ["mock", "service", "unknown"] },
+        "dependency_kinds": { "type": "object", "additionalProperties": { "enum": ["mock", "service", "unknown"] } },
+        "test_source": { "type": "object" },
+        "sut_source": { "type": "object" },
+        "schemas": { "type": "array", "items": { "$ref": "#/$defs/schemaRef" } },
+        "pending": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["attempt_id", "name", "started_at"],
+            "properties": {
+              "attempt_id": { "$ref": "#/$defs/id" },
+              "name": { "type": "string" },
+              "started_at": { "type": "string", "format": "date-time" }
+            }
+          }
+        },
+        "attempts": {
+          "type": "array",
+          "items": {
+            "allOf": [
+              { "$ref": "#/$defs/fileRef" },
+              { "type": "object", "required": ["attempt_id"], "properties": { "attempt_id": { "$ref": "#/$defs/id" } } }
+            ]
+          }
+        }
+      }
+    },
+    "flow": {
+      "type": "object",
+      "required": ["id", "protocol", "channel", "request", "response"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "protocol": { "type": "string" },
+        "channel": { "type": "string" },
+        "request": { "type": ["object", "null"] },
+        "response": { "type": ["object", "null"] },
+        "assumption": {
+          "type": "object",
+          "properties": {
+            "evidence_basis": { "const": "observed_exchange" },
+            "consumed_fields": { "const": "unknown" },
+            "provider_check": {
+              "type": "object",
+              "properties": { "status": { "const": "not_checked" } }
+            }
+          }
+        }
+      }
+    },
+    "capture": {
+      "type": "object",
+      "required": ["version", "testcase", "traffic"],
+      "properties": {
+        "version": { "type": "integer", "minimum": 1 },
+        "testcase": {
+          "type": "object",
+          "required": ["id", "name", "started_at"],
+          "properties": {
+            "id": { "$ref": "#/$defs/id" },
+            "name": { "type": "string" },
+            "started_at": { "type": "string", "format": "date-time" }
+          }
+        },
+        "schemas": { "type": "array", "items": { "$ref": "#/$defs/schemaRef" } },
+        "traffic": { "type": "array", "items": { "$ref": "#/$defs/flow" } }
+      }
+    },
+    "bodyRef": {
+      "allOf": [
+        { "$ref": "#/$defs/fileRef" },
+        {
+          "type": "object",
+          "required": ["flow_id", "phase", "representation", "retained_bytes"],
+          "properties": {
+            "flow_id": { "type": "string", "minLength": 1 },
+            "phase": { "enum": ["request", "response"] },
+            "representation": { "enum": ["text", "bytes"] },
+            "retained_bytes": { "type": "integer", "minimum": 0 }
+          }
+        }
+      ]
+    },
+    "attempt": {
+      "type": "object",
+      "required": ["evidence_version", "run_id", "attempt_id", "capture"],
+      "properties": {
+        "evidence_version": { "$ref": "#/$defs/version" },
+        "run_id": { "$ref": "#/$defs/id" },
+        "attempt_id": { "$ref": "#/$defs/id" },
+        "capture": { "$ref": "#/$defs/capture" },
+        "bodies": { "type": "array", "items": { "$ref": "#/$defs/bodyRef" } }
+      }
+    }
+  }
+}
