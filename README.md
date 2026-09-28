@@ -126,7 +126,7 @@ phrond report --bundle ./artifacts/<run-id>
 phrond export --bundle ./artifacts/<run-id> --format openapi --output api.yaml
 ```
 
-Workflow and diagnostic JSON/YAML exports are also available. Retained bodies
+Diagnostic JSON/YAML exports are also available. Retained bodies
 are limited to 4 MiB each by default while delivery streams through the proxy.
 
 ## Documentation

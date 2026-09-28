@@ -12,7 +12,7 @@ SUT, mock, and test processes. Any language can use this API directly.
 | POST | `/v1/setupTest` | Register a test attempt, trace, schemas, and redactions. |
 | POST | `/v1/teardownTest` | Drain, validate, and commit an attempt. |
 | POST | `/v1/finishRun` | Finalize the bundle and stop capture. |
-| POST | `/v1/report` | Rebuild bundle views and optionally export Workflow. |
+| POST | `/v1/report` | Rebuild bundle views. |
 | POST | `/v1/generateSchema` | Export an OpenAPI draft from bundle evidence. |
 | GET | `/v1/proxy/ca` | Read the public proxy CA certificate. |
 
@@ -205,8 +205,7 @@ coverage summary. A copied bundle can be selected with `bundle_path`:
 }
 ```
 
-The bundle's `viewer/index.html` is written automatically. Supply an explicit
-`workflow_path` when a separate Workflow export is wanted. It reads the same
+The bundle's `viewer/index.html` is written automatically from the same
 bundle evidence. Only bundles are accepted. Unknown request fields are rejected. See [capture bundles](okf-bundles.md).
 
 ## Proxy certificate

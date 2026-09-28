@@ -80,7 +80,7 @@ export interface Runtime {
   teardownTest(options?: { sessionId?: string; status?: 'pass' | 'fail' | 'skip'; drainTimeoutMs?: number }): Promise<CaptureResponse>;
   runTest<T>(name: string, callback: (session: Session) => T | Promise<T>, options?: TestOptions): Promise<T>;
   dependencyUrl(assetId: string): string;
-  report(options?: { bundlePath?: string; workflowPath?: string }): Promise<CaptureResponse>;
+  report(options?: { bundlePath?: string }): Promise<CaptureResponse>;
   generateSchema(options?: GenerateSchemaOptions): Promise<CaptureResponse>;
   finishRun(): Promise<CaptureResponse>;
 }

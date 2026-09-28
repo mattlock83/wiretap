@@ -17,7 +17,7 @@ import (
 	"github.com/phrond/evermock/internal/core"
 )
 
-func TestRuntimeReportRefreshesBundleAndExportsWorkflow(t *testing.T) {
+func TestRuntimeReportRefreshesBundle(t *testing.T) {
 	outputDir := t.TempDir()
 	cfg := core.DefaultConfig()
 	cfg.Artifact.OutputDir = outputDir
@@ -94,10 +94,8 @@ paths:
 		t.Fatal(err)
 	}
 
-	workflowPath := filepath.Join(outputDir, "custom.workflow.yaml")
 	payload, err := json.Marshal(map[string]any{
-		"bundle_path":   writer.Path(),
-		"workflow_path": workflowPath,
+		"bundle_path": writer.Path(),
 	})
 	if err != nil {
 		t.Fatalf("encode report request: %v", err)
@@ -119,9 +117,6 @@ paths:
 	if err := json.Unmarshal(body, &response); err != nil {
 		t.Fatalf("decode report response: %v", err)
 	}
-	if response["workflow_path"] != workflowPath {
-		t.Fatalf("workflow_path = %v", response["workflow_path"])
-	}
 	for _, key := range []string{"index_path", "viewer_path"} {
 		path, ok := response[key].(string)
 		if !ok {
@@ -130,15 +125,6 @@ paths:
 		if _, err := os.Stat(path); err != nil {
 			t.Fatalf("%s: %v", key, err)
 		}
-	}
-
-	workflow, err := os.ReadFile(workflowPath)
-	if err != nil {
-		t.Fatalf("read workflow output: %v", err)
-	}
-	if !strings.Contains(string(workflow), "dsl: 1.0.3") ||
-		!strings.Contains(string(workflow), "call: http") {
-		t.Fatalf("unexpected workflow output:\n%s", workflow)
 	}
 
 }
@@ -228,5 +214,18 @@ func TestGenerateSchemaEndpointWritesStandardOpenAPIWithoutCapturedValues(t *tes
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusConflict {
 		t.Fatalf("repeat generate schema status = %d, want %d", resp.StatusCode, http.StatusConflict)
+	}
+}
+
+func TestRuntimeReportRejectsWorkflowExport(t *testing.T) {
+	instance, err := New(Deps{Config: core.DefaultConfig()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/v1/report", strings.NewReader(`{"workflow_path":"output.yaml"}`))
+	response := httptest.NewRecorder()
+	instance.routes().ServeHTTP(response, request)
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("removed report field accepted: %d %s", response.Code, response.Body.String())
 	}
 }

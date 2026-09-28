@@ -55,7 +55,7 @@ test("startCapture and named test session send capture-only payloads", async () 
   }
 });
 
-test("report selects a bundle and optional workflow export", async () => {
+test("report selects a bundle", async () => {
   let reportPayload;
   const server = await controlServer((path, body) => {
     if (path === "/v1/startRun") return { sut_url: "http://127.0.0.1:20010", proxy: { listen_addr: "127.0.0.1:20010" } };
@@ -65,11 +65,9 @@ test("report selects a bundle and optional workflow export", async () => {
   try {
     const runtime = await startCapture({ baseUrl: server.baseUrl, generateSchema: true });
     await runtime.report({
-      workflowPath: "capture.workflow.yaml",
       bundlePath: "capture-bundle"
     });
-    assert.equal(reportPayload.workflow_path, "capture.workflow.yaml");
-    assert.equal(reportPayload.bundle_path, "capture-bundle");
+    assert.deepEqual(reportPayload, { bundle_path: "capture-bundle" });
   } finally {
     await server.close();
   }

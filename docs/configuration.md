@@ -123,14 +123,13 @@ schema IDs. These exceptions never turn a validation failure into a pass.
 ```bash
 phrond report --bundle artifacts/<run-id>
 phrond export --bundle artifacts/<run-id> --format openapi --output api.yaml
-phrond export --bundle artifacts/<run-id> --format workflow --output workflow.yaml
 phrond export --bundle artifacts/<run-id> --format json --output coverage.json
 phrond ca > phrond-ca.pem
 ```
 
 `report` is an optional offline repair/rebuild tool for copied bundles. It
 rebuilds OKF pages and the offline dashboard from verified evidence.
-`export` uses the same report implementation for explicit OpenAPI, Workflow,
+`export` uses the same report implementation for explicit OpenAPI
 or diagnostic JSON/YAML output. Normal capture already writes the bundle views.
 `ca` prints the public CA certificate used by that runtime configuration; it
 creates the local CA if necessary. Trust setup is described in the

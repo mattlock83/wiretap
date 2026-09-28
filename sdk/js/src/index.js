@@ -324,7 +324,7 @@ class Runtime {
   }
 
   report(options = {}) {
-    return this.client.report({ bundle_path: options.bundlePath, workflow_path: options.workflowPath });
+    return this.client.report({ bundle_path: options.bundlePath });
   }
 
   async generateSchema(options) {

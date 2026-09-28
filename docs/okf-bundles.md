@@ -44,8 +44,8 @@ is not a complete original body.
 
 The HTML dashboard uses embedded styling and a small filter script; it needs no
 server, network connection, or external libraries. Its links stay within the
-bundle. Generated OpenAPI, Workflow YAML, and diagnostic JSON/YAML are optional
-`--format openapi`, `--format workflow`, `--format json`, or `--format yaml`
+bundle. Generated OpenAPI and diagnostic JSON/YAML are optional
+`--format openapi`, `--format json`, or `--format yaml`
 exports. Those files are not generated during normal capture.
 
 The bundle can be browsed with a Markdown file browser or a repository viewer:

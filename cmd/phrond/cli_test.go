@@ -20,3 +20,11 @@ func TestCLIHelp(t *testing.T) {
 		}
 	}
 }
+
+func TestCLIRejectsWorkflowExport(t *testing.T) {
+	for _, command := range []string{"report", "export"} {
+		if code := execute(context.Background(), []string{command, "--bundle", t.TempDir(), "--format", "workflow"}); code != 2 {
+			t.Fatalf("%s accepted removed export format: exit %d", command, code)
+		}
+	}
+}

@@ -222,8 +222,7 @@ Attempts retain `testcase.trace_id`, `testcase.root_span_id`, sender
 `timing` parent relationships are inferences. `ambiguous`/`unmatched` flows omit
 `parent_flow_id`. The bundle's test pages show these distinctions and preserve
 retry IDs; the bundled HTML dashboard presents the same evidence.
-Executable Workflow requests omit captured trace/session headers; captured
-evidence retains the received W3C context.
+Captured evidence retains the received W3C context.
 
 Await all expected activity before finishing a test. Teardown stops new
 admission and waits up to five seconds for accepted requests; `drainTimeoutMs`

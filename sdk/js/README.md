@@ -142,8 +142,7 @@ to export before closing. Review generated specs before adopting them.
   custom fixtures. Manual setup registers a span but does not activate it around
   arbitrary requests; use `runTest` or standard OTel context binding.
 - `runtime.dependencyUrl(assetId)` returns the configured dependency capture URL.
-- `runtime.report({ bundlePath, workflowPath })` refreshes views and optionally
-  writes a Workflow export.
+- `runtime.report({ bundlePath })` refreshes bundle views.
 - `runtime.generateSchema({ outputPath, title, version, force })` explicitly exports
   a draft from current captures.
 - `runtime.finishRun()` finalizes capture when `manageRuntime` is enabled.

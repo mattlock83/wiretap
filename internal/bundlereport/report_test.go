@@ -58,8 +58,8 @@ paths:
 	if err != nil {
 		t.Fatal(err)
 	}
-	var workflowBefore bytes.Buffer
-	if err := coverage.WriteReport(&workflowBefore, before, "workflow"); err != nil {
+	var jsonBefore bytes.Buffer
+	if err := coverage.WriteReport(&jsonBefore, before, "json"); err != nil {
 		t.Fatal(err)
 	}
 	for _, rel := range []string{"index.md", "run.md", "coverage.md", "tests/attempt-1.md", "tests/index.md", "apis/index.md", "dependencies/index.md"} {
@@ -74,12 +74,12 @@ paths:
 	if err != nil {
 		t.Fatal(err)
 	}
-	var workflowAfter bytes.Buffer
-	if err := coverage.WriteReport(&workflowAfter, after, "workflow"); err != nil {
+	var jsonAfter bytes.Buffer
+	if err := coverage.WriteReport(&jsonAfter, after, "json"); err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Equal(workflowBefore.Bytes(), workflowAfter.Bytes()) {
-		t.Fatal("Markdown changed Workflow export")
+	if !bytes.Equal(jsonBefore.Bytes(), jsonAfter.Bytes()) {
+		t.Fatal("Markdown changed JSON export")
 	}
 	if _, err := Refresh(w.Path()); err != nil {
 		t.Fatal(err)
@@ -118,12 +118,12 @@ paths:
 	if err != nil {
 		t.Fatal(err)
 	}
-	var copiedWorkflow bytes.Buffer
-	if err := coverage.WriteReport(&copiedWorkflow, copiedReport, "workflow"); err != nil {
+	var copiedJSON bytes.Buffer
+	if err := coverage.WriteReport(&copiedJSON, copiedReport, "json"); err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Equal(workflowAfter.Bytes(), copiedWorkflow.Bytes()) {
-		t.Fatal("copied bundle changed Workflow export")
+	if !bytes.Equal(jsonAfter.Bytes(), copiedJSON.Bytes()) {
+		t.Fatal("copied bundle changed JSON export")
 	}
 	if _, err := Rebuild(copied); err != nil {
 		t.Fatal(err)

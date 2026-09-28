@@ -388,8 +388,7 @@ func (a *App) handleGenerateSchema(w http.ResponseWriter, r *http.Request) {
 }
 
 type runtimeReportRequest struct {
-	BundlePath   string `json:"bundle_path,omitempty"`
-	WorkflowPath string `json:"workflow_path,omitempty"`
+	BundlePath string `json:"bundle_path,omitempty"`
 }
 
 func (a *App) handleRuntimeReport(w http.ResponseWriter, r *http.Request) {
@@ -417,13 +416,6 @@ func (a *App) handleRuntimeReport(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	workflowPath := strings.TrimSpace(payload.WorkflowPath)
-	if workflowPath != "" {
-		if err := writeCoverageReport(workflowPath, report, "workflow"); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
-			return
-		}
-	}
 	response := map[string]any{"report": report}
 	run, _, err := bundle.Load(input)
 	if err != nil {
@@ -437,9 +429,6 @@ func (a *App) handleRuntimeReport(w http.ResponseWriter, r *http.Request) {
 	response["viewer_path"] = filepath.Join(absolute, "viewer", "index.html")
 	response["run_state"] = run.RunState
 	response["snapshot_revision"] = run.Revision
-	if workflowPath != "" {
-		response["workflow_path"] = workflowPath
-	}
 	writeJSON(w, http.StatusOK, response)
 }
 
@@ -470,18 +459,6 @@ func (a *App) configureProxy(payload proxyOptions) error {
 		}
 	}
 	return nil
-}
-
-func writeCoverageReport(path string, report *coverage.Report, format string) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	file, err := os.Create(path)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-	return coverage.WriteReport(file, report, format)
 }
 
 func writeGeneratedSchema(path string, report *coverage.Report, options coverage.GeneratedOpenAPIOptions, force bool) error {

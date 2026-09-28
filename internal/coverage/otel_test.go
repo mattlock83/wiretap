@@ -10,7 +10,7 @@ import (
 	"github.com/phrond/evermock/internal/bundle"
 )
 
-func TestTraceMetadataSurvivesReportsWithoutReplayingIdentity(t *testing.T) {
+func TestTraceMetadataSurvivesReports(t *testing.T) {
 	writer, err := bundle.New(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -34,13 +34,6 @@ func TestTraceMetadataSurvivesReportsWithoutReplayingIdentity(t *testing.T) {
 	sample := report.TestCases[0].Traffic[0]
 	if sample.TestCaseID == "" || sample.TestTraceID == "" || sample.RootSpanID != "root" || sample.RequestSpanID != "sender" {
 		t.Fatalf("trace metadata lost: %#v", sample)
-	}
-	task, ok := workflowHTTPTaskDefinition(sample, "GET /items", "schema", "sut", "")
-	if !ok {
-		t.Fatal("no workflow task")
-	}
-	if len(task.With.Headers) != 1 || task.Metadata.Phrond.RequestHeaders["Traceparent"][0] != "old" {
-		t.Fatal("workflow replay/evidence headers mixed")
 	}
 	// Trace metadata is present in diagnostic exports as well.
 	raw, _ := json.Marshal(report)

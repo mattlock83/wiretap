@@ -92,6 +92,6 @@ workers; stop Phrond only after every test is torn down.
 The JSON files under `evidence/` and the referenced schema/payload files are
 the source of truth. Regenerate Phrond's pages with
 `go run ./cmd/phrond report --bundle <run-directory>`. A missing Markdown
-page does not make a successful evidence read or Workflow export empty. If the
+page does not make a successful evidence read or diagnostic export empty. If the
 command reports an integrity error, restore the missing or corrupted evidence
 file from the original bundle; page regeneration cannot invent it.

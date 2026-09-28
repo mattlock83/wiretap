@@ -17,7 +17,7 @@ Phrond owns capture, correlation, schema validation, and the resulting bundle.
 | `internal/redact` | Apply configured redaction before persistence. |
 | `internal/artifact` | In-memory capture model shared by recording, storage, and reporting. |
 | `internal/bundle` | Authoritative run inventory, immutable attempt JSON, frozen schemas, payload attachments, and integrity checks. |
-| `internal/coverage` | Calculate observed operation coverage and generate optional OpenAPI, Workflow, and diagnostic exports. |
+| `internal/coverage` | Calculate observed operation coverage and generate optional OpenAPI and diagnostic exports. |
 | `internal/bundlereport` | Render OKF Markdown and the offline HTML dashboard from verified bundle evidence. |
 | `internal/project` | Discover and resolve `.phrond.yaml` once for the runtime. |
 | `internal/core` | Runtime configuration and component lifecycle. |
