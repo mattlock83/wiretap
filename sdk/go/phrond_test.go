@@ -41,7 +41,7 @@ func TestParallelTestsUseExistingClientsWithSeparateRoots(t *testing.T) {
 			json.NewEncoder(w).Encode(map[string]any{"session_id": name, "sut_url": target.URL})
 		} else {
 			completed++
-			json.NewEncoder(w).Encode(map[string]any{"artifact": map[string]any{"testcase": map[string]string{"status": "pass"}}})
+			json.NewEncoder(w).Encode(map[string]any{"capture": map[string]any{"testcase": map[string]string{"status": "pass"}}})
 		}
 	}))
 	defer core.Close()

@@ -258,22 +258,6 @@ func (s *Server) SetListenAddr(addr string) error {
 	return nil
 }
 
-// SetMode updates the proxy mode before the server starts.
-func (s *Server) SetMode(mode Mode) error {
-	if s.server != nil {
-		return ErrAlreadyStarted
-	}
-	if mode == "" {
-		return errors.New("mode must not be empty")
-	}
-	if mode == ModeMITM && s.cfg.TLSManager == nil {
-		return errors.New("mitm mode requires tls manager")
-	}
-	s.cfg.Mode = mode
-	return nil
-}
-
-// CACertPEM returns the CA certificate when running in MITM mode.
 func (s *Server) CACertPEM() ([]byte, error) {
 	if s.cfg.TLSManager == nil {
 		return nil, nil

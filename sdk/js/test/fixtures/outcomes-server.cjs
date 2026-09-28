@@ -11,7 +11,7 @@ module.exports = async function outcomesServer() {
     res.setHeader('content-type', 'application/json');
     if (req.url === '/v1/setupTest') res.end(JSON.stringify({ session_id: body.name, name: body.name, sut_url: url, proxy_listen: url }));
     else if (req.url === '/v1/teardownTest') res.end(JSON.stringify({
-      schema_validation: { status: body.session_id.includes('validation') ? 'fail' : 'skipped' }
+      capture: { schema_validation: { status: body.session_id.includes('validation') ? 'fail' : 'skipped' } }
     }));
     else res.end(JSON.stringify({ sut_url: url }));
   });

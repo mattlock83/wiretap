@@ -30,7 +30,7 @@
           "type": "object",
           "required": ["type"],
           "properties": {
-            "type": { "enum": ["file", "unavailable"] },
+            "type": { "enum": ["file", "omitted"] },
             "path": { "$ref": "#/$defs/relativePath" },
             "sha256": { "$ref": "#/$defs/hash" }
           }

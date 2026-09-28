@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"html/template"
 	"io"
 	"net/http"
 	"net/url"
@@ -134,41 +133,21 @@ type flowEntry struct {
 	CaptureIncomplete bool
 }
 
-// Generate builds a coverage report from artifact files in a directory.
-func Generate(ctx context.Context, artifactsDir, sutName string, includeArtifacts bool) (*Report, error) {
-	_ = ctx
-	if strings.TrimSpace(artifactsDir) == "" {
-		artifactsDir = "artifacts"
+// Generate derives coverage from verified bundle evidence.
+func Generate(ctx context.Context, bundlePath, sutName string, includeArtifacts bool) (*Report, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
-	if _, err := os.Stat(filepath.Join(artifactsDir, "evidence", "run.json")); err == nil {
-		run, captures, err := bundle.Load(artifactsDir)
-		if err != nil {
-			return nil, err
-		}
-		return GenerateBundleSnapshot(artifactsDir, run, captures, sutName, includeArtifacts)
-	}
-	paths, err := listArtifactFiles(artifactsDir)
+	run, captures, err := bundle.Load(bundlePath)
 	if err != nil {
 		return nil, err
 	}
-	if len(paths) == 0 {
-		return nil, errors.New("no artifact files found")
-	}
-
-	entries, err := loadArtifacts(paths)
-	if err != nil {
-		return nil, err
-	}
-	if len(entries) == 0 {
-		return nil, errors.New("no artifact files found")
-	}
-
-	return generateFromEntries(entries, nil, sutName, includeArtifacts, time.Now().UTC())
+	return GenerateBundleSnapshot(bundlePath, run, captures, sutName, includeArtifacts)
 }
 
 // GenerateBundleSnapshot derives coverage from one already-verified inventory
 // snapshot. View refresh uses this to avoid loading payloads twice.
-func GenerateBundleSnapshot(artifactsDir string, run *bundle.Run, captures []*artifact.Artifact, sutName string, includeArtifacts bool) (*Report, error) {
+func GenerateBundleSnapshot(bundlePath string, run *bundle.Run, captures []*artifact.Artifact, sutName string, includeArtifacts bool) (*Report, error) {
 	if run == nil {
 		return nil, errors.New("bundle inventory is nil")
 	}
@@ -177,13 +156,13 @@ func GenerateBundleSnapshot(artifactsDir string, run *bundle.Run, captures []*ar
 	}
 	entries := make([]artifactEntry, 0, len(captures))
 	for i, capture := range captures {
-		entries = append(entries, artifactEntry{Path: filepath.Join(artifactsDir, filepath.FromSlash(run.Attempts[i].Path)), Doc: capture})
+		entries = append(entries, artifactEntry{Path: filepath.Join(bundlePath, filepath.FromSlash(run.Attempts[i].Path)), Doc: capture})
 	}
 	report, err := generateFromEntries(entries, run.Schemas, sutName, includeArtifacts, run.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
-	root, err := filepath.Abs(artifactsDir)
+	root, err := filepath.Abs(bundlePath)
 	if err != nil {
 		return nil, err
 	}
@@ -220,27 +199,6 @@ func GenerateBundleSnapshot(artifactsDir string, run *bundle.Run, captures []*ar
 	return report, nil
 }
 
-// ReadLegacy loads only explicitly selected historical artifact files. Bundle
-// import uses this read-only adapter and never scans an active output root.
-func ReadLegacy(path string) ([]*artifact.Artifact, error) {
-	paths, err := listArtifactFiles(path)
-	if err != nil {
-		return nil, err
-	}
-	entries, err := loadArtifacts(paths)
-	if err != nil {
-		return nil, err
-	}
-	if len(entries) == 0 {
-		return nil, errors.New("no legacy artifacts found")
-	}
-	out := make([]*artifact.Artifact, 0, len(entries))
-	for _, entry := range entries {
-		out = append(out, entry.Doc)
-	}
-	return out, nil
-}
-
 func generateFromEntries(entries []artifactEntry, extraSchemas []artifact.SchemaRef, sutName string, includeArtifacts bool, generatedAt time.Time) (*Report, error) {
 	explicitSUTName := strings.TrimSpace(sutName) != ""
 	if sutName == "" {
@@ -274,13 +232,11 @@ func WriteReport(w io.Writer, report *Report, format string) error {
 		return errors.New("report is nil")
 	}
 	switch strings.ToLower(strings.TrimSpace(format)) {
-	case "openapi", "openapi-yaml", "openapi_yaml":
+	case "openapi":
 		return WriteGeneratedOpenAPI(w, report, GeneratedOpenAPIOptions{})
-	case "postman", "collection":
-		return errors.New("Postman export has been removed; use the OKF bundle or an explicit workflow export")
-	case "workflow", "serverless-workflow", "serverless_workflow", "sw":
+	case "workflow":
 		return WriteServerlessWorkflow(w, report)
-	case "yaml", "yml":
+	case "yaml":
 		data, err := yaml.Marshal(report)
 		if err != nil {
 			return err
@@ -291,646 +247,14 @@ func WriteReport(w io.Writer, report *Report, format string) error {
 		enc := json.NewEncoder(w)
 		enc.SetIndent("", "  ")
 		return enc.Encode(report)
-	case "html", "htm":
-		return writeHTMLReport(w, report)
 	default:
 		return fmt.Errorf("unsupported format: %s", format)
 	}
 }
 
-func writeHTMLReport(w io.Writer, report *Report) error {
-	tpl := template.New("report").Funcs(template.FuncMap{
-		"join": func(values []string) string {
-			return strings.Join(values, ", ")
-		},
-		"samplesForOp": func(items []OperationSamples, op string) []FlowSample {
-			for _, item := range items {
-				if item.Operation == op {
-					return item.Samples
-				}
-			}
-			return nil
-		},
-		"formatTime": func(t time.Time) string {
-			if t.IsZero() {
-				return ""
-			}
-			return t.Format(time.RFC3339)
-		},
-		"prettyJSON":    prettyJSON,
-		"formatHeaders": formatHeaders,
-	})
-	parsed, err := tpl.Parse(reportHTMLTemplate)
-	if err != nil {
-		return err
-	}
-	return parsed.Execute(w, report)
-}
-
-func prettyJSON(raw string) string {
-	trimmed := strings.TrimSpace(raw)
-	if trimmed == "" {
-		return ""
-	}
-	var payload any
-	if err := json.Unmarshal([]byte(trimmed), &payload); err != nil {
-		return raw
-	}
-	pretty, err := json.MarshalIndent(payload, "", "  ")
-	if err != nil {
-		return raw
-	}
-	return string(pretty)
-}
-
-func formatHeaders(headers artifact.Headers) string {
-	if len(headers) == 0 {
-		return ""
-	}
-	keys := make([]string, 0, len(headers))
-	for key := range headers {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-
-	lines := make([]string, 0, len(headers))
-	for _, key := range keys {
-		values := headers[key]
-		if len(values) == 0 {
-			lines = append(lines, key+":")
-			continue
-		}
-		for _, value := range values {
-			lines = append(lines, fmt.Sprintf("%s: %s", key, value))
-		}
-	}
-	return strings.Join(lines, "\n")
-}
-
-const reportHTMLTemplate = `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Phrond Coverage Report</title>
-  <style>
-    :root {
-      color-scheme: light;
-      --bg: #f7f8fb;
-      --panel: #ffffff;
-      --text: #0f172a;
-      --muted: #64748b;
-      --border: #e2e8f0;
-      --accent: #0f766e;
-      --warn: #b45309;
-    }
-    body {
-      margin: 0;
-      font-family: "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
-      background: var(--bg);
-      color: var(--text);
-    }
-    header {
-      padding: 32px 48px 16px;
-      background: linear-gradient(120deg, #0f766e, #0ea5e9);
-      color: #fff;
-    }
-    header h1 {
-      margin: 0 0 8px;
-      font-size: 28px;
-    }
-    header p {
-      margin: 0;
-      font-size: 14px;
-      opacity: 0.85;
-    }
-    main {
-      padding: 24px 48px 48px;
-      display: flex;
-      flex-direction: column;
-      gap: 24px;
-    }
-    .panel {
-      background: var(--panel);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 20px 24px;
-      box-shadow: 0 10px 20px rgba(15, 23, 42, 0.05);
-    }
-    .panel h2 {
-      margin: 0 0 12px;
-      font-size: 18px;
-    }
-    .summary-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-      gap: 16px;
-    }
-    .summary-card {
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 12px 16px;
-      background: #f8fafc;
-    }
-    .summary-card span {
-      display: block;
-      font-size: 12px;
-      color: var(--muted);
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      margin-bottom: 6px;
-    }
-    .summary-card strong {
-      font-size: 20px;
-    }
-    .tabs {
-      display: flex;
-      gap: 8px;
-    }
-    .tab-button {
-      border: 1px solid var(--border);
-      background: #f1f5f9;
-      color: var(--text);
-      padding: 8px 14px;
-      border-radius: 999px;
-      cursor: pointer;
-      font-weight: 600;
-    }
-    .tab-button.active {
-      background: var(--accent);
-      color: #ffffff;
-      border-color: var(--accent);
-    }
-    .tab-panel {
-      display: none;
-      gap: 24px;
-      flex-direction: column;
-    }
-    .tab-panel.active {
-      display: flex;
-    }
-    details {
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 10px 14px;
-      background: #f8fafc;
-      margin-top: 12px;
-    }
-    details[open] > summary {
-      margin-bottom: 12px;
-    }
-    summary {
-      cursor: pointer;
-      display: flex;
-      gap: 12px;
-      align-items: center;
-      justify-content: space-between;
-      font-weight: 600;
-      color: var(--text);
-    }
-    summary .meta {
-      font-weight: 500;
-      color: var(--muted);
-      font-size: 12px;
-    }
-    .spec {
-      background: #ffffff;
-    }
-    .spec-body {
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-    }
-    .op-group h4 {
-      margin: 0 0 8px;
-      font-size: 14px;
-      color: var(--accent);
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-    }
-    .op {
-      background: #f1f5f9;
-      margin-top: 8px;
-    }
-    .sample {
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 12px;
-      margin-top: 10px;
-      background: #ffffff;
-    }
-    .sample-title {
-      font-size: 12px;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      color: var(--muted);
-    }
-    .sample-body {
-      margin-top: 8px;
-      display: grid;
-      gap: 6px;
-      font-size: 13px;
-    }
-    .code-block {
-      margin: 0;
-      padding: 8px 10px;
-      background: #0f172a;
-      color: #e2e8f0;
-      border-radius: 8px;
-      font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
-      font-size: 12px;
-      white-space: pre-wrap;
-      word-break: break-word;
-    }
-    .meta {
-      color: var(--muted);
-      font-size: 13px;
-      margin-bottom: 8px;
-    }
-    ul {
-      margin: 8px 0 0 18px;
-    }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 13px;
-    }
-    th, td {
-      border: 1px solid var(--border);
-      padding: 8px 10px;
-      text-align: left;
-    }
-    th {
-      background: #f1f5f9;
-    }
-    .notes {
-      color: var(--warn);
-      font-size: 13px;
-    }
-    @media (max-width: 700px) {
-      header, main {
-        padding-left: 20px;
-        padding-right: 20px;
-      }
-    }
-  </style>
-</head>
-<body>
-  <header>
-    <h1>Phrond Coverage Report</h1>
-    <p>Generated {{ formatTime .GeneratedAt }} · SUT: {{ .SUTName }}</p>
-  </header>
-  <main>
-    <div class="tabs">
-      <button class="tab-button active" data-tab="tab-specs">By API Spec</button>
-      <button class="tab-button" data-tab="tab-tests">By Test Case</button>
-    </div>
-
-    <div id="tab-specs" class="tab-panel active">
-      <section class="panel">
-      <h2>Summary</h2>
-      <div class="summary-grid">
-        <div class="summary-card">
-          <span>Artifacts</span>
-          <strong>{{ .ArtifactCount }}</strong>
-        </div>
-        <div class="summary-card">
-          <span>Provided Specs</span>
-          <strong>{{ len .Provided.Specs }}</strong>
-        </div>
-        {{ if .Dependent.Specs }}<div class="summary-card">
-          <span>Dependent Specs</span>
-          <strong>{{ len .Dependent.Specs }}</strong>
-        </div>{{ end }}
-      </div>
-      {{ if .Notes }}
-      <div class="notes" style="margin-top: 16px;">
-        <strong>Notes:</strong>
-        <ul>
-          {{ range .Notes }}<li>{{ . }}</li>{{ end }}
-        </ul>
-      </div>
-      {{ end }}
-    </section>
-
-    <section class="panel">
-      <h2>Provided API Specs</h2>
-      {{ range .Provided.Specs }}
-        {{ $spec := . }}
-        <details class="spec" open>
-          <summary>
-            <span>{{ $spec.SchemaID }}</span>
-            <span class="meta">Type: {{ $spec.Type }}</span>
-          </summary>
-          <div class="spec-body">
-            <div class="meta">Source: {{ $spec.Source }}</div>
-            <div class="op-group">
-              <h4>Exercised</h4>
-              {{ if $spec.Exercised }}
-                {{ range $spec.Exercised }}
-                  <details class="op">
-                    <summary>{{ .Operation }}</summary>
-                    {{ if .Samples }}
-                      {{ range .Samples }}
-                        <div class="sample">
-                          <div class="sample-title">Test Case: {{ .TestCase }}</div>
-                          <div class="sample-body">
-                            <div><strong>Request:</strong> {{ .Request.Method }} {{ .Request.URL }}</div>
-                            {{ if .Request.Headers }}<div><strong>Request Headers:</strong></div><pre class="code-block">{{ formatHeaders .Request.Headers }}</pre>{{ end }}
-                            {{ if .Request.Body }}<pre class="code-block">{{ prettyJSON .Request.Body }}</pre>{{ end }}
-                            <div><strong>Response:</strong> {{ .Response.Status }}</div>
-                            {{ if .Response.Headers }}<div><strong>Response Headers:</strong></div><pre class="code-block">{{ formatHeaders .Response.Headers }}</pre>{{ end }}
-                            {{ if .Response.Body }}<pre class="code-block">{{ prettyJSON .Response.Body }}</pre>{{ end }}
-                          </div>
-                        </div>
-                      {{ end }}
-                    {{ else }}
-                      <div class="meta">No captured samples.</div>
-                    {{ end }}
-                  </details>
-                {{ end }}
-              {{ else }}
-                <div class="meta">None recorded.</div>
-              {{ end }}
-            </div>
-            <div class="op-group">
-              <h4>Not Covered</h4>
-              {{ if $spec.NotCovered }}
-                {{ range $spec.NotCovered }}
-                  <details class="op">
-                    <summary>{{ .Operation }}</summary>
-                    <div class="meta">Not exercised by tests.</div>
-                  </details>
-                {{ end }}
-              {{ else }}
-                <div class="meta">All operations exercised.</div>
-              {{ end }}
-            </div>
-          </div>
-        </details>
-      {{ end }}
-    </section>
-
-    {{ if .Dependent.Specs }}<section class="panel">
-      <h2>Dependent API Specs</h2>
-      {{ range .Dependent.Specs }}
-        {{ $spec := . }}
-        <details class="spec" open>
-          <summary>
-            <span>{{ $spec.SchemaID }}</span>
-            <span class="meta">Type: {{ $spec.Type }}</span>
-          </summary>
-          <div class="spec-body">
-            <div class="meta">Source: {{ $spec.Source }}</div>
-            <div class="op-group">
-              <h4>Exercised</h4>
-              {{ if $spec.Exercised }}
-                {{ range $spec.Exercised }}
-                  <details class="op">
-                    <summary>{{ .Operation }}</summary>
-                    {{ if .Samples }}
-                      {{ range .Samples }}
-                        <div class="sample">
-                          <div class="sample-title">Test Case: {{ .TestCase }}</div>
-                          <div class="sample-body">
-                            <div><strong>Request:</strong> {{ .Request.Method }} {{ .Request.URL }}</div>
-                            {{ if .Request.Headers }}<div><strong>Request Headers:</strong></div><pre class="code-block">{{ formatHeaders .Request.Headers }}</pre>{{ end }}
-                            {{ if .Request.Body }}<pre class="code-block">{{ prettyJSON .Request.Body }}</pre>{{ end }}
-                            <div><strong>Response:</strong> {{ .Response.Status }}</div>
-                            {{ if .Response.Headers }}<div><strong>Response Headers:</strong></div><pre class="code-block">{{ formatHeaders .Response.Headers }}</pre>{{ end }}
-                            {{ if .Response.Body }}<pre class="code-block">{{ prettyJSON .Response.Body }}</pre>{{ end }}
-                          </div>
-                        </div>
-                      {{ end }}
-                    {{ else }}
-                      <div class="meta">No captured samples.</div>
-                    {{ end }}
-                  </details>
-                {{ end }}
-              {{ else }}
-                <div class="meta">No dependency operations recorded.</div>
-              {{ end }}
-            </div>
-          </div>
-        </details>
-      {{ end }}
-    </section>{{ end }}
-    </div>
-
-    <div id="tab-tests" class="tab-panel">
-      {{ range .TestCases }}
-        <section class="panel">
-          <h2>Test Case: {{ .Name }}</h2>
-          {{ range .Attempts }}<p class="meta">Attempt {{ .ID }} · {{ .Status }}{{ if .TraceID }} · trace {{ .TraceID }} · root span {{ .RootSpanID }}{{ end }}</p>{{ end }}
-          <div class="op-group">
-            <h4>Captured Test → SUT and SUT → Dependency Traffic</h4>
-            {{ if .Traffic }}
-              {{ range .Traffic }}
-                <details class="op" open>
-                  <summary>
-                    <span>{{ .Request.Method }} {{ .Request.URL }}</span>
-                    <span class="meta">{{ .FlowID }} · response {{ .Response.Status }}</span>
-                  </summary>
-                  <div class="sample">
-                    <div class="sample-title">{{ .Protocol }} · {{ .Channel }}{{ if .AssetID }} · dependency {{ .AssetID }}{{ end }}{{ if .TraceID }} · trace {{ .TraceID }}{{ end }}{{ if .TestCaseID }} · attempt {{ .TestCaseID }}{{ end }}{{ if .TestCorrelation }} · test matched by {{ .TestCorrelation }}{{ end }}{{ if .ParentFlowID }} · parent {{ .ParentFlowID }}{{ end }}{{ if .ParentCorrelation }} · parent inference: {{ .ParentCorrelation }}{{ end }}{{ if .TraceContextSource }} · context {{ .TraceContextSource }}{{ end }}</div>
-                    <div class="sample-body">
-                      {{ if .TransportError }}<div class="notes"><strong>Transport error:</strong> {{ .TransportError }}</div>{{ end }}
-                      <div><strong>Request:</strong> {{ .Request.Method }} {{ .Request.URL }}</div>
-                      {{ if .Request.Headers }}<div><strong>Request Headers:</strong></div><pre class="code-block">{{ formatHeaders .Request.Headers }}</pre>{{ end }}
-                      {{ if .Request.Trailers }}<div><strong>Request Trailers:</strong></div><pre class="code-block">{{ formatHeaders .Request.Trailers }}</pre>{{ end }}
-                      {{ with .Request.ArtifactBody }}<div class="meta">Request body: {{ .Encoding }}{{ if .ContentEncoding }} · content-encoding {{ .ContentEncoding }}{{ end }}{{ if .Truncated }} · truncated from {{ .OriginalBytes }} bytes{{ end }}</div>{{ end }}
-                      {{ if .Request.Body }}<div><strong>Request Body:</strong></div><pre class="code-block">{{ prettyJSON .Request.Body }}</pre>{{ end }}
-                      <div><strong>Response:</strong> {{ .Response.Status }}</div>
-                      {{ if .Response.Headers }}<div><strong>Response Headers:</strong></div><pre class="code-block">{{ formatHeaders .Response.Headers }}</pre>{{ end }}
-                      {{ if .Response.Trailers }}<div><strong>Response Trailers:</strong></div><pre class="code-block">{{ formatHeaders .Response.Trailers }}</pre>{{ end }}
-                      {{ with .Response.ArtifactBody }}<div class="meta">Response body: {{ .Encoding }}{{ if .ContentEncoding }} · content-encoding {{ .ContentEncoding }}{{ end }}{{ if .Truncated }} · truncated from {{ .OriginalBytes }} bytes{{ end }}</div>{{ end }}
-                      {{ if .Response.Body }}<div><strong>Response Body:</strong></div><pre class="code-block">{{ prettyJSON .Response.Body }}</pre>{{ end }}
-                    </div>
-                  </div>
-                </details>
-              {{ end }}
-            {{ else }}
-              <div class="meta">No captured traffic.</div>
-            {{ end }}
-          </div>
-          <div class="op-group">
-            <h4>Provided Specs</h4>
-            {{ if .Provided }}
-              {{ range .Provided }}
-                {{ $spec := . }}
-                <details class="spec" open>
-                  <summary>
-                    <span>{{ $spec.SchemaID }}</span>
-                    <span class="meta">Type: {{ $spec.Type }}</span>
-                  </summary>
-                  <div class="spec-body">
-                    <div class="meta">Source: {{ $spec.Source }}</div>
-                    {{ range $spec.Operations }}
-                      <details class="op">
-                        <summary>{{ .Operation }}</summary>
-                        {{ if .Samples }}
-                          {{ range .Samples }}
-                            <div class="sample">
-                              <div class="sample-title">Test Case: {{ .TestCase }}</div>
-                              <div class="sample-body">
-                                <div><strong>Request:</strong> {{ .Request.Method }} {{ .Request.URL }}</div>
-                                {{ if .Request.Headers }}<div><strong>Request Headers:</strong></div><pre class="code-block">{{ formatHeaders .Request.Headers }}</pre>{{ end }}
-                                {{ if .Request.Body }}<pre class="code-block">{{ prettyJSON .Request.Body }}</pre>{{ end }}
-                                <div><strong>Response:</strong> {{ .Response.Status }}</div>
-                                {{ if .Response.Headers }}<div><strong>Response Headers:</strong></div><pre class="code-block">{{ formatHeaders .Response.Headers }}</pre>{{ end }}
-                                {{ if .Response.Body }}<pre class="code-block">{{ prettyJSON .Response.Body }}</pre>{{ end }}
-                              </div>
-                            </div>
-                          {{ end }}
-                        {{ else }}
-                          <div class="meta">No captured samples.</div>
-                        {{ end }}
-                      </details>
-                    {{ end }}
-                  </div>
-                </details>
-              {{ end }}
-            {{ else }}
-              <div class="meta">No provided interactions.</div>
-            {{ end }}
-          </div>
-
-          {{ if .Dependent }}<div class="op-group">
-            <h4>Dependent Specs</h4>
-            {{ if .Dependent }}
-              {{ range .Dependent }}
-                {{ $spec := . }}
-                <details class="spec" open>
-                  <summary>
-                    <span>{{ $spec.SchemaID }}</span>
-                    <span class="meta">Type: {{ $spec.Type }}</span>
-                  </summary>
-                  <div class="spec-body">
-                    <div class="meta">Source: {{ $spec.Source }}</div>
-                    {{ range $spec.Operations }}
-                      <details class="op">
-                        <summary>{{ .Operation }}</summary>
-                        {{ if .Samples }}
-                          {{ range .Samples }}
-                            <div class="sample">
-                              <div class="sample-title">Test Case: {{ .TestCase }}</div>
-                              <div class="sample-body">
-                                <div><strong>Request:</strong> {{ .Request.Method }} {{ .Request.URL }}</div>
-                                {{ if .Request.Headers }}<div><strong>Request Headers:</strong></div><pre class="code-block">{{ formatHeaders .Request.Headers }}</pre>{{ end }}
-                                {{ if .Request.Body }}<pre class="code-block">{{ prettyJSON .Request.Body }}</pre>{{ end }}
-                                <div><strong>Response:</strong> {{ .Response.Status }}</div>
-                                {{ if .Response.Headers }}<div><strong>Response Headers:</strong></div><pre class="code-block">{{ formatHeaders .Response.Headers }}</pre>{{ end }}
-                                {{ if .Response.Body }}<pre class="code-block">{{ prettyJSON .Response.Body }}</pre>{{ end }}
-                              </div>
-                            </div>
-                          {{ end }}
-                        {{ else }}
-                          <div class="meta">No captured samples.</div>
-                        {{ end }}
-                      </details>
-                    {{ end }}
-                  </div>
-                </details>
-              {{ end }}
-            {{ else }}
-              <div class="meta">No dependent interactions.</div>
-            {{ end }}
-          </div>{{ end }}
-        </section>
-      {{ end }}
-    </div>
-  </main>
-  <script>
-    const tabs = document.querySelectorAll('.tab-button');
-    const panels = document.querySelectorAll('.tab-panel');
-    tabs.forEach((tab) => {
-      tab.addEventListener('click', () => {
-        tabs.forEach((btn) => btn.classList.remove('active'));
-        panels.forEach((panel) => panel.classList.remove('active'));
-        tab.classList.add('active');
-        const panel = document.getElementById(tab.dataset.tab);
-        if (panel) {
-          panel.classList.add('active');
-        }
-      });
-    });
-  </script>
-</body>
-</html>`
-
 type artifactEntry struct {
 	Path string
 	Doc  *artifact.Artifact
-}
-
-func listArtifactFiles(path string) ([]string, error) {
-	if strings.TrimSpace(path) == "" {
-		return nil, errors.New("artifacts path is empty")
-	}
-	info, err := os.Stat(path)
-	if err != nil {
-		return nil, err
-	}
-	if !info.IsDir() {
-		if !isArtifactFile(path) {
-			return nil, fmt.Errorf("unsupported artifact file: %s", path)
-		}
-		return []string{path}, nil
-	}
-	entries, err := os.ReadDir(path)
-	if err != nil {
-		return nil, err
-	}
-	var paths []string
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		candidate := filepath.Join(path, entry.Name())
-		if isArtifactFile(candidate) {
-			paths = append(paths, candidate)
-		}
-	}
-	sort.Strings(paths)
-	return paths, nil
-}
-
-func loadArtifacts(paths []string) ([]artifactEntry, error) {
-	var entries []artifactEntry
-	for _, path := range paths {
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return nil, err
-		}
-		var doc artifact.Artifact
-		ext := strings.ToLower(filepath.Ext(path))
-		switch ext {
-		case ".yaml", ".yml":
-			if err := yaml.Unmarshal(data, &doc); err != nil {
-				return nil, fmt.Errorf("decode %s: %w", path, err)
-			}
-		case ".json":
-			if err := json.Unmarshal(data, &doc); err != nil {
-				return nil, fmt.Errorf("decode %s: %w", path, err)
-			}
-		default:
-			if err := yaml.Unmarshal(data, &doc); err != nil {
-				return nil, fmt.Errorf("decode %s: %w", path, err)
-			}
-		}
-		// Coverage exports also use YAML/JSON and are commonly written beside
-		// artifacts. Only accept documents carrying the artifact identity fields.
-		if doc.Version < 1 || strings.TrimSpace(doc.TestCase.ID) == "" {
-			continue
-		}
-		entries = append(entries, artifactEntry{Path: path, Doc: &doc})
-	}
-	return entries, nil
-}
-
-func isArtifactFile(path string) bool {
-	name := strings.ToLower(filepath.Ext(path))
-	return name == ".yaml" || name == ".yml" || name == ".json"
 }
 
 func inferSUTName(entries []artifactEntry) string {
@@ -1045,7 +369,9 @@ func loadSchemas(schemas []artifact.SchemaRef) ([]*loadedSchema, []string) {
 			Source:    schemaSourceLabel(schema),
 			Exercised: map[string]struct{}{},
 		}
-		if strings.EqualFold(schema.Type, "openapi") {
+		if schema.Source.Type == "omitted" {
+			notes = append(notes, fmt.Sprintf("API %q explicitly omits its OpenAPI schema; validation is skipped and coverage is unknown.", schema.ID))
+		} else if strings.EqualFold(schema.Type, "openapi") {
 			if spec, err := loadOpenAPISpec(schema); err == nil {
 				entry.OpenAPI = spec
 				entry.Operations = openapiOperations(spec)
@@ -1080,7 +406,11 @@ func markCoverage(entries []flowEntry, schemas []*loadedSchema, channel string) 
 			if schema.Ref.AssetID != "" && flow.AssetID != "" && schema.Ref.AssetID != flow.AssetID {
 				continue
 			}
-			if schema.OpenAPI != nil && flow.Protocol == "http" {
+			if schema.Ref.Source.Type == "omitted" {
+				if op := observedOperation(flow); op != "" {
+					schema.Exercised[op] = struct{}{}
+				}
+			} else if schema.OpenAPI != nil && flow.Protocol == "http" {
 				if op, ok := openapiOperationFromFlow(flow, schema.OpenAPI); ok {
 					schema.Exercised[op] = struct{}{}
 				}
@@ -1168,6 +498,10 @@ func buildOperationSamples(entries []flowEntry, schemas []*loadedSchema, channel
 				continue
 			}
 			switch {
+			case schema.Ref.Source.Type == "omitted":
+				if op := observedOperation(flow); op != "" {
+					raw = addSample(raw, schemaKey(schema.Ref), op, flowSampleFromFlow(entry))
+				}
 			case schema.OpenAPI != nil && flow.Protocol == "http":
 				op, ok := openapiOperationFromFlow(flow, schema.OpenAPI)
 				if !ok {
@@ -1235,6 +569,9 @@ func buildTestCaseCoverage(entries []flowEntry, providedSchemas, dependentSchema
 				continue
 			}
 			op := ""
+			if schema.Ref.Source.Type == "omitted" {
+				op = observedOperation(flow)
+			}
 			if schema.OpenAPI != nil && flow.Protocol == "http" {
 				if matched, ok := openapiOperationFromFlow(flow, schema.OpenAPI); ok {
 					op = matched
@@ -1590,4 +927,21 @@ func containsOp(ops []string, target string) bool {
 		}
 	}
 	return false
+}
+
+// Without a schema these are observed concrete paths, never inferred contract operations.
+func observedOperation(flow artifact.Flow) string {
+	if flow.Protocol != "http" || flow.Request.HTTP == nil {
+		return ""
+	}
+	req := flow.Request.HTTP
+	uri, err := url.Parse(req.URL)
+	if err != nil || req.Method == "" {
+		return ""
+	}
+	path := uri.EscapedPath()
+	if path == "" {
+		path = "/"
+	}
+	return strings.ToUpper(req.Method) + " " + path
 }

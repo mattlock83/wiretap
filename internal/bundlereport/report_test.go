@@ -54,7 +54,7 @@ paths:
 	if data, err := os.ReadFile(operationPages[0]); err != nil || !bytes.Contains(data, []byte("Consumer field use and provider agreement are unknown")) {
 		t.Fatalf("assumption semantics absent: %v", err)
 	}
-	before, err := coverage.Generate(nil, w.Path(), "", false)
+	before, err := coverage.Generate(t.Context(), w.Path(), "", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +70,7 @@ paths:
 	if err := os.Remove(operationPages[0]); err != nil {
 		t.Fatal(err)
 	}
-	after, err := coverage.Generate(nil, w.Path(), "", false)
+	after, err := coverage.Generate(t.Context(), w.Path(), "", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -114,7 +114,7 @@ paths:
 	}); err != nil {
 		t.Fatal(err)
 	}
-	copiedReport, err := coverage.Generate(nil, copied, "", false)
+	copiedReport, err := coverage.Generate(t.Context(), copied, "", false)
 	if err != nil {
 		t.Fatal(err)
 	}

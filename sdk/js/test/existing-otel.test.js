@@ -23,8 +23,8 @@ test('existing provider and client instrumentation are reused without duplicate 
     const body = JSON.parse(raw || '{}');
     res.setHeader('content-type', 'application/json');
     if (req.url === '/v1/setupTest') res.end(JSON.stringify({ session_id: 'existing', name: body.name, sut_url: url }));
-    else if (req.url === '/v1/teardownTest') res.end(JSON.stringify({ schema_validation: { status: 'skipped' } }));
-    else if (req.url === '/v1/startServer') res.end(JSON.stringify({ sut_url: url }));
+    else if (req.url === '/v1/teardownTest') res.end(JSON.stringify({ capture: { schema_validation: { status: 'skipped' } } }));
+    else if (req.url === '/v1/startRun') res.end(JSON.stringify({ sut_url: url }));
     else { parent = req.headers.traceparent; res.end('{}'); }
   });
   server.listen(0, '127.0.0.1'); await once(server, 'listening');

@@ -1,0 +1,11 @@
+version: 1
+sut:
+  id: basic-rest
+  url: ${SUT_BASE_URL}
+  kind: service
+  schema: schemas/sut-openapi.yaml
+dependencies:
+  inventory-service:
+    url: ${DEPENDENCY_UPSTREAM_URL}
+    kind: mock
+    schema: schemas/inventory-openapi.yaml

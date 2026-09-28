@@ -39,6 +39,13 @@ type Manager struct {
 // NewManager creates a CA manager rooted at baseDir.
 // Files are created as needed and cached in memory.
 func NewManager(baseDir string) *Manager {
+	if baseDir == "" {
+		cacheDir, err := os.UserCacheDir()
+		if err != nil || cacheDir == "" {
+			cacheDir = os.TempDir()
+		}
+		baseDir = filepath.Join(cacheDir, "phrond", "ca")
+	}
 	return &Manager{
 		baseDir:    baseDir,
 		caCertPath: filepath.Join(baseDir, "ca-cert.pem"),

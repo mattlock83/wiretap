@@ -19,12 +19,13 @@ import (
 var validDependencyAssetID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
 
 type dependencyRegistration struct {
-	AssetID      string               `json:"asset_id"`
-	AssetName    string               `json:"asset_name,omitempty"`
-	UpstreamKind string               `json:"upstream_kind,omitempty"`
-	UpstreamURL  string               `json:"upstream_url"`
-	Schema       *artifact.SchemaRef  `json:"schema,omitempty"`
-	Schemas      []artifact.SchemaRef `json:"schemas,omitempty"`
+	SchemaRequired *bool                `json:"schema_required,omitempty"`
+	AssetID        string               `json:"asset_id"`
+	AssetName      string               `json:"asset_name,omitempty"`
+	UpstreamKind   string               `json:"upstream_kind,omitempty"`
+	UpstreamURL    string               `json:"upstream_url"`
+	Schema         *artifact.SchemaRef  `json:"schema,omitempty"`
+	Schemas        []artifact.SchemaRef `json:"schemas,omitempty"`
 }
 
 // runtimeSession owns the capture state for one consumer test. Phrond does
@@ -78,11 +79,14 @@ func normalizeDependencies(dependencies []dependencyRegistration) (map[string]de
 		if dependency.Schema != nil {
 			selectedSchemas = append(selectedSchemas, *dependency.Schema)
 		}
-		if len(selectedSchemas) == 0 {
+		if len(selectedSchemas) == 0 && requiresSchema(dependency.SchemaRequired) {
 			return nil, nil, fmt.Errorf("dependency %q requires an OpenAPI schema; supply schema or schemas", dependency.AssetID)
 		}
-		if err := validateSchemaSetup(selectedSchemas, false); err != nil {
+		if err := validateSchemaSetup(selectedSchemas, !requiresSchema(dependency.SchemaRequired) && len(selectedSchemas) == 0); err != nil {
 			return nil, nil, fmt.Errorf("dependency %q: %w", dependency.AssetID, err)
+		}
+		if len(selectedSchemas) == 0 {
+			selectedSchemas = []artifact.SchemaRef{omittedSchema(dependency.AssetID, "dependency")}
 		}
 		for i := range selectedSchemas {
 			selectedSchemas[i].Role = "dependency"
@@ -209,9 +213,6 @@ func (a *App) admitRequest(request *http.Request, headerSession string) (*proxy.
 		selected, correlation = a.defaultSessionID, "active_session"
 	}
 	session := a.sessions[selected]
-	if selected == "" && a.legacySession != nil {
-		session, correlation = a.legacySession, "active_session"
-	}
 	if session == nil {
 		if selected != "" || len(a.sessions) > 0 || strings.HasPrefix(request.URL.Path, "/__phrond/") {
 			return nil, fmt.Errorf("no unambiguous capture session; propagate W3C trace context or use an explicit session")
@@ -285,7 +286,7 @@ func (a *App) waitForDrain(ctx context.Context, session *runtimeSession, timeout
 func (a *App) hasActiveSessions() bool {
 	a.sessionsMu.Lock()
 	defer a.sessionsMu.Unlock()
-	return len(a.sessions) != 0 || a.legacySession != nil || a.inFlight != 0
+	return len(a.sessions) != 0 || a.inFlight != 0
 }
 
 // Control requests are serialized; traffic admission uses a separate lock.
@@ -311,9 +312,6 @@ func (a *App) hasRetiredWorkLocked() bool {
 		}
 		active += session.pending
 	}
-	if a.legacySession != nil {
-		active += a.legacySession.pending
-	}
 	return a.inFlight > active
 }
 
@@ -323,7 +321,6 @@ func (a *App) resetCaptureRouting() {
 	a.traceOwners = map[string]string{}
 	a.sessions = map[string]*runtimeSession{}
 	a.defaultSessionID = ""
-	a.legacySession = nil
 	a.sessionsMu.Unlock()
 	a.reverseTarget = ""
 	if a.proxyComponent != nil {

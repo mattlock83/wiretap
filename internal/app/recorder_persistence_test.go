@@ -30,8 +30,7 @@ func (s *failOnceCaptureSink) Commit(art *artifact.Artifact) (string, error) {
 
 func TestPersistenceRetryRetainsFinalizedAttempt(t *testing.T) {
 	sink := &failOnceCaptureSink{}
-	store := NewTestCaseStore(t.TempDir())
-	store.SetSink(sink)
+	store := NewTestCaseStore(sink, 1024)
 	if _, err := store.StartCase("retry", nil, nil, ""); err != nil {
 		t.Fatal(err)
 	}

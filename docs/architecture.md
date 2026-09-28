@@ -1,0 +1,111 @@
+# Phrond architecture
+
+Phrond captures HTTP exchanges during existing tests and turns them into a
+portable record of tested API behaviour and observed dependency assumptions.
+The test harness owns the application, mocks, test execution, and assertions.
+Phrond owns capture, correlation, schema validation, and the resulting bundle.
+
+## Components
+
+| Component | Responsibility |
+| --- | --- |
+| `cmd/phrond` | Host the HTTP runtime; optional offline report/export and CA utilities. |
+| `sdk/js`, `sdk/go` | Test lifecycle helpers, standard trace context, and capture locations. JavaScript includes Node and Jest adapters. |
+| `internal/app` | Run and test sessions, dependency routes, draining, and schema validation. |
+| `internal/proxy`, `internal/capture` | Forward traffic and retain bounded request/response evidence. |
+| `internal/tracecontext` | W3C context parsing and propagation. |
+| `internal/redact` | Apply configured redaction before persistence. |
+| `internal/artifact` | In-memory capture model shared by recording, storage, and reporting. |
+| `internal/bundle` | Authoritative run inventory, immutable attempt JSON, frozen schemas, payload attachments, and integrity checks. |
+| `internal/coverage` | Calculate observed operation coverage and generate optional OpenAPI, Workflow, and diagnostic exports. |
+| `internal/bundlereport` | Render OKF Markdown and the offline HTML dashboard from verified bundle evidence. |
+| `internal/project` | Discover and resolve `.phrond.yaml` once for the runtime. |
+| `internal/core` | Runtime configuration and component lifecycle. |
+
+Run start/finalization is controlled through the HTTP API. SDKs are libraries
+called from existing test frameworks; the binary never launches test processes.
+There is one session map, admission path, drain procedure, and bundle writer.
+
+The runtime exposes one control listener and one capture listener. The capture
+listener forwards inbound calls to the configured SUT and dependency calls to
+their declared upstreams. One runtime has one reverse SUT target. The
+[HTTP API](runtime-api.md) is usable directly; SDKs make lifecycle integration
+convenient without requiring a special HTTP client.
+
+## A run
+
+1. The existing harness starts Phrond, the SUT, and mocks or dependencies.
+   Test framework hooks call the SDK/HTTP API to start capture. Test calls and
+   selected dependency endpoints are routed through Phrond.
+2. Capture startup creates a run bundle. Each test setup registers a named
+   attempt, its schemas, and a fresh standard trace context.
+3. The proxy forwards requests and responses while retaining bounded evidence.
+   Test-side instrumentation propagates the attempt context through ordinary
+   HTTP clients. The application can continue using its existing OTel setup.
+4. Teardown stops admitting new work for the attempt and drains accepted
+   exchanges. Phrond records the test outcome, validation results, and any
+   incomplete-capture diagnostics, then commits an immutable JSON attempt.
+5. The runtime refreshes the OKF pages and HTML dashboard. After all attempts
+   finish, the suite-level owner closes the run through the HTTP API. Interrupted and pending work
+   remains distinguishable from completed capture.
+
+The default drain timeout is five seconds. Request and response delivery is
+streamed; the default retained prefix is 4 MiB per body. Payloads are redacted
+before persistence. Generated views preview at most 4 KiB and link to retained
+attachments. These limits describe evidence completeness, not delivery limits.
+
+## Correlation and adoption
+
+A test attempt is the root of a trace. W3C `traceparent`/`tracestate` provide
+context across the SUT when its server and outbound clients propagate them.
+Phrond's session IDs select capture sessions at the control/proxy boundary;
+they do not require application-specific propagation.
+
+With working propagation, parallel tests can share the SUT and dependency
+routes. Application state and mock isolation remain the harness's responsibility.
+Without it, sequential capture uses the one active test session. Independent
+worker runtimes and SUTs provide another isolation option. Late background work
+must be drained or isolated even when tests run sequentially.
+
+A trace establishes test ownership, but may not establish which inbound request
+caused a downstream call. Unique-candidate and timing relationships are marked
+as inferences; ambiguous relationships are left unset. See
+[tracing adoption](otel-adoption.md) for supported runners and client setup.
+
+## Evidence and views
+
+The bundle contains versioned JSON evidence, frozen OpenAPI documents and their
+references, and retained payload attachments. Its inventory records hashes and
+attempt identity. Readers verify evidence before calculating coverage or
+rebuilding views. Copy the complete bundle to preserve that evidence graph.
+
+OKF pages are browsable documentation for humans and agents. The HTML dashboard
+is a static, offline view over the same evidence and coverage calculation.
+Neither is an input to coverage or exports, and both can be rebuilt without the
+original workspace or running application. There is one HTML renderer, owned by
+`internal/bundlereport`.
+
+OpenAPI schemas are required by default. Explicit SUT schema generation lets a
+team draft a contract from passing tests. Each API may explicitly permit an
+absent spec with `schema_required: false`; omission is persisted and displayed
+as skipped validation with unknown coverage. Supplied specs always validate.
+Generated contracts need review before adoption. Reports and exports read only verified bundle evidence.
+
+The maintained format contracts are [bundle evidence](bundle-evidence.md) and
+the [OKF profile](okf-profile.md). The [bundle guide](okf-bundles.md) describes
+viewing, rebuilding, and exports.
+
+## Meaning and limits
+
+Observed operation coverage describes which declared operations were exercised,
+including whether tests passed and schema validation succeeded. It is not code
+coverage or proof that every behaviour has been tested. Dependency observations
+show what the upstream returned in a test, with declared mock/service provenance.
+They do not prove provider agreement or identify which response fields the SUT
+consumed. Stable API identities and source revisions prepare the evidence for a
+future cross-repository comparator; that comparison is not implemented.
+
+Broader transport support (streaming, WebSocket, HTTP/2, and RPC-specific
+capture) remains future work. Current guarantees centre on bounded HTTP
+request/response evidence, with HTTPS trust configured as described in the
+[trust guide](https-trust.md).

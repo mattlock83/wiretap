@@ -22,9 +22,7 @@ func TestWriteServerlessWorkflowEmitsOnlyCapturedSUTCalls(t *testing.T) {
 	if flow.With == nil || flow.With.Method != "get" || flow.With.Endpoint != "http://sut.test/hello" {
 		t.Fatalf("unexpected HTTP task: %#v", flow)
 	}
-	if strings.Contains(out.String(), "mock-traffic") || strings.Contains(out.String(), "fake") {
-		t.Fatalf("workflow contains removed mock concepts:\n%s", out.String())
-	}
+
 }
 
 func TestWriteServerlessWorkflowIncludesCorrelatedExternalDependencyCalls(t *testing.T) {
@@ -43,7 +41,7 @@ func TestWriteServerlessWorkflowIncludesCorrelatedExternalDependencyCalls(t *tes
 	if dependency.Metadata == nil || dependency.Metadata.Phrond.AssetID != "inventory-service" || dependency.Metadata.Phrond.ParentFlowID != "flow-1" {
 		t.Fatalf("dependency identity/correlation missing: %#v", dependency.Metadata)
 	}
-	if !strings.Contains(output.String(), "dependency-traffic:") || strings.Contains(output.String(), "mock-traffic") {
+	if !strings.Contains(output.String(), "dependency-traffic:") {
 		t.Fatalf("unexpected workflow channels:\n%s", output.String())
 	}
 }

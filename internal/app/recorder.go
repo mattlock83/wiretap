@@ -30,15 +30,11 @@ import (
 
 type TestCaseStore struct {
 	mu           sync.Mutex
-	outputDir    string
 	sink         CaptureSink
 	active       *testCaseState
-	last         *artifact.Artifact
 	pending      *artifact.Artifact
-	lastPath     string
 	flowSeq      int
 	schemaSeq    int
-	expectSeq    int
 	maxBodyBytes int64
 }
 
@@ -48,20 +44,11 @@ type CaptureSink interface {
 	Commit(*artifact.Artifact) (string, error)
 }
 
-func (s *TestCaseStore) SetSink(sink CaptureSink) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.sink = sink
-}
-
 func (s *TestCaseStore) RegisterActive() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.active == nil {
 		return errors.New("no active test case")
-	}
-	if s.sink == nil {
-		return nil
 	}
 	tc := artifact.TestCase{ID: s.active.id, Name: s.active.name, StartedAt: s.active.startedAt, Tags: s.active.tags, Meta: s.active.meta}
 	frozen, err := s.sink.Register(tc, s.active.schemas)
@@ -85,14 +72,11 @@ type testCaseState struct {
 	id                 string
 	name               string
 	startedAt          time.Time
-	finishedAt         time.Time
-	status             string
 	tags               []string
 	meta               map[string]any
 	sutBaseURL         string
 	flows              []artifact.Flow
 	schemas            []artifact.SchemaRef
-	expectation        []Expectation
 	redactions         []artifact.Redaction
 	generateSchema     bool
 }
@@ -105,18 +89,8 @@ func (s *TestCaseStore) SetSchemaGeneration(enabled bool) {
 	}
 }
 
-type Expectation struct {
-	Channel string         `json:"channel"`
-	Match   map[string]any `json:"match"`
-	Times   int            `json:"times"`
-}
-
-func NewTestCaseStore(outputDir string, maxBodyBytes ...int64) *TestCaseStore {
-	limit := capture.DefaultMaxBodyBytes
-	if len(maxBodyBytes) > 0 {
-		limit = maxBodyBytes[0]
-	}
-	return &TestCaseStore{outputDir: outputDir, maxBodyBytes: limit}
+func NewTestCaseStore(sink CaptureSink, maxBodyBytes int64) *TestCaseStore {
+	return &TestCaseStore{sink: sink, maxBodyBytes: maxBodyBytes}
 }
 
 func (s *TestCaseStore) StartCase(name string, tags []string, meta map[string]any, sutBaseURL string) (*artifact.TestCase, error) {
@@ -143,12 +117,9 @@ func (s *TestCaseStore) StartCase(name string, tags []string, meta map[string]an
 		meta:       meta,
 		sutBaseURL: sutBaseURL,
 	}
-	s.last = nil
 	s.pending = nil
-	s.lastPath = ""
 	s.flowSeq = 0
 	s.schemaSeq = 0
-	s.expectSeq = 0
 
 	return &artifact.TestCase{ID: id, Name: name, StartedAt: startedAt, Tags: tags, Meta: meta}, nil
 }
@@ -159,26 +130,16 @@ func (s *TestCaseStore) HasPendingCommit() bool {
 	return s.pending != nil
 }
 
-type TestCaseStatus struct {
-	Active      bool       `json:"active"`
-	CurrentID   string     `json:"current_id,omitempty"`
-	CurrentName string     `json:"current_name,omitempty"`
-	StartedAt   *time.Time `json:"started_at,omitempty"`
-	LastID      string     `json:"last_id,omitempty"`
-	LastStatus  string     `json:"last_status,omitempty"`
-	LastPath    string     `json:"last_path,omitempty"`
-}
-
 // FinishCase finalizes the active test case and writes its captured artifact.
 func (s *TestCaseStore) FinishCase(status string, env *artifact.Environment) (*artifact.Artifact, string, error) {
 	s.mu.Lock()
 	state := s.active
 	if state == nil {
-		if s.pending != nil && s.sink != nil {
+		if s.pending != nil {
 			art := s.pending
 			path, err := s.sink.Commit(art)
 			if err == nil {
-				s.last, s.pending, s.lastPath = art, nil, path
+				s.pending = nil
 			}
 			s.mu.Unlock()
 			return art, path, err
@@ -190,11 +151,9 @@ func (s *TestCaseStore) FinishCase(status string, env *artifact.Environment) (*a
 	s.mu.Unlock()
 
 	finishedAt := time.Now().UTC()
-	state.finishedAt = finishedAt
 	if state.captureIncomplete {
 		status = "fail"
 	}
-	state.status = status
 
 	flows := append([]artifact.Flow{}, state.flows...)
 	linkCausality(flows)
@@ -228,9 +187,6 @@ func (s *TestCaseStore) FinishCase(status string, env *artifact.Environment) (*a
 		art.TestCase.RootSpanID = state.root.SpanID().String()
 	}
 
-	if len(state.expectation) > 0 {
-		art.Meta["expectations"] = state.expectation
-	}
 	if state.generateSchema {
 		art.Meta["schema_generation"] = true
 	}
@@ -243,13 +199,7 @@ func (s *TestCaseStore) FinishCase(status string, env *artifact.Environment) (*a
 		}
 	}
 
-	var path string
-	var err error
-	if s.sink != nil {
-		path, err = s.sink.Commit(art)
-	} else {
-		path, err = artifact.WriteFile(s.outputDir, art)
-	}
+	path, err := s.sink.Commit(art)
 	if err != nil {
 		s.mu.Lock()
 		s.pending = art
@@ -257,41 +207,7 @@ func (s *TestCaseStore) FinishCase(status string, env *artifact.Environment) (*a
 		return art, "", err
 	}
 
-	s.mu.Lock()
-	s.last = art
-	s.lastPath = path
-	s.mu.Unlock()
-
 	return art, path, nil
-}
-
-func (s *TestCaseStore) Status() TestCaseStatus {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	status := TestCaseStatus{}
-	if s.active != nil {
-		status.Active = true
-		status.CurrentID = s.active.id
-		status.CurrentName = s.active.name
-		status.StartedAt = &s.active.startedAt
-	}
-	if s.last != nil {
-		status.LastID = s.last.TestCase.ID
-		status.LastStatus = s.last.TestCase.Status
-		status.LastPath = s.lastPath
-	}
-	return status
-}
-
-func (s *TestCaseStore) LastArtifact() *artifact.Artifact {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.last == nil {
-		return nil
-	}
-	copy := *s.last
-	return &copy
 }
 
 func (s *TestCaseStore) AddSchema(ref artifact.SchemaRef) artifact.SchemaRef {
@@ -339,16 +255,6 @@ func fillSchemaSHA(ref *artifact.SchemaRef) {
 		sum := sha256.Sum256(data)
 		ref.Source.SHA256 = hex.EncodeToString(sum[:])
 	}
-}
-
-func (s *TestCaseStore) AddExpectation(expectation Expectation) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.active == nil {
-		return
-	}
-	s.expectSeq++
-	s.active.expectation = append(s.active.expectation, expectation)
 }
 
 func (s *TestCaseStore) AddRedaction(rule artifact.Redaction) artifact.Redaction {

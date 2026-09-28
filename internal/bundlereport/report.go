@@ -181,6 +181,9 @@ func render(root string, force bool) (*coverage.Report, error) {
 		}
 		if capture.SchemaValidation != nil {
 			page.WriteString("\nSchema validation: **" + escape(capture.SchemaValidation.Status) + "**.\n\n")
+			for _, id := range capture.SchemaValidation.Skipped {
+				page.WriteString("- Validation skipped for API `" + escape(id) + "`: schema explicitly omitted.\n")
+			}
 			for _, issue := range capture.SchemaValidation.Errors {
 				page.WriteString("- " + escape(issue.Message) + "\n")
 			}

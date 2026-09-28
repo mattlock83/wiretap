@@ -1,209 +1,117 @@
-# Getting started with existing tests and a mock server
+# Capture existing tests and mocks
 
-Use this guide when your project already has:
-
-- tests that start or connect to the service under test (SUT);
-- a mock server such as WireMock or MockServer; and
-- test setup that configures the SUT and its mocked dependencies.
-
-Keep that setup. Phrond does not start the SUT or replace the mock server. The
-same capture proxy sits on both sides of the SUT:
+Keep the application, test runner, HTTP client, assertions, and mock server you
+already use. Phrond captures the HTTP traffic routed through its proxy:
 
 ```text
-tests  →  Phrond capture proxy  →  SUT
-                                     ↓
-                        Phrond capture proxy  →  existing mock server
+tests → Phrond → SUT → Phrond → existing mock or dependency
 ```
 
-One run bundle records and correlates the test→SUT and SUT→mock requests and
-responses. Your existing mock tooling still owns stubs, responses,
-verification, configuration, and lifecycle.
+## Configure the boundaries
 
-## 1. Start the existing test environment
-
-Start the mock server and configure its responses exactly as you do today. Use
-your existing orchestration to start the SUT, setting its dependency base URL
-to the capture route instead of directly to the mock server. For example:
-
-```text
-SUT:                     http://127.0.0.1:8080
-Actual mock server:      http://127.0.0.1:9090
-Phrond capture proxy:    http://127.0.0.1:18080
-SUT inventory base URL:  http://127.0.0.1:18080/__phrond/dep/inventory
-```
-
-Phrond will forward the captured inventory requests to the existing mock
-server. The mock server itself does not need to know that Phrond exists.
-
-## 2. Start Phrond
-
-```bash
-PHROND_HTTP_LISTEN=127.0.0.1:18000 \
-PHROND_PROXY_LISTEN=127.0.0.1:18080 \
-PHROND_OUTPUT_DIR=./artifacts \
-go run ./cmd/phrond
-```
-
-Port `18000` is Phrond's control API. Port `18080` is the single capture proxy
-that forwards inbound requests to the SUT and outbound requests to the declared
-mock server.
-
-## 3. Route test calls through Phrond
-
-With Node's built-in test runner and `@phrond/sdk`, install SDK dependencies
-and preload standard instrumentation before HTTP client modules:
-
-```bash
-node --require @phrond/sdk/tracing --test test/*.test.js
-```
-
-```js
-const assert = require("node:assert/strict");
-const { createNodeTestSuite } = require("@phrond/sdk");
-
-const phrond = createNodeTestSuite({
-  baseUrl: "http://127.0.0.1:18000",
-  sutBaseUrl: "http://127.0.0.1:8080",
-  schemas: [{
-    id: "orders-api",
-    role: "sut",
-    type: "openapi",
-    source: { type: "file", path: "schemas/orders.openapi.yaml" }
-  }],
-  dependencies: {
-    inventory: {
-      upstreamUrl: "http://127.0.0.1:9090",
-      schema: {
-        id: "inventory-api",
-        type: "openapi",
-        source: { type: "file", path: "schemas/inventory.openapi.yaml" }
-      }
-    }
-  }
-});
-
-phrond.test("creates an order", async () => {
-  // Keep the existing mock setup and verification.
-  await existingMock.stubOrderAccepted();
-
-  // Phrond captures this inbound call and the SUT's downstream mock request.
-  const response = await phrond.http.postJson("/orders", {
-    product_id: "product-123",
-    quantity: 2
-  });
-
-  assert.equal(response.status, 201);
-  await existingMock.verifyOrderLookup("product-123");
-});
-```
-
-`phrond.test(...)` preserves the test name in the bundle and records whether
-the test passed or failed. The attempt evidence includes:
+Put shared settings in `.phrond.yaml` at the project root:
 
 ```yaml
-traffic:
-  - id: flow-1
-    channel: sut_to_dependency
-    asset_id: inventory
-    parent_flow_id: flow-2
-  - id: flow-2
-    channel: test_to_sut
+version: 1
+sut:
+  id: orders
+  url: http://127.0.0.1:8080
+  kind: service
+  schema: schemas/orders.openapi.yaml
+dependencies:
+  inventory:
+    url: http://127.0.0.1:9090
+    kind: mock
+    schema: schemas/inventory.openapi.yaml
 ```
 
-Both entries also contain their complete bounded request/response evidence and
-shared W3C trace ID when the SUT propagates `traceparent` through its server and
-outbound clients. If it does not, run tests sequentially: Phrond records
-`test_correlation: active_session` and uses timing for an inferred parent. If
-several requests overlap, the parent can be ambiguous and is left unset. The downstream exchange
-normally finishes first, so its flow ID may precede the parent ID.
+Use the existing harness to start Phrond, the SUT, and the mock.
+Start the runtime with `phrond --config .phrond.yaml`. Configure the SUT's inventory
+base URL to `http://127.0.0.1:18080/__phrond/dep/inventory`. Phrond forwards this
+route to `http://127.0.0.1:9090`. Your mock tooling still owns stubs and verification.
+Schema paths resolve relative to `.phrond.yaml`; environment substitution and
+CI overrides are covered in [configuration and runtime](configuration.md).
 
-If the tests already have an HTTP client, keep it and change only its base URL:
+## Connect test lifecycle
+
+Call the SDK from the framework you already use. A simple Node suite can use
+native setup/cleanup hooks and keep its existing `test` function:
 
 ```js
-phrond.test("gets an order", async () => {
-  const client = createExistingClient({ baseUrl: phrond.sutUrl });
-  const response = await client.get("/orders/order-123");
-  assert.equal(response.status, 200);
-});
+const { test, before, after } = require("node:test");
+const assert = require("node:assert/strict");
+const { startCapture } = require("@phrond/sdk");
+let capture;
+before(async () => { capture = await startCapture(); });
+after(async () => { if (capture) await capture.finishRun(); });
+
+test("creates an order", () => capture.runTest("creates an order", async session => {
+  await existingMock.stubOrderAccepted();
+  const response = await fetch(`${session.sutUrl}/orders`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ product_id: "product-123", quantity: 2 })
+  });
+  assert.equal(response.status, 201);
+  await existingMock.verifyOrderLookup("product-123");
+}));
 ```
 
-`phrond.sutUrl` is Phrond's capture address. Phrond forwards those calls to
-the already-running `sutBaseUrl`. Once the suite is running,
-`phrond.dependencyUrl("inventory")` returns the dependency capture address if
-your existing harness needs to discover it dynamically.
-
-## 4. Generate a schema if you do not have one
-
-OpenAPI validation is strict by default. If the service does not have a schema,
-explicitly ask Phrond to generate a standard OpenAPI 3.1 draft:
-
-```js
-const phrond = createNodeTestSuite({
-  baseUrl: "http://127.0.0.1:18000",
-  sutBaseUrl: "http://127.0.0.1:8080",
-  generateSchema: {
-    output: "artifacts/orders.generated.openapi.yaml",
-    title: "Orders API",
-    version: "1.0.0"
-  }
-});
-```
-
-The SDK combines the suite's captures and writes the draft during suite
-teardown. Captured values are not included as examples. Review the generated
-contract, move it into the project's schemas directory, then replace
-`generateSchema` with the normal `schemas` configuration shown above.
-
-Schema generation models the SUT's provided API. An existing external
-dependency must still supply its own OpenAPI schema through `dependencies`, so
-downstream contract validation remains strict during SUT onboarding.
-
-Supplying neither option fails setup with a useful error. Supplying both is
-rejected so Phrond never silently changes an enforced contract.
-
-## 5. Review the bundle
-
-The runtime creates `./artifacts/<run-id>/viewer/index.html` as an offline HTML
-dashboard and `index.md` as the OKF entry point. Both show API coverage, test
-attempts, and observed dependency behaviour. The SDK and HTTP API return the
-exact `bundle_path` and `viewer_path`. Open either view, or rebuild them later:
+Keep your existing HTTP client if you have one, pointing its base URL at the
+session's `sutUrl`. Run tests normally; load tracing before client modules:
 
 ```bash
-go run ./cmd/phrond-coverage --bundle ./artifacts/<run-id>
+node --require @phrond/sdk/tracing --test test/orders.test.js
 ```
 
-The command prints the OKF entry page path. JSON evidence and retained body
-attachments remain inside the same directory.
+`runTest` observes the supplied callback's outcome. It does not observe separate
+framework hooks or runner timeouts. For those, use the library's
+`createTestAttempt` handle from your framework's lifecycle: call `run` for each
+captured fixture/test callback and `finish` from the final completion hook.
+The optional Node/Jest adapters already implement runner-specific outcome
+handling. Go's `StartTest` uses `t.Cleanup` to observe the test's final result.
 
-Generated OpenAPI, standalone HTML, and Workflow YAML are also explicit `--format`
-choices. [Bundle details](okf-bundles.md) explain what coverage and dependency
-assumptions can establish.
+The suite owns capture finalization. Shared workers finish their individual
+attempts; one global suite hook finalizes the run after all workers finish.
+The SDK only calls the running Phrond service over HTTP. See
+[JavaScript](../sdk/js/README.md), [Go](../sdk/go/README.md), and
+[Jest/tracing](otel-adoption.md) for integration details.
 
-## Other languages and test frameworks
+## Choose concurrency deliberately
 
-Any test framework can integrate through Phrond's HTTP API:
+A shared SUT must propagate W3C `traceparent` through its server and outbound
+clients for parallel test correlation. The mock does not need instrumentation.
+Without SUT propagation, run tests sequentially or use separate SUT/Phrond
+runtimes per worker. Await all captured requests and dependency work before the
+test finishes. Several overlapping inbound requests can leave the downstream
+parent ambiguous even when the owning test is known; Phrond records that uncertainty.
 
-1. Start capture with `POST /v1/startServer` and the SUT in
-   `proxy.target_url`.
-2. Start a named test with `POST /v1/setupTest`, supplying `schemas` or
-   explicitly setting `generate_schema: true`, plus any external dependencies.
-3. Send the test's HTTP calls to the returned `sut_url`; configure the SUT's
-   downstream clients to use the returned `dependencies` capture URLs.
-4. Finish with `POST /v1/teardownTest` and the test's pass/fail status.
-5. In generation mode, call `POST /v1/generateSchema` after the final test.
+## Supply specs
 
-See the [runtime HTTP API](runtime-api.md) for complete request and response
-examples.
+Schemas are required and enforced by default for the SUT and each dependency.
+If the SUT has no spec yet, replace its `schema` setting with
+`generate_schema: true`, then explicitly export a draft after the run:
 
-## Common mistakes
+```bash
+phrond export --bundle artifacts/<run-id> --format openapi --output orders.yaml
+```
 
-- Do not ask Phrond to start or configure the SUT or mock server.
-- Do point the SUT's captured dependency base URL at its Phrond dependency
-  route; direct calls to the mock server cannot be observed.
-- Do continue stubbing and verifying with your existing mock tooling.
-- Do provide an OpenAPI schema for every declared dependency.
-- Do send test→SUT calls through `phrond.sutUrl`; direct calls are not captured.
-- For HTTPS SUTs, follow the [HTTPS trust setup](https-trust.md).
-- Run tests serially by default. Shared-SUT parallel tests need independent test
-  traces, `explicitSession: true`, and working inbound-to-outbound W3C propagation.
-  See [test tracing, Jest, Go, and isolation options](otel-adoption.md).
+Review the draft and adopt it as the supplied schema. Captured values are not
+included as examples. Each dependency still requires its own schema unless you
+explicitly set `schema_required: false` for that API. Such exceptions keep
+capturing traffic but show skipped validation and unknown schema coverage.
+A provided invalid spec never becomes an exception automatically.
+
+## Read the output
+
+SDK/API responses return the exact paths to `index.md` and
+`viewer/index.html`, which are written automatically during capture/finalization. Both views describe tested API behaviour, test attempts,
+operation coverage, and observed dependency assumptions. Preserve the complete
+bundle when uploading it to CI or giving it to an agent.
+
+A mock response records what the test assumed, not proof of provider behaviour
+or of which fields the SUT consumed. See [bundle details](okf-bundles.md).
+
+For a custom runner, use the [HTTP API](runtime-api.md): start the run, set up
+each named test with a fresh trace context, route its calls through `sut_url`,
+and tear it down with the outcome. Finish the run after all workers are done.

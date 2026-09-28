@@ -43,13 +43,13 @@ DEPENDENCY_PORT="${DEPENDENCY_PORT:-$(pick_unique_port "${USED_PORTS}")}"
 BUILD_DIR="${BUILD_DIR:-$(mktemp -d)}"
 
 cleanup() {
-  if [[ -n "${SUT_PID:-}" ]]; then
-    kill "${SUT_PID}" 2>/dev/null || true
-    wait "${SUT_PID}" 2>/dev/null || true
-  fi
   if [[ -n "${PHROND_PID:-}" ]]; then
     kill "${PHROND_PID}" 2>/dev/null || true
     wait "${PHROND_PID}" 2>/dev/null || true
+  fi
+  if [[ -n "${SUT_PID:-}" ]]; then
+    kill "${SUT_PID}" 2>/dev/null || true
+    wait "${SUT_PID}" 2>/dev/null || true
   fi
   if [[ -n "${DEPENDENCY_PID:-}" ]]; then
     kill "${DEPENDENCY_PID}" 2>/dev/null || true
@@ -66,7 +66,6 @@ mkdir -p "$ARTIFACT_DIR"
 export PHROND_HTTP_LISTEN="127.0.0.1:${PHROND_PORT}"
 export PHROND_PROXY_LISTEN="127.0.0.1:${PROXY_PORT}"
 export PHROND_OUTPUT_DIR="$ARTIFACT_DIR"
-unset PHROND_ARTIFACT_DIR
 export PHROND_BASE_URL="http://127.0.0.1:${PHROND_PORT}"
 if [[ -n "${PHROND_GENERATE_SCHEMA:-}" ]]; then
   export PHROND_GENERATED_SCHEMA_PATH="${PHROND_GENERATED_SCHEMA_PATH:-${ARTIFACT_DIR}/basic-rest.generated.openapi.yaml}"
@@ -83,14 +82,11 @@ export DEPENDENCY_BASE_URL="http://127.0.0.1:${PROXY_PORT}/__phrond/dep/inventor
 pushd "$ROOT_DIR" >/dev/null
 
 GOFLAGS=${GOFLAGS:-}
-go build ${GOFLAGS} -o "${BUILD_DIR}/phrond-core" ./cmd/phrond
+go build ${GOFLAGS} -o "${BUILD_DIR}/phrond-runtime" ./cmd/phrond
 GOFLAGS=${GOFLAGS:-}
 go build ${GOFLAGS} -o "${BUILD_DIR}/basic-rest-sut" ./examples/demo-apps/basic-rest/sut
 GOFLAGS=${GOFLAGS:-}
 go build ${GOFLAGS} -o "${BUILD_DIR}/basic-rest-dependency" ./examples/demo-apps/basic-rest/dependency
-
-nohup "${BUILD_DIR}/phrond-core" > /tmp/phrond-core.log 2>&1 &
-PHROND_PID=$!
 
 wait_for() {
   local url="$1"
@@ -102,12 +98,6 @@ wait_for() {
   done
   return 1
 }
-
-if ! wait_for "http://127.0.0.1:${PHROND_PORT}/healthz"; then
-  echo "Core failed to start. See /tmp/phrond-core.log"
-  tail -n 50 /tmp/phrond-core.log || true
-  exit 1
-fi
 
 # The runner owns this dependency exactly as a consumer owns WireMock or
 # another existing mock server. Phrond never starts or configures it.
@@ -131,19 +121,32 @@ if ! wait_for "${SUT_BASE_URL}/healthz"; then
   exit 1
 fi
 
-if [[ "${PHROND_TEST_RUNNER:-node}" == "jest" ]]; then
-  ./sdk/js/node_modules/.bin/jest --projects ./examples/basic-rest/jest.config.cjs
-else
-  node --require ./sdk/js/tracing.js --test ./examples/basic-rest/basic-test.js
+# Phrond is another service in the existing harness. Test hooks control capture.
+nohup "${BUILD_DIR}/phrond-runtime" --config ./examples/basic-rest/.phrond.yaml > /tmp/phrond-basic-rest-runtime.log 2>&1 &
+PHROND_PID=$!
+if ! wait_for "${PHROND_BASE_URL}/healthz"; then
+  echo "Phrond failed to start. See /tmp/phrond-basic-rest-runtime.log" >&2
+  tail -n 50 /tmp/phrond-basic-rest-runtime.log || true
+  exit 1
 fi
 
-curl -fsS -X POST "${PHROND_BASE_URL}/v1/killServer" >/dev/null
+TEST_STATUS=0
+if [[ "${PHROND_TEST_RUNNER:-node}" == "jest" ]]; then
+  ./sdk/js/node_modules/.bin/jest --projects ./examples/basic-rest/jest.config.cjs || TEST_STATUS=$?
+else
+  node --require ./sdk/js/tracing.js --test ./examples/basic-rest/basic-test.js || TEST_STATUS=$?
+fi
+
 BUNDLE_DIR="$(find "${ARTIFACT_DIR}" -mindepth 1 -maxdepth 1 -type d -name 'run-*' -print | sort | tail -n 1)"
 if [[ -z "${BUNDLE_DIR}" || ! -f "${BUNDLE_DIR}/evidence/run.json" || ! -f "${BUNDLE_DIR}/viewer/index.html" ]]; then
   echo "Phrond did not produce a bundle under ${ARTIFACT_DIR}" >&2
   exit 1
 fi
-go run ./cmd/phrond-coverage --bundle "${BUNDLE_DIR}"
+# Views must already exist from HTTP finalization; no report command is needed.
+node -e 'const fs = require("node:fs"); const run = JSON.parse(fs.readFileSync(process.argv[1])); if (run.run_state !== "complete") throw new Error("test hooks did not finalize capture")' "${BUNDLE_DIR}/evidence/run.json"
+if [[ -n "${PHROND_GENERATE_SCHEMA:-}" ]]; then
+  "${BUILD_DIR}/phrond-runtime" export --bundle "${BUNDLE_DIR}" --format openapi --output "${PHROND_GENERATED_SCHEMA_PATH}"
+fi
 
 popd >/dev/null
 
@@ -152,3 +155,5 @@ echo "HTML dashboard: ${BUNDLE_DIR}/viewer/index.html"
 if [[ -n "${PHROND_GENERATE_SCHEMA:-}" ]]; then
   echo "Generated OpenAPI: ${PHROND_GENERATED_SCHEMA_PATH}"
 fi
+
+exit "${TEST_STATUS}"

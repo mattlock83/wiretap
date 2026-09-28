@@ -65,7 +65,7 @@ func TestW3CContextAcrossReverseForwardAndMITM(t *testing.T) {
 			io.Copy(io.Discard, res.Body)
 			res.Body.Close()
 			headers := <-observed
-			if headers.Get("traceparent") != parent || headers.Get("tracestate") != "vendor=value" || headers.Get("X-Phrond-Trace-Id") != "" || headers.Get("X-Phrond-Session-Id") != "" {
+			if headers.Get("traceparent") != parent || headers.Get("tracestate") != "vendor=value" || headers.Get("X-Phrond-Session-Id") != "" {
 				t.Fatalf("context changed: %v", headers)
 			}
 			exchange := <-recorder.exchanges

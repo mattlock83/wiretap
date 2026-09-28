@@ -22,7 +22,7 @@ function createJestSuite(config = {}, api = globalThis) {
       };
       callback.__phrondStart = async (fullName) => {
         const active = await getRuntime();
-        return active._createTestAttempt(fullName, {
+        return active.createTestAttempt(fullName, {
           ...(config.testDefaults || {}),
           explicitSession: concurrent || (config.testDefaults?.explicitSession ?? config.explicitSession ?? false)
         });
@@ -47,7 +47,6 @@ function createJestSuite(config = {}, api = globalThis) {
     test,
     get runtime() { if (!runtime) throw new Error('Phrond capture runtime is not started yet'); return runtime; },
     get sutUrl() { return this.runtime.sutUrl; },
-    get http() { return this.runtime.http; },
     dependencyUrl(assetId) { return this.runtime.dependencyUrl(assetId); }
   };
 }

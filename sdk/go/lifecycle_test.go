@@ -98,7 +98,7 @@ func runOutcomeFixture(t *testing.T) {
 		if name == "validation" {
 			status = "fail"
 		}
-		json.NewEncoder(w).Encode(map[string]any{"artifact": map[string]any{"testcase": map[string]string{"status": status}}})
+		json.NewEncoder(w).Encode(map[string]any{"capture": map[string]any{"testcase": map[string]string{"status": status}}})
 	}))
 	defer server.Close()
 	runtime := Runtime{BaseURL: server.URL, TracerProvider: provider}

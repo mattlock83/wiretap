@@ -1,13 +1,5 @@
 const { createJestSuite } = require('../../sdk/js/jest');
-const phrond = createJestSuite({
-  baseUrl: process.env.PHROND_BASE_URL,
-  sutBaseUrl: process.env.SUT_BASE_URL,
-  schemas: [{ id: 'sut', type: 'openapi', source: { type: 'file', path: 'examples/basic-rest/schemas/sut-openapi.yaml' } }],
-  dependencies: { 'inventory-service': {
-    upstreamUrl: process.env.DEPENDENCY_UPSTREAM_URL,
-    schema: { id: 'inventory', type: 'openapi', source: { type: 'file', path: 'examples/basic-rest/schemas/inventory-openapi.yaml' } }
-  } }
-});
+const phrond = createJestSuite();
 let entered = 0, release;
 const gate = new Promise(resolve => { release = resolve; });
 phrond.test.concurrent.each(['123', '456'])('processes %s', async id => {
@@ -22,7 +14,7 @@ phrond.test.concurrent.each(['123', '456'])('processes %s', async id => {
 
 });
 afterAll(async () => {
-  const { report } = await phrond.runtime.report({ artifactsDir: process.env.PHROND_ARTIFACT_DIR });
+  const { report } = await phrond.runtime.report();
   expect(report.testcases).toHaveLength(2);
   expect(new Set(report.testcases.map(tc => tc.attempts[0].trace_id)).size).toBe(2);
   for (const tc of report.testcases) {

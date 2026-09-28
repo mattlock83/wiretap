@@ -615,8 +615,14 @@ func supportedEvidenceVersion(value string) bool {
 func resolveSchemas(root string, schemas []artifact.SchemaRef) error {
 	for i := range schemas {
 		ref := &schemas[i]
-		if ref.Source.Path == "" {
+		if ref.Source.Type == "omitted" {
+			if ref.Source.Path != "" || ref.Source.URL != "" || ref.Source.Content != "" || ref.Source.SHA256 != "" {
+				return fmt.Errorf("omitted schema %q contains a source", ref.ID)
+			}
 			continue
+		}
+		if ref.Source.Type != "file" || ref.Source.Path == "" {
+			return fmt.Errorf("schema %q is not a frozen file or explicit omission", ref.ID)
 		}
 		if !validRelative(ref.Source.Path) {
 			return fmt.Errorf("invalid schema path %q", ref.Source.Path)

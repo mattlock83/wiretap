@@ -35,6 +35,11 @@ type schemaManifest struct {
 func (w *Writer) freezeSchema(ref artifact.SchemaRef) (artifact.SchemaRef, error) {
 	var rootURL *url.URL
 	switch strings.ToLower(ref.Source.Type) {
+	case "omitted":
+		if ref.Source.Path != "" || ref.Source.URL != "" || ref.Source.Content != "" || ref.Source.SHA256 != "" {
+			return ref, errors.New("omitted schema cannot contain a source")
+		}
+		return ref, nil
 	case "file":
 		path, err := filepath.Abs(ref.Source.Path)
 		if err != nil {

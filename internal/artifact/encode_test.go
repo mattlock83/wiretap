@@ -1,11 +1,12 @@
 package artifact
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 )
 
-func TestEncodeDeterministic(t *testing.T) {
+func TestCaptureJSONDeterministic(t *testing.T) {
 	baseTime := time.Date(2026, 2, 4, 19, 0, 0, 0, time.UTC)
 
 	artifactA := Artifact{
@@ -75,15 +76,30 @@ func TestEncodeDeterministic(t *testing.T) {
 		},
 	}
 
-	outA, err := EncodeBytes(&artifactA)
+	artifactA.Normalize()
+	outA, err := json.Marshal(&artifactA)
 	if err != nil {
 		t.Fatalf("encode artifact A: %v", err)
 	}
-	outB, err := EncodeBytes(&artifactB)
+	artifactB.Normalize()
+	outB, err := json.Marshal(&artifactB)
 	if err != nil {
 		t.Fatalf("encode artifact B: %v", err)
 	}
 	if string(outA) != string(outB) {
 		t.Fatalf("expected deterministic output")
+	}
+}
+
+func TestHTTPMessageJSONRejectsInvalidFields(t *testing.T) {
+	for _, raw := range []string{`{"method":123}`, `{"status":"200"}`, `{"body":"invalid"}`, `[]`} {
+		var message Message
+		if err := json.Unmarshal([]byte(raw), &message); err == nil {
+			t.Fatalf("invalid HTTP message accepted: %s", raw)
+		}
+	}
+	message := Message{HTTP: &HttpMessage{Method: "GET"}}
+	if err := json.Unmarshal([]byte(`null`), &message); err != nil || message.HTTP != nil {
+		t.Fatalf("null message: %v", err)
 	}
 }

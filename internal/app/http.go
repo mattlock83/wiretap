@@ -12,31 +12,20 @@ import (
 func newLogger(cfg core.LogConfig) *slog.Logger {
 	handlerOpts := &slog.HandlerOptions{Level: cfg.Level}
 	if cfg.Format == "json" {
-		return slog.New(slog.NewJSONHandler(os.Stdout, handlerOpts))
+		return slog.New(slog.NewJSONHandler(os.Stderr, handlerOpts))
 	}
-	return slog.New(slog.NewTextHandler(os.Stdout, handlerOpts))
+	return slog.New(slog.NewTextHandler(os.Stderr, handlerOpts))
 }
 
 func (a *App) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", a.handleHealthz)
-	mux.HandleFunc("/v1/lifecycle/start", a.handleLifecycleStart)
-	mux.HandleFunc("/v1/lifecycle/stop", a.handleLifecycleStop)
-	mux.HandleFunc("/v1/startServer", a.handleStartServer)
+	mux.HandleFunc("/v1/startRun", a.handleStartRun)
 	mux.HandleFunc("/v1/setupTest", a.handleSetupTest)
 	mux.HandleFunc("/v1/teardownTest", a.handleTeardownTest)
 	mux.HandleFunc("/v1/generateSchema", a.handleGenerateSchema)
 	mux.HandleFunc("/v1/report", a.handleRuntimeReport)
-	mux.HandleFunc("/v1/killServer", a.handleKillServer)
-	mux.HandleFunc("/v1/testcases/start", a.handleTestCaseStart)
-	mux.HandleFunc("/v1/testcases/finish", a.handleTestCaseFinish)
-	mux.HandleFunc("/v1/testcases/status", a.handleTestCaseStatus)
-	mux.HandleFunc("/v1/artifact", a.handleArtifact)
-	mux.HandleFunc("/v1/expectations", a.handleExpectations)
-	mux.HandleFunc("/v1/schemas", a.handleSchemas)
-	mux.HandleFunc("/v1/redactions", a.handleRedactions)
-	mux.HandleFunc("/v1/proxy/start", a.handleProxyStart)
-	mux.HandleFunc("/v1/proxy/mode", a.handleProxyMode)
+	mux.HandleFunc("/v1/finishRun", a.handleFinishRun)
 	mux.HandleFunc("/v1/proxy/ca", a.handleProxyCA)
 	return loggingMiddleware(a.logger, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Teardown owns its short critical section and drains outside the
@@ -55,35 +44,6 @@ func (a *App) handleHealthz(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
-}
-
-func (a *App) handleLifecycleStart(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
-		return
-	}
-	if err := a.lifecycle.Start(r.Context()); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "started"})
-}
-
-func (a *App) handleLifecycleStop(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
-		return
-	}
-	if a.hasActiveSessions() {
-		writeJSON(w, http.StatusConflict, map[string]string{"error": "capture sessions are still active"})
-		return
-	}
-	if err := a.lifecycle.Stop(r.Context()); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
-		return
-	}
-	a.resetCaptureRouting()
-	writeJSON(w, http.StatusOK, map[string]string{"status": "stopped"})
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload any) {

@@ -5,7 +5,9 @@ Node's built-in test runner:
 
 - the runner starts the SUT and an external inventory dependency independently;
 - the runner points the SUT's dependency URL at Phrond's existing proxy;
-- `createNodeTestSuite` starts Phrond's proxy and names each capture after its test;
+- the harness starts Phrond with `.phrond.yaml` as another service;
+- native test hooks call the SDK to start capture and finalize the run;
+- ordinary `test` callbacks call `runTest` and use ordinary fetch;
 - test HTTP calls and downstream dependency calls go through the same proxy;
 - the bundle correlates `test_to_sut` and `sut_to_dependency` traffic;
 - Phrond writes one portable bundle with JSON evidence, an offline HTML

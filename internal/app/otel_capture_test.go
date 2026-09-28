@@ -67,8 +67,8 @@ func TestOTelParallelSessionsRouteBeforeDependencySelection(t *testing.T) {
 	observed := map[string]int{}
 	mock := func(label string) *httptest.Server {
 		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.Header.Get("X-Phrond-Trace-Id") != "" || r.Header.Get("X-Phrond-Session-Id") != "" {
-				t.Error("proprietary header reached mock")
+			if r.Header.Get("X-Phrond-Session-Id") != "" {
+				t.Error("session selection header reached mock")
 			}
 			sc := tracecontext.Extract(r.Header)
 			if !sc.IsValid() || sc.IsSampled() {
@@ -95,7 +95,7 @@ func TestOTelParallelSessionsRouteBeforeDependencySelection(t *testing.T) {
 	}), "sut", otelhttp.WithTracerProvider(provider), otelhttp.WithPropagators(props)))
 	defer sut.Close()
 	control, _ := dependencyCaptureRuntime(t)
-	info := postDependencyJSON(t, control.URL, "/v1/startServer", map[string]any{"proxy": map[string]string{"target_url": sut.URL}})
+	info := postDependencyJSON(t, control.URL, "/v1/startRun", map[string]any{"proxy": map[string]string{"target_url": sut.URL}})
 	proxyURL := info["sut_url"].(string)
 	dependencyURL = proxyURL + "/__phrond/dep/inventory"
 	sessions := make([]map[string]any, 2)
@@ -108,20 +108,9 @@ func TestOTelParallelSessionsRouteBeforeDependencySelection(t *testing.T) {
 			t.Fatal("traced dependency URL must stay stable")
 		}
 	}
-	// Active configuration cannot be redirected by any control endpoint.
-	for _, endpoint := range []string{"/v1/startServer", "/v1/proxy/start"} {
-		payload := any(map[string]any{"target_url": first.URL})
-		if endpoint == "/v1/startServer" {
-			payload = map[string]any{"proxy": payload}
-		}
-		// startServer historically reports bad request for invalid configuration.
-		want := 409
-		if endpoint == "/v1/startServer" {
-			want = 400
-		}
-		apiStatus(t, control.URL, endpoint, payload, want)
-	}
-	apiStatus(t, control.URL, "/v1/killServer", map[string]any{}, 409)
+	// Active configuration cannot be redirected by run startup.
+	apiStatus(t, control.URL, "/v1/startRun", map[string]any{"proxy": map[string]any{"target_url": first.URL}}, 400)
+	apiStatus(t, control.URL, "/v1/finishRun", map[string]any{}, 409)
 	requestStatus(t, proxyURL, traceRegistration(1)["traceparent"], sessions[1]["session_id"].(string), 409)
 	requestStatus(t, dependencyURL+"/items", "", "", 409)
 	var wg sync.WaitGroup
@@ -174,17 +163,15 @@ func TestOTelParallelSessionsRouteBeforeDependencySelection(t *testing.T) {
 	}
 }
 
-func TestTraceRegistrationValidationAndLegacyIsolation(t *testing.T) {
+func TestTraceRegistrationValidationAndImplicitIsolation(t *testing.T) {
 	control, _ := dependencyCaptureRuntime(t)
 	for _, parent := range []string{"bad", "00-00000000000000000000000000000000-1111111111111111-01", "00-11111111111111111111111111111111-0000000000000000-01"} {
 		apiStatus(t, control.URL, "/v1/setupTest", map[string]any{"name": "invalid", "generate_schema": true, "trace_context": map[string]string{"traceparent": parent}}, 400)
 	}
 	session := postDependencyJSON(t, control.URL, "/v1/setupTest", map[string]any{"name": "new", "generate_schema": true})
-	apiStatus(t, control.URL, "/v1/testcases/start", map[string]any{"name": "legacy", "generate_schema": true}, 409)
+	apiStatus(t, control.URL, "/v1/setupTest", map[string]any{"name": "overlap", "generate_schema": true}, 409)
 	postDependencyJSON(t, control.URL, "/v1/teardownTest", map[string]any{"session_id": session["session_id"]})
-	postDependencyJSON(t, control.URL, "/v1/testcases/start", map[string]any{"name": "legacy", "generate_schema": true})
-	apiStatus(t, control.URL, "/v1/setupTest", map[string]any{"name": "new", "generate_schema": true}, 409)
-	postDependencyJSON(t, control.URL, "/v1/testcases/finish", map[string]any{})
+
 }
 
 func TestCaptureDrainAndTimeoutDoNotReassignInFlightTraffic(t *testing.T) {

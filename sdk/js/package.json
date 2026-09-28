@@ -1,7 +1,7 @@
 {
   "name": "@phrond/sdk",
   "version": "0.1.0",
-  "description": "JavaScript SDK for the Phrond recorder core",
+  "description": "Test lifecycle and tracing SDK for Phrond boundary capture",
   "main": "src/index.js",
   "type": "commonjs",
   "license": "UNLICENSED",
@@ -31,5 +31,6 @@
     "jest-environment-node": {
       "optional": true
     }
-  }
+  },
+  "types": "src/index.d.ts"
 }

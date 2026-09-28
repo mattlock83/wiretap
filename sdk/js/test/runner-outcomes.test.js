@@ -43,6 +43,5 @@ for (const runner of ['node', 'jest']) test(`${runner} final outcomes include ti
     assert.equal(outcomes['never settles'], 'fail');
     assert.equal(outcomes['assertion count'], 'fail');
     assert.equal(outcomes['hooks hook failure'], 'fail');
-    assert.deepEqual(result.lateErrors, ['capture attempt is already closed']);
   }
 });

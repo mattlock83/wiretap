@@ -5,7 +5,7 @@ async function runNodeTest(runtime, t, name, fn, defaults) {
   if (typeof t.passed !== 'boolean') throw new Error('The Phrond node:test adapter requires Node 20.12 or newer');
   await Promise.all(runtime.pendingCleanup);
   if (t.signal.aborted) throw t.signal.reason || new Error('test already completed');
-  const attempt = runtime._createTestAttempt(t.fullName || name, defaults);
+  const attempt = runtime.createTestAttempt(t.fullName || name, defaults);
   let skipped = false, childFailure, generation = 0;
   const finish = () => attempt.finish({
     status: t.error || childFailure ? 'fail' : skipped ? 'skip' : 'pass',

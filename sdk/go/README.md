@@ -1,24 +1,17 @@
 # Go test integration
 
 Import `github.com/phrond/evermock/sdk/go` as `phrond`. The helper uses the root
-Go module and standard OTel APIs. Start Phrond with your existing orchestration;
-this helper does not launch or stop a shared runtime.
+Go module and standard OTel APIs. Put addresses and specs in `.phrond.yaml` and
+start `phrond` alongside the SUT and mocks using your existing harness. Run tests
+normally with `go test`. The SDK inherits runtime defaults over HTTP; it never
+invokes the CLI or launches test processes.
 
 ```go
-runtime := phrond.Runtime{BaseURL: os.Getenv("PHROND_BASE_URL")}
+runtime := phrond.Runtime{} // PHROND_BASE_URL or http://127.0.0.1:18000
 
 t.Run("creates an order", func(t *testing.T) {
     t.Parallel() // only with working SUT propagation / isolated runtimes
-    session := runtime.StartTest(t, phrond.TestOptions{
-        APIID: "orders",
-        SUTTargetKind: "service",
-        SUTBaseURL: sut.URL, // shared httptest.NewServer or existing service
-        Schemas: []any{map[string]any{
-            "type": "openapi",
-            "source": map[string]any{"type": "file", "path": "schemas/orders.yaml"},
-        }},
-        ExplicitSession: true,
-    })
+    session := runtime.StartTest(t, phrond.TestOptions{ExplicitSession: true})
     client := session.HTTPClient(existingClient)
     response, err := client.Get(session.SUTURL + "/orders")
     if err != nil { t.Fatal(err) }
@@ -26,6 +19,29 @@ t.Run("creates an order", func(t *testing.T) {
     // Keep existing assertions and mock verification here.
 })
 ```
+
+Finish the run from suite cleanup after every test has completed. For a runtime
+owned by one Go test package, use its existing `TestMain`:
+
+```go
+func TestMain(m *testing.M) {
+    code := m.Run() // StartTest starts capture lazily; testing owns execution.
+    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+    runtime := phrond.Runtime{}
+    if err := runtime.FinishRun(ctx); err != nil {
+        fmt.Fprintln(os.Stderr, err)
+        if code == 0 { code = 1 }
+    }
+    cancel()
+    os.Exit(code)
+}
+```
+
+`FinishRun` calls `/v1/finishRun` to stop capture and finalize the bundle; the
+HTTP control process remains available. For multiple packages/workers sharing
+a runtime, finalize once from the outer suite/harness after all packages finish,
+instead of each package's `TestMain`. The method returns an error if attempts
+are still active. Use a bounded context and propagate finalization errors.
 
 `StartTest` creates a fresh root and registers cleanup. Call it after
 `t.Parallel()` and before registering user cleanups so capture teardown runs
@@ -45,11 +61,13 @@ keep it and create requests using `http.NewRequestWithContext(session.Context,
 one, the global provider is used, with a local fallback for a no-op global setup.
 No exporter or collector is needed; unsampled contexts work.
 
-`TestOptions.Dependencies` accepts the API dependency registration objects
-(`asset_id`, `upstream_url`, optional `upstream_kind`, `schema`/`schemas`). The returned `Dependencies` map
+`TestOptions.Schemas` and `TestOptions.Dependencies` accept typed `Schema` and
+`Dependency` overrides. `SchemaSource` supports file, URL, and inline content. The returned `Dependencies` map
 contains capture URLs. Configure the SUT's dependency endpoints once to stable
 `/__phrond/dep/<asset-id>` URLs for traced sessions. `GenerateSchema: true` is the
-explicit alternative to SUT schemas; dependencies still require their schemas.
+explicit alternative to SUT schemas. Each API requires its spec unless its
+`SchemaRequired` pointer is explicitly false; supplied specs always validate.
+Export a generated draft afterward with the optional `phrond export` utility.
 `DrainTimeout` defaults to five seconds; use a positive duration up to one minute.
 
 Each runtime run writes an OKF bundle automatically. `Session.RunID`,

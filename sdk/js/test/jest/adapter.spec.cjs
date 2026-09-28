@@ -10,7 +10,7 @@ beforeAll(async () => {
     if (!req.url.startsWith('/v1/')) { requests.push(req.headers.traceparent); res.end('{}'); return; }
     const body = JSON.parse(raw || '{}'); calls.push({ path: req.url, body });
     if (req.url === '/v1/setupTest') res.end(JSON.stringify({ session_id: `s-${calls.length}`, name: body.name, sut_url: url, proxy_listen: url }));
-    else if (req.url === '/v1/teardownTest') res.end(JSON.stringify({ schema_validation: { status: 'skipped' } }));
+    else if (req.url === '/v1/teardownTest') res.end(JSON.stringify({ capture: { schema_validation: { status: 'skipped' } } }));
     else res.end(JSON.stringify({ sut_url: url }));
   });
   server.listen(0, '127.0.0.1'); await once(server, 'listening');
@@ -27,7 +27,7 @@ suite.test.concurrent.each(['alpha', 'beta'])('concurrent %s', async () => {
   await fetch(suite.sutUrl + '/concurrent');
   expect(suite.runtime.activeSession).not.toBeNull();
 });
-suite.test.each([{ value: 'first' }, { value: 'second' }])('row $value', async () => { await suite.http.get('/table'); });
+suite.test.each([{ value: 'first' }, { value: 'second' }])('row $value', async () => { await fetch(`${suite.sutUrl}/table`); });
 suite.test('retried callback', async () => {
   if (++attempts === 1) throw new Error('retry me');
   await fetch(suite.sutUrl + '/retry');
@@ -44,5 +44,5 @@ afterAll(async () => {
   expect(teardowns).toHaveLength(setups.length);
   expect(teardowns.filter(call => call.status === 'fail')).toHaveLength(1);
   for (const parent of requests) expect(parent).toMatch(/^00-[a-f0-9]{32}-[a-f0-9]{16}-01$/);
-  expect(calls.some(call => call.path === '/v1/killServer')).toBe(false);
+  expect(calls.some(call => call.path === '/v1/finishRun')).toBe(false);
 });

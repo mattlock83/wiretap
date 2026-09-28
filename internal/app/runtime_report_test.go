@@ -13,10 +13,11 @@ import (
 	"time"
 
 	"github.com/phrond/evermock/internal/artifact"
+	"github.com/phrond/evermock/internal/bundle"
 	"github.com/phrond/evermock/internal/core"
 )
 
-func TestRuntimeReportWritesWorkflowAndHTML(t *testing.T) {
+func TestRuntimeReportRefreshesBundleAndExportsWorkflow(t *testing.T) {
 	outputDir := t.TempDir()
 	cfg := core.DefaultConfig()
 	cfg.Artifact.OutputDir = outputDir
@@ -39,7 +40,7 @@ paths:
         "200":
           description: ok
 `
-	_, err = artifact.WriteFile(outputDir, &artifact.Artifact{
+	capture := &artifact.Artifact{
 		Version: 1,
 		TestCase: artifact.TestCase{
 			ID:        "runtime-report",
@@ -79,18 +80,24 @@ paths:
 			Request:  artifact.Message{HTTP: &artifact.HttpMessage{Method: "GET", URL: "http://mock.test/items"}},
 			Response: artifact.Message{HTTP: &artifact.HttpMessage{Status: http.StatusOK}},
 		}},
-	})
+	}
+	writer, err := bundle.New(outputDir)
 	if err != nil {
-		t.Fatalf("write artifact: %v", err)
+		t.Fatal(err)
+	}
+	frozen, err := writer.Register(capture.TestCase, capture.Schemas)
+	if err != nil {
+		t.Fatal(err)
+	}
+	capture.Schemas = frozen
+	if _, err := writer.Commit(capture); err != nil {
+		t.Fatal(err)
 	}
 
 	workflowPath := filepath.Join(outputDir, "custom.workflow.yaml")
-	htmlPath := filepath.Join(outputDir, "custom.html")
 	payload, err := json.Marshal(map[string]any{
-		"artifacts_dir": outputDir,
-		"sut_name":      "Example SUT",
+		"bundle_path":   writer.Path(),
 		"workflow_path": workflowPath,
-		"html_path":     htmlPath,
 	})
 	if err != nil {
 		t.Fatalf("encode report request: %v", err)
@@ -115,13 +122,14 @@ paths:
 	if response["workflow_path"] != workflowPath {
 		t.Fatalf("workflow_path = %v", response["workflow_path"])
 	}
-	for _, key := range []string{"pact_dir", "pact_paths", "consumer_name"} {
-		if _, found := response[key]; found {
-			t.Fatalf("removed report field %q returned: %v", key, response[key])
+	for _, key := range []string{"index_path", "viewer_path"} {
+		path, ok := response[key].(string)
+		if !ok {
+			t.Fatalf("missing %s: %v", key, response)
 		}
-	}
-	if _, err := os.Stat(filepath.Join(outputDir, "pacts")); !os.IsNotExist(err) {
-		t.Fatalf("unexpected automatic contract export: %v", err)
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("%s: %v", key, err)
+		}
 	}
 
 	workflow, err := os.ReadFile(workflowPath)
@@ -132,25 +140,7 @@ paths:
 		!strings.Contains(string(workflow), "call: http") {
 		t.Fatalf("unexpected workflow output:\n%s", workflow)
 	}
-	if _, err := os.Stat(htmlPath); err != nil {
-		t.Fatalf("stat HTML output: %v", err)
-	}
-	removedExport, err := http.Post(server.URL+"/v1/report", "application/json", bytes.NewReader([]byte(`{"collection_path":"unused.json"}`)))
-	if err != nil {
-		t.Fatalf("removed export request: %v", err)
-	}
-	removedExport.Body.Close()
-	if removedExport.StatusCode != http.StatusBadRequest {
-		t.Fatalf("removed export status = %d, want 400", removedExport.StatusCode)
-	}
-	removedEndpoint, err := http.Post(server.URL+"/v1/assertDependency", "application/json", bytes.NewReader([]byte(`{}`)))
-	if err != nil {
-		t.Fatalf("removed assertion endpoint request: %v", err)
-	}
-	removedEndpoint.Body.Close()
-	if removedEndpoint.StatusCode != http.StatusNotFound {
-		t.Fatalf("removed assertion endpoint status = %d, want %d", removedEndpoint.StatusCode, http.StatusNotFound)
-	}
+
 }
 
 func TestGenerateSchemaEndpointWritesStandardOpenAPIWithoutCapturedValues(t *testing.T) {
@@ -165,7 +155,7 @@ func TestGenerateSchemaEndpointWritesStandardOpenAPIWithoutCapturedValues(t *tes
 	server := httptest.NewServer(appInstance.routes())
 	defer server.Close()
 
-	_, err = artifact.WriteFile(outputDir, &artifact.Artifact{
+	capture := &artifact.Artifact{
 		Version: 1,
 		TestCase: artifact.TestCase{
 			ID:        "schema-generation",
@@ -188,17 +178,27 @@ func TestGenerateSchemaEndpointWritesStandardOpenAPIWithoutCapturedValues(t *tes
 				Body:    &artifact.Body{Text: `{"id":"order-123"}`},
 			}},
 		}},
-	})
+	}
+	writer, err := bundle.New(outputDir)
 	if err != nil {
-		t.Fatalf("write artifact: %v", err)
+		t.Fatal(err)
+	}
+	if _, err := writer.Register(capture.TestCase, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := writer.Commit(capture); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Finalize("complete"); err != nil {
+		t.Fatal(err)
 	}
 
 	schemaPath := filepath.Join(outputDir, "orders.generated.openapi.yaml")
 	payload, _ := json.Marshal(map[string]any{
-		"artifacts_dir": outputDir,
-		"output_path":   schemaPath,
-		"title":         "Orders Service",
-		"version":       "1.0.0",
+		"bundle_path": writer.Path(),
+		"output_path": schemaPath,
+		"title":       "Orders Service",
+		"version":     "1.0.0",
 	})
 	resp, err := http.Post(server.URL+"/v1/generateSchema", "application/json", bytes.NewReader(payload))
 	if err != nil {

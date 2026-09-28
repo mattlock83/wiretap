@@ -23,20 +23,19 @@ test("startCapture and named test session send capture-only payloads", async () 
   const calls = [];
   const server = await controlServer((path, body) => {
     calls.push({ path, body });
-    if (path === "/v1/startServer") return { sut_url: "http://127.0.0.1:20010", proxy: { listen_addr: "127.0.0.1:20010" } };
+    if (path === "/v1/startRun") return { sut_url: "http://127.0.0.1:20010", proxy: { listen_addr: "127.0.0.1:20010" } };
     if (path === "/v1/setupTest") return { session_id: "session-1", name: body.name, proxy_listen: "http://127.0.0.1:20010", viewer_path: "/bundle/viewer/index.html" };
-    if (path === "/v1/teardownTest") return { schema_validation: { status: "pass" } };
+    if (path === "/v1/teardownTest") return { capture: { schema_validation: { status: "pass" } } };
     return { status: "ok" };
   });
   try {
     const runtime = await startCapture({ baseUrl: server.baseUrl, sutBaseUrl: "http://sut.test", schemas: [{ id: "sut-api" }] });
-    runtime.scenarioName("hello world happy flow");
-    const session = await runtime.setupTest();
+    const session = await runtime.setupTest({ name: "hello world happy flow" });
     assert.equal(session.name, "hello world happy flow");
     assert.equal(session.viewerPath, "/bundle/viewer/index.html");
     await runtime.teardownTest({ status: "pass" });
     assert.deepEqual(calls[0], {
-      path: "/v1/startServer",
+      path: "/v1/startRun",
       body: { proxy: { target_url: "http://sut.test" } }
     });
     assert.match(calls[1].body.trace_context.traceparent, /^00-[0-9a-f]{32}-[0-9a-f]{16}-0[01]$/);
@@ -45,20 +44,21 @@ test("startCapture and named test session send capture-only payloads", async () 
       name: "hello world happy flow",
       sut_base_url: "http://sut.test",
       explicit_session: false,
-      schemas: [{ id: "sut-api" }]
+      schemas: [{ id: "sut-api" }],
+      dependencies: []
     });
     assert.equal(calls[2].body.status, "pass");
     assert.equal(JSON.stringify(calls).includes("mock"), false);
-    assert.equal(JSON.stringify(calls).includes("dependencies"), false);
+    assert.deepEqual(setupPayload.dependencies, []);
   } finally {
     await server.close();
   }
 });
 
-test("report forwards all supported output paths", async () => {
+test("report selects a bundle and optional workflow export", async () => {
   let reportPayload;
   const server = await controlServer((path, body) => {
-    if (path === "/v1/startServer") return { sut_url: "http://127.0.0.1:20010", proxy: { listen_addr: "127.0.0.1:20010" } };
+    if (path === "/v1/startRun") return { sut_url: "http://127.0.0.1:20010", proxy: { listen_addr: "127.0.0.1:20010" } };
     if (path === "/v1/report") { reportPayload = body; return { status: "ok" }; }
     return {};
   });
@@ -66,10 +66,10 @@ test("report forwards all supported output paths", async () => {
     const runtime = await startCapture({ baseUrl: server.baseUrl, generateSchema: true });
     await runtime.report({
       workflowPath: "capture.workflow.yaml",
-      htmlPath: "capture.html"
+      bundlePath: "capture-bundle"
     });
     assert.equal(reportPayload.workflow_path, "capture.workflow.yaml");
-    assert.equal(reportPayload.html_path, "capture.html");
+    assert.equal(reportPayload.bundle_path, "capture-bundle");
   } finally {
     await server.close();
   }
@@ -79,7 +79,7 @@ test("declared external dependencies retain strict schemas and session-scoped ca
   const calls = [];
   const server = await controlServer((path, body) => {
     calls.push({ path, body });
-    if (path === "/v1/startServer") return { sut_url: "http://127.0.0.1:20010", proxy: { listen_addr: "127.0.0.1:20010" } };
+    if (path === "/v1/startRun") return { sut_url: "http://127.0.0.1:20010", proxy: { listen_addr: "127.0.0.1:20010" } };
     if (path === "/v1/setupTest") {
       return {
         session_id: "session-1",
@@ -89,7 +89,7 @@ test("declared external dependencies retain strict schemas and session-scoped ca
         dependencies: { inventory: "http://127.0.0.1:20010/__phrond/session/session-1/dep/inventory" }
       };
     }
-    return { schema_validation: { status: "pass" } };
+    return { capture: { schema_validation: { status: "pass" } } };
   });
   try {
     const inventorySchema = { id: "inventory-api", type: "openapi", source: { type: "file", path: "inventory.yaml" } };
@@ -98,7 +98,7 @@ test("declared external dependencies retain strict schemas and session-scoped ca
       sutBaseUrl: "http://sut.test",
       schemas: [{ id: "sut-api" }],
       dependencies: {
-        inventory: { assetName: "Inventory API", url: "http://wiremock.test", schema: inventorySchema }
+        inventory: { assetName: "Inventory API", upstreamUrl: "http://wiremock.test", schema: inventorySchema }
       }
     });
     assert.equal(runtime.dependencyUrl("inventory"), "http://127.0.0.1:20010/__phrond/dep/inventory");
@@ -119,7 +119,7 @@ test("declared external dependencies retain strict schemas and session-scoped ca
   }
 });
 
-test("external dependencies always require their own schema", async () => {
+test("external dependencies require their own schema by default", async () => {
   await assert.rejects(
     () => startCapture({
       baseUrl: "http://127.0.0.1:1",
@@ -144,21 +144,7 @@ test("external dependencies always require their own schema", async () => {
   );
 });
 
-test("bindTest records the test name and preserves failures", async () => {
-  const calls = [];
-  const runtime = {
-    setupTest: async (payload) => { calls.push(["setup", payload]); return { sessionId: "session-1" }; },
-    teardownTest: async (payload) => { calls.push(["teardown", payload]); return {}; }
-  };
-  let wrapped;
-  const fakeTest = (name, fn) => { wrapped = fn; return name; };
-  bindTest(runtime, fakeTest)("hello world happy flow", async () => { throw new Error("boom"); });
-  await assert.rejects(() => wrapped({}), /boom/);
-  assert.equal(calls[0][1].name, "hello world happy flow");
-  assert.equal(calls[1][1].status, "fail");
-});
-
-test("createNodeTestSuite exposes capture, dependency forwarding, HTTP, and reporting", () => {
+test("createNodeTestSuite exposes capture, dependency forwarding, and reporting", () => {
   const hooks = {};
   const suite = createNodeTestSuite({
     autoHooks: true,
@@ -172,25 +158,19 @@ test("createNodeTestSuite exposes capture, dependency forwarding, HTTP, and repo
   assert.equal(typeof suite.test, "function");
   assert.equal(typeof suite.report, "function");
   assert.equal(typeof suite.generateSchema, "function");
-  assert.equal(suite.queueResponse, undefined);
-  assert.equal(suite.verify, undefined);
 	assert.equal(typeof suite.dependencyUrl, "function");
   assert.equal(typeof hooks.before, "function");
   assert.equal(typeof hooks.after, "function");
 });
 
 test("schemas are required unless generation is explicitly enabled", async () => {
-  await assert.rejects(
-    () => startCapture({ baseUrl: "http://127.0.0.1:1" }),
-    /OpenAPI schemas are required/
-  );
+  const server = await controlServer(() => ({}));
+  try {
+    await assert.rejects(() => startCapture({ baseUrl: server.baseUrl }), /OpenAPI schemas are required/);
+  } finally { await server.close(); }
   assert.throws(
     () => createNodeTestSuite({ schemas: [{ id: "sut-api" }], generateSchema: true }),
     /cannot be used together/
-  );
-  assert.throws(
-    () => createNodeTestSuite({ strictSchema: false }),
-    /no longer supported/
   );
 });
 
@@ -198,11 +178,11 @@ test("explicit generation permits skipped validation and writes schema before sh
   const calls = [];
   const server = await controlServer((path, body) => {
     calls.push({ path, body });
-    if (path === "/v1/startServer") return { sut_url: "http://127.0.0.1:20010", proxy: { listen_addr: "127.0.0.1:20010" } };
+    if (path === "/v1/startRun") return { sut_url: "http://127.0.0.1:20010", proxy: { listen_addr: "127.0.0.1:20010" } };
     if (path === "/v1/setupTest") return { session_id: "session-1", name: body.name, proxy_listen: "http://127.0.0.1:20010" };
-    if (path === "/v1/teardownTest") return { schema_validation: { status: "skipped" } };
+    if (path === "/v1/teardownTest") return { capture: { schema_validation: { status: "skipped" } } };
     if (path === "/v1/generateSchema") return { schema_path: body.output_path, artifact_count: 1 };
-    if (path === "/v1/killServer") return { status: "killed" };
+    if (path === "/v1/finishRun") return { status: "complete" };
     return {};
   });
   try {
@@ -210,7 +190,7 @@ test("explicit generation permits skipped validation and writes schema before sh
       baseUrl: server.baseUrl,
       sutBaseUrl: "http://sut.test",
       generateSchema: {
-        output: "artifacts/orders.generated.openapi.yaml",
+        outputPath: "artifacts/orders.generated.openapi.yaml",
         title: "Orders Service",
         version: "1.0.0",
         force: true
@@ -218,13 +198,13 @@ test("explicit generation permits skipped validation and writes schema before sh
     });
     await runtime.setupTest({ name: "creates an order" });
     await runtime.teardownTest({ status: "pass" });
-    const result = await runtime.killServer();
+    const result = await runtime.finishRun();
 
     const setup = calls.find((call) => call.path === "/v1/setupTest");
     assert.equal(setup.body.generate_schema, true);
     assert.deepEqual(setup.body.schemas, []);
     const paths = calls.map((call) => call.path);
-    assert.ok(paths.indexOf("/v1/generateSchema") < paths.indexOf("/v1/killServer"));
+    assert.ok(paths.indexOf("/v1/generateSchema") < paths.indexOf("/v1/finishRun"));
     const generation = calls.find((call) => call.path === "/v1/generateSchema");
     assert.deepEqual(generation.body, {
       output_path: "artifacts/orders.generated.openapi.yaml",
@@ -240,9 +220,9 @@ test("explicit generation permits skipped validation and writes schema before sh
 
 test("strict schema violations fail teardown", async () => {
   const server = await controlServer((path, body) => {
-    if (path === "/v1/startServer") return { sut_url: "http://127.0.0.1:20010", proxy: { listen_addr: "127.0.0.1:20010" } };
+    if (path === "/v1/startRun") return { sut_url: "http://127.0.0.1:20010", proxy: { listen_addr: "127.0.0.1:20010" } };
     if (path === "/v1/setupTest") return { session_id: "session-1", name: body.name, proxy_listen: "http://127.0.0.1:20010" };
-    if (path === "/v1/teardownTest") return { schema_validation: { status: "fail", errors: [{ message: "response body is invalid" }] } };
+    if (path === "/v1/teardownTest") return { capture: { schema_validation: { status: "fail", errors: [{ message: "response body is invalid" }] } } };
     return {};
   });
   try {
@@ -250,6 +230,39 @@ test("strict schema violations fail teardown", async () => {
     await runtime.setupTest({ name: "invalid response" });
     await assert.rejects(() => runtime.teardownTest({ status: "pass" }), /response body is invalid/);
   } finally {
+    await server.close();
+  }
+});
+
+test("project defaults are inherited and shared suites leave finalization to their owner", async () => {
+  const calls = [];
+  const server = await controlServer((path, body) => {
+    calls.push({ path, body });
+    if (path === "/v1/startRun") return {
+      sut_url: "http://127.0.0.1:20010",
+      defaults: { sut_base_url: "http://sut.test", api_id: "orders", schema_required: false,
+        dependencies: [{ asset_id: "inventory", upstream_url: "http://mock.test", schema_required: false, upstream_kind: "mock" }] }
+    };
+    if (path === "/v1/setupTest") return { session_id: "configured", sut_url: "http://127.0.0.1:20010" };
+    if (path === "/v1/teardownTest") return { capture: { schema_validation: { status: "partial", skipped: ["inventory"] } } };
+    return {};
+  });
+  const previousBase = process.env.PHROND_BASE_URL;
+  process.env.PHROND_BASE_URL = server.baseUrl;
+  try {
+    const runtime = await startCapture({ manageRuntime: false });
+    await runtime.runTest("configured test", () => {});
+    await runtime.finishRun();
+    const setup = calls.find(call => call.path === "/v1/setupTest").body;
+    assert.equal(setup.schema_required, false);
+    assert.equal(setup.sut_base_url, "http://sut.test");
+    assert.equal(setup.dependencies[0].schema_required, false);
+    assert.equal(setup.dependencies[0].upstream_kind, "mock");
+    await runtime.runTest("clears dependencies", () => {}, { dependencies: [] });
+    assert.deepEqual(calls.filter(call => call.path === "/v1/setupTest")[1].body.dependencies, []);
+    assert.equal(calls.some(call => call.path === "/v1/finishRun"), false);
+  } finally {
+    if (previousBase === undefined) delete process.env.PHROND_BASE_URL; else process.env.PHROND_BASE_URL = previousBase;
     await server.close();
   }
 });

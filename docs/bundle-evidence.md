@@ -28,8 +28,6 @@ Configured OpenAPI schemas and their transitive external references are frozen
 before the attempt is admitted. Each `schemas/<hash>/manifest.json` records the
 set hash, root document, and all local document hashes. The reader checks the
 manifest identity and every file.
-An imported historical schema without a verifiable original source is marked
-`unavailable`; its coverage denominator is unknown.
 
 Evidence version `1.x` is the reader's additive compatibility range. Writers
 currently produce `1.0`. Unknown optional fields are ignored by readers.
@@ -42,3 +40,10 @@ For outbound flows, `assumption` says `evidence_basis: observed_exchange`,
 `consumed_fields: unknown`, and `provider_check.status: not_checked` unless a
 later, explicit provider comparison changes that separate result. Capturing a
 field in a mock response does not mean the consumer required it.
+
+An API explicitly configured with `schema_required: false` and no supplied spec
+has a schema reference with `source.type: omitted` and no source bytes. This is
+a declared exception. Validation
+lists its ID in `schema_validation.skipped`; mixed attempts have status `partial`
+unless an enforced schema fails. Coverage remains unknown for the omitted API,
+while concrete observed paths and exchanges remain browsable.

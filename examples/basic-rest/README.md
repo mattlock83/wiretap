@@ -28,7 +28,10 @@ Two overlapping Jest tests use native `fetch` and one stable dependency URL.
 The demo SUT uses standard `otelhttp` server/client instrumentation; it contains
 no Phrond header forwarding. The tests check separate traces and captured
 inbound and downstream payloads in their own test-attempt evidence.
-The shell harness owns all process lifecycles; Jest workers do not stop Phrond.
+The shell harness starts Phrond with [.phrond.yaml](.phrond.yaml) alongside the
+demo services. Native Node suite hooks or Jest global teardown finalize capture
+over HTTP; Jest workers only own their test attempts. The bundle and views are
+written automatically, without a report command.
 
 For an uninstrumented SUT with serial capture:
 

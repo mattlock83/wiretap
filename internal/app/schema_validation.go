@@ -42,6 +42,18 @@ func applySchemaValidation(art *artifact.Artifact) {
 	}
 	issues := validateSchemas(art)
 	result := &artifact.SchemaValidation{Status: "pass"}
+	for _, schema := range art.Schemas {
+		if schema.Source.Type == "omitted" {
+			result.Skipped = append(result.Skipped, schema.ID)
+		}
+	}
+	if len(result.Skipped) > 0 {
+		result.Status = "partial"
+		if len(result.Skipped) == len(art.Schemas) {
+			result.Status = "skipped"
+		}
+	}
+
 	if len(issues) > 0 {
 		result.Status = "fail"
 		result.Errors = issues
@@ -117,6 +129,9 @@ func validateSchemas(art *artifact.Artifact) []artifact.SchemaValidationError {
 
 	for role, schemas := range roleSchemas {
 		for _, schema := range schemas {
+			if schema.Source.Type == "omitted" {
+				continue
+			}
 			typ := strings.ToLower(strings.TrimSpace(schema.Type))
 			switch typ {
 			case "openapi":
@@ -171,6 +186,9 @@ func validateSchemas(art *artifact.Artifact) []artifact.SchemaValidationError {
 			candidates = append(candidates, spec)
 		}
 		if len(candidates) == 0 {
+			if omittedForFlow(art.Schemas, role, flow.AssetID) {
+				continue
+			}
 			if generating, _ := art.Meta["schema_generation"].(bool); generating && role == "sut" {
 				continue
 			}

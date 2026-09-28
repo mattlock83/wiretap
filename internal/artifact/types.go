@@ -5,19 +5,19 @@ import (
 	"time"
 )
 
-// Artifact is the top-level test artifact written per test case.
+// Artifact is the capture model for one test attempt, persisted as bundle evidence.
 type Artifact struct {
-	CaptureIncomplete  bool              `yaml:"capture_incomplete,omitempty" json:"capture_incomplete,omitempty"`
-	CaptureDiagnostics []string          `yaml:"capture_diagnostics,omitempty" json:"capture_diagnostics,omitempty"`
-	Version            int               `yaml:"version" json:"version"`
-	TestCase           TestCase          `yaml:"testcase" json:"testcase"`
-	Env                *Environment      `yaml:"environment,omitempty" json:"environment,omitempty"`
-	Schemas            []SchemaRef       `yaml:"schemas,omitempty" json:"schemas,omitempty"`
-	Traffic            []Flow            `yaml:"traffic" json:"traffic"`
-	Assertions         []Assertion       `yaml:"assertions,omitempty" json:"assertions,omitempty"`
-	SchemaValidation   *SchemaValidation `yaml:"schema_validation,omitempty" json:"schema_validation,omitempty"`
-	Redactions         []Redaction       `yaml:"redactions,omitempty" json:"redactions,omitempty"`
-	Meta               map[string]any    `yaml:"meta,omitempty" json:"meta,omitempty"`
+	CaptureIncomplete  bool              `json:"capture_incomplete,omitempty"`
+	CaptureDiagnostics []string          `json:"capture_diagnostics,omitempty"`
+	Version            int               `json:"version"`
+	TestCase           TestCase          `json:"testcase"`
+	Env                *Environment      `json:"environment,omitempty"`
+	Schemas            []SchemaRef       `json:"schemas,omitempty"`
+	Traffic            []Flow            `json:"traffic"`
+	Assertions         []Assertion       `json:"assertions,omitempty"`
+	SchemaValidation   *SchemaValidation `json:"schema_validation,omitempty"`
+	Redactions         []Redaction       `json:"redactions,omitempty"`
+	Meta               map[string]any    `json:"meta,omitempty"`
 }
 
 // Normalize ensures deterministic ordering for slices.
@@ -49,83 +49,83 @@ func (a *Artifact) Normalize() {
 
 // TestCase metadata.
 type TestCase struct {
-	TraceID    string         `yaml:"trace_id,omitempty" json:"trace_id,omitempty"`
-	RootSpanID string         `yaml:"root_span_id,omitempty" json:"root_span_id,omitempty"`
-	ID         string         `yaml:"id" json:"id"`
-	Name       string         `yaml:"name" json:"name"`
-	StartedAt  time.Time      `yaml:"started_at" json:"started_at"`
-	FinishedAt time.Time      `yaml:"finished_at,omitempty" json:"finished_at,omitempty"`
-	Status     string         `yaml:"status,omitempty" json:"status,omitempty"`
-	Tags       []string       `yaml:"tags,omitempty" json:"tags,omitempty"`
-	Meta       map[string]any `yaml:"meta,omitempty" json:"meta,omitempty"`
+	TraceID    string         `json:"trace_id,omitempty" yaml:"trace_id,omitempty"`
+	RootSpanID string         `json:"root_span_id,omitempty" yaml:"root_span_id,omitempty"`
+	ID         string         `json:"id" yaml:"id"`
+	Name       string         `json:"name" yaml:"name"`
+	StartedAt  time.Time      `json:"started_at" yaml:"started_at"`
+	FinishedAt time.Time      `json:"finished_at,omitempty" yaml:"finished_at,omitempty"`
+	Status     string         `json:"status,omitempty" yaml:"status,omitempty"`
+	Tags       []string       `json:"tags,omitempty" yaml:"tags,omitempty"`
+	Meta       map[string]any `json:"meta,omitempty" yaml:"meta,omitempty"`
 }
 
 // Environment describes runtime addresses.
 type Environment struct {
-	SUTBaseURL  string `yaml:"sut_base_url,omitempty" json:"sut_base_url,omitempty"`
-	ProxyListen string `yaml:"proxy_listen,omitempty" json:"proxy_listen,omitempty"`
-	ProxyMode   string `yaml:"proxy_mode,omitempty" json:"proxy_mode,omitempty"`
+	SUTBaseURL  string `json:"sut_base_url,omitempty"`
+	ProxyListen string `json:"proxy_listen,omitempty"`
+	ProxyMode   string `json:"proxy_mode,omitempty"`
 }
 
 // SchemaRef identifies schemas attached to the test case.
 type SchemaRef struct {
-	ID             string       `yaml:"id" json:"id"`
-	Role           string       `yaml:"role" json:"role"`
-	Type           string       `yaml:"type" json:"type"`
-	Source         SchemaSource `yaml:"source" json:"source"`
-	OpenAPIVersion string       `yaml:"openapi_version,omitempty" json:"openapi_version,omitempty"`
-	AssetName      string       `yaml:"asset_name,omitempty" json:"asset_name,omitempty"`
-	AssetID        string       `yaml:"asset_id,omitempty" json:"asset_id,omitempty"`
-	AssetSHA       string       `yaml:"asset_sha,omitempty" json:"asset_sha,omitempty"`
+	ID             string       `json:"id"`
+	Role           string       `json:"role"`
+	Type           string       `json:"type"`
+	Source         SchemaSource `json:"source"`
+	OpenAPIVersion string       `json:"openapi_version,omitempty"`
+	AssetName      string       `json:"asset_name,omitempty"`
+	AssetID        string       `json:"asset_id,omitempty"`
+	AssetSHA       string       `json:"asset_sha,omitempty"`
 }
 
 // SchemaSource identifies where the schema came from.
 type SchemaSource struct {
-	Type        string   `yaml:"type" json:"type"`
-	Path        string   `yaml:"path,omitempty" json:"path,omitempty"`
-	URL         string   `yaml:"url,omitempty" json:"url,omitempty"`
-	Content     string   `yaml:"content,omitempty" json:"content,omitempty"`
-	SHA256      string   `yaml:"sha256,omitempty" json:"sha256,omitempty"`
-	Format      string   `yaml:"format,omitempty" json:"format,omitempty"`
-	ImportPaths []string `yaml:"import_paths,omitempty" json:"import_paths,omitempty"`
+	Type        string   `json:"type"`
+	Path        string   `json:"path,omitempty"`
+	URL         string   `json:"url,omitempty"`
+	Content     string   `json:"content,omitempty"`
+	SHA256      string   `json:"sha256,omitempty"`
+	Format      string   `json:"format,omitempty"`
+	ImportPaths []string `json:"import_paths,omitempty"`
 }
 
 // Flow captures one request/response exchange.
 type Flow struct {
-	ID         string    `yaml:"id" json:"id"`
-	Protocol   string    `yaml:"protocol" json:"protocol"`
-	Channel    string    `yaml:"channel" json:"channel"`
-	StartedAt  time.Time `yaml:"started_at,omitempty" json:"started_at,omitempty"`
-	DurationMS int64     `yaml:"duration_ms,omitempty" json:"duration_ms,omitempty"`
-	Request    Message   `yaml:"request" json:"request"`
-	Response   Message   `yaml:"response" json:"response"`
+	ID         string    `json:"id"`
+	Protocol   string    `json:"protocol"`
+	Channel    string    `json:"channel"`
+	StartedAt  time.Time `json:"started_at,omitempty"`
+	DurationMS int64     `json:"duration_ms,omitempty"`
+	Request    Message   `json:"request"`
+	Response   Message   `json:"response"`
 	// AssetID identifies the externally owned dependency receiving this flow.
-	AssetID string `yaml:"asset_id,omitempty" json:"asset_id,omitempty"`
+	AssetID string `json:"asset_id,omitempty"`
 	// TraceID correlates the captured exchange with application traces and logs.
-	TraceID            string `yaml:"trace_id,omitempty" json:"trace_id,omitempty"`
-	RequestSpanID      string `yaml:"request_span_id,omitempty" json:"request_span_id,omitempty"`
-	TraceContextSource string `yaml:"trace_context_source,omitempty" json:"trace_context_source,omitempty"`
-	TestCorrelation    string `yaml:"test_correlation,omitempty" json:"test_correlation,omitempty"`
-	ParentCorrelation  string `yaml:"parent_correlation,omitempty" json:"parent_correlation,omitempty"`
+	TraceID            string `json:"trace_id,omitempty"`
+	RequestSpanID      string `json:"request_span_id,omitempty"`
+	TraceContextSource string `json:"trace_context_source,omitempty"`
+	TestCorrelation    string `json:"test_correlation,omitempty"`
+	ParentCorrelation  string `json:"parent_correlation,omitempty"`
 	// ParentFlowID identifies the inbound test request that caused a dependency call.
-	ParentFlowID string `yaml:"parent_flow_id,omitempty" json:"parent_flow_id,omitempty"`
+	ParentFlowID string `json:"parent_flow_id,omitempty"`
 	// Fingerprint is a stable hash of the interaction shape (channel, method,
 	// path, status, JSON body key/type structure) for cross-run dedup.
-	Fingerprint string `yaml:"fingerprint,omitempty" json:"fingerprint,omitempty"`
+	Fingerprint string `json:"fingerprint,omitempty"`
 	// TransportError preserves an upstream connection or TLS failure alongside
 	// the recorded 502 response.
-	TransportError string                `yaml:"transport_error,omitempty" json:"transport_error,omitempty"`
-	Assumption     *DependencyAssumption `yaml:"assumption,omitempty" json:"assumption,omitempty"`
+	TransportError string                `json:"transport_error,omitempty"`
+	Assumption     *DependencyAssumption `json:"assumption,omitempty"`
 }
 
 // DependencyAssumption qualifies an observed outbound exchange. Presence of a
 // field in a mock response is not evidence that the consumer required it.
 type DependencyAssumption struct {
-	EvidenceBasis  string `yaml:"evidence_basis" json:"evidence_basis"`
-	ConsumedFields string `yaml:"consumed_fields" json:"consumed_fields"`
+	EvidenceBasis  string `json:"evidence_basis"`
+	ConsumedFields string `json:"consumed_fields"`
 	ProviderCheck  struct {
-		Status string `yaml:"status" json:"status"`
-	} `yaml:"provider_check" json:"provider_check"`
+		Status string `json:"status"`
+	} `json:"provider_check"`
 }
 
 // Message wraps HTTP message payloads.
@@ -135,12 +135,12 @@ type Message struct {
 
 // HttpMessage represents a request or response payload.
 type HttpMessage struct {
-	Method   string  `yaml:"method,omitempty" json:"method,omitempty"`
-	URL      string  `yaml:"url,omitempty" json:"url,omitempty"`
-	Status   int     `yaml:"status,omitempty" json:"status,omitempty"`
-	Headers  Headers `yaml:"headers,omitempty" json:"headers,omitempty"`
-	Trailers Headers `yaml:"trailers,omitempty" json:"trailers,omitempty"`
-	Body     *Body   `yaml:"body,omitempty" json:"body,omitempty"`
+	Method   string  `json:"method,omitempty"`
+	URL      string  `json:"url,omitempty"`
+	Status   int     `json:"status,omitempty"`
+	Headers  Headers `json:"headers,omitempty"`
+	Trailers Headers `json:"trailers,omitempty"`
+	Body     *Body   `json:"body,omitempty"`
 }
 
 // Headers stores multi-valued headers.
@@ -148,61 +148,62 @@ type Headers map[string][]string
 
 // Body stores raw and decoded payloads.
 type Body struct {
-	Encoding string `yaml:"encoding,omitempty" json:"encoding,omitempty"`
-	Text     string `yaml:"text,omitempty" json:"text,omitempty"`
-	Bytes    string `yaml:"bytes,omitempty" json:"bytes,omitempty"`
+	Encoding string `json:"encoding,omitempty"`
+	Text     string `json:"text,omitempty"`
+	Bytes    string `json:"bytes,omitempty"`
 	// Truncated is true when only a bounded prefix was retained.
-	Truncated bool `yaml:"truncated,omitempty" json:"truncated,omitempty"`
+	Truncated bool `json:"truncated,omitempty"`
 	// OriginalBytes is the complete observed size before capture truncation.
-	OriginalBytes int64 `yaml:"original_bytes,omitempty" json:"original_bytes,omitempty"`
+	OriginalBytes int64 `json:"original_bytes,omitempty"`
 	// ContentEncoding records the original on-the-wire Content-Encoding (e.g.
 	// "gzip") when the payload was transparently decompressed before storage.
 	// Empty means the body was not compressed.
-	ContentEncoding string       `yaml:"content_encoding,omitempty" json:"content_encoding,omitempty"`
-	Decoded         *DecodedBody `yaml:"decoded,omitempty" json:"decoded,omitempty"`
+	ContentEncoding string       `json:"content_encoding,omitempty"`
+	Decoded         *DecodedBody `json:"decoded,omitempty"`
 }
 
 // DecodedBody stores decoded payloads.
 type DecodedBody struct {
-	Encoding  string `yaml:"encoding,omitempty" json:"encoding,omitempty"`
-	Text      string `yaml:"text,omitempty" json:"text,omitempty"`
-	SchemaRef string `yaml:"schema_ref,omitempty" json:"schema_ref,omitempty"`
+	Encoding  string `json:"encoding,omitempty"`
+	Text      string `json:"text,omitempty"`
+	SchemaRef string `json:"schema_ref,omitempty"`
 }
 
 // Assertion captures a field-level assertion.
 type Assertion struct {
-	ID       string `yaml:"id" json:"id"`
-	Channel  string `yaml:"channel" json:"channel"`
-	Phase    string `yaml:"phase" json:"phase"`
-	FlowID   string `yaml:"flow_id,omitempty" json:"flow_id,omitempty"`
-	Field    string `yaml:"field,omitempty" json:"field,omitempty"`
-	PathLang string `yaml:"path_lang,omitempty" json:"path_lang,omitempty"`
-	Operator string `yaml:"operator" json:"operator"`
-	Expected any    `yaml:"expected,omitempty" json:"expected,omitempty"`
-	Actual   any    `yaml:"actual,omitempty" json:"actual,omitempty"`
-	Result   string `yaml:"result" json:"result"`
-	Message  string `yaml:"message,omitempty" json:"message,omitempty"`
+	ID       string `json:"id"`
+	Channel  string `json:"channel"`
+	Phase    string `json:"phase"`
+	FlowID   string `json:"flow_id,omitempty"`
+	Field    string `json:"field,omitempty"`
+	PathLang string `json:"path_lang,omitempty"`
+	Operator string `json:"operator"`
+	Expected any    `json:"expected,omitempty"`
+	Actual   any    `json:"actual,omitempty"`
+	Result   string `json:"result"`
+	Message  string `json:"message,omitempty"`
 }
 
 // SchemaValidation captures schema validation results.
 type SchemaValidation struct {
-	Status string                  `yaml:"status,omitempty" json:"status,omitempty"`
-	Errors []SchemaValidationError `yaml:"errors,omitempty" json:"errors,omitempty"`
+	Skipped []string                `json:"skipped,omitempty"`
+	Status  string                  `json:"status,omitempty"`
+	Errors  []SchemaValidationError `json:"errors,omitempty"`
 }
 
 // SchemaValidationError describes a single schema validation failure.
 type SchemaValidationError struct {
-	FlowID   string `yaml:"flow_id,omitempty" json:"flow_id,omitempty"`
-	Channel  string `yaml:"channel,omitempty" json:"channel,omitempty"`
-	Protocol string `yaml:"protocol,omitempty" json:"protocol,omitempty"`
-	Phase    string `yaml:"phase,omitempty" json:"phase,omitempty"`
-	SchemaID string `yaml:"schema_id,omitempty" json:"schema_id,omitempty"`
-	Message  string `yaml:"message,omitempty" json:"message,omitempty"`
+	FlowID   string `json:"flow_id,omitempty"`
+	Channel  string `json:"channel,omitempty"`
+	Protocol string `json:"protocol,omitempty"`
+	Phase    string `json:"phase,omitempty"`
+	SchemaID string `json:"schema_id,omitempty"`
+	Message  string `json:"message,omitempty"`
 }
 
 // Redaction defines a redaction rule applied before export.
 type Redaction struct {
-	Field       string `yaml:"field" json:"field"`
-	Rule        string `yaml:"rule" json:"rule"`
-	Replacement string `yaml:"replacement,omitempty" json:"replacement,omitempty"`
+	Field       string `json:"field"`
+	Rule        string `json:"rule"`
+	Replacement string `json:"replacement,omitempty"`
 }

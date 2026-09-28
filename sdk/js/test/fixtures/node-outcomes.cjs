@@ -17,7 +17,7 @@ wrapped('subtest failure', async t => { await t.test('child', () => { throw Erro
 wrapped('timeout', { timeout: 60 }, () => new Promise(() => {}));
 wrapped('validation', () => {});
 wrapped('skip', t => { t.skip(); });
-after(async () => { await runtime.killServer(); await server.finish({
+after(async () => { await runtime.finishRun(); await server.finish({
   open: runtime.openSessions.size, beforeCounts,
   spans: exporter.getFinishedSpans().map(span => ({ name: span.name, status: span.status.code }))
 }); });

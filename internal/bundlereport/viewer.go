@@ -150,6 +150,9 @@ func writeViewer(root string, run *bundle.Run, captures []*artifact.Artifact, re
 		attempt.Diagnostics = append(attempt.Diagnostics, capture.CaptureDiagnostics...)
 		if capture.SchemaValidation != nil {
 			attempt.ValidationStatus = capture.SchemaValidation.Status
+			for _, id := range capture.SchemaValidation.Skipped {
+				attempt.Diagnostics = append(attempt.Diagnostics, "Validation skipped for API "+id+": schema explicitly omitted.")
+			}
 			for _, issue := range capture.SchemaValidation.Errors {
 				attempt.Diagnostics = append(attempt.Diagnostics, issue.Message)
 			}

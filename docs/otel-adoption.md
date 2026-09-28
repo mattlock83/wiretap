@@ -14,8 +14,7 @@ No application or mock source change should be required specifically for Phrond.
 Some test harness and endpoint configuration is required; this is not a promise
 that every test suite can run with completely unchanged test code.
 
-Phrond no longer generates or correlates `X-Phrond-Trace-Id`. It uses standard W3C `traceparent` and
-`tracestate` propagation. There is no custom trace-header compatibility mode.
+Phrond uses standard W3C `traceparent` and `tracestate` propagation.
 Phrond's internal session and flow IDs remain, along with explicit test-to-Phrond
 session selection. The SUT never needs to propagate those internal IDs.
 
@@ -41,8 +40,8 @@ The mock only needs to receive normal HTTP requests; it does not need OTel.
 Phrond still records request and response payloads at the proxy. OTel supplies
 context for correlation, not full body capture. No collector, exporter, or
 tracing backend is required for this feature, and capture must work even when
-trace sampling is disabled. Existing SUT traces can be inspected in the team's
-tracing backend; importing SUT spans into Phrond is outside this change.
+trace sampling is disabled. Inspect existing SUT spans in the team's tracing backend; Phrond records
+proxy exchanges and their context without importing those spans.
 
 One test trace can contain several inbound SUT requests. Knowing the test does
 not always prove which inbound request caused a dependency call: the SUT's
@@ -64,15 +63,18 @@ timing-based parent inferences and ambiguity.
 5. **Await the test's work before teardown.** Wait for HTTP calls and any expected
    background dependency activity. Closing the test early cannot establish the
    ownership of later work reliably.
-6. **Keep current schema setup.** This change does not remove OpenAPI validation
-   or the existing explicit schema-generation option.
+6. **Supply schemas.** Configure specs in `.phrond.yaml`. Generation is an
+   explicit SUT option; an individual API can explicitly omit a spec with
+   `schema_required: false`. See [configuration](configuration.md).
 
-Serial capture remains the default, with one implicit session. Shared-SUT parallel
+Your harness starts the Phrond process; test framework hooks call its HTTP API
+through the SDK to start and finalize capture. Set `PHROND_BASE_URL` when needed.
+One suite-level owner finalizes after all workers finish. Serial capture remains the default, with one implicit session. Shared-SUT parallel
 mode uses explicit sessions and a stable dependency capture URL, configured once
 in the SUT; Phrond selects the owning session using each request's trace. Select
 that mode only when propagation works on the relevant application path.
 
-### Node.js and `node:test`
+### Node.js and the optional `node:test` adapter
 
 Install the SDK dependencies (`npm ci --prefix sdk/js` when working in this
 repository). For CommonJS tests, load instrumentation before HTTP client modules:
@@ -103,8 +105,7 @@ phrond.test("creates an order", async () => {
 
 The SDK instruments Node `http`/`https` and native `fetch` through
 standard HTTP and Undici instrumentation. Keep existing calls and assertions;
-`phrond.http` remains optional. Other clients work when they use an instrumented
-stack, but custom transports, ESM module hooks, and in-process mock interception
+Other clients work when they use an instrumented stack, but custom transports, ESM module hooks, and in-process mock interception
 need separate verification. The SDK requires Node 18.19+ or 20.6+; its
 `node:test` adapter requires **Node 20.12+** for the runner's
 [final outcome API](https://nodejs.org/api/test.html#contextpassed).
@@ -120,15 +121,19 @@ an explicitly supplied no-op provider fails setup. Sampling can be disabled.
 `runtime.runTest(name, async session => { ... }, options)` is the lower-level
 wrapper for other promise-based runners. It creates an isolated async context,
 registers a fresh root and finalizes capture even when the callback throws.
-This generic wrapper sees callback errors only; use the supplied Node/Jest
-adapters for runner timeouts and hook outcomes. With `node:test`, `t.after`
+This generic wrapper sees callback errors only. To integrate other framework
+hooks, use `runtime.createTestAttempt(name, options)`, run each captured callback
+with `attempt.run`, and call `attempt.finish({ status, error })` from the
+framework's completion hook, including timeouts. Keep a separate handle for
+every attempt/retry. The optional Node/Jest adapters implement their own outcome
+integration. With `node:test`, `t.after`
 cleanup and nested `t.test` failures contribute to the owning attempt. The
 original test tree and hook registration order are preserved.
 `setupTest`/`teardownTest` remain available for manual serial fixtures. Manual
 setup does not activate a global test span; use `runTest` for ordinary client
-instrumentation, or use the session-bound optional `runtime.http` helper.
+instrumentation, or explicitly activate its span with standard OTel context APIs.
 
-### Jest
+### Optional Jest adapter
 
 Use the provided Node environment so Jest's VM and native HTTP stack share the
 same OTel context. This is tested with Jest 30; browser/jsdom environments are
@@ -169,9 +174,11 @@ use explicit sessions; set `explicitSession: true` on the suite for multiple
 Jest workers sharing a traced SUT. Only enable parallel tests after confirming
 SUT propagation, or isolate each worker's runtime and SUT.
 
-Jest suites always use `manageRuntime: false`. A single orchestration owner starts
-and stops the shared Phrond process and generates reports/schemas after **all**
-workers finish. Worker teardown never kills another worker's proxy. Existing
+Jest suites always use `manageRuntime: false`. Start Phrond with the existing
+harness and call `POST /v1/finishRun` from Jest global teardown after **all**
+workers finish. See the [example teardown](../examples/basic-rest/jest-teardown.cjs).
+Bundles and views are automatic; schema exports are optional. Worker teardown
+never kills another worker's proxy. Existing
 host-level OTel instrumentation can be preloaded with `NODE_OPTIONS`; set
 `PHROND_EXISTING_OTEL=1` to keep the Jest environment from installing duplicates.
 
@@ -207,22 +214,15 @@ choosing sequential execution or isolated workers. These arrangements establish
 test ownership; timing still does not prove causality for arbitrary background
 work or overlapping requests.
 
-## Existing Phrond users
+## Evidence and completion
 
-Integrations relying on `X-Phrond-Trace-Id` must migrate
-to standard context or use the isolation/sequential fallback. Remove custom
-Phrond-header forwarding from application code when it is no longer needed.
-No replacement Phrond-specific propagation code should be added to the SUT.
-
-Historical YAML artifacts remain readable through the explicit legacy import.
-New runs write a versioned OKF bundle with JSON attempts and generated pages.
 Attempts retain `testcase.trace_id`, `testcase.root_span_id`, sender
 `request_span_id`, `trace_context_source`, `test_correlation`, and
 `parent_correlation`. A trace match identifies the test; `trace_unique` and
 `timing` parent relationships are inferences. `ambiguous`/`unmatched` flows omit
 `parent_flow_id`. The bundle's test pages show these distinctions and preserve
-retry IDs; HTML remains an explicit optional export.
-Executable Workflow requests omit old trace/session headers; captured
+retry IDs; the bundled HTML dashboard presents the same evidence.
+Executable Workflow requests omit captured trace/session headers; captured
 evidence retains the received W3C context.
 
 Await all expected activity before finishing a test. Teardown stops new
@@ -230,7 +230,7 @@ admission and waits up to five seconds for accepted requests; `drainTimeoutMs`
 (JS) or `drain_timeout_ms` (API) changes that bound, from 0 to 60000 milliseconds.
 A timeout writes a failed attempt with `capture_incomplete` and diagnostics;
 it does not silently claim a complete capture. Closed trace IDs cannot be reused
-until a successful runtime shutdown (`killServer` or lifecycle stop). If a
+until a successful runtime shutdown (`finishRun`). If a
 timed-out attempt still has accepted requests in flight, Phrond rejects new
 implicit sessions and unlabeled fallback traffic until they finish. Untraced
 late/background work cannot be

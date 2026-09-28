@@ -71,7 +71,7 @@ func TestReviewShutdownClearsRetiredTraces(t *testing.T) {
 	payload := map[string]any{"name": "old", "generate_schema": true, "trace_context": traceRegistration(90)}
 	old := postDependencyJSON(t, control.URL, "/v1/setupTest", payload)
 	postDependencyJSON(t, control.URL, "/v1/teardownTest", map[string]any{"session_id": old["session_id"]})
-	postDependencyJSON(t, control.URL, "/v1/killServer", map[string]any{})
+	postDependencyJSON(t, control.URL, "/v1/finishRun", map[string]any{})
 	postDependencyJSON(t, control.URL, "/v1/setupTest", payload)
 }
 
@@ -161,7 +161,7 @@ func TestGoSDKCapturesParallelTestsThroughRealRuntime(t *testing.T) {
 	}), "sut", otelhttp.WithPropagators(props)))
 	defer sut.Close()
 	control, app := dependencyCaptureRuntime(t)
-	info := postDependencyJSON(t, control.URL, "/v1/startServer", map[string]any{"proxy": map[string]string{"target_url": sut.URL}})
+	info := postDependencyJSON(t, control.URL, "/v1/startRun", map[string]any{"proxy": map[string]string{"target_url": sut.URL}})
 	dependencyURL = info["sut_url"].(string) + "/__phrond/dep/inventory"
 	runtime := phrond.Runtime{BaseURL: control.URL}
 	var mu sync.Mutex
@@ -171,7 +171,7 @@ func TestGoSDKCapturesParallelTestsThroughRealRuntime(t *testing.T) {
 			t.Run(fmt.Sprint(i), func(t *testing.T) {
 				t.Parallel()
 				session := runtime.StartTest(t, phrond.TestOptions{SUTBaseURL: sut.URL, GenerateSchema: true, ExplicitSession: true,
-					Dependencies: []any{dependencyRegistration{AssetID: "inventory", UpstreamURL: mock.URL, Schema: permissiveDependencySchema()}},
+					Dependencies: []phrond.Dependency{{AssetID: "inventory", UpstreamURL: mock.URL, Schema: &phrond.Schema{ID: "inventory", Type: "openapi", Source: phrond.SchemaSource{Type: "inline", Content: permissiveDependencySchema().Source.Content}}}},
 				})
 				mu.Lock()
 				expected[t.Name()] = trace.SpanContextFromContext(session.Context).TraceID().String()
@@ -188,9 +188,16 @@ func TestGoSDKCapturesParallelTestsThroughRealRuntime(t *testing.T) {
 			})
 		}
 	})
-	_, captures, err := bundle.Load(app.currentBundle().Path())
+	root := app.currentBundle().Path()
+	if err := runtime.FinishRun(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	run, captures, err := bundle.Load(root)
 	if err != nil || len(captures) != 2 {
 		t.Fatalf("expected two committed attempts: %d %v", len(captures), err)
+	}
+	if run.RunState != "complete" {
+		t.Fatalf("suite cleanup did not finalize the bundle: %s", run.RunState)
 	}
 	for _, doc := range captures {
 		if doc.TestCase.Status != "pass" || len(doc.Traffic) != 2 || doc.TestCase.TraceID != expected[doc.TestCase.Name] {

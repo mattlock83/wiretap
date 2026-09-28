@@ -11,11 +11,7 @@ describe('hooks', () => {
   afterEach(() => { throw Error('cleanup failed'); });
   suite.test('hook failure', () => {});
 });
-const lateErrors = [];
-suite.test('late helper', () => {
-  setTimeout(() => suite.http.get('/late').catch(error => lateErrors.push(error.message)), 20);
-});
 afterAll(async () => {
   await new Promise(resolve => setTimeout(resolve, 200));
-  await server.finish({ open: suite.runtime.openSessions.size, lateErrors });
+  await server.finish({ open: suite.runtime.openSessions.size });
 });

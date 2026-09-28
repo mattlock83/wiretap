@@ -2,33 +2,42 @@ package coverage
 
 import (
 	"context"
+	"github.com/phrond/evermock/internal/artifact"
+	"github.com/phrond/evermock/internal/bundle"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 )
 
-func TestGenerateIgnoresReportsBesideArtifacts(t *testing.T) {
-	dir := t.TempDir()
-	artifact := `version: 1
-testcase:
-  id: tc-1
-  name: hello
-  started_at: 2026-08-08T00:00:00Z
-traffic: []
-`
-	if err := os.WriteFile(filepath.Join(dir, "tc-1.yaml"), []byte(artifact), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "coverage.workflow.yaml"), []byte("document:\n  dsl: 1.0.3\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	report, err := Generate(context.Background(), dir, "hello", true)
+func TestGenerateReadsOnlyBundleInventory(t *testing.T) {
+	writer, err := bundle.New(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if report.ArtifactCount != 1 || len(report.Artifacts) != 1 || filepath.Base(report.Artifacts[0]) != "tc-1.yaml" {
-		t.Fatalf("unexpected artifact discovery: %#v", report)
+	capture := &artifact.Artifact{Version: 1, TestCase: artifact.TestCase{ID: "tc-1", Name: "hello", StartedAt: time.Now().UTC(), Status: "pass"}}
+	if _, err := writer.Register(capture.TestCase, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := writer.Commit(capture); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(writer.Path(), "coverage.workflow.yaml"), []byte("document: {dsl: 1.0.3}"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	report, err := Generate(context.Background(), writer.Path(), "hello", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.ArtifactCount != 1 || len(report.Artifacts) != 1 || filepath.Base(report.Artifacts[0]) != "tc-1.json" {
+		t.Fatalf("unexpected evidence: %#v", report)
+	}
+	loose := t.TempDir()
+	if err := os.WriteFile(filepath.Join(loose, "tc-1.json"), []byte(`{"version":1,"testcase":{"id":"tc-1"}}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Generate(context.Background(), loose, "", false); err == nil {
+		t.Fatal("accepted a loose capture without a bundle")
 	}
 }
 

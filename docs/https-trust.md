@@ -2,6 +2,10 @@
 
 The proxy can run in MITM mode to capture HTTPS traffic. To allow TLS interception in test environments, your system or test runner must trust the Phrond proxy CA certificate.
 
+Use `phrond ca > phrond-ca.pem` to export the public certificate for the current
+configuration. The command creates the local CA if needed and never prints its
+private key.
+
 ## Default CA Location
 The CA is stored under the system cache directory:
 - macOS: `~/Library/Caches/phrond/ca/ca-cert.pem`

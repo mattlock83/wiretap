@@ -1,33 +1,102 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"flag"
 	"fmt"
+	"os"
 
+	"github.com/phrond/evermock/internal/app"
 	"github.com/phrond/evermock/internal/core"
+	"github.com/phrond/evermock/internal/project"
+	phrondtls "github.com/phrond/evermock/internal/tls"
 )
 
-type cliConfig struct {
-	printCA bool
-}
-
-func parseCLI(cfg *core.Config) cliConfig {
-	var cli cliConfig
-	flag.BoolVar(&cli.printCA, "print-ca", false, "print proxy CA certificate and exit")
-	flag.Parse()
-
-	return cli
-}
-
-func handleCLI(cli cliConfig, cfg core.Config) bool {
-	if !cli.printCA {
-		return false
+func execute(ctx context.Context, args []string) int {
+	command := ""
+	if len(args) > 0 && len(args[0]) > 0 && args[0][0] != '-' {
+		command = args[0]
+		args = args[1:]
 	}
-	fmt.Println("Proxy CA is stored under:")
-	if cfg.Proxy.CABaseDir != "" {
-		fmt.Println(cfg.Proxy.CABaseDir)
-	} else {
-		fmt.Println("<default cache dir>")
+	if command == "report" || command == "export" {
+		if err := reportCommand(args); err != nil {
+			if errors.Is(err, flag.ErrHelp) {
+				return 0
+			}
+			fmt.Fprintln(os.Stderr, err)
+			if errors.Is(err, errUsage) {
+				return 2
+			}
+			return 1
+		}
+		return 0
 	}
-	return true
+	if command != "" && command != "ca" {
+		fmt.Fprintf(os.Stderr, "unknown command %q; start the runtime with phrond, or use report, export, or ca\n", command)
+		return 2
+	}
+	flags := flag.NewFlagSet("phrond "+command, flag.ContinueOnError)
+	configPath := flags.String("config", "", "project configuration (default: discover .phrond.yaml)")
+	flags.Usage = func() {
+		fmt.Fprintln(flags.Output(), "Usage: phrond [--config path]\n  phrond ca [--config path]\n  phrond report --bundle <directory>\n  phrond export --bundle <directory> --format openapi --output api.yaml")
+		flags.PrintDefaults()
+	}
+	if err := flags.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return 0
+		}
+		return 2
+	}
+	if len(flags.Args()) > 0 {
+		fmt.Fprintln(os.Stderr, "unexpected arguments: Phrond hosts the HTTP API; run tests with your existing test framework")
+		return 2
+	}
+	cfg := core.DefaultConfig()
+	projectConfig, err := project.Load(*configPath)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 2
+	}
+	if projectConfig != nil {
+		if projectConfig.HTTPListen != "" {
+			cfg.HTTP.ListenAddr = projectConfig.HTTPListen
+		}
+		if projectConfig.ProxyListen != "" {
+			cfg.Proxy.ListenAddr = projectConfig.ProxyListen
+		}
+		cfg.Artifact.OutputDir = projectConfig.OutputDir
+		cfg.Proxy.CABaseDir = projectConfig.CADir
+	}
+	if err := applyEnv(&cfg); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 2
+	}
+	if err := cfg.Validate(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 2
+	}
+	if command == "ca" {
+		manager := phrondtls.NewManager(cfg.Proxy.CABaseDir)
+		pem, err := manager.CACertPEM()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		_, err = os.Stdout.Write(pem)
+		if err != nil {
+			return 1
+		}
+		return 0
+	}
+	instance, err := app.New(app.Deps{Config: cfg, Project: projectConfig})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	if err := instance.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	return 0
 }

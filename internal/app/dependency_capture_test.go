@@ -114,7 +114,7 @@ func TestExternalDependencyCaptureCorrelatesBothTrafficDirections(t *testing.T) 
 	defer sut.Close()
 
 	control, appInstance := dependencyCaptureRuntime(t)
-	runtime := postDependencyJSON(t, control.URL, "/v1/startServer", map[string]any{
+	runtime := postDependencyJSON(t, control.URL, "/v1/startRun", map[string]any{
 		"proxy": map[string]any{"target_url": sut.URL},
 	})
 	proxyURL := runtime["sut_url"].(string)
@@ -211,7 +211,7 @@ func TestExplicitDependencyCaptureSessionsStayIsolated(t *testing.T) {
 	second := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("second")) }))
 	defer second.Close()
 	control, _ := dependencyCaptureRuntime(t)
-	runtime := postDependencyJSON(t, control.URL, "/v1/startServer", map[string]any{})
+	runtime := postDependencyJSON(t, control.URL, "/v1/startRun", map[string]any{})
 
 	createSession := func(name, target string) map[string]any {
 		return postDependencyJSON(t, control.URL, "/v1/setupTest", map[string]any{
@@ -259,7 +259,7 @@ func TestDependencyUpstreamFailureRecords502AndTransportError(t *testing.T) {
 	upstreamURL := upstream.URL
 	upstream.Close()
 	control, _ := dependencyCaptureRuntime(t)
-	postDependencyJSON(t, control.URL, "/v1/startServer", map[string]any{})
+	postDependencyJSON(t, control.URL, "/v1/startRun", map[string]any{})
 	session := postDependencyJSON(t, control.URL, "/v1/setupTest", map[string]any{
 		"name": "dependency unavailable", "generate_schema": true,
 		"dependencies": []dependencyRegistration{{AssetID: "inventory", UpstreamURL: upstreamURL, Schema: permissiveDependencySchema()}},
@@ -286,7 +286,7 @@ func TestDependencySchemaViolationsFailTheOwningTest(t *testing.T) {
 	}))
 	defer upstream.Close()
 	control, _ := dependencyCaptureRuntime(t)
-	postDependencyJSON(t, control.URL, "/v1/startServer", map[string]any{})
+	postDependencyJSON(t, control.URL, "/v1/startRun", map[string]any{})
 	session := postDependencyJSON(t, control.URL, "/v1/setupTest", map[string]any{
 		"name": "dependency contract drift", "generate_schema": true,
 		"dependencies": []dependencyRegistration{{AssetID: "inventory", UpstreamURL: upstream.URL, Schema: permissiveDependencySchema()}},
@@ -309,7 +309,7 @@ func TestDependencySchemaViolationsFailTheOwningTest(t *testing.T) {
 
 func TestDependencyCaptureAlwaysRequiresItsOwnReadableSchema(t *testing.T) {
 	control, _ := dependencyCaptureRuntime(t)
-	postDependencyJSON(t, control.URL, "/v1/startServer", map[string]any{})
+	postDependencyJSON(t, control.URL, "/v1/startRun", map[string]any{})
 	payload, _ := json.Marshal(map[string]any{
 		"name": "missing dependency schema", "generate_schema": true,
 		"dependencies": []dependencyRegistration{{AssetID: "inventory", UpstreamURL: "http://127.0.0.1:9090"}},
@@ -395,7 +395,7 @@ func postDependencyJSON(t *testing.T, baseURL, path string, payload any) map[str
 
 func dependencyArtifact(t *testing.T, response map[string]any) artifact.Artifact {
 	t.Helper()
-	data, err := json.Marshal(response["artifact"])
+	data, err := json.Marshal(response["capture"])
 	if err != nil {
 		t.Fatal(err)
 	}

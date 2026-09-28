@@ -14,9 +14,13 @@ func TestApplyEnvProxySettings(t *testing.T) {
 	t.Setenv("PHROND_PROXY_CA_DIR", "/tmp/phrond-ca")
 	t.Setenv("PHROND_PROXY_MODE", "passthrough")
 	t.Setenv("PHROND_MAX_CAPTURE_BYTES", "1024")
+	t.Setenv("PHROND_OUTPUT_DIR", "/tmp/phrond-bundles")
 
 	applyEnv(&cfg)
 
+	if cfg.Artifact.OutputDir != "/tmp/phrond-bundles" {
+		t.Fatalf("output root = %q", cfg.Artifact.OutputDir)
+	}
 	if cfg.Proxy.ListenAddr != "127.0.0.1:18081" {
 		t.Fatalf("expected proxy listen addr, got %q", cfg.Proxy.ListenAddr)
 	}

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/phrond/evermock/internal/artifact"
+	"github.com/phrond/evermock/internal/bundle"
 	"github.com/phrond/evermock/internal/capture"
 	"github.com/phrond/evermock/internal/proxy"
 )
@@ -37,7 +38,7 @@ func TestBodyFromHTTPCapsDecompressedPayload(t *testing.T) {
 }
 
 func TestFlowFromProxyCarriesCaptureMetadataAndError(t *testing.T) {
-	store := NewTestCaseStore(t.TempDir(), 4)
+	store := testRecorder(t, 4)
 	_, _ = store.StartCase("bounded", nil, nil, "")
 	flow := store.flowFromProxy(proxy.HTTPExchange{
 		Method: http.MethodPost, URL: "http://example.test/items",
@@ -57,8 +58,11 @@ func TestFlowFromProxyCarriesCaptureMetadataAndError(t *testing.T) {
 }
 
 func TestFinishCaseAttachesFingerprint(t *testing.T) {
-	store := NewTestCaseStore(t.TempDir())
+	store := testRecorder(t, capture.DefaultMaxBodyBytes)
 	_, _ = store.StartCase("fingerprint-case", nil, nil, "")
+	if err := store.RegisterActive(); err != nil {
+		t.Fatal(err)
+	}
 	store.RecordHTTP(proxy.HTTPExchange{Method: http.MethodGet, URL: "http://sut.test/hello", Status: http.StatusOK})
 	art, _, err := store.FinishCase("pass", nil)
 	if err != nil {
@@ -70,10 +74,19 @@ func TestFinishCaseAttachesFingerprint(t *testing.T) {
 }
 
 func TestFillSchemaSHAInline(t *testing.T) {
-	store := NewTestCaseStore(t.TempDir())
+	store := testRecorder(t, capture.DefaultMaxBodyBytes)
 	_, _ = store.StartCase("sha-case", nil, nil, "")
 	stored := store.AddSchema(artifact.SchemaRef{ID: "sut-openapi", Role: "sut", Type: "openapi", Source: artifact.SchemaSource{Type: "inline", Content: "openapi: 3.0.0"}})
 	if stored.Source.SHA256 == "" {
 		t.Fatal("expected inline schema sha256")
 	}
+}
+
+func testRecorder(t *testing.T, limit int64) *TestCaseStore {
+	t.Helper()
+	writer, err := bundle.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return NewTestCaseStore(writer, limit)
 }

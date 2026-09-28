@@ -1,11 +1,24 @@
 # Runtime API
 
-The SDK uses this capture-only HTTP API. External orchestration owns the SUT and
-any dependency or mock-server lifecycles.
+The SDK calls this HTTP API from your existing test framework's lifecycle.
+Start the control process with `phrond [--config path]`; suite hooks own capture
+startup/finalization, and test hooks own attempts. Your harness owns the Phrond,
+SUT, mock, and test processes. Any language can use this API directly.
+
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| GET | `/healthz` | Check that the control service is available. |
+| POST | `/v1/startRun` | Start capture and create/reuse the run bundle. |
+| POST | `/v1/setupTest` | Register a test attempt, trace, schemas, and redactions. |
+| POST | `/v1/teardownTest` | Drain, validate, and commit an attempt. |
+| POST | `/v1/finishRun` | Finalize the bundle and stop capture. |
+| POST | `/v1/report` | Rebuild bundle views and optionally export Workflow. |
+| POST | `/v1/generateSchema` | Export an OpenAPI draft from bundle evidence. |
+| GET | `/v1/proxy/ca` | Read the public proxy CA certificate. |
 
 ## Suite lifecycle
 
-`POST /v1/startServer` starts the capture proxy:
+`POST /v1/startRun` starts the capture proxy:
 
 ```json
 {
@@ -19,21 +32,26 @@ any dependency or mock-server lifecycles.
 The response contains `sut_url`, the reverse proxy address tests should call,
 and `dependency_base_url`, the reserved dependency gateway on that same proxy.
 It also returns `run_id`, `bundle_path`, `index_path`, and `viewer_path`. A new run gets a
-fresh bundle under `PHROND_OUTPUT_DIR` (default `./artifacts`).
+fresh bundle under `PHROND_OUTPUT_DIR` (default `./artifacts`). The response
+also includes `defaults`, the resolved project test settings from `.phrond.yaml`.
+Repeated startup calls reuse the active run.
 `target_url` is only a routing destination; Phrond never starts, configures,
 waits for, or stops that application.
 
-`POST /v1/killServer` stops the proxy after all tests are torn down. It returns
-409 while any session (including a legacy test case) is active. One orchestration
-owner must control shutdown when suites/workers share a runtime. The reverse SUT
+`POST /v1/finishRun` stops the proxy after all tests are torn down. It returns
+409 while any session is active. One orchestration
+owner must control finalization when suites/workers share a runtime. This stops
+capture and completes the bundle; it leaves the control process running. The reverse SUT
 target cannot be changed while sessions are active.
 
 ## Test lifecycle
 
 `POST /v1/setupTest` creates a named capture session. It also starts the proxy
-if needed, so lower-level consumers do not have to call `startServer` first.
-An OpenAPI schema is required and checked for readability and validity before
-the session starts.
+if needed, so lower-level consumers do not have to call `startRun` first.
+Omitted fields inherit project defaults. Supplied arrays replace the defaults.
+OpenAPI specs are required and validated before the session starts; an API can
+explicitly allow an absent spec with `schema_required: false`. An invalid
+supplied spec always fails. `redactions` can register per-attempt redaction rules.
 
 ```json
 {
@@ -78,8 +96,10 @@ Requests to `/__phrond/dep/inventory/products/123` are forwarded to
 `http://127.0.0.1:9090/products/123`. Request methods, headers, bodies, query
 parameters, responses, and trailers retain the existing proxy's bounded-capture
 semantics. Phrond does not start, configure, stub, or verify the upstream.
-Every dependency requires a readable, valid OpenAPI schema. SDK helpers attach
-`X-Phrond-Session-Id` to inbound test requests automatically.
+Every dependency requires a readable, valid OpenAPI schema unless that
+dependency explicitly sets `schema_required: false`. Ordinary instrumented
+clients use W3C trace context; custom clients can select an explicit session
+with `X-Phrond-Session-Id` on requests to Phrond.
 
 Only one implicit session can be active. Unlabeled traffic falls back to it
 only when it is the sole active session. Optional standard trace registration:
@@ -110,7 +130,7 @@ Conflicting header, URL, or registered trace selectors return 409 before
 forwarding. Unknown valid traces are preserved and require another unambiguous
 selector or the single implicit fallback; they are not automatically registered.
 A root mismatch is recorded in `capture_diagnostics`. Closed trace IDs are
-rejected until a successful `killServer` or lifecycle stop clears the routing
+rejected until a successful `finishRun` clears the routing
 state, even if a newer default test is active. While requests from a timed-out
 attempt remain in flight, new implicit sessions and unlabeled fallback traffic
 return 409; explicit traced sessions can still run.
@@ -119,7 +139,7 @@ Missing/invalid inbound context may be replaced by the registered root when
 ownership is independently known. The flow says `trace_context_source: injected`
 and keeps its original `test_correlation` method. Phrond never injects test
 context into an untraced dependency request. Ambiguous unlabeled traffic returns
-409. Legacy `/v1/testcases/*` capture and session capture are mutually exclusive.
+409.
 
 `POST /v1/teardownTest` finalizes and commits the attempt to the bundle:
 
@@ -127,11 +147,11 @@ context into an untraced dependency request. Ambiguous unlabeled traffic returns
 {"session_id": "session-...", "status": "pass", "drain_timeout_ms": 5000}
 ```
 
-The response contains inline compatibility fields `artifact` and
+The response contains `capture`, the completed test capture including
 `schema_validation`, plus `attempt_path` (canonical JSON), `attempt_page_path`
-(readable Markdown), `bundle_path`, `index_path`, and `viewer_path`. `path` temporarily aliases
-`attempt_path`. These paths are on the Phrond server's filesystem; a remote SDK
-cannot open them locally without copying/mounting that directory. OpenAPI
+(readable Markdown), `bundle_path`, `index_path`, and `viewer_path`. These paths
+are on the Phrond server's filesystem; a remote SDK cannot open them locally
+without copying or mounting that directory. OpenAPI
 violations change an otherwise passing artifact to `fail`. Teardown stops new
 admission and waits for accepted exchanges, up to `drain_timeout_ms` (default
 5000, range 0–60000). Timeout/cancellation writes `capture_incomplete: true`,
@@ -170,8 +190,8 @@ schemas reject unobserved properties and require properties seen in every
 relevant capture. Existing files are not overwritten unless `force` is true.
 
 Supplying both `schemas` and `generate_schema` is rejected. Supplying neither
-is also rejected; generation is the explicit onboarding exception to strict
-schema enforcement.
+is rejected unless inherited project defaults provide schemas or the SUT
+explicitly sets `schema_required: false`.
 
 ## Reports
 
@@ -186,24 +206,18 @@ coverage summary. A copied bundle can be selected with `bundle_path`:
 ```
 
 The bundle's `viewer/index.html` is written automatically. Supply an explicit
-`workflow_path` or `html_path` when a separate export file is wanted; both read the same
-bundle evidence. Postman export has been removed; `collection_path` and its
-old `yaml_path` alias return a migration error. `artifacts_dir` remains available only when explicitly
-reading a historical artifact directory. See [capture bundles](okf-bundles.md).
+`workflow_path` when a separate Workflow export is wanted. It reads the same
+bundle evidence. Only bundles are accepted. Unknown request fields are rejected. See [capture bundles](okf-bundles.md).
 
-## Lower-level endpoints
+## Proxy certificate
 
-- `POST /v1/testcases/start`, `/v1/testcases/finish`
-- `GET /v1/testcases/status`, `/v1/artifact`
-- `POST /v1/schemas`, `/v1/redactions`, `/v1/expectations`
-- `POST /v1/proxy/start`, `/v1/proxy/mode`
-- `GET /v1/proxy/ca`
-- `POST /v1/lifecycle/start`, `/v1/lifecycle/stop`
+`GET /v1/proxy/ca` returns the public CA certificate used by the capture proxy.
+Set proxy mode through runtime configuration before capture starts.
 
-There are no response queue, stub, mock lifecycle, or verification endpoints.
-`GET /v1/artifact` continues to return the last inline capture for legacy
-clients, now as `application/json` with an `artifact.json` filename. Its bytes
-do not represent an independently persisted YAML file.
-The dependency gateway is a reserved forwarding route on the existing capture
-proxy, not a mock server or a separate control API. Mocking belongs to
-consumer-selected tools outside Phrond.
+Supply schemas and redactions at test setup so they are registered with the
+attempt before traffic is captured. The dependency gateway forwards traffic on
+the capture listener; your mock server owns response configuration and verification.
+
+With explicitly omitted schemas, `capture.schema_validation.status` is `partial` if
+other APIs were validated or `skipped` if all omitted their schemas. `skipped`
+lists the omitted schema IDs. Enforced validation failures still produce `fail`.

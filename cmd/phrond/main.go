@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -10,49 +11,18 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/phrond/evermock/internal/app"
 	"github.com/phrond/evermock/internal/core"
 )
 
 func main() {
-	cfg := core.DefaultConfig()
-	applyEnv(&cfg)
-	cli := parseCLI(&cfg)
-
-	logger := appLogger(cfg.Log)
-	if output, legacy := strings.TrimSpace(os.Getenv("PHROND_OUTPUT_DIR")), strings.TrimSpace(os.Getenv("PHROND_ARTIFACT_DIR")); output != "" && legacy != "" && output != legacy {
-		logger.Error("PHROND_OUTPUT_DIR and PHROND_ARTIFACT_DIR disagree")
-		os.Exit(1)
-	}
-	if handleCLI(cli, cfg) {
-		return
-	}
-	appInstance, err := app.New(app.Deps{Config: cfg, Logger: logger})
-	if err != nil {
-		logger.Error("failed to initialize", "error", err)
-		os.Exit(1)
-	}
-
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
-
-	if err := appInstance.Run(ctx); err != nil && err != context.Canceled {
-		logger.Error("server exited", "error", err)
-		os.Exit(1)
-	}
+	os.Exit(execute(ctx, os.Args[1:]))
 }
 
-func appLogger(cfg core.LogConfig) *slog.Logger {
-	opts := &slog.HandlerOptions{Level: cfg.Level}
-	if cfg.Format == "json" {
-		return slog.New(slog.NewJSONHandler(os.Stdout, opts))
-	}
-	return slog.New(slog.NewTextHandler(os.Stdout, opts))
-}
-
-func applyEnv(cfg *core.Config) {
+func applyEnv(cfg *core.Config) error {
 	if cfg == nil {
-		return
+		return nil
 	}
 	if v := strings.TrimSpace(os.Getenv("PHROND_HTTP_LISTEN")); v != "" {
 		cfg.HTTP.ListenAddr = v
@@ -61,7 +31,12 @@ func applyEnv(cfg *core.Config) {
 		cfg.Log.Format = strings.ToLower(v)
 	}
 	if v := strings.TrimSpace(os.Getenv("PHROND_LOG_LEVEL")); v != "" {
-		cfg.Log.Level = parseLogLevel(v)
+		switch strings.ToLower(v) {
+		case "debug", "info", "warn", "warning", "error":
+			cfg.Log.Level = parseLogLevel(v)
+		default:
+			return fmt.Errorf("invalid PHROND_LOG_LEVEL: %s", v)
+		}
 	}
 	if v := strings.TrimSpace(os.Getenv("PHROND_PROXY_MODE")); v != "" {
 		cfg.Proxy.Mode = strings.ToLower(v)
@@ -74,23 +49,36 @@ func applyEnv(cfg *core.Config) {
 	}
 	if v := strings.TrimSpace(os.Getenv("PHROND_OUTPUT_DIR")); v != "" {
 		cfg.Artifact.OutputDir = v
-	} else if v := strings.TrimSpace(os.Getenv("PHROND_ARTIFACT_DIR")); v != "" {
-		cfg.Artifact.OutputDir = v
 	}
 	if v := strings.TrimSpace(os.Getenv("PHROND_MAX_CAPTURE_BYTES")); v != "" {
-		if parsed, err := strconv.ParseInt(v, 10, 64); err == nil {
-			cfg.Capture.MaxBodyBytes = parsed
+		parsed, err := strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			return fmt.Errorf("PHROND_MAX_CAPTURE_BYTES: %w", err)
 		}
+		cfg.Capture.MaxBodyBytes = parsed
 	}
 	if v := strings.TrimSpace(os.Getenv("PHROND_HTTP_READ_TIMEOUT")); v != "" {
-		cfg.HTTP.ReadTimeout = parseDuration(v, cfg.HTTP.ReadTimeout)
+		value, err := time.ParseDuration(v)
+		if err != nil {
+			return fmt.Errorf("PHROND_HTTP_READ_TIMEOUT: %w", err)
+		}
+		cfg.HTTP.ReadTimeout = value
 	}
 	if v := strings.TrimSpace(os.Getenv("PHROND_HTTP_WRITE_TIMEOUT")); v != "" {
-		cfg.HTTP.WriteTimeout = parseDuration(v, cfg.HTTP.WriteTimeout)
+		value, err := time.ParseDuration(v)
+		if err != nil {
+			return fmt.Errorf("PHROND_HTTP_WRITE_TIMEOUT: %w", err)
+		}
+		cfg.HTTP.WriteTimeout = value
 	}
 	if v := strings.TrimSpace(os.Getenv("PHROND_HTTP_IDLE_TIMEOUT")); v != "" {
-		cfg.HTTP.IdleTimeout = parseDuration(v, cfg.HTTP.IdleTimeout)
+		value, err := time.ParseDuration(v)
+		if err != nil {
+			return fmt.Errorf("PHROND_HTTP_IDLE_TIMEOUT: %w", err)
+		}
+		cfg.HTTP.IdleTimeout = value
 	}
+	return nil
 }
 
 func parseLogLevel(raw string) slog.Level {
@@ -104,12 +92,4 @@ func parseLogLevel(raw string) slog.Level {
 	default:
 		return slog.LevelInfo
 	}
-}
-
-func parseDuration(raw string, fallback time.Duration) time.Duration {
-	d, err := time.ParseDuration(raw)
-	if err != nil {
-		return fallback
-	}
-	return d
 }

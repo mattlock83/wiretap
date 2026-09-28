@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -20,22 +21,31 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-// Runtime connects to an externally managed Phrond process. It never stops a
-// shared process or changes global HTTP clients, providers, or propagators.
+// Runtime connects to an externally managed Phrond process. It never launches
+// processes or changes global HTTP clients, providers, or propagators.
 type Runtime struct {
 	BaseURL        string
 	Client         *http.Client
 	TracerProvider trace.TracerProvider
 }
 
+// FinishRun finalizes the bundle and stops capture through the HTTP API. Call
+// from suite cleanup after all tests/workers sharing this runtime have finished.
+// It leaves the control process running so another capture run can start.
+func (r *Runtime) FinishRun(ctx context.Context) error {
+	return r.call(ctx, "/v1/finishRun", map[string]any{}, nil)
+}
+
 type TestOptions struct {
+	SchemaRequired  *bool          `json:"schema_required,omitempty"`
+	Redactions      []Redaction    `json:"redactions,omitempty"`
 	APIID           string         `json:"api_id,omitempty"`
 	SUTTargetKind   string         `json:"sut_target_kind,omitempty"`
 	TestSource      map[string]any `json:"test_source,omitempty"`
 	SUTSource       map[string]any `json:"sut_source,omitempty"`
 	SUTBaseURL      string         `json:"sut_base_url,omitempty"`
-	Schemas         []any          `json:"schemas,omitempty"`
-	Dependencies    []any          `json:"dependencies,omitempty"`
+	Schemas         []Schema       `json:"schemas,omitempty"`
+	Dependencies    []Dependency   `json:"dependencies,omitempty"`
 	GenerateSchema  bool           `json:"generate_schema,omitempty"`
 	ExplicitSession bool           `json:"explicit_session,omitempty"`
 	Tags            []string       `json:"tags,omitempty"`
@@ -111,15 +121,15 @@ func (r *Runtime) StartTest(t testing.TB, options TestOptions) *Session {
 		cleanupCtx, cancel := context.WithTimeout(context.Background(), timeout+10*time.Second)
 		defer cancel()
 		var response struct {
-			Artifact struct {
+			Capture struct {
 				CaptureIncomplete bool `json:"capture_incomplete"`
 				TestCase          struct {
 					Status string `json:"status"`
 				} `json:"testcase"`
-			} `json:"artifact"`
+			} `json:"capture"`
 		}
 		err := r.call(cleanupCtx, "/v1/teardownTest", map[string]any{"session_id": session.ID, "status": status, "drain_timeout_ms": timeout.Milliseconds()}, &response)
-		if err == nil && (response.Artifact.CaptureIncomplete || response.Artifact.TestCase.Status == "fail") {
+		if err == nil && (response.Capture.CaptureIncomplete || response.Capture.TestCase.Status == "fail") {
 			err = fmt.Errorf("Phrond capture or validation failed for %s", t.Name())
 		}
 		if err != nil {
@@ -169,7 +179,14 @@ func (r *Runtime) call(ctx context.Context, path string, payload, output any) er
 	if err != nil {
 		return err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(r.BaseURL, "/")+path, bytes.NewReader(data))
+	baseURL := r.BaseURL
+	if baseURL == "" {
+		baseURL = os.Getenv("PHROND_BASE_URL")
+	}
+	if baseURL == "" {
+		baseURL = "http://127.0.0.1:18000"
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(baseURL, "/")+path, bytes.NewReader(data))
 	if err != nil {
 		return err
 	}

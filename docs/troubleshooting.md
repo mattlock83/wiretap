@@ -8,8 +8,7 @@ the process may bind local ports.
 ## No traffic is captured
 
 Send test calls to `sut_url` / `runtime.sutUrl`, not directly to the SUT. Check
-that `sutBaseUrl` points to the already-running application. SDK HTTP helpers
-perform both steps automatically.
+that `sutBaseUrl` points to the already-running application. Use ordinary HTTP clients within the test adapter or `runTest` trace context.
 
 ## Downstream dependency traffic is missing
 
@@ -30,7 +29,7 @@ passthrough mode encrypted request and response bodies cannot be inspected.
 
 Only one zero-configuration session may be active. Ensure teardown runs after
 every test (`phrond.test` does this), run serially, or use explicit sessions.
-Also check for a reused trace ID or a legacy test case still active. Each retry
+Also check for a reused trace ID or another implicit session still active. Each retry
 needs a fresh root trace. Finished trace IDs remain reserved until runtime shutdown. After a drain timeout,
 wait for accepted requests to finish before starting another implicit session;
 Phrond returns 409 while old untraced work could contaminate it.
@@ -38,8 +37,8 @@ Phrond returns 409 while old untraced work could contaminate it.
 ## `setupTest` says an OpenAPI schema is required
 
 Attach the service's schema through `schemas`. If the service does not have one,
-opt in with the SDK's `generateSchema` configuration or set
-`generate_schema: true` through the runtime API. Generation is intentionally
+configure `generate_schema: true` for the SUT, or explicitly set
+`schema_required: false` for the particular API missing a spec. Generation is intentionally
 explicit and cannot be combined with a supplied schema.
 
 ## An attempt contains HTTP 502
@@ -61,7 +60,8 @@ session, or the URL/session header conflicts with its registered trace. Check
 that test instrumentation loads before the client and that the SUT propagates
 `traceparent` end to end. An OTel library merely being installed is insufficient.
 Without propagation, serialize tests and SUT requests or isolate each worker.
-Do not forward `X-Phrond-Session-Id` or the removed custom trace header in the SUT.
+The SUT propagates standard `traceparent`/`tracestate`; `X-Phrond-Session-Id` is
+only for test-to-Phrond session selection.
 
 ## A dependency has no parent flow
 
@@ -91,7 +91,7 @@ workers; stop Phrond only after every test is torn down.
 
 The JSON files under `evidence/` and the referenced schema/payload files are
 the source of truth. Regenerate Phrond's pages with
-`go run ./cmd/phrond-coverage --bundle <run-directory>`. A missing Markdown
+`go run ./cmd/phrond report --bundle <run-directory>`. A missing Markdown
 page does not make a successful evidence read or Workflow export empty. If the
 command reports an integrity error, restore the missing or corrupted evidence
 file from the original bundle; page regeneration cannot invent it.

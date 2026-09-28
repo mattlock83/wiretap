@@ -36,7 +36,7 @@ func TestEndToEndCapturesTestToSUTTraffic(t *testing.T) {
 
 	start := map[string]any{"proxy": map[string]any{"target_url": sut.URL}}
 	startBody, _ := json.Marshal(start)
-	resp, err := http.Post(control.URL+"/v1/startServer", "application/json", bytes.NewReader(startBody))
+	resp, err := http.Post(control.URL+"/v1/startRun", "application/json", bytes.NewReader(startBody))
 	if err != nil {
 		t.Fatalf("start capture: %v", err)
 	}
@@ -77,7 +77,7 @@ func TestEndToEndCapturesTestToSUTTraffic(t *testing.T) {
 		t.Fatal(err)
 	}
 	var finished struct {
-		Path string `json:"path"`
+		Path string `json:"attempt_path"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&finished); err != nil {
 		t.Fatal(err)

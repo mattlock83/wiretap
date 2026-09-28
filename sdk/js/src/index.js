@@ -2,13 +2,6 @@ const { AsyncLocalStorage } = require("node:async_hooks");
 const tracing = require("./tracing");
 const DEFAULT_BASE_URL = "http://127.0.0.1:18000";
 
-function toURL(value, baseUrl) {
-  if (!value || typeof value !== "string") throw new Error("request path is required");
-  try { return new URL(value); } catch (_) { /* resolve below */ }
-  if (!baseUrl) throw new Error("base URL is required to resolve request path");
-  return new URL(value, baseUrl);
-}
-
 function pickFirstString(...values) {
   for (const value of values) {
     if (typeof value === "string" && value.trim()) return value.trim();
@@ -22,13 +15,11 @@ function normalizeProxyConfig(config = {}) {
       (typeof config.proxy !== "object" || Array.isArray(config.proxy))) {
     throw new Error("proxy config must be an object or true");
   }
-  const proxy = { ...(config.proxy === true ? {} : (config.proxy || {})) };
-  if (proxy.listenAddr && !proxy.listen_addr) proxy.listen_addr = proxy.listenAddr;
-  if (proxy.targetUrl && !proxy.target_url) proxy.target_url = proxy.targetUrl;
-  if (config.sutBaseUrl && !proxy.target_url) proxy.target_url = config.sutBaseUrl;
-  delete proxy.listenAddr;
-  delete proxy.targetUrl;
-  return proxy;
+  const proxy = config.proxy === true ? {} : (config.proxy || {});
+  return {
+    listen_addr: proxy.listenAddr,
+    target_url: proxy.targetUrl || config.sutBaseUrl
+  };
 }
 
 function normalizeGenerateSchema(value) {
@@ -41,14 +32,12 @@ function normalizeGenerateSchema(value) {
   if (typeof value !== "object" || Array.isArray(value)) {
     throw new Error("generateSchema must be true, an output path, or an options object");
   }
-  const outputPath = pickFirstString(value.outputPath, value.output_path, value.output, value.path);
-  const artifactsDir = pickFirstString(value.artifactsDir, value.artifacts_dir);
-  const bundlePath = pickFirstString(value.bundlePath, value.bundle_path);
+  const outputPath = pickFirstString(value.outputPath);
+  const bundlePath = pickFirstString(value.bundlePath);
   const title = pickFirstString(value.title);
   const version = pickFirstString(value.version);
   return {
     ...(outputPath ? { outputPath } : {}),
-    ...(artifactsDir ? { artifactsDir } : {}),
     ...(bundlePath ? { bundlePath } : {}),
     ...(title ? { title } : {}),
     ...(version ? { version } : {}),
@@ -56,16 +45,13 @@ function normalizeGenerateSchema(value) {
   };
 }
 
-function schemaConfiguration(config = {}) {
+function schemaConfiguration(config = {}, allowInherited = false) {
   const schemas = Array.isArray(config.schemas) ? config.schemas : [];
-  const generateSchema = normalizeGenerateSchema(config.generateSchema ?? config.generate_schema);
-  if (config.strictSchema === false || config.strict_schema === false) {
-    throw new Error("strictSchema: false is no longer supported; supply schemas or opt in with generateSchema");
-  }
+  const generateSchema = normalizeGenerateSchema(config.generateSchema);
   if (schemas.length > 0 && generateSchema) {
     throw new Error("schemas and generateSchema cannot be used together");
   }
-  if (schemas.length === 0 && !generateSchema) {
+  if (schemas.length === 0 && !generateSchema && config.schemaRequired !== false && !allowInherited) {
     throw new Error("OpenAPI schemas are required; supply schemas or explicitly opt in with generateSchema");
   }
   return { schemas, generateSchema };
@@ -86,15 +72,13 @@ function normalizeDependencies(value) {
     if (!dependency || typeof dependency !== "object" || Array.isArray(dependency)) {
       throw new Error(`dependency ${index + 1} must be an object`);
     }
-    const assetId = pickFirstString(dependency.assetId, dependency.asset_id, dependency.id, dependency.name);
+    const assetId = pickFirstString(dependency.assetId);
     if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(assetId)) {
       throw new Error(`dependency ${index + 1} requires a valid assetId`);
     }
     if (seen.has(assetId)) throw new Error(`dependency assetId "${assetId}" is declared more than once`);
     seen.add(assetId);
-    const upstreamUrl = pickFirstString(
-      dependency.upstreamUrl, dependency.upstream_url, dependency.url, dependency.targetUrl, dependency.target_url
-    );
+    const upstreamUrl = pickFirstString(dependency.upstreamUrl);
     let parsed;
     try { parsed = new URL(upstreamUrl); } catch (_) { /* validated below */ }
     if (!parsed || !["http:", "https:"].includes(parsed.protocol)) {
@@ -102,11 +86,11 @@ function normalizeDependencies(value) {
     }
     const schemas = Array.isArray(dependency.schemas) ? [...dependency.schemas] : [];
     if (dependency.schema) schemas.push(dependency.schema);
-    if (schemas.length === 0) {
+    if (schemas.length === 0 && dependency.schemaRequired !== false) {
       throw new Error(`dependency "${assetId}" requires an OpenAPI schema`);
     }
-    const assetName = pickFirstString(dependency.assetName, dependency.asset_name);
-    const upstreamKind = pickFirstString(dependency.upstreamKind, dependency.upstream_kind) || "unknown";
+    const assetName = pickFirstString(dependency.assetName);
+    const upstreamKind = pickFirstString(dependency.upstreamKind) || "unknown";
     if (!["mock", "service", "unknown"].includes(upstreamKind)) {
       throw new Error(`dependency "${assetId}" upstreamKind must be mock, service, or unknown`);
     }
@@ -114,6 +98,7 @@ function normalizeDependencies(value) {
       asset_id: assetId,
       ...(assetName ? { asset_name: assetName } : {}),
       upstream_kind: upstreamKind,
+      ...(dependency.schemaRequired === false ? { schema_required: false } : {}),
       upstream_url: upstreamUrl,
       ...(schemas.length > 0 ? { schemas } : {})
     };
@@ -122,16 +107,16 @@ function normalizeDependencies(value) {
 
 class CoreClient {
   constructor(config = {}) {
-    this.baseUrl = config.baseUrl || DEFAULT_BASE_URL;
+    this.baseUrl = config.baseUrl || process.env.PHROND_BASE_URL || DEFAULT_BASE_URL;
     this.timeoutMs = config.timeoutMs || 0;
   }
 
-  startServer(payload) { return this._request("POST", "/v1/startServer", payload || {}); }
+  startRun(payload) { return this._request("POST", "/v1/startRun", payload || {}); }
   setupTest(payload) { return this._request("POST", "/v1/setupTest", payload || {}); }
   teardownTest(payload) { return this._request("POST", "/v1/teardownTest", payload || {}); }
   generateSchema(payload) { return this._request("POST", "/v1/generateSchema", payload || {}); }
   report(payload) { return this._request("POST", "/v1/report", payload || {}); }
-  killServer() { return this._request("POST", "/v1/killServer", {}); }
+  finishRun() { return this._request("POST", "/v1/finishRun", {}); }
 
   async _request(method, path, payload) {
     if (typeof fetch !== "function") throw new Error("global fetch is not available; require Node.js >= 18");
@@ -168,15 +153,16 @@ class Runtime {
     this.defaultSutBaseUrl = config.sutBaseUrl || null;
     const schemaConfig = schemaConfiguration(config);
     this.defaultSchemas = [...schemaConfig.schemas];
+    this.schemaRequired = config.schemaRequired;
     this.generatedSchemaConfig = schemaConfig.generateSchema;
     this.defaultDependencies = normalizeDependencies(config.dependencies);
-    this.apiId = pickFirstString(config.apiId, config.api_id);
-    this.sutTargetKind = pickFirstString(config.sutTargetKind, config.sut_target_kind);
-    this.testSource = config.testSource || config.test_source;
-    this.sutSource = config.sutSource || config.sut_source;
+    this.defaultRedactions = config.redactions;
+    this.apiId = pickFirstString(config.apiId);
+    this.sutTargetKind = pickFirstString(config.sutTargetKind);
+    this.testSource = config.testSource;
+    this.sutSource = config.sutSource;
     this.schemaGenerated = false;
-    this.manualScenarioName = "";
-    this.sutUrl = runtimeInfo.sut_url || null;
+    this.sutUrl = runtimeInfo.sut_url;
     this.sessions = new AsyncLocalStorage();
     this.manualSession = null;
     this.manageRuntime = config.manageRuntime !== false;
@@ -184,22 +170,8 @@ class Runtime {
     this.tracerProvider = config.tracerProvider;
     this.openSessions = new Set();
     this.pendingCleanup = new Set();
-    this.http = {
-      request: (options) => this._httpRequest(options),
-      get: (path, options) => this._httpRequest({ ...options, method: "GET", path }),
-      post: (path, body, options) => this._httpRequest({ ...options, method: "POST", path, body }),
-      postJson: (path, body, options = {}) => this._httpRequest({
-        ...options,
-        method: "POST",
-        path,
-        body: JSON.stringify(body),
-        headers: { "Content-Type": "application/json", ...(options.headers || {}) }
-      })
-    };
-  }
 
-  get pendingScenarioName() { return this.sessions.getStore()?.pendingScenarioName || (this.sessions.getStore() ? "" : this.manualScenarioName); }
-  set pendingScenarioName(value) { const scope = this.sessions.getStore(); if (scope) scope.pendingScenarioName = value; else this.manualScenarioName = value; }
+  }
 
   get activeSession() { return this.sessions.getStore()?.session ?? (this.sessions.getStore() ? null : this.manualSession); }
   set activeSession(value) {
@@ -207,9 +179,9 @@ class Runtime {
     if (scope) scope.session = value; else this.manualSession = value;
   }
 
-  // Adapters own completion so runner timeouts, hooks, and assertion failures
-  // can close the same attempt even when its callback never settles.
-  _createTestAttempt(name, options = {}) {
+  // Framework completion hooks own the outcome independently of callback
+  // settlement. Keep this handle per attempt so fixtures and retries are isolated.
+  createTestAttempt(name, options = {}) {
     const scope = { session: null, closed: false };
     const ready = this.sessions.run(scope, () => this.setupTest({ ...options, name }));
     // A runner may execute hooks before invoking run/finish. Observe setup
@@ -241,7 +213,7 @@ class Runtime {
   }
 
   async runTest(name, fn, options = {}) {
-    const attempt = this._createTestAttempt(name, options);
+    const attempt = this.createTestAttempt(name, options);
     let result, failure, failed = false;
     try { result = await attempt.run(fn); }
     catch (err) { failed = true; failure = err; }
@@ -249,12 +221,6 @@ class Runtime {
     catch (err) { if (!failed) { failed = true; failure = err; } }
     if (failed) throw failure;
     return result;
-  }
-
-  scenarioName(name) {
-    if (typeof name !== "string" || !name.trim()) throw new Error("scenario name is required");
-    this.pendingScenarioName = name.trim();
-    return this.pendingScenarioName;
   }
 
   dependencyUrl(assetId) {
@@ -265,7 +231,7 @@ class Runtime {
     if (!this.defaultDependencies.some((dependency) => dependency.asset_id === selected)) {
       throw new Error(`dependency "${selected}" is not configured`);
     }
-    const proxyBase = this.sutUrl || this.runtimeInfo?.proxy?.listen_addr;
+    const proxyBase = this.sutUrl;
     if (!proxyBase) throw new Error("proxy listen address is not available");
     const base = proxyBase.startsWith("http") ? proxyBase : `http://${proxyBase}`;
     return `${base.replace(/\/$/, "")}/__phrond/dep/${encodeURIComponent(selected)}`;
@@ -276,26 +242,28 @@ class Runtime {
     if (owner.closed) throw new Error("capture attempt is already closed");
     if (this.activeSession || owner.setupPending) throw new Error("a capture session is already active");
     const selectedSchemas = Array.isArray(options.schemas) ? options.schemas : this.defaultSchemas;
-    const selectedGeneration = options.generateSchema === undefined && options.generate_schema === undefined
+    const selectedGeneration = options.generateSchema === undefined
       ? this.generatedSchemaConfig
-      : normalizeGenerateSchema(options.generateSchema ?? options.generate_schema);
-    const schemaConfig = schemaConfiguration({ schemas: selectedSchemas, generateSchema: selectedGeneration });
+      : normalizeGenerateSchema(options.generateSchema);
+    const schemaConfig = schemaConfiguration({ schemas: selectedSchemas, generateSchema: selectedGeneration, schemaRequired: options.schemaRequired ?? this.schemaRequired });
     const dependencies = options.dependencies === undefined
       ? this.defaultDependencies
       : normalizeDependencies(options.dependencies);
     const payload = {
-      name: pickFirstString(options.name, options.scenarioName, this.pendingScenarioName) || undefined,
+      name: pickFirstString(options.name) || undefined,
       tags: options.tags,
       meta: options.meta,
-      api_id: pickFirstString(options.apiId, options.api_id, this.apiId) || undefined,
-      sut_target_kind: pickFirstString(options.sutTargetKind, options.sut_target_kind, this.sutTargetKind) || undefined,
-      test_source: options.testSource || options.test_source || this.testSource,
-      sut_source: options.sutSource || options.sut_source || this.sutSource,
-      sut_base_url: options.sutBaseUrl || options.sut_base_url || this.defaultSutBaseUrl,
-      explicit_session: Boolean(options.explicitSession ?? options.explicit_session ?? this.explicitSession),
-      schemas: schemaConfig.schemas
+      api_id: pickFirstString(options.apiId, this.apiId) || undefined,
+      sut_target_kind: pickFirstString(options.sutTargetKind, this.sutTargetKind) || undefined,
+      test_source: options.testSource || this.testSource,
+      sut_source: options.sutSource || this.sutSource,
+      sut_base_url: options.sutBaseUrl || this.defaultSutBaseUrl,
+      explicit_session: Boolean(options.explicitSession ?? this.explicitSession),
+      schemas: schemaConfig.schemas,
+      schema_required: options.schemaRequired ?? this.schemaRequired,
+      redactions: options.redactions ?? this.defaultRedactions,
+      dependencies
     };
-    if (dependencies.length > 0) payload.dependencies = dependencies;
     if (schemaConfig.generateSchema) payload.generate_schema = true;
     const span = tracing.newTestSpan(payload.name || "test", this.tracerProvider);
     payload.trace_context = tracing.serialize(span);
@@ -312,44 +280,39 @@ class Runtime {
       name: session.name,
       explicit: Boolean(session.explicit),
       sutBaseUrl: payload.sut_base_url,
-      proxyListen: session.proxy_listen || this.runtimeInfo?.proxy?.listen_addr,
-      sutUrl: session.sut_url || this.sutUrl,
+      proxyListen: session.proxy_listen,
+      sutUrl: session.sut_url,
       runId: session.run_id,
       bundlePath: session.bundle_path,
       indexPath: session.index_path,
       viewerPath: session.viewer_path,
-      dependencyUrls: session.dependencies || Object.fromEntries(dependencies.map((dependency) => [
-        dependency.asset_id,
-        `${String(session.proxy_listen || this.sutUrl || "").replace(/\/$/, "")}/__phrond/dep/${encodeURIComponent(dependency.asset_id)}`
-      ])),
+      dependencyUrls: session.dependencies,
       generateSchema: schemaConfig.generateSchema
     };
-    this.pendingScenarioName = "";
     return this.activeSession;
   }
 
   async teardownTest(options = {}) {
-    const sessionId = options.sessionId || options.session_id || this.activeSession?.sessionId;
+    const sessionId = options.sessionId || this.activeSession?.sessionId;
     if (!sessionId) return { status: "idle" };
     const session = this.activeSession;
     if (session?.sessionId === sessionId && this.sessions.getStore()) this.sessions.getStore().closed = true;
-    const generation = session?.generateSchema || this.generatedSchemaConfig;
     let failure;
     try {
       const response = await this.client.teardownTest({ session_id: sessionId, status: options.status || "pass",
         ...(options.drainTimeoutMs !== undefined ? { drain_timeout_ms: options.drainTimeoutMs } : {}) });
       this.openSessions.delete(sessionId);
       if (session?.sessionId === sessionId) this.activeSession = null;
-      const validationStatus = response?.schema_validation?.status;
-      if (validationStatus && validationStatus !== "pass" && (!generation || validationStatus === "fail")) {
-        const errors = response.schema_validation.errors || [];
+      const validationStatus = response?.capture?.schema_validation?.status;
+      if (validationStatus === "fail") {
+        const errors = response.capture.schema_validation.errors || [];
         const err = new Error(errors.map((entry) => entry.message || "schema violation").join("; ") || "schema validation failed");
-        err.schemaValidation = response.schema_validation;
+        err.schemaValidation = response.capture.schema_validation;
         err.response = response;
         throw err;
       }
-      if (response?.artifact?.capture_incomplete || (response?.artifact?.testcase?.status === "fail" && options.status !== "fail")) {
-        const err = new Error(response.artifact.capture_diagnostics?.join("; ") || "captured test failed");
+      if (response?.capture?.capture_incomplete || (response?.capture?.testcase?.status === "fail" && options.status !== "fail")) {
+        const err = new Error(response.capture.capture_diagnostics?.join("; ") || "captured test failed");
         err.response = response;
         throw err;
       }
@@ -361,14 +324,7 @@ class Runtime {
   }
 
   report(options = {}) {
-    return this.client.report({
-      bundle_path: options.bundlePath || options.bundle_path,
-      artifacts_dir: options.artifactsDir || options.artifacts_dir,
-      sut_name: options.sutName || options.sut_name,
-      include_artifacts: options.includeArtifacts || options.include_artifacts || false,
-      workflow_path: options.workflowPath || options.workflow_path,
-      html_path: options.htmlPath || options.html_path
-    });
+    return this.client.report({ bundle_path: options.bundlePath, workflow_path: options.workflowPath });
   }
 
   async generateSchema(options) {
@@ -376,7 +332,6 @@ class Runtime {
     if (!config) throw new Error("generateSchema was not enabled for this capture runtime");
     const response = await this.client.generateSchema({
       bundle_path: config.bundlePath,
-      artifacts_dir: config.artifactsDir,
       output_path: config.outputPath,
       title: config.title,
       version: config.version,
@@ -386,7 +341,7 @@ class Runtime {
     return response;
   }
 
-  async killServer() {
+  async finishRun() {
     await Promise.all(this.pendingCleanup);
     if (this.openSessions.size) throw new Error("teardown all capture sessions before closing the runtime");
     if (!this.manageRuntime) return { status: "shared" };
@@ -399,95 +354,49 @@ class Runtime {
         generationError = err;
       }
     }
-    let killResult;
+    let finishResult;
     try {
-      killResult = await this.client.killServer();
-    } catch (killError) {
-      if (generationError) throw new AggregateError([generationError, killError], "schema generation and Phrond shutdown failed");
-      throw killError;
+      finishResult = await this.client.finishRun();
+    } catch (finishError) {
+      if (generationError) throw new AggregateError([generationError, finishError], "schema generation and run finalization failed");
+      throw finishError;
     }
     if (generationError) throw generationError;
-    return generationResult ? { ...killResult, generatedSchema: generationResult } : killResult;
-  }
-
-  async _ensureSession(options = {}) {
-    if (this.sessions.getStore()?.closed) throw new Error("capture attempt is already closed");
-    return this.activeSession || this.setupTest(options);
-  }
-
-  async _httpRequest(options = {}) {
-    if (!options || typeof options !== "object" || Array.isArray(options)) throw new Error("request options must be an object");
-    const session = await this._ensureSession(options);
-    const proxyBaseUrl = options.proxyBaseUrl || options.proxy_base_url || session.proxyListen;
-    if (!proxyBaseUrl) throw new Error("proxy listen address is not available");
-    const proxyUrl = toURL(proxyBaseUrl.startsWith("http") ? proxyBaseUrl : `http://${proxyBaseUrl}`);
-    const defaultTarget = session.sutBaseUrl || this.defaultSutBaseUrl;
-    const overrideTarget = options.sutBaseUrl || options.sut_base_url;
-    const forward = Boolean(overrideTarget && overrideTarget !== defaultTarget);
-    const targetUrl = forward ? toURL(options.path, overrideTarget) : toURL(options.path, proxyUrl.href);
-    const headers = { ...(options.headers || {}), "X-Phrond-Session-Id": session.sessionId };
-    if (forward) headers.Host = targetUrl.host;
-    return tracing.api.context.with(tracing.api.trace.setSpan(tracing.api.ROOT_CONTEXT, session.span), () => this._requestViaProxy(proxyUrl, targetUrl, {
-      method: String(options.method || "GET").toUpperCase(), headers, body: options.body, forward
-    }));
-  }
-
-  _requestViaProxy(proxyUrl, targetUrl, options) {
-    const headers = { ...options.headers };
-    let body = options.body;
-    if (body !== undefined && body !== null) {
-      if (!Buffer.isBuffer(body) && typeof body !== "string" && !(body instanceof Uint8Array)) {
-        throw new Error("request body must be a string, Buffer, or Uint8Array; use postJson for objects");
-      }
-      if (!headers["Content-Length"] && !headers["content-length"]) headers["Content-Length"] = Buffer.byteLength(body);
-    }
-    const client = proxyUrl.protocol === "https:" ? require("node:https") : require("node:http");
-    return new Promise((resolve, reject) => {
-      const req = client.request({
-        host: proxyUrl.hostname,
-        port: proxyUrl.port || (proxyUrl.protocol === "https:" ? 443 : 80),
-        method: options.method,
-        path: options.forward ? targetUrl.href : targetUrl.pathname + targetUrl.search,
-        headers
-      }, (res) => {
-        const chunks = [];
-        res.on("data", (chunk) => chunks.push(chunk));
-        res.on("end", () => {
-          const raw = Buffer.concat(chunks).toString("utf8");
-          let parsed = raw || null;
-          if (raw && String(res.headers["content-type"] || "").includes("application/json")) {
-            try { parsed = JSON.parse(raw); } catch (err) { reject(err); return; }
-          }
-          const response = { status: res.statusCode || 0, headers: res.headers, body: parsed };
-          if (response.status >= 400) {
-            const err = new Error(`proxy request failed: ${response.status}`);
-            Object.assign(err, response);
-            reject(err);
-            return;
-          }
-          resolve(response);
-        });
-      });
-      if (this.client.timeoutMs > 0) req.setTimeout(this.client.timeoutMs, () => req.destroy(new Error("proxy request timed out")));
-      req.on("error", reject);
-      if (body !== undefined && body !== null) req.write(body);
-      req.end();
-    });
+    return generationResult ? { ...finishResult, generatedSchema: generationResult } : finishResult;
   }
 }
 
 async function startCapture(config = {}) {
   if (!config || typeof config !== "object" || Array.isArray(config)) throw new Error("startCapture config must be an object");
   tracing.initializeTracing({ instrumentation: config.instrumentation !== false });
-  const schemaConfig = schemaConfiguration(config);
-  const dependencies = normalizeDependencies(config.dependencies);
-  const runtimeConfig = { ...config, schemas: schemaConfig.schemas, generateSchema: schemaConfig.generateSchema, dependencies };
+  schemaConfiguration(config, true);
+  if (config.dependencies !== undefined) normalizeDependencies(config.dependencies);
   const client = new CoreClient({ baseUrl: config.baseUrl, timeoutMs: config.timeoutMs });
-  const runtimeInfo = await client.startServer({ proxy: normalizeProxyConfig(config) });
-  return new Runtime(client, runtimeConfig, runtimeInfo);
+  const runtimeInfo = await client.startRun({ proxy: normalizeProxyConfig(config) });
+  const defaults = runtimeInfo.defaults || {};
+  const resolved = {
+    sutBaseUrl: defaults.sut_base_url,
+    apiId: defaults.api_id,
+    sutTargetKind: defaults.sut_target_kind,
+    schemas: defaults.schemas,
+    schemaRequired: defaults.schema_required,
+    generateSchema: defaults.generate_schema,
+    redactions: defaults.redactions,
+    testSource: defaults.test_source,
+    sutSource: defaults.sut_source,
+    dependencies: defaults.dependencies?.map(dependency => ({
+      assetId: dependency.asset_id,
+      assetName: dependency.asset_name,
+      upstreamUrl: dependency.upstream_url,
+      upstreamKind: dependency.upstream_kind,
+      schemas: dependency.schemas,
+      schema: dependency.schema,
+      schemaRequired: dependency.schema_required
+    })),
+    ...config
+  };
+  return new Runtime(client, resolved, runtimeInfo);
 }
-
-const startServer = startCapture;
 
 function bindTest(runtimeOrGetter, testFn, defaults = {}) {
   const resolveRuntime = typeof runtimeOrGetter === "function" ? runtimeOrGetter : () => runtimeOrGetter;
@@ -498,26 +407,17 @@ function bindTest(runtimeOrGetter, testFn, defaults = {}) {
     const run = async (t) => {
       const runtime = resolveRuntime();
       if (!runtime) throw new Error("bindTest could not resolve a Phrond runtime");
-      if (runtime._createTestAttempt && typeof t?.test === "function" && typeof t?.after === "function") {
+      if (typeof t?.test === "function" && typeof t?.after === "function") {
         return require("./node-test").runNodeTest(runtime, t, name, fn, defaults);
       }
-      if (runtime.runTest) return runtime.runTest(name, (session) => fn(t, session), defaults);
-      const session = await runtime.setupTest({ ...defaults, name });
-      try {
-        if (typeof defaults.onSession === "function") await defaults.onSession(session);
-        await fn(t, session);
-      } catch (err) {
-        try { await runtime.teardownTest({ status: "fail" }); } catch (_) { /* preserve test failure */ }
-        throw err;
-      }
-      await runtime.teardownTest({ status: "pass" });
+      return runtime.runTest(name, session => fn(t, session), defaults);
     };
     return testOptions === undefined ? testFn(name, run) : testFn(name, testOptions, run);
   };
 }
 
 function createNodeTestSuite(config = {}) {
-  schemaConfiguration(config);
+  schemaConfiguration(config, true);
   normalizeDependencies(config.dependencies);
   const testApi = config.testApi || require("node:test");
   if (!testApi || typeof testApi.test !== "function" || typeof testApi.before !== "function" || typeof testApi.after !== "function") {
@@ -540,11 +440,10 @@ function createNodeTestSuite(config = {}) {
       if (!runtime) return { status: "idle" };
       const active = runtime;
       runtime = null;
-      return active.killServer();
+      return active.finishRun();
     },
     get runtime() { if (!runtime) throw new Error("Phrond capture runtime is not started yet"); return runtime; },
     get sutUrl() { return this.runtime.sutUrl; },
-    get http() { return this.runtime.http; },
     dependencyUrl(assetId) { return this.runtime.dependencyUrl(assetId); },
     generateSchema(options) { return this.runtime.generateSchema(options); },
     report(options) { return this.runtime.report(options); }
@@ -557,4 +456,4 @@ function createNodeTestSuite(config = {}) {
   return suite;
 }
 
-module.exports = { startCapture, startServer, bindTest, createNodeTestSuite, initializeTracing: tracing.initializeTracing };
+module.exports = { startCapture, bindTest, createNodeTestSuite, initializeTracing: tracing.initializeTracing };

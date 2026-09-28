@@ -19,7 +19,7 @@ func TestViewerIsOfflineRebuildableAndUsesBoundedEvidencePreviews(t *testing.T) 
 		t.Fatal(err)
 	}
 	largeBody := strings.Repeat("body-", 1000) + "END-OF-BODY"
-	tc := artifact.TestCase{ID: "attempt-1", Name: `<script>alert("bad")</script>`, StartedAt: time.Now().UTC(), Status: "pass"}
+	tc := artifact.TestCase{ID: "attempt-1", Name: `<script>alert("bad")</script>`, StartedAt: time.Now().UTC(), Status: "pass", TraceID: "test-trace-123"}
 	if _, err := writer.Register(tc, nil); err != nil {
 		t.Fatal(err)
 	}
@@ -27,7 +27,7 @@ func TestViewerIsOfflineRebuildableAndUsesBoundedEvidencePreviews(t *testing.T) 
 		CaptureDiagnostics: []string{"trace parent was uncertain"},
 		SchemaValidation:   &artifact.SchemaValidation{Status: "fail", Errors: []artifact.SchemaValidationError{{Message: "response omitted required field"}}},
 		Traffic: []artifact.Flow{{
-			ID: "flow-1", Protocol: "http", Channel: "test_to_sut",
+			ID: "flow-1", Protocol: "http", Channel: "test_to_sut", TraceID: "test-trace-123", TestCorrelation: "trace", TraceContextSource: "received",
 			Request:  artifact.Message{HTTP: &artifact.HttpMessage{Method: "POST", URL: "http://sut.test/items", Body: &artifact.Body{Text: largeBody}}},
 			Response: artifact.Message{HTTP: &artifact.HttpMessage{Status: 201}},
 		}}}); err != nil {
@@ -41,7 +41,7 @@ func TestViewerIsOfflineRebuildableAndUsesBoundedEvidencePreviews(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, expected := range []string{"../evidence/run.json", "../evidence/attempts/attempt-1.json", "../payloads/", "preview limited to 4 KiB", "&lt;script&gt;", "data-pane=\"tests\"", "trace parent was uncertain", "response omitted required field"} {
+	for _, expected := range []string{"../evidence/run.json", "../evidence/attempts/attempt-1.json", "../payloads/", "preview limited to 4 KiB", "&lt;script&gt;", "data-pane=\"tests\"", "trace parent was uncertain", "response omitted required field", "test-trace-123", "received"} {
 		if !bytes.Contains(html, []byte(expected)) {
 			t.Fatalf("viewer missing %q", expected)
 		}
@@ -62,14 +62,14 @@ func TestViewerIsOfflineRebuildableAndUsesBoundedEvidencePreviews(t *testing.T) 
 	if err := os.WriteFile(viewerPath, html, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	before, err := coverage.Generate(nil, writer.Path(), "", false)
+	before, err := coverage.Generate(t.Context(), writer.Path(), "", false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Remove(viewerPath); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := coverage.Generate(nil, writer.Path(), "", false); err != nil {
+	if _, err := coverage.Generate(t.Context(), writer.Path(), "", false); err != nil {
 		t.Fatalf("missing viewer changed evidence calculation: %v", err)
 	}
 	if _, err := Rebuild(writer.Path()); err != nil {
@@ -82,7 +82,7 @@ func TestViewerIsOfflineRebuildableAndUsesBoundedEvidencePreviews(t *testing.T) 
 	if !bytes.Equal(html, rebuilt) {
 		t.Fatal("viewer did not rebuild deterministically from evidence")
 	}
-	after, err := coverage.Generate(nil, writer.Path(), "", false)
+	after, err := coverage.Generate(t.Context(), writer.Path(), "", false)
 	if err != nil || before.ArtifactCount != after.ArtifactCount {
 		t.Fatalf("coverage changed after viewer rebuild: %v", err)
 	}
