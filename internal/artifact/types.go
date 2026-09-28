@@ -10,7 +10,6 @@ type Artifact struct {
 	CaptureIncomplete  bool              `yaml:"capture_incomplete,omitempty" json:"capture_incomplete,omitempty"`
 	CaptureDiagnostics []string          `yaml:"capture_diagnostics,omitempty" json:"capture_diagnostics,omitempty"`
 	Version            int               `yaml:"version" json:"version"`
-	Producer           *Producer         `yaml:"producer,omitempty" json:"producer,omitempty"`
 	TestCase           TestCase          `yaml:"testcase" json:"testcase"`
 	Env                *Environment      `yaml:"environment,omitempty" json:"environment,omitempty"`
 	Schemas            []SchemaRef       `yaml:"schemas,omitempty" json:"schemas,omitempty"`
@@ -19,17 +18,6 @@ type Artifact struct {
 	SchemaValidation   *SchemaValidation `yaml:"schema_validation,omitempty" json:"schema_validation,omitempty"`
 	Redactions         []Redaction       `yaml:"redactions,omitempty" json:"redactions,omitempty"`
 	Meta               map[string]any    `yaml:"meta,omitempty" json:"meta,omitempty"`
-}
-
-// Producer identifies the repository and build that produced the artifact.
-// It is the consumer-side join key a central broker uses to attribute
-// recorded assumptions back to the team that made them.
-type Producer struct {
-	Repo      string `yaml:"repo,omitempty" json:"repo,omitempty"`
-	CommitSHA string `yaml:"commit_sha,omitempty" json:"commit_sha,omitempty"`
-	Branch    string `yaml:"branch,omitempty" json:"branch,omitempty"`
-	Build     string `yaml:"build,omitempty" json:"build,omitempty"`
-	Source    string `yaml:"source,omitempty" json:"source,omitempty"`
 }
 
 // Normalize ensures deterministic ordering for slices.
@@ -104,17 +92,13 @@ type SchemaSource struct {
 
 // Flow captures one request/response exchange.
 type Flow struct {
-	ID           string    `yaml:"id" json:"id"`
-	Protocol     string    `yaml:"protocol" json:"protocol"`
-	Channel      string    `yaml:"channel" json:"channel"`
-	StartedAt    time.Time `yaml:"started_at,omitempty" json:"started_at,omitempty"`
-	DurationMS   int64     `yaml:"duration_ms,omitempty" json:"duration_ms,omitempty"`
-	Request      Message   `yaml:"request" json:"request"`
-	Response     Message   `yaml:"response" json:"response"`
-	AssertionIDs []string  `yaml:"assertion_ids,omitempty" json:"assertion_ids,omitempty"`
-	// ProviderStates are optional Pact-compatible prerequisites declared by
-	// the consumer for verifying this captured dependency interaction.
-	ProviderStates []ProviderState `yaml:"provider_states,omitempty" json:"provider_states,omitempty"`
+	ID         string    `yaml:"id" json:"id"`
+	Protocol   string    `yaml:"protocol" json:"protocol"`
+	Channel    string    `yaml:"channel" json:"channel"`
+	StartedAt  time.Time `yaml:"started_at,omitempty" json:"started_at,omitempty"`
+	DurationMS int64     `yaml:"duration_ms,omitempty" json:"duration_ms,omitempty"`
+	Request    Message   `yaml:"request" json:"request"`
+	Response   Message   `yaml:"response" json:"response"`
 	// AssetID identifies the externally owned dependency receiving this flow.
 	AssetID string `yaml:"asset_id,omitempty" json:"asset_id,omitempty"`
 	// TraceID correlates the captured exchange with application traces and logs.
@@ -131,12 +115,6 @@ type Flow struct {
 	// TransportError preserves an upstream connection or TLS failure alongside
 	// the recorded 502 response.
 	TransportError string `yaml:"transport_error,omitempty" json:"transport_error,omitempty"`
-}
-
-// ProviderState describes the provider data required for an interaction.
-type ProviderState struct {
-	Name   string         `yaml:"name" json:"name"`
-	Params map[string]any `yaml:"params,omitempty" json:"params,omitempty"`
 }
 
 // Message wraps HTTP message payloads.

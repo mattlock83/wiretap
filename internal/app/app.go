@@ -8,8 +8,6 @@ import (
 	"sync"
 
 	"github.com/phrond/evermock/core"
-	"github.com/phrond/evermock/internal/artifact"
-	"github.com/phrond/evermock/internal/identity"
 )
 
 type Deps struct {
@@ -26,8 +24,6 @@ type App struct {
 	store     *TestCaseStore
 
 	proxyComponent *ProxyComponent
-
-	producer artifact.Producer
 
 	controlMu     sync.Mutex
 	traceOwners   map[string]string
@@ -56,9 +52,7 @@ func New(deps Deps) (*App, error) {
 		logger = newLogger(cfg.Log)
 	}
 
-	producer := identity.Detect()
 	store := NewTestCaseStore(cfg.Artifact.OutputDir, cfg.Capture.MaxBodyBytes)
-	store.SetProducer(producer)
 
 	proxy := deps.Proxy
 	if proxy == nil {
@@ -78,7 +72,6 @@ func New(deps Deps) (*App, error) {
 		logger:      logger,
 		lifecycle:   lifecycle,
 		store:       store,
-		producer:    producer,
 		sessions:    map[string]*runtimeSession{},
 		traceOwners: map[string]string{},
 	}

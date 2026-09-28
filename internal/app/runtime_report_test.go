@@ -54,6 +54,16 @@ paths:
 				Type:    "inline",
 				Content: openapi,
 			},
+		}, {
+			ID: "dependency-openapi", Role: "dependency", Type: "openapi", AssetID: "inventory",
+			Source: artifact.SchemaSource{Type: "inline", Content: `openapi: 3.0.0
+info: {title: Inventory, version: "1"}
+paths:
+  /items:
+    get:
+      responses:
+        "200": {description: ok}
+`},
 		}},
 		Traffic: []artifact.Flow{{
 			ID:       "flow-1",
@@ -63,6 +73,10 @@ paths:
 				Method: "GET",
 				URL:    "http://example.test/hello",
 			}},
+			Response: artifact.Message{HTTP: &artifact.HttpMessage{Status: http.StatusOK}},
+		}, {
+			ID: "flow-2", Protocol: "http", Channel: "sut_to_dependency", AssetID: "inventory",
+			Request:  artifact.Message{HTTP: &artifact.HttpMessage{Method: "GET", URL: "http://mock.test/items"}},
 			Response: artifact.Message{HTTP: &artifact.HttpMessage{Status: http.StatusOK}},
 		}},
 	})
@@ -106,6 +120,14 @@ paths:
 	if response["workflow_path"] != workflowPath {
 		t.Fatalf("workflow_path = %v", response["workflow_path"])
 	}
+	for _, key := range []string{"pact_dir", "pact_paths", "consumer_name"} {
+		if _, found := response[key]; found {
+			t.Fatalf("removed report field %q returned: %v", key, response[key])
+		}
+	}
+	if _, err := os.Stat(filepath.Join(outputDir, "pacts")); !os.IsNotExist(err) {
+		t.Fatalf("unexpected automatic contract export: %v", err)
+	}
 
 	postman, err := os.ReadFile(collectionPath)
 	if err != nil {
@@ -125,94 +147,13 @@ paths:
 	if _, err := os.Stat(htmlPath); err != nil {
 		t.Fatalf("stat HTML output: %v", err)
 	}
-}
-
-func TestRuntimeReportWritesPactContractsFromSuccessfulDependencyFlows(t *testing.T) {
-	outputDir := t.TempDir()
-	cfg := core.DefaultConfig()
-	cfg.Artifact.OutputDir = outputDir
-	appInstance, err := New(Deps{Config: cfg})
+	removedEndpoint, err := http.Post(server.URL+"/v1/assertDependency", "application/json", bytes.NewReader([]byte(`{}`)))
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("removed assertion endpoint request: %v", err)
 	}
-	server := httptest.NewServer(appInstance.routes())
-	defer server.Close()
-
-	_, err = artifact.WriteFile(outputDir, &artifact.Artifact{
-		Version:  1,
-		Producer: &artifact.Producer{Repo: "acme/orders", CommitSHA: "abc123", Branch: "main"},
-		TestCase: artifact.TestCase{ID: "pact-report", Name: "orders check inventory", Status: "pass", StartedAt: time.Now().UTC()},
-		Schemas: []artifact.SchemaRef{{
-			ID: "inventory-api", Role: "dependency", Type: "openapi", AssetID: "inventory",
-			Source: artifact.SchemaSource{Type: "inline", Content: `openapi: 3.0.3
-info: {title: Inventory, version: 1.0.0}
-paths:
-  /inventory:
-    get:
-      responses:
-        '200':
-          description: available
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  available: {type: boolean}
-                  ignored: {type: string}
-`},
-		}},
-		Assertions: []artifact.Assertion{{
-			ID: "assertion-1", Channel: "sut_to_dependency", Phase: "response", FlowID: "flow-1",
-			Field: "$.available", PathLang: "jsonpath", Operator: "equals", Expected: true, Result: "pass",
-		}},
-		Traffic: []artifact.Flow{{
-			ID: "flow-1", Protocol: "http", Channel: "sut_to_dependency", AssetID: "inventory",
-			Request: artifact.Message{HTTP: &artifact.HttpMessage{Method: "GET", URL: "http://mock.test/inventory"}},
-			Response: artifact.Message{HTTP: &artifact.HttpMessage{
-				Status: http.StatusOK, Headers: artifact.Headers{"Content-Type": {"application/json"}},
-				Body: &artifact.Body{Encoding: "utf8", Text: `{"available":true,"ignored":"private"}`},
-			}},
-		}},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	pactDir := filepath.Join(outputDir, "contracts")
-	payload, _ := json.Marshal(map[string]any{
-		"artifacts_dir": outputDir, "consumer_name": "orders-service", "pact_dir": pactDir,
-		"provider_names": map[string]string{"inventory": "inventory-service"},
-	})
-	response, err := http.Post(server.URL+"/v1/report", "application/json", bytes.NewReader(payload))
-	if err != nil {
-		t.Fatal(err)
-	}
-	body, _ := io.ReadAll(response.Body)
-	response.Body.Close()
-	if response.StatusCode != http.StatusOK {
-		t.Fatalf("runtime Pact report status = %d: %s", response.StatusCode, body)
-	}
-	var result struct {
-		PactDir         string   `json:"pact_dir"`
-		PactPaths       []string `json:"pact_paths"`
-		ConsumerName    string   `json:"consumer_name"`
-		ConsumerVersion string   `json:"consumer_version"`
-		Branch          string   `json:"branch"`
-	}
-	if err := json.Unmarshal(body, &result); err != nil {
-		t.Fatal(err)
-	}
-	if result.PactDir != pactDir || result.ConsumerName != "orders-service" || result.ConsumerVersion != "abc123" ||
-		result.Branch != "main" || len(result.PactPaths) != 1 {
-		t.Fatalf("Pact publication identity or paths are incomplete: %#v", result)
-	}
-	contract, err := os.ReadFile(result.PactPaths[0])
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Contains(contract, []byte(`"provider"`)) || !bytes.Contains(contract, []byte(`"inventory-service"`)) ||
-		!bytes.Contains(contract, []byte(`"available": true`)) || bytes.Contains(contract, []byte(`"ignored"`)) {
-		t.Fatalf("runtime generated the wrong Pact contract: %s", contract)
+	removedEndpoint.Body.Close()
+	if removedEndpoint.StatusCode != http.StatusNotFound {
+		t.Fatalf("removed assertion endpoint status = %d, want %d", removedEndpoint.StatusCode, http.StatusNotFound)
 	}
 }
 

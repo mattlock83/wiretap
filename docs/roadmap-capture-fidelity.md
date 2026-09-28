@@ -19,19 +19,7 @@ those existing servers solely to capture and correlate the traffic.
 - C1: consumer-owned SUT lifecycle and low-ceremony named Node test API.
 - C2: strict-by-default OpenAPI enforcement with explicit, deterministic
   OpenAPI 3.1 generation for teams bootstrapping a contract.
-- C3: optional immediate dependency-response field assertions linked to the
-  captured flow, preserving full payloads and failing the owning test on drift.
 - E1: Postman JSON and Open Workflow Specification YAML exports.
-- E2: standard Pact V3 export from successful captured dependency traffic,
-  including stable participant naming, producer/version metadata, optional
-  provider states, assertion-selected response fields, OpenAPI-derived
-  matchers, credential filtering, deterministic interaction deduplication,
-  and one broker-ready contract per consumer/provider pair.
-- E3: real Pact Broker import compatibility and an independently owned
-  orders/inventory consumer-provider demonstration, including disposable
-  SQLite-backed local Broker startup, duplicate-safe publication, standard
-  provider-state setup, official Pact V3 provider verification, and published
-  verification results.
 - F1: capture-only product simplification; all mock-serving code and public
   mock APIs removed.
 - F2: restore external-only dependency capture on the existing proxy listener,
@@ -65,4 +53,3 @@ Acceptance criteria:
 - Artifact compatibility/version tests for downstream integrations.
 - Parallel-session stress and long-stream memory tests.
 - Richer report filtering by test, tag, operation, status, and transport error.
-- Additional assertion operators and richer schema-derived Pact matchers.

@@ -154,19 +154,12 @@ go run ./cmd/phrond-coverage \
   --format html \
   --output "${ARTIFACT_DIR}/coverage.html"
 
-go run ./cmd/phrond-coverage \
-  --artifacts "${ARTIFACT_DIR}" \
-  --consumer-name "basic-rest-sut" \
-  --format pact \
-  --output "${ARTIFACT_DIR}/pacts"
-
 popd >/dev/null
 
 echo "Artifacts written to ${ARTIFACT_DIR}"
 echo "Coverage report (Workflow): ${ARTIFACT_DIR}/coverage.workflow.yaml"
 echo "Coverage report (Postman): ${ARTIFACT_DIR}/coverage.postman_collection.json"
 echo "Coverage report (HTML): ${ARTIFACT_DIR}/coverage.html"
-echo "Pact contracts: ${ARTIFACT_DIR}/pacts"
 if [[ -n "${PHROND_GENERATE_SCHEMA:-}" ]]; then
   echo "Generated OpenAPI: ${PHROND_GENERATED_SCHEMA_PATH}"
 fi

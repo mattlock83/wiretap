@@ -115,35 +115,6 @@ and keeps its original `test_correlation` method. Phrond never injects test
 context into an untraced dependency request. Ambiguous unlabeled traffic returns
 409. Legacy `/v1/testcases/*` capture and session capture are mutually exclusive.
 
-`POST /v1/assertDependency` checks selected fields on an already captured
-dependency response and links the resulting assertions to that flow:
-
-```json
-{
-  "session_id": "session-...",
-  "asset_id": "inventory",
-  "method": "GET",
-  "path": "/inventory/product-123",
-  "provider_states": [{
-    "name": "product exists and is available",
-    "params": {"productId": "product-123"}
-  }],
-  "response": {
-    "$.productId": "product-123",
-    "$.available": true
-  }
-}
-```
-
-`method`, `path`, and `flow_id` are optional selectors; the latest matching
-captured dependency exchange is used. Response fields use JSONPath properties
-and array indexes. Success returns `status`, `flow_id`, and `assertions`. A
-mismatch returns HTTP 422, records the failed assertion, and marks the owning
-artifact as failed even if teardown requests `status: pass`. The complete
-captured response remains in the artifact.
-Optional `provider_states` are attached to that flow for standard Pact provider
-verification; they do not configure or change the existing upstream server.
-
 `POST /v1/teardownTest` finalizes and writes the artifact:
 
 ```json
@@ -200,21 +171,15 @@ schema enforcement.
 {
   "artifacts_dir": "artifacts",
   "sut_name": "Hello SUT",
-  "consumer_name": "orders-service",
-  "provider_names": {"inventory": "inventory-service"},
   "collection_path": "artifacts/coverage.postman_collection.json",
   "workflow_path": "artifacts/coverage.workflow.yaml",
-  "html_path": "artifacts/coverage.html",
-  "pact_dir": "artifacts/pacts"
+  "html_path": "artifacts/coverage.html"
 }
 ```
 
-When captured dependency schemas are present, Pact V3 files are generated in
-`pact_dir` or the default `artifacts/pacts`. The response includes `pact_dir`,
-`pact_paths`, `consumer_name`, and detected `consumer_version`/`branch` when
-available. Each file contains one consumer/provider contract, deduplicated
-passing downstream interactions, and assertion-selected response fields. The
-normal Postman, Open Workflow, and HTML reports remain unchanged.
+The response includes the Postman collection, Open Workflow, and HTML paths
+alongside the aggregate coverage report. All three include captured dependency
+traffic where present.
 
 ## Lower-level endpoints
 

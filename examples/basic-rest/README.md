@@ -10,12 +10,9 @@ the correlated downstream inventory request.
 ./examples/run-basic-rest-e2e.sh
 ```
 
-The test also asserts `$.available` on the captured inventory response and
-declares the `product is available` Pact provider state. The run writes the
-per-test artifact plus HTML, Postman, Open Workflow YAML, and Pact V3 reports.
-The Pact contract includes only the asserted inventory response field while
-the artifact retains the complete response. Phrond never starts, configures,
-or simulates the SUT or dependency.
+The run writes the per-test artifact plus HTML, Postman, and Open Workflow
+YAML reports. The artifact retains the captured inventory response. Phrond
+never starts, configures, or simulates the SUT or dependency.
 
 ## Ordinary clients and parallel test traces
 
@@ -28,8 +25,8 @@ PHROND_TEST_RUNNER=jest ./examples/run-basic-rest-e2e.sh
 
 Two overlapping Jest tests use native `fetch` and one stable dependency URL.
 The demo SUT uses standard `otelhttp` server/client instrumentation; it contains
-no Phrond header forwarding. The tests check separate traces, captured inbound
-and downstream payloads, and dependency assertions in their own artifacts.
+no Phrond header forwarding. The tests check separate traces and captured
+inbound and downstream payloads in their own artifacts.
 The shell harness owns all process lifecycles; Jest workers do not stop Phrond.
 
 For an uninstrumented SUT with serial capture:

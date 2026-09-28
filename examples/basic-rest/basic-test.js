@@ -48,11 +48,6 @@ if (!RUN_E2E) {
     assert.equal(result.status, 200);
     assert.deepEqual(result.body, { message: "processed", id: "123", action: "process" });
 
-    await phrond.assertDependency("inventory-service", {
-      method: "POST",
-      path: "/inventory/check",
-      providerState: { name: "product is available", params: { id: "123" } },
-      response: { "$.available": true }
-    });
+
   });
 }

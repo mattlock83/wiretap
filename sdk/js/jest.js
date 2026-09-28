@@ -48,8 +48,7 @@ function createJestSuite(config = {}, api = globalThis) {
     get runtime() { if (!runtime) throw new Error('Phrond capture runtime is not started yet'); return runtime; },
     get sutUrl() { return this.runtime.sutUrl; },
     get http() { return this.runtime.http; },
-    dependencyUrl(assetId) { return this.runtime.dependencyUrl(assetId); },
-    assertDependency(assetId, options) { return this.runtime.assertDependency(assetId, options); }
+    dependencyUrl(assetId) { return this.runtime.dependencyUrl(assetId); }
   };
 }
 module.exports = { createJestSuite };

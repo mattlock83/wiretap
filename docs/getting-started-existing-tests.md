@@ -93,12 +93,6 @@ phrond.test("creates an order", async () => {
   });
 
   assert.equal(response.status, 201);
-  await phrond.assertDependency("inventory", {
-    method: "GET",
-    path: "/inventory/product-123",
-    providerState: "product-123 exists and is available",
-    response: { "$.available": true }
-  });
   await existingMock.verifyOrderLookup("product-123");
 });
 ```
@@ -122,11 +116,6 @@ outbound clients. If it does not, run tests sequentially: Phrond records
 `test_correlation: active_session` and uses timing for an inferred parent. If
 several requests overlap, the parent can be ambiguous and is left unset. The downstream exchange
 normally finishes first, so its flow ID may precede the parent ID.
-
-`assertDependency` is optional. It checks fields on traffic Phrond has already
-captured and records exactly which dependency response fields the test relied
-on; it never configures or verifies the external mock server. Failed assertions
-fail the test, while unasserted response fields remain visible in the artifact.
 
 If the tests already have an HTTP client, keep it and change only its base URL:
 
@@ -188,26 +177,6 @@ go run ./cmd/phrond-coverage \
 The same command can export generated OpenAPI, Postman JSON, or Open Workflow
 YAML by changing `--format` to `openapi`, `postman`, or `workflow`.
 
-To create one standard Pact V3 contract per captured downstream dependency:
-
-```bash
-go run ./cmd/phrond-coverage \
-  --artifacts ./artifacts \
-  --consumer-name orders-service \
-  --provider-name inventory=inventory-service \
-  --format pact \
-  --output ./artifacts/pacts
-
-pact-broker publish ./artifacts/pacts \
-  --consumer-app-version "$GIT_COMMIT" \
-  --branch "$GIT_BRANCH"
-```
-
-When `assertDependency` is used, only the asserted dependency response fields
-are required in the Pact; without it, all captured response fields are used.
-Repeated interactions are deduplicated and all tests are merged into one
-contract per provider before publication. See [Pact export](pact-export.md).
-
 ## Other languages and test frameworks
 
 Any test framework can integrate through Phrond's HTTP API:
@@ -218,9 +187,8 @@ Any test framework can integrate through Phrond's HTTP API:
    explicitly setting `generate_schema: true`, plus any external dependencies.
 3. Send the test's HTTP calls to the returned `sut_url`; configure the SUT's
    downstream clients to use the returned `dependencies` capture URLs.
-4. Optionally record consumed response fields with `POST /v1/assertDependency`.
-5. Finish with `POST /v1/teardownTest` and the test's pass/fail status.
-6. In generation mode, call `POST /v1/generateSchema` after the final test.
+4. Finish with `POST /v1/teardownTest` and the test's pass/fail status.
+5. In generation mode, call `POST /v1/generateSchema` after the final test.
 
 See the [runtime HTTP API](runtime-api.md) for complete request and response
 examples.

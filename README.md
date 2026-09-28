@@ -4,7 +4,7 @@ Phrond captures network traffic between tests and an already-running system
 under test (SUT), and between that SUT and its externally owned dependencies or
 mock servers. It writes one correlated YAML artifact per test, validates both
 traffic directions strictly against supplied OpenAPI schemas, and exports HTML,
-Postman, Open Workflow Specification, Pact V3, and generated OpenAPI documents.
+Postman, Open Workflow Specification, and generated OpenAPI documents.
 
 Phrond deliberately does not start or configure the SUT, and it is not a mock
 server. Use the application harness and mocking tools that already fit your
@@ -17,17 +17,6 @@ Phrond capture proxy.
 npm ci --prefix sdk/js
 ./examples/run-basic-rest-e2e.sh
 ```
-
-To exercise two real demo services, publish their captured Pact contract to an
-official local Pact Broker, and verify the provider using the official Pact
-verifier:
-
-```bash
-./examples/run-pact-broker-e2e.sh
-```
-
-The Pact example requires a running Docker daemon. Its disposable Broker uses
-SQLite locally, so a PostgreSQL installation is not required.
 
 The JavaScript consumer API is intentionally small:
 
@@ -82,9 +71,6 @@ parallel capture requires the SUT to propagate context. See the
   a dependency adds capture-only forwarding on the existing proxy listener.
 - Downstream flows use `channel: sut_to_dependency`, include their stable
   `asset_id`, and point to the originating inbound flow with `parent_flow_id`.
-- Optional `phrond.assertDependency(assetId, { method, path, response })`
-  checks selected captured downstream response fields and records precise
-  flow-linked assertions without managing the existing mock server.
 - HTTPS capture uses a locally generated MITM CA; see
   [HTTPS trust setup](docs/https-trust.md).
 - Request and response bodies stream through unchanged. Artifacts retain at
@@ -103,7 +89,6 @@ parallel capture requires the SUT to propagate context. See the
 go run ./cmd/phrond-coverage --artifacts ./artifacts --sut-name "Example SUT" --format openapi --output generated.openapi.yaml
 go run ./cmd/phrond-coverage --artifacts ./artifacts --sut-name "Example SUT" --format workflow --output coverage.workflow.yaml
 go run ./cmd/phrond-coverage --artifacts ./artifacts --sut-name "Example SUT" --format postman --output coverage.postman_collection.json
-go run ./cmd/phrond-coverage --artifacts ./artifacts --consumer-name orders-service --format pact --output ./artifacts/pacts
 go run ./cmd/phrond-coverage --artifacts ./artifacts --sut-name "Example SUT" --format html --output coverage.html
 ```
 
@@ -113,15 +98,6 @@ can be explored by API operation or test case and includes the captured
 request/response headers, trailers, payloads, dependency identity, and parent
 request. The workflow export uses Open Workflow Specification DSL 1.0.3;
 Postman remains an interoperability option.
-
-Pact export writes one deterministic Pact Specification V3 JSON file per
-consumer/provider pair from successful SUT→dependency exchanges. Optional
-`assertDependency` calls select the response fields that actually matter; when
-none are present, the full captured dependency response is included with
-OpenAPI-derived matchers. Identical interactions are deduplicated, sensitive
-and capture-specific headers are omitted, and provider states can be attached
-without giving Phrond ownership of the existing mock server. Publish the files
-with the standard Pact Broker CLI; see [Pact export](docs/pact-export.md).
 
 Generated OpenAPI contains inferred paths, parameters, bodies, content types,
 and responses from passing tests, but never captured values as examples. Review
@@ -135,8 +111,6 @@ it before moving the file into `schemas` and using normal strict validation.
 - [Getting started with existing tests and a mock server](docs/getting-started-existing-tests.md)
 - [JavaScript SDK](sdk/js/README.md)
 - [Runtime HTTP API](docs/runtime-api.md)
-- [Pact export and Pact Broker publishing](docs/pact-export.md)
-- [Orders/inventory Pact Broker demo](examples/pact-broker/README.md)
 - [Artifact schema](docs/artifact-openapi.yaml)
 - [Design](docs/testing-tool-requirements-and-design.md)
 - [Roadmap](docs/roadmap-capture-fidelity.md)

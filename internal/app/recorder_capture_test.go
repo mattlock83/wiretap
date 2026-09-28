@@ -56,17 +56,13 @@ func TestFlowFromProxyCarriesCaptureMetadataAndError(t *testing.T) {
 	}
 }
 
-func TestFinishCaseAttachesProducerAndFingerprint(t *testing.T) {
+func TestFinishCaseAttachesFingerprint(t *testing.T) {
 	store := NewTestCaseStore(t.TempDir())
-	store.SetProducer(artifact.Producer{Repo: "acme/widgets", CommitSHA: "abc123", Source: "git"})
-	_, _ = store.StartCase("producer-case", nil, nil, "")
+	_, _ = store.StartCase("fingerprint-case", nil, nil, "")
 	store.RecordHTTP(proxy.HTTPExchange{Method: http.MethodGet, URL: "http://sut.test/hello", Status: http.StatusOK})
 	art, _, err := store.FinishCase("pass", nil)
 	if err != nil {
 		t.Fatalf("finish case: %v", err)
-	}
-	if art.Producer == nil || art.Producer.Repo != "acme/widgets" {
-		t.Fatalf("unexpected producer: %+v", art.Producer)
 	}
 	if len(art.Traffic) != 1 || art.Traffic[0].Fingerprint == "" {
 		t.Fatalf("unexpected traffic: %+v", art.Traffic)

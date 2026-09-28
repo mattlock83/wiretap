@@ -47,9 +47,3 @@ Notes:
   `PHROND_MAX_CAPTURE_BYTES` to another non-negative byte count when CI
   artifact size requires a different bound; `0` means unlimited.
 - If HTTPS MITM is used in CI, add the proxy CA to the trust store (see `docs/https-trust.md`).
-- Export captured dependency traffic as Pact V3 contracts with
-  `go run ./cmd/phrond-coverage --artifacts artifacts --consumer-name orders-service --format pact --output artifacts/pacts`.
-- Publish the complete provider-grouped directory once per Git commit with
-  `pact-broker publish artifacts/pacts --consumer-app-version "$GITHUB_SHA" --branch "$GITHUB_REF_NAME"`.
-  Merge test-shard artifacts before exporting so one consumer version publishes
-  exactly one contract per provider.

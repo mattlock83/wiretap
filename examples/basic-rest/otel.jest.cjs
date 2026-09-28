@@ -19,9 +19,7 @@ phrond.test.concurrent.each(['123', '456'])('processes %s', async id => {
     body: JSON.stringify({ id, action: 'process' })
   });
   expect(await response.json()).toEqual({ message: 'processed', id, action: 'process' });
-  await phrond.assertDependency('inventory-service', {
-    method: 'POST', path: '/inventory/check', response: { '$.available': true }
-  });
+
 });
 afterAll(async () => {
   const { report } = await phrond.runtime.report({ artifactsDir: process.env.PHROND_ARTIFACT_DIR });

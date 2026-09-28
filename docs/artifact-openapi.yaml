@@ -36,8 +36,6 @@ components:
         capture_diagnostics:
           type: array
           items: {type: string}
-        producer:
-          $ref: "#/components/schemas/Producer"
         testcase:
           $ref: "#/components/schemas/TestCase"
         environment:
@@ -63,25 +61,6 @@ components:
         meta:
           type: object
           additionalProperties: true
-      additionalProperties: false
-
-    Producer:
-      type: object
-      description: >-
-        Auto-detected identity of the repository and build that produced this
-        artifact. Used by a central broker as the consumer-side join key.
-      properties:
-        repo:
-          type: string
-        commit_sha:
-          type: string
-        branch:
-          type: string
-        build:
-          type: string
-        source:
-          type: string
-          description: How identity was resolved (env, github-actions, gitlab-ci, git).
       additionalProperties: false
 
     TestCase:
@@ -212,23 +191,6 @@ components:
           $ref: "#/components/schemas/HttpRequest"
         response:
           $ref: "#/components/schemas/HttpResponse"
-        assertion_ids:
-          type: array
-          items:
-            type: string
-        provider_states:
-          type: array
-          description: Optional Pact-compatible provider verification prerequisites.
-          items:
-            type: object
-            required: [name]
-            properties:
-              name:
-                type: string
-              params:
-                type: object
-                additionalProperties: true
-            additionalProperties: false
         asset_id:
           type: string
           description: Declared externally owned dependency receiving this request.

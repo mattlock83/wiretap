@@ -62,67 +62,15 @@ test("report forwards all supported output paths", async () => {
     return {};
   });
   try {
-    const runtime = await startCapture({ baseUrl: server.baseUrl, generateSchema: true, consumerName: "orders-service" });
+    const runtime = await startCapture({ baseUrl: server.baseUrl, generateSchema: true });
     await runtime.report({
       collectionPath: "capture.postman.json",
       workflowPath: "capture.workflow.yaml",
-      htmlPath: "capture.html",
-      pactDir: "artifacts/pacts",
-      providerNames: { inventory: "inventory-service" }
+      htmlPath: "capture.html"
     });
     assert.equal(reportPayload.collection_path, "capture.postman.json");
     assert.equal(reportPayload.workflow_path, "capture.workflow.yaml");
     assert.equal(reportPayload.html_path, "capture.html");
-    assert.equal(reportPayload.consumer_name, "orders-service");
-    assert.equal(reportPayload.pact_dir, "artifacts/pacts");
-    assert.deepEqual(reportPayload.provider_names, { inventory: "inventory-service" });
-  } finally {
-    await server.close();
-  }
-});
-
-test("assertDependency records selected response fields against the active session", async () => {
-  let assertionPayload;
-  const server = await controlServer((path, body) => {
-    if (path === "/v1/startServer") return { sut_url: "http://127.0.0.1:20010", proxy: { listen_addr: "127.0.0.1:20010" } };
-    if (path === "/v1/setupTest") return { session_id: "session-1", name: body.name, proxy_listen: "http://127.0.0.1:20010" };
-    if (path === "/v1/assertDependency") {
-      assertionPayload = body;
-      return { status: "pass", flow_id: "flow-2", assertions: [{ field: "$.available", result: "pass" }] };
-    }
-    return {};
-  });
-  try {
-    const runtime = await startCapture({ baseUrl: server.baseUrl, generateSchema: true });
-    await assert.rejects(
-      () => runtime.assertDependency("inventory", { response: { "$.available": true } }),
-      /active capture session/
-    );
-    await runtime.setupTest({ name: "inventory response contains consumed fields" });
-    const result = await runtime.assertDependency("inventory", {
-      method: "get",
-      path: "/items",
-      providerState: { name: "widget exists", params: { sku: "widget" } },
-      response: { "$.available": true, "$.items[0].sku": "widget" }
-    });
-    assert.equal(result.flow_id, "flow-2");
-    assert.deepEqual(assertionPayload, {
-      session_id: "session-1",
-      asset_id: "inventory",
-      method: "GET",
-      path: "/items",
-      provider_states: [{ name: "widget exists", params: { sku: "widget" } }],
-      response: { "$.available": true, "$.items[0].sku": "widget" }
-    });
-    await assert.rejects(() => runtime.assertDependency("inventory", { response: {} }), /at least one response field/);
-    await assert.rejects(
-      () => runtime.assertDependency("inventory", { response: { available: true } }),
-      /must be a JSONPath/
-    );
-    await assert.rejects(
-      () => runtime.assertDependency("inventory", { response: { "$.available": true }, providerState: "" }),
-      /non-empty name/
-    );
   } finally {
     await server.close();
   }
@@ -168,40 +116,6 @@ test("declared external dependencies retain strict schemas and session-scoped ca
     assert.equal(JSON.stringify(calls).includes('"mock"'), false);
   } finally {
     await server.close();
-  }
-});
-
-test("assertDependency exposes the useful captured field mismatch", async () => {
-  const server = http.createServer(async (request, response) => {
-    for await (const _ of request) { /* drain the request body */ }
-    response.setHeader("content-type", "application/json");
-    if (request.url === "/v1/startServer") {
-      response.end(JSON.stringify({ sut_url: "http://127.0.0.1:20010", proxy: { listen_addr: "127.0.0.1:20010" } }));
-      return;
-    }
-    if (request.url === "/v1/setupTest") {
-      response.end(JSON.stringify({ session_id: "session-1", proxy_listen: "http://127.0.0.1:20010" }));
-      return;
-    }
-    response.statusCode = 422;
-    response.end(JSON.stringify({
-      error: "dependency \"inventory\" response assertion failed: $.available: expected true, got false",
-      assertions: [{ field: "$.available", result: "fail" }]
-    }));
-  });
-  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-  try {
-    const runtime = await startCapture({
-      baseUrl: `http://127.0.0.1:${server.address().port}`,
-      generateSchema: true
-    });
-    await runtime.setupTest({ name: "inventory assertion fails clearly" });
-    await assert.rejects(
-      () => runtime.assertDependency("inventory", { response: { "$.available": true } }),
-      (err) => err.status === 422 && /expected true, got false/.test(err.message) && err.assertions[0].result === "fail"
-    );
-  } finally {
-    await new Promise((resolve) => server.close(resolve));
   }
 });
 
@@ -258,7 +172,6 @@ test("createNodeTestSuite exposes capture, dependency forwarding, HTTP, and repo
   assert.equal(typeof suite.test, "function");
   assert.equal(typeof suite.report, "function");
   assert.equal(typeof suite.generateSchema, "function");
-  assert.equal(typeof suite.assertDependency, "function");
   assert.equal(suite.queueResponse, undefined);
   assert.equal(suite.verify, undefined);
 	assert.equal(typeof suite.dependencyUrl, "function");

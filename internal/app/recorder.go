@@ -31,22 +31,12 @@ import (
 type TestCaseStore struct {
 	mu           sync.Mutex
 	outputDir    string
-	producer     artifact.Producer
 	active       *testCaseState
 	last         *artifact.Artifact
 	flowSeq      int
 	schemaSeq    int
 	expectSeq    int
-	assertSeq    int
 	maxBodyBytes int64
-}
-
-// SetProducer attaches auto-detected producer identity to artifacts written by
-// this store.
-func (s *TestCaseStore) SetProducer(producer artifact.Producer) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.producer = producer
 }
 
 type testCaseState struct {
@@ -62,7 +52,6 @@ type testCaseState struct {
 	meta               map[string]any
 	sutBaseURL         string
 	flows              []artifact.Flow
-	assertions         []artifact.Assertion
 	schemas            []artifact.SchemaRef
 	expectation        []Expectation
 	redactions         []artifact.Redaction
@@ -116,7 +105,6 @@ func (s *TestCaseStore) StartCase(name string, tags []string, meta map[string]an
 	s.flowSeq = 0
 	s.schemaSeq = 0
 	s.expectSeq = 0
-	s.assertSeq = 0
 
 	return &artifact.TestCase{ID: id, Name: name, StartedAt: startedAt, Tags: tags, Meta: meta}, nil
 }
@@ -140,17 +128,10 @@ func (s *TestCaseStore) FinishCase(status string, env *artifact.Environment) (*a
 		return nil, "", errors.New("no active test case")
 	}
 	s.active = nil
-	producer := s.producer
 	s.mu.Unlock()
 
 	finishedAt := time.Now().UTC()
 	state.finishedAt = finishedAt
-	for _, assertion := range state.assertions {
-		if assertion.Result == "fail" {
-			status = "fail"
-			break
-		}
-	}
 	if state.captureIncomplete {
 		status = "fail"
 	}
@@ -176,17 +157,12 @@ func (s *TestCaseStore) FinishCase(status string, env *artifact.Environment) (*a
 		Env:        env,
 		Schemas:    append([]artifact.SchemaRef{}, state.schemas...),
 		Traffic:    flows,
-		Assertions: append([]artifact.Assertion{}, state.assertions...),
 		Redactions: append([]artifact.Redaction{}, state.redactions...),
 		Meta:       map[string]any{},
 	}
 	if state.root.IsValid() {
 		art.TestCase.TraceID = state.root.TraceID().String()
 		art.TestCase.RootSpanID = state.root.SpanID().String()
-	}
-	if producer != (artifact.Producer{}) {
-		p := producer
-		art.Producer = &p
 	}
 
 	if len(state.expectation) > 0 {

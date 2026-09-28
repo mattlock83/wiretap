@@ -183,8 +183,7 @@ visible even when parentage is unknown. Include trace/root metadata in per-test
 report output; retain attempt identities even when aggregate reports group names.
 Raw captured headers remain evidence subject to normal redaction. Do not replay
 stale `traceparent`, `tracestate`, or Phrond session headers in executable Postman
-or workflow requests. Pact already filters tracing headers; preserve that behavior
-and keep trace IDs out of interaction fingerprints and contract deduplication.
+or workflow requests. Keep trace IDs out of interaction fingerprints.
 
 ## Scope and limitations
 

@@ -60,9 +60,9 @@ experience; they are not optional merely because core Go tests pass.
 | Recorder | `internal/app/recorder.go`: case state, `FinishCase`, `RecordHTTP`, `linkCausality` | `map[traceID]oneInbound` overwrites candidates; timing picks latest overlapping request. |
 | Artifact | `internal/artifact/types.go`, `docs/artifact-openapi.yaml` | Flow trace/parent fields exist; test root and correlation evidence do not. |
 | JS SDK | `sdk/js/src/index.js`: `Runtime`, `setupTest`, `teardownTest`, `_httpRequest`, `bindTest`, `createNodeTestSuite` | One `activeSession`; no OTel; built-in Node runner only. |
-| Reports | `internal/coverage/report.go`, `workflow.go`, `postman.go`, `pact.go` | Carry new metadata; distinguish evidence from executable replay headers. |
+| Reports | `internal/coverage/report.go`, `workflow.go`, `postman.go` | Carry new metadata; distinguish evidence from executable replay headers. |
 | Dependencies | `go.mod`, `sdk/js/package.json` | Neither currently includes OTel dependencies. |
-| Examples | `examples/basic-rest/`, `examples/demo-apps/`, `examples/pact-broker/` | Some demo services manually copy the custom trace header. |
+| Examples | `examples/basic-rest/`, `examples/demo-apps/` | Some demo services manually copy the custom trace header. |
 
 Search symbols instead of relying on line numbers. Do not interpret the directory
 `zigzap/` beside this repository as part of this change.
@@ -138,10 +138,9 @@ parallel tracing at this intermediate point.
   descriptive labels; a shared trace must not be presented as a proven causal tree.
 - [ ] Preserve raw captured headers subject to redaction. Remove stale trace/session
   headers from executable Postman/workflow request headers, not evidence metadata.
-  Preserve Pact's existing `traceparent`/`tracestate`/`baggage`/`x-phrond-*` filtering.
-- [ ] Ensure trace/span IDs do not affect flow fingerprints, Pact interaction
-  identity, operation coverage, or grouping of schema operations. Preserve test
-  attempt IDs in samples even if aggregate reports group by test name.
+- [ ] Ensure trace/span IDs do not affect flow fingerprints, operation coverage,
+  or grouping of schema operations. Preserve test attempt IDs in samples even
+  if aggregate reports group by test name.
 - [ ] Test multiple concurrent inbound requests in the same test trace, a unique
   timing candidate, multiple timing candidates, no candidate, a dependency that
   predates the only inbound request, injected-context evidence, and legacy round trips.
@@ -256,8 +255,6 @@ go vet ./...
 Wire Jest tests into the SDK test scripts so `npm --prefix sdk/js test` covers the
 shipped adapter, and include new Go SDK packages in their own race-enabled checks.
 The basic example starts its own local processes; check port/runtime prerequisites.
-`./examples/run-pact-broker-e2e.sh` additionally requires Docker and is relevant if
-Pact behavior changes; it need not block an otherwise unchanged contract exporter.
 Also use `git diff --check` and check all new Markdown links.
 
 Existing regression anchors: `internal/app/dependency_capture_test.go`,
