@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/phrond/evermock/core"
+	"github.com/phrond/evermock/internal/core"
 )
 
 func TestEndToEndCapturesTestToSUTTraffic(t *testing.T) {

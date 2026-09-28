@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/phrond/evermock/core"
+	"github.com/phrond/evermock/internal/core"
 )
 
 func newLogger(cfg core.LogConfig) *slog.Logger {

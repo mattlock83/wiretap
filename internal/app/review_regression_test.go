@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/phrond/evermock/core"
+	"github.com/phrond/evermock/internal/core"
 	"github.com/phrond/evermock/internal/artifact"
 	phrond "github.com/phrond/evermock/sdk/go"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"

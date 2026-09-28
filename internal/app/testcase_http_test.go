@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/phrond/evermock/core"
+	"github.com/phrond/evermock/internal/core"
 	"github.com/phrond/evermock/internal/artifact"
 )
 

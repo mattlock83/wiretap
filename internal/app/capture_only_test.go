@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/phrond/evermock/core"
+	"github.com/phrond/evermock/internal/core"
 )
 
 func TestMockRoutesAreRemoved(t *testing.T) {

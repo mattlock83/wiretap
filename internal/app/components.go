@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/phrond/evermock/core"
+	"github.com/phrond/evermock/internal/core"
 	"github.com/phrond/evermock/internal/capture"
 	"github.com/phrond/evermock/internal/proxy"
 	tlsmgr "github.com/phrond/evermock/internal/tls"

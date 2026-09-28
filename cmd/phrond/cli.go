@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/phrond/evermock/core"
+	"github.com/phrond/evermock/internal/core"
 )
 
 type cliConfig struct {

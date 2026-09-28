@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"sync"
 
-	"github.com/phrond/evermock/core"
+	"github.com/phrond/evermock/internal/core"
 )
 
 type Deps struct {

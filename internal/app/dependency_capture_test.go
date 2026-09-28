@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/phrond/evermock/core"
+	"github.com/phrond/evermock/internal/core"
 	"github.com/phrond/evermock/internal/artifact"
 	"github.com/phrond/evermock/internal/coverage"
 )
