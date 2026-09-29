@@ -24,6 +24,7 @@ import (
 )
 
 type Report struct {
+	Contracts     *ContractCoverage  `json:"contract_coverage,omitempty" yaml:"contract_coverage,omitempty"`
 	GeneratedAt   time.Time          `json:"generated_at" yaml:"generated_at"`
 	SUTName       string             `json:"sut_name" yaml:"sut_name"`
 	ArtifactCount int                `json:"artifact_count" yaml:"artifact_count"`
@@ -196,6 +197,7 @@ func GenerateBundleSnapshot(bundlePath string, run *bundle.Run, captures []*arti
 	for i := range report.Artifacts {
 		report.Artifacts[i] = portable(report.Artifacts[i])
 	}
+	report.Contracts = buildContractCoverage(run, captures)
 	return report, nil
 }
 
@@ -798,28 +800,11 @@ func openapiOperations(spec *openapiSpec) []string {
 	}
 	var ops []string
 	for path, item := range spec.Doc.Paths.Map() {
-		if item.Get != nil {
-			ops = append(ops, "GET "+path)
-		}
-		if item.Post != nil {
-			ops = append(ops, "POST "+path)
-		}
-		if item.Put != nil {
-			ops = append(ops, "PUT "+path)
-		}
-		if item.Patch != nil {
-			ops = append(ops, "PATCH "+path)
-		}
-		if item.Delete != nil {
-			ops = append(ops, "DELETE "+path)
-		}
-		if item.Head != nil {
-			ops = append(ops, "HEAD "+path)
-		}
-		if item.Options != nil {
-			ops = append(ops, "OPTIONS "+path)
+		for method := range item.Operations() {
+			ops = append(ops, strings.ToUpper(method)+" "+path)
 		}
 	}
+	sort.Strings(ops)
 	return ops
 }
 

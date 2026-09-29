@@ -115,6 +115,9 @@ See [configuration and runtime](docs/configuration.md) and the
   explicitly labelled inferred request relationships.
 - Observed operation coverage against supplied schemas, with incomplete captures
   and unknown provenance kept visible.
+- Per-spec contract condition keys: covered, not covered, unknown, unsupported,
+  or excluded, with test/flow evidence and separate provider and mock results.
+  Open the HTML **Conditions** tab or `contract-coverage.md` / `.json` in the bundle.
 
 A mock response records an assumption made by the test. It does not establish
 which fields the application used or prove that the real provider behaves the
@@ -138,6 +141,7 @@ are limited to 4 MiB each by default while delivery streams through the proxy.
 - [JavaScript SDK](sdk/js/README.md) · [Go SDK](sdk/go/README.md)
 - [Tracing and parallel tests](docs/otel-adoption.md)
 - [Capture bundles and reports](docs/okf-bundles.md)
+- [Contract coverage rules](docs/contract-coverage-rules.md)
 - [Runtime HTTP API](docs/runtime-api.md) · [Architecture](docs/architecture.md)
 - [JSON evidence contract](docs/bundle-evidence.md) · [OKF profile](docs/okf-profile.md)
 - [CI example](docs/ci-example.md) · [HTTPS trust](docs/https-trust.md)

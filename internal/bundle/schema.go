@@ -16,7 +16,7 @@ import (
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/phrond/evermock/internal/artifact"
-	"gopkg.in/yaml.v3"
+	"github.com/phrond/evermock/internal/schemajson"
 )
 
 type schemaFile struct {
@@ -82,8 +82,8 @@ func (w *Writer) freezeSchema(ref artifact.SchemaRef) (artifact.SchemaRef, error
 				return err
 			}
 		}
-		var value any
-		if err := yaml.Unmarshal(data, &value); err != nil {
+		value, err := schemajson.Decode(data)
+		if err != nil {
 			return fmt.Errorf("decode schema %s: %w", uri, err)
 		}
 		docs[key] = sourceDoc{uri: uri, value: value}

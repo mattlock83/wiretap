@@ -23,6 +23,7 @@ import (
 // The HTML dashboard is a disposable view. It uses the same verified snapshot
 // and coverage calculation as the OKF pages, and never becomes input to either.
 type viewerData struct {
+	Contracts                 *coverage.ContractCoverage
 	RunID, State, GeneratedAt string
 	Revision                  uint64
 	Attempts, Passed, Failed  int
@@ -75,7 +76,8 @@ type viewerMessage struct {
 
 func writeViewer(root string, run *bundle.Run, captures []*artifact.Artifact, report *coverage.Report, drafts []mockDraft) error {
 	data := viewerData{
-		RunID: run.RunID, State: run.RunState, Revision: run.Revision,
+		Contracts: report.Contracts,
+		RunID:     run.RunID, State: run.RunState, Revision: run.Revision,
 		GeneratedAt: run.UpdatedAt.Format("2006-01-02 15:04:05 UTC"),
 		Pending:     run.Pending,
 		Notes:       report.Notes,

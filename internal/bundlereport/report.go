@@ -56,6 +56,13 @@ func render(root string, force bool) (*coverage.Report, error) {
 	if err != nil {
 		return nil, err
 	}
+	contractJSON, err := json.MarshalIndent(report.Contracts, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	if err := writePage(filepath.Join(root, "contract-coverage.json"), append(contractJSON, '\n')); err != nil {
+		return nil, err
+	}
 	generatedAt := run.UpdatedAt.Format("2006-01-02T15:04:05Z07:00")
 	base := map[string]any{"profile_version": "1.0", "run_id": run.RunID, "snapshot_revision": run.Revision}
 	write := func(rel, kind, title, description, body string, extra map[string]any) error {
@@ -102,8 +109,11 @@ func render(root string, force bool) (*coverage.Report, error) {
 		}
 		return writePage(path, []byte("---\n"+string(data)+"---\n\n"+body))
 	}
+	if err := write("contract-coverage.md", "coverage", "Contract Coverage", "Per-contract condition keys and evidence", contractCoverageMarkdown(report.Contracts), map[string]any{"evidence": "evidence/run.json"}); err != nil {
+		return nil, err
+	}
 	index := "---\nokf_version: \"0.2\"\n---\n\n# Wiretap capture\n\n" +
-		"- [Interactive report](viewer/index.html)\n- [Run](run.md)\n- [Coverage](coverage.md)\n- [Provided APIs](apis/index.md)\n- [Dependencies](dependencies/index.md)\n- [Tests](tests/index.md)\n"
+		"- [Interactive report](viewer/index.html)\n- [Run](run.md)\n- [Coverage](coverage.md)\n- [Contract conditions](contract-coverage.md)\n- [Provided APIs](apis/index.md)\n- [Dependencies](dependencies/index.md)\n- [Tests](tests/index.md)\n"
 	if err := writePage(filepath.Join(root, "index.md"), []byte(index)); err != nil {
 		return nil, err
 	}
@@ -139,6 +149,7 @@ func render(root string, force bool) (*coverage.Report, error) {
 		}
 		coverageBody += "\n"
 	}
+	coverageBody += "## Contract conditions\n\n[Per-spec condition keys and evidence](contract-coverage.md) · [JSON catalogue](contract-coverage.json). These distinguish passing coverage, observations, unknowns, unsupported rules and exclusions.\n\n"
 	if len(report.Notes) > 0 {
 		coverageBody += "## Diagnostics\n\n"
 		for _, note := range report.Notes {

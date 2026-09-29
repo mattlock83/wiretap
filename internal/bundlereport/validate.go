@@ -2,6 +2,7 @@ package bundlereport
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/phrond/evermock/internal/bundle"
+	"github.com/phrond/evermock/internal/coverage"
 	"gopkg.in/yaml.v3"
 )
 
@@ -37,7 +39,10 @@ func Validate(root string) error {
 		}
 		flows[capture.TestCase.ID] = ids
 	}
-	for _, rel := range []string{"index.md", "run.md", "coverage.md", "apis/index.md", "dependencies/index.md", "tests/index.md"} {
+	if err := validateContractCatalogue(root, run, flows); err != nil {
+		return err
+	}
+	for _, rel := range []string{"index.md", "run.md", "coverage.md", "contract-coverage.md", "apis/index.md", "dependencies/index.md", "tests/index.md"} {
 		if err := validatePage(root, rel, run.RunID, run.Revision, flows, false); err != nil {
 			return err
 		}
@@ -71,6 +76,60 @@ func Validate(root string) error {
 	return nil
 }
 
+func validateContractCatalogue(root string, run *bundle.Run, flows map[string]map[string]bool) error {
+	const name = "contract-coverage.json"
+	if err := rootReference(root, name); err != nil {
+		return fmt.Errorf("view %s: %w", name, err)
+	}
+	data, err := os.ReadFile(filepath.Join(root, name))
+	if err != nil {
+		return fmt.Errorf("view %s: %w", name, err)
+	}
+	var report *coverage.ContractCoverage
+	if err := json.Unmarshal(data, &report); err != nil {
+		return fmt.Errorf("view %s: invalid catalogue JSON: %w", name, err)
+	}
+	if report == nil || report.RunID != run.RunID || report.SnapshotRevision != run.Revision || report.RunState != run.RunState || report.RulesVersion != coverage.ContractRulesVersion || report.Specs == nil {
+		return fmt.Errorf("view %s: invalid catalogue identity or snapshot", name)
+	}
+	attemptPaths := make(map[string]string, len(run.Attempts))
+	for _, attempt := range run.Attempts {
+		attemptPaths[attempt.AttemptID] = attempt.Path
+	}
+	checkEvidence := func(e coverage.ContractEvidence) error {
+		if e.RunID != run.RunID || !flows[e.AttemptID][e.FlowID] || e.Path != attemptPaths[e.AttemptID] {
+			return fmt.Errorf("view %s: evidence pointer does not identify a committed flow", name)
+		}
+		return nil
+	}
+	for _, spec := range report.Specs {
+		if spec == nil {
+			return fmt.Errorf("view %s: null contract specification", name)
+		}
+		for _, target := range spec.Targets {
+			if target == nil {
+				return fmt.Errorf("view %s: null condition target", name)
+			}
+			for _, evidence := range target.Evidence {
+				if err := checkEvidence(evidence); err != nil {
+					return err
+				}
+			}
+		}
+		for _, violation := range spec.Violations {
+			if err := checkEvidence(violation.Evidence); err != nil {
+				return err
+			}
+		}
+		for _, combination := range spec.Combinations {
+			if err := checkEvidence(combination.Evidence); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 func validatePage(root, rel, runID string, runRevision uint64, flows map[string]map[string]bool, requiredProfile bool) error {
 	path := filepath.Join(root, filepath.FromSlash(rel))
 	data, err := os.ReadFile(path)
@@ -83,14 +142,14 @@ func validatePage(root, rel, runID string, runRevision uint64, flows map[string]
 		if len(parts) != 3 || yaml.Unmarshal(parts[1], &front) != nil {
 			return fmt.Errorf("view %s: invalid YAML frontmatter", rel)
 		}
-	} else if requiredProfile || rel == "run.md" || rel == "coverage.md" {
+	} else if requiredProfile || rel == "run.md" || rel == "coverage.md" || rel == "contract-coverage.md" {
 		return fmt.Errorf("view %s: missing Wiretap frontmatter", rel)
 	}
 	if wiretap, exists := front["wiretap"]; exists {
 		if err := validateProfile(root, path, rel, front, wiretap, runID, runRevision, flows); err != nil {
 			return err
 		}
-	} else if requiredProfile || rel == "run.md" || rel == "coverage.md" {
+	} else if requiredProfile || rel == "run.md" || rel == "coverage.md" || rel == "contract-coverage.md" {
 		return fmt.Errorf("view %s: missing Wiretap profile", rel)
 	}
 	for _, match := range markdownLink.FindAllSubmatch(withoutFencedBlocks(data), -1) {

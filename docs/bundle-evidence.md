@@ -47,3 +47,14 @@ a declared exception. Validation
 lists its ID in `schema_validation.skipped`; mixed attempts have status `partial`
 unless an enforced schema fails. Coverage remains unknown for the omitted API,
 while concrete observed paths and exchanges remain browsable.
+
+## Derived contract coverage
+
+`contract-coverage.json`, `contract-coverage.md`, and the HTML Conditions tab are
+rebuildable views of this evidence and the supplied frozen contracts. They never
+become evidence inputs. The catalogue identifies the run snapshot, measurement
+rule version, content-based contract revision, and API/operation/condition keys.
+Each observation links back to an attempt path and flow ID, with phase, instance
+location, test name, outcome, message validation, capture completeness and
+transport failure details. See [contract coverage rules](contract-coverage-rules.md)
+for status meanings and unsupported measurement scopes.

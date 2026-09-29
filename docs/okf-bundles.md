@@ -6,7 +6,7 @@ default. Set `WIRETAP_OUTPUT_DIR` to choose another parent directory.
 The `bundle_path` returned by `/v1/startRun` and `/v1/setupTest` identifies
 the exact run directory. Open `viewer/index.html` for the offline HTML dashboard,
 or `index.md` for the OKF pages. Both browse the API, dependency observations,
-test attempts, and operation coverage. The runtime updates these views as
+test attempts, operation coverage, and contract conditions. The runtime updates these views as
 attempts finish. `/v1/finishRun` finalizes the run after all attempts
 have been torn down. A copied bundle remains readable without the original
 workspace, source schemas, or a live Wiretap process.
@@ -17,6 +17,8 @@ artifacts/<run-id>/
   viewer/index.html     offline interactive HTML dashboard
   run.md                lifecycle and pending attempts
   coverage.md           observed API operation coverage
+  contract-coverage.md  per-spec condition keys and evidence
+  contract-coverage.json machine-readable condition catalogue and combinations
   apis/                 provided API and operation pages
   dependencies/         grouped observed dependency behaviour
   dependencies/mocks/   inferred OpenAPI drafts, one per mock dependency
@@ -48,6 +50,25 @@ server, network connection, or external libraries. Its links stay within the
 bundle. Diagnostic JSON/YAML are optional
 `--format json` or `--format yaml`
 exports. Those files are not generated during normal capture.
+
+## Contract conditions
+
+The **Conditions** tab and `contract-coverage.md` list the keys derived from each
+supplied spec, including conditions with no observations. Passing coverage is
+separate from failed observations, violations, unknown evidence, unsupported
+rules, and impossible/excluded targets. JSON results include exact test, attempt,
+flow and array-item references, plus conditions observed together per message.
+
+No SDK changes or test labels are needed. The initial scope supports OpenAPI 3.0,
+JSON bodies and scalar HTTP parameters; see the [coverage rules](contract-coverage-rules.md)
+for supported constraints and explicit limits. Inferred mock drafts never create
+a denominator. Only registered specs contribute to the catalogue.
+
+`contract-coverage.json` is generated during normal capture and rebuilding, and
+is disposable like the HTML/Markdown views. Optional `wiretap export` output also
+includes it under `contract_coverage`. Shared API identity, contract content and
+rule version make keys comparable between provider and consumer repositories;
+matching keys do not establish provider agreement.
 
 ## Inferred mock assumptions
 

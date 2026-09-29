@@ -17,7 +17,7 @@ Wiretap owns capture, correlation, schema validation, and the resulting bundle.
 | `internal/redact` | Apply configured redaction before persistence. |
 | `internal/artifact` | In-memory capture model shared by recording, storage, and reporting. |
 | `internal/bundle` | Authoritative run inventory, immutable attempt JSON, frozen schemas, payload attachments, and integrity checks. |
-| `internal/coverage` | Calculate observed operation coverage and generate optional diagnostic exports. |
+| `internal/coverage` | Calculate operation and contract-condition coverage from verified evidence; generate diagnostic exports. |
 | `internal/bundlereport` | Render OKF Markdown and the offline HTML dashboard from verified bundle evidence. |
 | `internal/project` | Discover and resolve `.wiretap.yaml` once for the runtime. |
 | `internal/core` | Runtime configuration and component lifecycle. |
@@ -106,6 +106,13 @@ show what the upstream returned in a test, with declared mock/service provenance
 They do not prove provider agreement or identify which response fields the SUT
 consumed. Stable API identities and source revisions prepare the evidence for a
 future cross-repository comparator; that comparison is not implemented.
+
+Contract-condition coverage additionally derives a finite catalogue from each
+supplied contract, records individual observations and per-message combinations,
+and separates provider from mock/service provenance. The versioned rules and
+current support limits are in [contract coverage rules](contract-coverage-rules.md).
+Its generated JSON catalogue, Markdown page and HTML tab use the same calculation;
+no test runner, SDK instrumentation or live validation behaviour is added.
 
 Broader transport support (streaming, WebSocket, HTTP/2, and RPC-specific
 capture) remains future work. Current guarantees centre on bounded HTTP

@@ -2,6 +2,7 @@ package bundlereport
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -58,11 +59,28 @@ paths:
 	if err != nil {
 		t.Fatal(err)
 	}
+	catalogue, err := os.ReadFile(filepath.Join(w.Path(), "contract-coverage.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var actual coverage.ContractCoverage
+	if err := json.Unmarshal(catalogue, &actual); err != nil {
+		t.Fatal(err)
+	}
+	actualJSON, _ := json.Marshal(actual)
+	expectedJSON, _ := json.Marshal(before.Contracts)
+	if !bytes.Equal(actualJSON, expectedJSON) {
+		t.Fatal("published catalogue differs from the shared coverage calculation")
+	}
+	html, err := os.ReadFile(filepath.Join(w.Path(), "viewer/index.html"))
+	if err != nil || !bytes.Contains(html, []byte(`id="contracts"`)) || !bytes.Contains(html, []byte(before.Contracts.Specs[0].Targets[0].Key)) {
+		t.Fatal("HTML Conditions tab is missing the published keys")
+	}
 	var jsonBefore bytes.Buffer
 	if err := coverage.WriteReport(&jsonBefore, before, "json"); err != nil {
 		t.Fatal(err)
 	}
-	for _, rel := range []string{"index.md", "run.md", "coverage.md", "tests/attempt-1.md", "tests/index.md", "apis/index.md", "dependencies/index.md"} {
+	for _, rel := range []string{"index.md", "run.md", "coverage.md", "contract-coverage.md", "contract-coverage.json", "tests/attempt-1.md", "tests/index.md", "apis/index.md", "dependencies/index.md"} {
 		if err := os.Remove(filepath.Join(w.Path(), rel)); err != nil {
 			t.Fatal(err)
 		}
