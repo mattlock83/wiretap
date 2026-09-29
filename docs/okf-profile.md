@@ -14,6 +14,9 @@ Phrond-generated `.md` file is a concept with `type`, `title`, `description`,
 Phrond does not set OKF `verified` merely because a test passed.
 The bundle's `viewer/index.html` is a separate disposable HTML view over the
 same JSON evidence; it is not an OKF concept or an evidence source.
+Likewise, `dependencies/mocks/<dependency-hash>.openapi.yaml` files are disposable
+inferred mock assumptions, not OKF concepts or supplied contracts. They link to
+source evidence using file-relative `x-phrond-evidence` paths.
 
 Pages may carry `phrond.evidence`: a bundle-root-relative JSON path for a run
 or attempt, or a list of `{attempt_id, flow_id, path}` pointers for an operation
@@ -29,6 +32,6 @@ against one inventory snapshot. Evidence readers and exports do not parse
 frontmatter or Markdown, and missing pages do not block them.
 
 Phrond owns the documented generated paths (`index.md`, `run.md`,
-`coverage.md`, `viewer/index.html`, and its `apis/`, `dependencies/`, and `tests/` indexes/pages).
+`coverage.md`, `viewer/index.html`, `dependencies/mocks/*.openapi.yaml`, and its `apis/`, `dependencies/`, and `tests/` indexes/pages).
 Regeneration replaces those paths only. Unrecognized team-authored concepts
 and extensions are preserved.

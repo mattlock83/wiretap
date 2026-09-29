@@ -63,7 +63,7 @@ test("report selects a bundle", async () => {
     return {};
   });
   try {
-    const runtime = await startCapture({ baseUrl: server.baseUrl, generateSchema: true });
+    const runtime = await startCapture({ baseUrl: server.baseUrl, schemaRequired: false });
     await runtime.report({
       bundlePath: "capture-bundle"
     });
@@ -128,7 +128,7 @@ test("external dependencies require their own schema by default", async () => {
   );
   assert.throws(
     () => createNodeTestSuite({
-      generateSchema: true,
+      schemaRequired: false,
       dependencies: [{ assetId: "inventory", upstreamUrl: "http://wiremock.test" }]
     }),
     /dependency "inventory" requires an OpenAPI schema/
@@ -155,31 +155,27 @@ test("createNodeTestSuite exposes capture, dependency forwarding, and reporting"
   });
   assert.equal(typeof suite.test, "function");
   assert.equal(typeof suite.report, "function");
-  assert.equal(typeof suite.generateSchema, "function");
 	assert.equal(typeof suite.dependencyUrl, "function");
   assert.equal(typeof hooks.before, "function");
   assert.equal(typeof hooks.after, "function");
 });
 
-test("schemas are required unless generation is explicitly enabled", async () => {
+test("schemas are required unless explicitly omitted", async () => {
   const server = await controlServer(() => ({}));
   try {
     await assert.rejects(() => startCapture({ baseUrl: server.baseUrl }), /OpenAPI schemas are required/);
+    const runtime = await startCapture({ baseUrl: server.baseUrl, schemas: [{ id: "sut-api" }], schemaRequired: false });
+    assert.deepEqual(runtime.defaultSchemas, [{ id: "sut-api" }]);
   } finally { await server.close(); }
-  assert.throws(
-    () => createNodeTestSuite({ schemas: [{ id: "sut-api" }], generateSchema: true }),
-    /cannot be used together/
-  );
 });
 
-test("explicit generation permits skipped validation and writes schema before shutdown", async () => {
+test("explicit schema omission permits skipped validation and finalizes the run", async () => {
   const calls = [];
   const server = await controlServer((path, body) => {
     calls.push({ path, body });
     if (path === "/v1/startRun") return { sut_url: "http://127.0.0.1:20010", proxy: { listen_addr: "127.0.0.1:20010" } };
     if (path === "/v1/setupTest") return { session_id: "session-1", name: body.name, proxy_listen: "http://127.0.0.1:20010" };
     if (path === "/v1/teardownTest") return { capture: { schema_validation: { status: "skipped" } } };
-    if (path === "/v1/generateSchema") return { schema_path: body.output_path, artifact_count: 1 };
     if (path === "/v1/finishRun") return { status: "complete" };
     return {};
   });
@@ -187,30 +183,19 @@ test("explicit generation permits skipped validation and writes schema before sh
     const runtime = await startCapture({
       baseUrl: server.baseUrl,
       sutBaseUrl: "http://sut.test",
-      generateSchema: {
-        outputPath: "artifacts/orders.generated.openapi.yaml",
-        title: "Orders Service",
-        version: "1.0.0",
-        force: true
-      }
+      schemaRequired: false
     });
     await runtime.setupTest({ name: "creates an order" });
     await runtime.teardownTest({ status: "pass" });
     const result = await runtime.finishRun();
 
     const setup = calls.find((call) => call.path === "/v1/setupTest");
-    assert.equal(setup.body.generate_schema, true);
+    assert.equal(setup.body.schema_required, false);
     assert.deepEqual(setup.body.schemas, []);
     const paths = calls.map((call) => call.path);
-    assert.ok(paths.indexOf("/v1/generateSchema") < paths.indexOf("/v1/finishRun"));
-    const generation = calls.find((call) => call.path === "/v1/generateSchema");
-    assert.deepEqual(generation.body, {
-      output_path: "artifacts/orders.generated.openapi.yaml",
-      title: "Orders Service",
-      version: "1.0.0",
-      force: true
-    });
-    assert.equal(result.generatedSchema.schema_path, "artifacts/orders.generated.openapi.yaml");
+    assert.deepEqual(paths, ["/v1/startRun", "/v1/setupTest", "/v1/teardownTest", "/v1/finishRun"]);
+    assert.deepEqual(result, { status: "complete" });
+
   } finally {
     await server.close();
   }

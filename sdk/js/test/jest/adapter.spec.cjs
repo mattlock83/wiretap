@@ -17,7 +17,7 @@ beforeAll(async () => {
   url = `http://127.0.0.1:${server.address().port}`;
 });
 // Defer resolving the dynamically allocated address until the suite starts.
-const config = { get baseUrl() { return url; }, generateSchema: true };
+const config = { get baseUrl() { return url; }, schemaRequired: false };
 const suite = createJestSuite(config);
 jest.retryTimes(1, { retryImmediately: true });
 let attempts = 0;

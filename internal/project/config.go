@@ -21,7 +21,6 @@ type API struct {
 	Kind           string `yaml:"kind"`
 	Schema         string `yaml:"schema"`
 	SchemaRequired *bool  `yaml:"schema_required"`
-	GenerateSchema bool   `yaml:"generate_schema"`
 }
 
 func (a API) RequiresSchema() bool { return a.SchemaRequired == nil || *a.SchemaRequired }
@@ -128,7 +127,7 @@ func Load(path string) (*Config, error) {
 			return nil, err
 		}
 	}
-	resolveAPI := func(id string, a API, dependency bool) (API, error) {
+	resolveAPI := func(id string, a API) (API, error) {
 		a.URL, err = expand(a.URL)
 		if err != nil {
 			return a, err
@@ -137,10 +136,7 @@ func Load(path string) (*Config, error) {
 		if err != nil {
 			return a, err
 		}
-		if a.GenerateSchema && (dependency || a.Schema != "") {
-			return a, fmt.Errorf("%s: generate_schema is only allowed for a SUT without a schema", id)
-		}
-		if a.Schema == "" && a.RequiresSchema() && !a.GenerateSchema {
+		if a.Schema == "" && a.RequiresSchema() {
 			return a, fmt.Errorf("%s: schema is required; set schema_required: false explicitly for this API to omit it", id)
 		}
 		if a.Kind != "" && a.Kind != "mock" && a.Kind != "service" && a.Kind != "unknown" {
@@ -148,12 +144,12 @@ func Load(path string) (*Config, error) {
 		}
 		return a, nil
 	}
-	cfg.SUT, err = resolveAPI("sut", cfg.SUT, false)
+	cfg.SUT, err = resolveAPI("sut", cfg.SUT)
 	if err != nil {
 		return nil, err
 	}
 	for _, id := range cfg.DependencyIDs() {
-		a, e := resolveAPI(id, cfg.Dependencies[id], true)
+		a, e := resolveAPI(id, cfg.Dependencies[id])
 		if e != nil {
 			return nil, e
 		}

@@ -46,7 +46,6 @@ type TestOptions struct {
 	SUTBaseURL      string         `json:"sut_base_url,omitempty"`
 	Schemas         []Schema       `json:"schemas,omitempty"`
 	Dependencies    []Dependency   `json:"dependencies,omitempty"`
-	GenerateSchema  bool           `json:"generate_schema,omitempty"`
 	ExplicitSession bool           `json:"explicit_session,omitempty"`
 	Tags            []string       `json:"tags,omitempty"`
 	Meta            map[string]any `json:"meta,omitempty"`

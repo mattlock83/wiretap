@@ -9,9 +9,7 @@ if (!RUN_E2E) {
 } else {
   let phrond;
   before(async () => {
-    phrond = await startCapture(process.env.PHROND_GENERATE_SCHEMA
-      ? { schemas: [], generateSchema: true }
-      : {});
+    phrond = await startCapture();
   });
   after(async () => { if (phrond) await phrond.finishRun(); });
 

@@ -39,7 +39,7 @@ func execute(ctx context.Context, args []string) int {
 	flags := flag.NewFlagSet("phrond "+command, flag.ContinueOnError)
 	configPath := flags.String("config", "", "project configuration (default: discover .phrond.yaml)")
 	flags.Usage = func() {
-		fmt.Fprintln(flags.Output(), "Usage: phrond [--config path]\n  phrond ca [--config path]\n  phrond report --bundle <directory>\n  phrond export --bundle <directory> --format openapi --output api.yaml")
+		fmt.Fprintln(flags.Output(), "Usage: phrond [--config path]\n  phrond ca [--config path]\n  phrond report --bundle <directory>\n  phrond export --bundle <directory> --format json --output coverage.json")
 		flags.PrintDefaults()
 	}
 	if err := flags.Parse(args); err != nil {

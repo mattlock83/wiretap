@@ -19,6 +19,7 @@ artifacts/<run-id>/
   coverage.md           observed API operation coverage
   apis/                 provided API and operation pages
   dependencies/         grouped observed dependency behaviour
+  dependencies/mocks/   inferred OpenAPI drafts, one per mock dependency
   tests/                one readable page per test attempt
   evidence/run.json     versioned run inventory
   evidence/attempts/    immutable JSON capture per attempt
@@ -44,9 +45,51 @@ is not a complete original body.
 
 The HTML dashboard uses embedded styling and a small filter script; it needs no
 server, network connection, or external libraries. Its links stay within the
-bundle. Generated OpenAPI and diagnostic JSON/YAML are optional
-`--format openapi`, `--format json`, or `--format yaml`
+bundle. Diagnostic JSON/YAML are optional
+`--format json` or `--format yaml`
 exports. Those files are not generated during normal capture.
+
+## Inferred mock assumptions
+
+Every dependency explicitly marked `upstream_kind: mock` (or `kind: mock` in
+`.phrond.yaml`) gets an OpenAPI 3.1 YAML draft under
+`dependencies/mocks/<dependency-hash>.openapi.yaml`. The Dependencies page and
+HTML dashboard link to it by dependency ID. Phrond refreshes these drafts as
+attempts are committed and when the run finishes; `phrond report --bundle ...`
+rebuilds them from the same verified evidence. No generation option or export
+command is needed.
+
+Each draft combines captured requests and responses for one dependency ID
+across the run, even when a provider spec was supplied. Supplied specs remain
+frozen under `schemas/` and continue to enforce the contract. Without a supplied
+spec, explicitly set `schema_required: false`; generated observations do not
+satisfy the spec requirement or give coverage a declared-operation denominator.
+Services, unknown upstream kinds, and the SUT do not get inferred drafts.
+An unused mock gets an empty `paths` document labelled as having no captured
+exchanges. Phrond cannot infer unused mock definitions.
+
+Drafts describe **observed mock assumptions**, not provider contracts or proven
+consumer requirements:
+
+- Endpoints, methods, query parameters, content types, response statuses, and
+  JSON body shapes come from retained, redacted traffic.
+- Numeric and UUID path segments become inferred path parameters. Other segments
+  remain literal; these heuristics may need human review. Query parameters retain
+  string values or arrays of strings, without publishing their captured values.
+- Body fields, query parameters, and request bodies are not made required just
+  because they appeared in every sample. Extra object properties remain allowed.
+- Failed test attempts are included so contract mismatches are visible. Each
+  operation has `x-phrond-evidence` references to attempt JSON and flow IDs, with
+  test status and incomplete-capture flags. Reference paths are relative to the
+  draft file. Root `x-phrond` metadata identifies the dependency and run snapshot.
+- Transport failures and incomplete HTTP exchanges are excluded from operations
+  and recorded with reasons in the root evidence list. Truncated or unreadable
+  JSON bodies leave that content type's schema unconstrained. Redaction can also
+  affect inferred shapes; captured payload values are not emitted as examples.
+
+These files are generated views, never validation inputs or authoritative
+provider claims. Editing or deleting a draft cannot change evidence, validation,
+or coverage. Preserve the full bundle to keep provenance links usable.
 
 The bundle can be browsed with a Markdown file browser or a repository viewer:
 start at `index.md` and follow the relative links. Keep the complete directory

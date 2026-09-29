@@ -31,8 +31,7 @@ func applySchemaValidation(art *artifact.Artifact) {
 		return
 	}
 	if len(art.Schemas) == 0 {
-		// Public APIs permit this only for explicit schema generation. Direct
-		// store callers retain a truthful skipped result.
+		// Direct store callers without schemas retain a truthful skipped result.
 		art.SchemaValidation = &artifact.SchemaValidation{Status: "skipped"}
 		if art.Meta == nil {
 			art.Meta = map[string]any{}
@@ -90,15 +89,12 @@ func applySchemaValidation(art *artifact.Artifact) {
 	}
 }
 
-func validateSchemaSetup(schemas []artifact.SchemaRef, generate bool) error {
+func validateSchemaSetup(schemas []artifact.SchemaRef, allowMissing bool) error {
 	if len(schemas) == 0 {
-		if generate {
+		if allowMissing {
 			return nil
 		}
-		return errors.New("an OpenAPI schema is required; supply schemas or explicitly opt in with generate_schema")
-	}
-	if generate {
-		return errors.New("schemas and generate_schema cannot be used together")
+		return errors.New("an OpenAPI schema is required; supply schemas or explicitly set schema_required: false for this API")
 	}
 	for index, schema := range schemas {
 		if !strings.EqualFold(strings.TrimSpace(schema.Type), "openapi") {
@@ -187,9 +183,6 @@ func validateSchemas(art *artifact.Artifact) []artifact.SchemaValidationError {
 		}
 		if len(candidates) == 0 {
 			if omittedForFlow(art.Schemas, role, flow.AssetID) {
-				continue
-			}
-			if generating, _ := art.Meta["schema_generation"].(bool); generating && role == "sut" {
 				continue
 			}
 			issues = append(issues, artifact.SchemaValidationError{

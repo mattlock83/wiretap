@@ -26,7 +26,7 @@ func (a *App) testDefaults() setupTestRequest {
 	if id == "" {
 		id = "sut"
 	}
-	out := setupTestRequest{APIID: id, SUTBaseURL: cfg.SUT.TargetURL(), SUTTargetKind: cfg.SUT.Kind, Schemas: cfg.SUT.Schemas(id, "sut"), SchemaRequired: cfg.SUT.SchemaRequired, GenerateSchema: cfg.SUT.GenerateSchema}
+	out := setupTestRequest{APIID: id, SUTBaseURL: cfg.SUT.TargetURL(), SUTTargetKind: cfg.SUT.Kind, Schemas: cfg.SUT.Schemas(id, "sut"), SchemaRequired: cfg.SUT.SchemaRequired}
 	for _, id := range cfg.DependencyIDs() {
 		dep := cfg.Dependencies[id]
 		out.Dependencies = append(out.Dependencies, dependencyRegistration{AssetID: id, UpstreamURL: dep.TargetURL(), UpstreamKind: dep.Kind, Schemas: dep.Schemas(id, "dependency"), SchemaRequired: dep.SchemaRequired})

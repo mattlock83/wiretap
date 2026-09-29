@@ -70,7 +70,7 @@ a{color:var(--blue);text-underline-offset:2px}button,input{font:inherit}button{c
 <p class="note">These attempts started but have no committed capture yet.</p>{{range .Pending}}<p>{{.Name}} · {{.AttemptID}}</p>{{end}}</div>{{end}}<div class="card">
 <h2>What this run shows</h2>
 <p>Coverage counts declared API operations observed in captured test traffic. A passing observation needs a complete passing attempt. Dependency examples show behaviour used by the consumer; they do not prove which fields it read or that a real provider agrees.</p>
-<p class="subtle">This dashboard is a generated view. The JSON evidence, schemas, and retained payloads in this bundle are authoritative.</p>
+<p class="subtle">This dashboard is a generated view. The JSON evidence, supplied schemas, and retained payloads in this bundle are authoritative.</p>
 </div>{{if .Notes}}<div class="card">
 <h2>Diagnostics</h2>{{range .Notes}}<p class="note">{{.}}</p>{{end}}</div>{{end}}<div class="card">
 <h2>Navigation</h2>
@@ -82,7 +82,7 @@ a{color:var(--blue);text-underline-offset:2px}button,input{font:inherit}button{c
 </div>
 </section>
 <section class="pane" id="apis" hidden>{{if .Provided}}{{range .Provided}}{{template "spec" .}}{{end}}{{else}}<div class="card empty">No provided API schemas were supplied. The coverage denominator is unknown.</div>{{end}}</section>
-<section class="pane" id="dependencies" hidden>{{if .Dependent}}<div class="card note">Dependency responses are observed assumptions. Consumer field use and provider agreement remain unknown.</div>{{range .Dependent}}{{template "spec" .}}{{end}}{{else}}<div class="card empty">No dependency schemas were supplied.</div>{{end}}</section>
+<section class="pane" id="dependencies" hidden>{{if .MockDrafts}}<div class="card"><h2>Inferred mock assumptions</h2><p>OpenAPI drafts from observed mock requests and responses, including failed attempts. These are not provider contracts or validation inputs. Consumer field use and provider agreement remain unknown.</p><div class="links">{{range .MockDrafts}}<a href="{{.URL}}">{{.ID}} — {{.Operations}} operations, {{.Exchanges}} exchanges</a>{{end}}</div></div>{{end}}{{if .Dependent}}<div class="card note">Dependency responses are observed assumptions. Consumer field use and provider agreement remain unknown.</div>{{range .Dependent}}{{template "spec" .}}{{end}}{{else}}<div class="card empty">No dependency schemas were supplied.</div>{{end}}</section>
 <section class="pane" id="tests" hidden>{{if .Tests}}{{range .Tests}}<article class="card item" data-search="{{.Search}}">
 <div class="card-head">
 <div>

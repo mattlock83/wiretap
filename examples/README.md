@@ -19,12 +19,4 @@ Run it with:
 ./examples/run-basic-rest-e2e.sh
 ```
 
-The default path demonstrates strict validation with an existing schema. To
-exercise the explicit schema-bootstrap path instead:
-
-```bash
-PHROND_GENERATE_SCHEMA=1 ./examples/run-basic-rest-e2e.sh
-```
-
-That run also writes `basic-rest.generated.openapi.yaml` as an explicit schema
-export.
+The example validates traffic against supplied OpenAPI schemas.

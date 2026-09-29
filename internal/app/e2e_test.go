@@ -48,7 +48,7 @@ func TestEndToEndCapturesTestToSUTTraffic(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	setupBody, _ := json.Marshal(map[string]any{"name": "hello world happy flow", "sut_base_url": sut.URL, "generate_schema": true})
+	setupBody, _ := json.Marshal(map[string]any{"name": "hello world happy flow", "sut_base_url": sut.URL, "schema_required": false})
 	resp, err = http.Post(control.URL+"/v1/setupTest", "application/json", bytes.NewReader(setupBody))
 	if err != nil {
 		t.Fatal(err)

@@ -52,6 +52,10 @@ func render(root string, force bool) (*coverage.Report, error) {
 	if err != nil {
 		return nil, err
 	}
+	mockDrafts, err := writeMockDrafts(root, run, captures)
+	if err != nil {
+		return nil, err
+	}
 	generatedAt := run.UpdatedAt.Format("2006-01-02T15:04:05Z07:00")
 	base := map[string]any{"profile_version": "1.0", "run_id": run.RunID, "snapshot_revision": run.Revision}
 	write := func(rel, kind, title, description, body string, extra map[string]any) error {
@@ -256,6 +260,13 @@ func render(root string, force bool) (*coverage.Report, error) {
 	}{{"apis", report.Provided.Specs}, {"dependencies", report.Dependent.Specs}} {
 		var overview strings.Builder
 		overview.WriteString("# " + strings.Title(role.dir) + "\n\n")
+		if role.dir == "dependencies" && len(mockDrafts) > 0 {
+			overview.WriteString("## Inferred mock assumptions\n\nAutomatically inferred from captured mock traffic, including failed attempts. These drafts are not provider contracts or validation inputs. Consumer field use and provider agreement remain unknown.\n\n")
+			for _, draft := range mockDrafts {
+				overview.WriteString(fmt.Sprintf("- [%s — observed OpenAPI](%s): %d operations from %d exchanges.\n", escape(draft.AssetID), strings.TrimPrefix(draft.Path, "dependencies/"), draft.Operations, draft.Exchanges))
+			}
+			overview.WriteString("\n## Supplied specs and coverage\n\n")
+		}
 		for _, spec := range role.specs {
 			key := shortHash(role.dir + "|" + spec.AssetID + "|" + spec.SchemaID + "|" + spec.SchemaSet)
 			apiDir := role.dir + "/" + key
@@ -279,6 +290,9 @@ func render(root string, force bool) (*coverage.Report, error) {
 			}
 			if strings.HasPrefix(spec.Source, "schemas/") {
 				apiBody.WriteString("[Frozen OpenAPI schema](../../" + spec.Source + ")\n\n")
+			}
+			if role.dir == "dependencies" && run.DependencyKinds[spec.AssetID] == "mock" {
+				apiBody.WriteString("[Inferred mock assumptions — OpenAPI](../../" + mockDraftPath(spec.AssetID) + ")\n\nThis separate draft describes observed mock traffic; it does not replace the supplied schema or establish provider agreement.\n\n")
 			}
 			apiBody.WriteString("## Declared operations\n\n")
 			for _, op := range ops {
@@ -328,7 +342,7 @@ func render(root string, force bool) (*coverage.Report, error) {
 			return nil, err
 		}
 	}
-	if err := writeViewer(root, run, captures, report); err != nil {
+	if err := writeViewer(root, run, captures, report, mockDrafts); err != nil {
 		return nil, err
 	}
 	return report, nil

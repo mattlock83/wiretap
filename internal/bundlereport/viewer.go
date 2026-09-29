@@ -29,8 +29,14 @@ type viewerData struct {
 	Flows, ObservedOperations int
 	Pending                   []bundle.PendingAttempt
 	Provided, Dependent       []viewerSpec
+	MockDrafts                []viewerMockDraft
 	Tests                     []viewerAttempt
 	Notes                     []string
+}
+
+type viewerMockDraft struct {
+	ID, URL               string
+	Operations, Exchanges int
 }
 
 type viewerSpec struct {
@@ -67,12 +73,15 @@ type viewerMessage struct {
 	Body, AttachmentURL, BodyNote          string
 }
 
-func writeViewer(root string, run *bundle.Run, captures []*artifact.Artifact, report *coverage.Report) error {
+func writeViewer(root string, run *bundle.Run, captures []*artifact.Artifact, report *coverage.Report, drafts []mockDraft) error {
 	data := viewerData{
 		RunID: run.RunID, State: run.RunState, Revision: run.Revision,
 		GeneratedAt: run.UpdatedAt.Format("2006-01-02 15:04:05 UTC"),
 		Pending:     run.Pending,
 		Notes:       report.Notes,
+	}
+	for _, draft := range drafts {
+		data.MockDrafts = append(data.MockDrafts, viewerMockDraft{ID: draft.AssetID, URL: "../" + draft.Path, Operations: draft.Operations, Exchanges: draft.Exchanges})
 	}
 	paths := make(map[string]string, len(run.Attempts))
 	for _, ref := range run.Attempts {

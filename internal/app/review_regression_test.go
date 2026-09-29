@@ -39,7 +39,7 @@ func TestReviewLateUntracedDependencyAfterDrainTimeout(t *testing.T) {
 	}))
 	defer sut.Close()
 	control, _ := dependencyCaptureRuntime(t)
-	payload := map[string]any{"name": "old", "sut_base_url": sut.URL, "generate_schema": true, "trace_context": traceRegistration(81), "dependencies": []dependencyRegistration{{AssetID: "inventory", UpstreamURL: mock.URL, Schema: permissiveDependencySchema()}}}
+	payload := map[string]any{"name": "old", "sut_base_url": sut.URL, "schema_required": false, "trace_context": traceRegistration(81), "dependencies": []dependencyRegistration{{AssetID: "inventory", UpstreamURL: mock.URL, Schema: permissiveDependencySchema()}}}
 	old := postDependencyJSON(t, control.URL, "/v1/setupTest", payload)
 	dependencyURL = old["dependencies"].(map[string]any)["inventory"].(string)
 	go func() {
@@ -68,7 +68,7 @@ func TestReviewLateUntracedDependencyAfterDrainTimeout(t *testing.T) {
 
 func TestReviewShutdownClearsRetiredTraces(t *testing.T) {
 	control, _ := dependencyCaptureRuntime(t)
-	payload := map[string]any{"name": "old", "generate_schema": true, "trace_context": traceRegistration(90)}
+	payload := map[string]any{"name": "old", "schema_required": false, "trace_context": traceRegistration(90)}
 	old := postDependencyJSON(t, control.URL, "/v1/setupTest", payload)
 	postDependencyJSON(t, control.URL, "/v1/teardownTest", map[string]any{"session_id": old["session_id"]})
 	postDependencyJSON(t, control.URL, "/v1/finishRun", map[string]any{})
@@ -98,7 +98,7 @@ func TestDrainDoesNotBlockOtherTestsOrLoseResponse(t *testing.T) {
 	defer app.proxyComponent.Stop(t.Context())
 	setup := func(n int) map[string]any {
 		return postDependencyJSON(t, control.URL, "/v1/setupTest", map[string]any{
-			"name": "parallel", "generate_schema": true, "sut_base_url": sut.URL,
+			"name": "parallel", "schema_required": false, "sut_base_url": sut.URL,
 			"explicit_session": true, "trace_context": traceRegistration(n),
 		})
 	}
@@ -170,7 +170,7 @@ func TestGoSDKCapturesParallelTestsThroughRealRuntime(t *testing.T) {
 		for i := 0; i < 2; i++ {
 			t.Run(fmt.Sprint(i), func(t *testing.T) {
 				t.Parallel()
-				session := runtime.StartTest(t, phrond.TestOptions{SUTBaseURL: sut.URL, GenerateSchema: true, ExplicitSession: true,
+				session := runtime.StartTest(t, phrond.TestOptions{SUTBaseURL: sut.URL, SchemaRequired: new(bool), ExplicitSession: true,
 					Dependencies: []phrond.Dependency{{AssetID: "inventory", UpstreamURL: mock.URL, Schema: &phrond.Schema{ID: "inventory", Type: "openapi", Source: phrond.SchemaSource{Type: "inline", Content: permissiveDependencySchema().Source.Content}}}},
 				})
 				mu.Lock()
@@ -221,8 +221,8 @@ func TestUnknownTracePreservedAndSelectorsRejected(t *testing.T) {
 	}))
 	defer sut.Close()
 	control, _ := dependencyCaptureRuntime(t)
-	first := postDependencyJSON(t, control.URL, "/v1/setupTest", map[string]any{"name": "first", "sut_base_url": sut.URL, "generate_schema": true, "explicit_session": true, "trace_context": traceRegistration(901)})
-	second := postDependencyJSON(t, control.URL, "/v1/setupTest", map[string]any{"name": "second", "generate_schema": true, "explicit_session": true, "trace_context": traceRegistration(902)})
+	first := postDependencyJSON(t, control.URL, "/v1/setupTest", map[string]any{"name": "first", "sut_base_url": sut.URL, "schema_required": false, "explicit_session": true, "trace_context": traceRegistration(901)})
+	second := postDependencyJSON(t, control.URL, "/v1/setupTest", map[string]any{"name": "second", "schema_required": false, "explicit_session": true, "trace_context": traceRegistration(902)})
 	requestStatus(t, first["sut_url"].(string), foreign, first["session_id"].(string), 200)
 	scoped := first["sut_url"].(string) + "/__phrond/session/" + first["session_id"].(string) + "/dep/inventory"
 	requestStatus(t, scoped, traceRegistration(902)["traceparent"], "", 409)

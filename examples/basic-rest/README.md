@@ -13,7 +13,10 @@ and the correlated downstream inventory request.
 The run writes a bundle under `artifacts/<run-id>/`. Open `viewer/index.html` for
 the offline HTML dashboard or `index.md` for the OKF pages. Inspect `evidence/` for the exact captured
 attempts. The retained evidence includes the inventory response. Phrond never
-starts, configures, or simulates the SUT or dependency.
+starts, configures, or simulates the SUT or dependency. The Dependencies page
+and HTML dashboard also link to an inferred OpenAPI draft for `inventory-service`.
+It is generated from observed mock traffic alongside the supplied spec, which
+continues to control validation.
 
 ## Ordinary clients and parallel test traces
 

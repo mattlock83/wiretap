@@ -1,7 +1,7 @@
 const { createJestSuite } = require('../../jest');
 let server;
 beforeAll(async () => { server = await require('./outcomes-server.cjs')(); });
-const suite = createJestSuite({ get baseUrl() { return server.url; }, generateSchema: true });
+const suite = createJestSuite({ get baseUrl() { return server.url; }, schemaRequired: false });
 suite.test('pass', () => {});
 suite.test('timeout', async () => { await new Promise(resolve => setTimeout(resolve, 180)); }, 60);
 suite.test('never settles', () => new Promise(() => {}), 60);

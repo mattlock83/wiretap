@@ -15,20 +15,12 @@ export interface Dependency {
   schemas?: Schema[];
   schemaRequired?: boolean;
 }
-export interface GenerateSchemaOptions {
-  outputPath?: string;
-  bundlePath?: string;
-  title?: string;
-  version?: string;
-  force?: boolean;
-}
 export interface TestOptions {
   name?: string;
   tags?: string[];
   meta?: Record<string, unknown>;
   schemas?: Schema[];
   schemaRequired?: boolean;
-  generateSchema?: boolean | string | GenerateSchemaOptions;
   sutBaseUrl?: string;
   dependencies?: Record<string, Dependency> | Dependency[];
   apiId?: string;
@@ -81,7 +73,6 @@ export interface Runtime {
   runTest<T>(name: string, callback: (session: Session) => T | Promise<T>, options?: TestOptions): Promise<T>;
   dependencyUrl(assetId: string): string;
   report(options?: { bundlePath?: string }): Promise<CaptureResponse>;
-  generateSchema(options?: GenerateSchemaOptions): Promise<CaptureResponse>;
   finishRun(): Promise<CaptureResponse>;
 }
 export interface TestAttempt {
@@ -102,7 +93,6 @@ export interface Suite {
   start(): Promise<Runtime>;
   close(): Promise<unknown>;
   report(options?: Parameters<Runtime['report']>[0]): Promise<CaptureResponse>;
-  generateSchema(options?: GenerateSchemaOptions): Promise<CaptureResponse>;
 }
 export function startCapture(config?: Config): Promise<Runtime>;
 export function createNodeTestSuite(config?: Config): Suite;

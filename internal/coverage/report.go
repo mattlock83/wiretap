@@ -232,8 +232,6 @@ func WriteReport(w io.Writer, report *Report, format string) error {
 		return errors.New("report is nil")
 	}
 	switch strings.ToLower(strings.TrimSpace(format)) {
-	case "openapi":
-		return WriteGeneratedOpenAPI(w, report, GeneratedOpenAPIOptions{})
 	case "yaml":
 		data, err := yaml.Marshal(report)
 		if err != nil {

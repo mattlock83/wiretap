@@ -22,39 +22,12 @@ function normalizeProxyConfig(config = {}) {
   };
 }
 
-function normalizeGenerateSchema(value) {
-  if (value === undefined || value === null || value === false) return null;
-  if (value === true) return {};
-  if (typeof value === "string") {
-    if (!value.trim()) throw new Error("generateSchema output path must not be empty");
-    return { outputPath: value.trim() };
-  }
-  if (typeof value !== "object" || Array.isArray(value)) {
-    throw new Error("generateSchema must be true, an output path, or an options object");
-  }
-  const outputPath = pickFirstString(value.outputPath);
-  const bundlePath = pickFirstString(value.bundlePath);
-  const title = pickFirstString(value.title);
-  const version = pickFirstString(value.version);
-  return {
-    ...(outputPath ? { outputPath } : {}),
-    ...(bundlePath ? { bundlePath } : {}),
-    ...(title ? { title } : {}),
-    ...(version ? { version } : {}),
-    force: Boolean(value.force)
-  };
-}
-
 function schemaConfiguration(config = {}, allowInherited = false) {
   const schemas = Array.isArray(config.schemas) ? config.schemas : [];
-  const generateSchema = normalizeGenerateSchema(config.generateSchema);
-  if (schemas.length > 0 && generateSchema) {
-    throw new Error("schemas and generateSchema cannot be used together");
+  if (schemas.length === 0 && config.schemaRequired !== false && !allowInherited) {
+    throw new Error("OpenAPI schemas are required; supply schemas or explicitly set schemaRequired: false for this API");
   }
-  if (schemas.length === 0 && !generateSchema && config.schemaRequired !== false && !allowInherited) {
-    throw new Error("OpenAPI schemas are required; supply schemas or explicitly opt in with generateSchema");
-  }
-  return { schemas, generateSchema };
+  return { schemas };
 }
 
 function normalizeDependencies(value) {
@@ -114,7 +87,6 @@ class CoreClient {
   startRun(payload) { return this._request("POST", "/v1/startRun", payload || {}); }
   setupTest(payload) { return this._request("POST", "/v1/setupTest", payload || {}); }
   teardownTest(payload) { return this._request("POST", "/v1/teardownTest", payload || {}); }
-  generateSchema(payload) { return this._request("POST", "/v1/generateSchema", payload || {}); }
   report(payload) { return this._request("POST", "/v1/report", payload || {}); }
   finishRun() { return this._request("POST", "/v1/finishRun", {}); }
 
@@ -154,14 +126,12 @@ class Runtime {
     const schemaConfig = schemaConfiguration(config);
     this.defaultSchemas = [...schemaConfig.schemas];
     this.schemaRequired = config.schemaRequired;
-    this.generatedSchemaConfig = schemaConfig.generateSchema;
     this.defaultDependencies = normalizeDependencies(config.dependencies);
     this.defaultRedactions = config.redactions;
     this.apiId = pickFirstString(config.apiId);
     this.sutTargetKind = pickFirstString(config.sutTargetKind);
     this.testSource = config.testSource;
     this.sutSource = config.sutSource;
-    this.schemaGenerated = false;
     this.sutUrl = runtimeInfo.sut_url;
     this.sessions = new AsyncLocalStorage();
     this.manualSession = null;
@@ -242,10 +212,7 @@ class Runtime {
     if (owner.closed) throw new Error("capture attempt is already closed");
     if (this.activeSession || owner.setupPending) throw new Error("a capture session is already active");
     const selectedSchemas = Array.isArray(options.schemas) ? options.schemas : this.defaultSchemas;
-    const selectedGeneration = options.generateSchema === undefined
-      ? this.generatedSchemaConfig
-      : normalizeGenerateSchema(options.generateSchema);
-    const schemaConfig = schemaConfiguration({ schemas: selectedSchemas, generateSchema: selectedGeneration, schemaRequired: options.schemaRequired ?? this.schemaRequired });
+    const schemaConfig = schemaConfiguration({ schemas: selectedSchemas, schemaRequired: options.schemaRequired ?? this.schemaRequired });
     const dependencies = options.dependencies === undefined
       ? this.defaultDependencies
       : normalizeDependencies(options.dependencies);
@@ -264,7 +231,6 @@ class Runtime {
       redactions: options.redactions ?? this.defaultRedactions,
       dependencies
     };
-    if (schemaConfig.generateSchema) payload.generate_schema = true;
     const span = tracing.newTestSpan(payload.name || "test", this.tracerProvider);
     payload.trace_context = tracing.serialize(span);
     let session;
@@ -287,7 +253,6 @@ class Runtime {
       indexPath: session.index_path,
       viewerPath: session.viewer_path,
       dependencyUrls: session.dependencies,
-      generateSchema: schemaConfig.generateSchema
     };
     return this.activeSession;
   }
@@ -327,42 +292,11 @@ class Runtime {
     return this.client.report({ bundle_path: options.bundlePath });
   }
 
-  async generateSchema(options) {
-    const config = options === undefined ? this.generatedSchemaConfig : normalizeGenerateSchema(options);
-    if (!config) throw new Error("generateSchema was not enabled for this capture runtime");
-    const response = await this.client.generateSchema({
-      bundle_path: config.bundlePath,
-      output_path: config.outputPath,
-      title: config.title,
-      version: config.version,
-      force: Boolean(config.force)
-    });
-    this.schemaGenerated = true;
-    return response;
-  }
-
   async finishRun() {
     await Promise.all(this.pendingCleanup);
     if (this.openSessions.size) throw new Error("teardown all capture sessions before closing the runtime");
     if (!this.manageRuntime) return { status: "shared" };
-    let generationResult;
-    let generationError;
-    if (this.generatedSchemaConfig && !this.schemaGenerated) {
-      try {
-        generationResult = await this.generateSchema();
-      } catch (err) {
-        generationError = err;
-      }
-    }
-    let finishResult;
-    try {
-      finishResult = await this.client.finishRun();
-    } catch (finishError) {
-      if (generationError) throw new AggregateError([generationError, finishError], "schema generation and run finalization failed");
-      throw finishError;
-    }
-    if (generationError) throw generationError;
-    return generationResult ? { ...finishResult, generatedSchema: generationResult } : finishResult;
+    return this.client.finishRun();
   }
 }
 
@@ -380,7 +314,6 @@ async function startCapture(config = {}) {
     sutTargetKind: defaults.sut_target_kind,
     schemas: defaults.schemas,
     schemaRequired: defaults.schema_required,
-    generateSchema: defaults.generate_schema,
     redactions: defaults.redactions,
     testSource: defaults.test_source,
     sutSource: defaults.sut_source,
@@ -445,7 +378,6 @@ function createNodeTestSuite(config = {}) {
     get runtime() { if (!runtime) throw new Error("Phrond capture runtime is not started yet"); return runtime; },
     get sutUrl() { return this.runtime.sutUrl; },
     dependencyUrl(assetId) { return this.runtime.dependencyUrl(assetId); },
-    generateSchema(options) { return this.runtime.generateSchema(options); },
     report(options) { return this.runtime.report(options); }
   };
   suite.test = bindTest(() => runtime, testApi.test, config.testDefaults || {});

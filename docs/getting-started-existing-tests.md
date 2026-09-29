@@ -89,16 +89,7 @@ parent ambiguous even when the owning test is known; Phrond records that uncerta
 ## Supply specs
 
 Schemas are required and enforced by default for the SUT and each dependency.
-If the SUT has no spec yet, replace its `schema` setting with
-`generate_schema: true`, then explicitly export a draft after the run:
-
-```bash
-phrond export --bundle artifacts/<run-id> --format openapi --output orders.yaml
-```
-
-Review the draft and adopt it as the supplied schema. Captured values are not
-included as examples. Each dependency still requires its own schema unless you
-explicitly set `schema_required: false` for that API. Such exceptions keep
+For an API without a spec, explicitly set `schema_required: false`. Such exceptions keep
 capturing traffic but show skipped validation and unknown schema coverage.
 A provided invalid spec never becomes an exception automatically.
 

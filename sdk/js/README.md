@@ -122,14 +122,10 @@ const capture = await startCapture({
 API-provided file paths resolve on the runtime host. Schemas are required by
 default. Set `schemaRequired: false` only on an API whose spec is intentionally
 absent; supplied specs still validate strictly. Dependencies retain this same
-per-API requirement. `generateSchema` is the explicit SUT drafting mode and
-cannot accompany supplied SUT schemas. When overriding configured SUT schemas
-for generation, also pass `schemas: []`.
-
-In shared runs, export the draft after all workers complete using
-`phrond export --bundle <run> --format openapi --output api.yaml`. A standalone
-Node suite that owns its runtime can use `generateSchema: { outputPath: "api.yaml" }`
-to export before closing. Review generated specs before adopting them.
+per-API requirement. Dependencies marked `upstreamKind: "mock"` automatically get
+a separate inferred OpenAPI draft in the bundle, even with a supplied spec.
+The draft documents observations and never changes validation. Follow the
+Dependencies links in the bundle to inspect it.
 
 ## Lower-level integration
 
@@ -143,8 +139,6 @@ to export before closing. Review generated specs before adopting them.
   arbitrary requests; use `runTest` or standard OTel context binding.
 - `runtime.dependencyUrl(assetId)` returns the configured dependency capture URL.
 - `runtime.report({ bundlePath })` refreshes bundle views.
-- `runtime.generateSchema({ outputPath, title, version, force })` explicitly exports
-  a draft from current captures.
 - `runtime.finishRun()` finalizes capture when `manageRuntime` is enabled.
   It never terminates the control process.
 

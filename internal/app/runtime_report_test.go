@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -127,94 +126,6 @@ paths:
 		}
 	}
 
-}
-
-func TestGenerateSchemaEndpointWritesStandardOpenAPIWithoutCapturedValues(t *testing.T) {
-	outputDir := t.TempDir()
-	cfg := core.DefaultConfig()
-	cfg.Artifact.OutputDir = outputDir
-
-	appInstance, err := New(Deps{Config: cfg})
-	if err != nil {
-		t.Fatalf("new app: %v", err)
-	}
-	server := httptest.NewServer(appInstance.routes())
-	defer server.Close()
-
-	capture := &artifact.Artifact{
-		Version: 1,
-		TestCase: artifact.TestCase{
-			ID:        "schema-generation",
-			Name:      "creates an order",
-			StartedAt: time.Date(2026, 8, 8, 10, 0, 0, 0, time.UTC),
-		},
-		Traffic: []artifact.Flow{{
-			ID:       "flow-1",
-			Protocol: "http",
-			Channel:  "test_to_sut",
-			Request: artifact.Message{HTTP: &artifact.HttpMessage{
-				Method:  "POST",
-				URL:     "http://orders.test/orders",
-				Headers: artifact.Headers{"Content-Type": {"application/json"}},
-				Body:    &artifact.Body{Text: `{"product_id":"sensitive-value","quantity":2}`},
-			}},
-			Response: artifact.Message{HTTP: &artifact.HttpMessage{
-				Status:  http.StatusCreated,
-				Headers: artifact.Headers{"Content-Type": {"application/json"}},
-				Body:    &artifact.Body{Text: `{"id":"order-123"}`},
-			}},
-		}},
-	}
-	writer, err := bundle.New(outputDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := writer.Register(capture.TestCase, nil); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := writer.Commit(capture); err != nil {
-		t.Fatal(err)
-	}
-	if err := writer.Finalize("complete"); err != nil {
-		t.Fatal(err)
-	}
-
-	schemaPath := filepath.Join(outputDir, "orders.generated.openapi.yaml")
-	payload, _ := json.Marshal(map[string]any{
-		"bundle_path": writer.Path(),
-		"output_path": schemaPath,
-		"title":       "Orders Service",
-		"version":     "1.0.0",
-	})
-	resp, err := http.Post(server.URL+"/v1/generateSchema", "application/json", bytes.NewReader(payload))
-	if err != nil {
-		t.Fatalf("generate schema request: %v", err)
-	}
-	body, _ := io.ReadAll(resp.Body)
-	resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("generate schema status = %d: %s", resp.StatusCode, body)
-	}
-	generated, err := os.ReadFile(schemaPath)
-	if err != nil {
-		t.Fatalf("read generated schema: %v", err)
-	}
-	text := string(generated)
-	if !strings.Contains(text, "openapi: 3.1.0") || !strings.Contains(text, "/orders:") {
-		t.Fatalf("unexpected generated schema:\n%s", text)
-	}
-	if strings.Contains(text, "sensitive-value") || strings.Contains(text, "order-123") {
-		t.Fatalf("generated schema leaked captured values:\n%s", text)
-	}
-
-	resp, err = http.Post(server.URL+"/v1/generateSchema", "application/json", bytes.NewReader(payload))
-	if err != nil {
-		t.Fatalf("repeat generate schema request: %v", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusConflict {
-		t.Fatalf("repeat generate schema status = %d, want %d", resp.StatusCode, http.StatusConflict)
-	}
 }
 
 func TestRuntimeReportRejectsWorkflowExport(t *testing.T) {

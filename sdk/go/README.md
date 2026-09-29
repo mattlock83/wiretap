@@ -64,10 +64,11 @@ No exporter or collector is needed; unsampled contexts work.
 `TestOptions.Schemas` and `TestOptions.Dependencies` accept typed `Schema` and
 `Dependency` overrides. `SchemaSource` supports file, URL, and inline content. The returned `Dependencies` map
 contains capture URLs. Configure the SUT's dependency endpoints once to stable
-`/__phrond/dep/<asset-id>` URLs for traced sessions. `GenerateSchema: true` is the
-explicit alternative to SUT schemas. Each API requires its spec unless its
+`/__phrond/dep/<asset-id>` URLs for traced sessions. Each API requires its spec unless its
 `SchemaRequired` pointer is explicitly false; supplied specs always validate.
-Export a generated draft afterward with the optional `phrond export` utility.
+Dependencies marked `UpstreamKind: "mock"` always get a separate inferred OpenAPI
+draft in the bundle, including with a supplied spec. It documents observed mock
+traffic and never changes enforcement. The bundle's Dependencies view links to it.
 `DrainTimeout` defaults to five seconds; use a positive duration up to one minute.
 
 Each runtime run writes an OKF bundle automatically. `Session.RunID`,

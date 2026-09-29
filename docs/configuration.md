@@ -92,9 +92,7 @@ runtime failures return `1`; those are independent of the test command's status.
 
 ## Specs remain required
 
-Both the SUT and each dependency require an OpenAPI spec by default. The SUT
-can use `generate_schema: true` instead of `schema` to draft a contract from
-passing tests. Export the draft after the run and review it before adoption.
+Both the SUT and each dependency require an OpenAPI spec by default.
 
 For an API that genuinely has no spec, make the exception explicit on that API:
 
@@ -118,19 +116,23 @@ some APIs have specs and others explicitly omit them, `skipped` when all omit
 them, and `fail` if any enforced schema fails. `skipped` lists the omitted API
 schema IDs. These exceptions never turn a validation failure into a pass.
 
+For dependencies marked `kind: mock`, Phrond always generates a separate OpenAPI
+draft from captured requests and responses, including when a spec was supplied.
+It appears in the bundle's Dependencies page and HTML dashboard. Omitted specs
+still need `schema_required: false`; inferred drafts do not enforce contracts or
+change coverage. See [inferred mock assumptions](okf-bundles.md#inferred-mock-assumptions).
+
 ## Inspect and export
 
 ```bash
 phrond report --bundle artifacts/<run-id>
-phrond export --bundle artifacts/<run-id> --format openapi --output api.yaml
 phrond export --bundle artifacts/<run-id> --format json --output coverage.json
 phrond ca > phrond-ca.pem
 ```
 
 `report` is an optional offline repair/rebuild tool for copied bundles. It
 rebuilds OKF pages and the offline dashboard from verified evidence.
-`export` uses the same report implementation for explicit OpenAPI
-or diagnostic JSON/YAML output. Normal capture already writes the bundle views.
+`export` uses the same report implementation for diagnostic JSON/YAML output. Normal capture already writes the bundle views.
 `ca` prints the public CA certificate used by that runtime configuration; it
 creates the local CA if necessary. Trust setup is described in the
 [HTTPS guide](https-trust.md).

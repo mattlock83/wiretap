@@ -215,7 +215,7 @@ func TestExplicitDependencyCaptureSessionsStayIsolated(t *testing.T) {
 
 	createSession := func(name, target string) map[string]any {
 		return postDependencyJSON(t, control.URL, "/v1/setupTest", map[string]any{
-			"name": name, "explicit_session": true, "generate_schema": true,
+			"name": name, "explicit_session": true, "schema_required": false,
 			"dependencies": []dependencyRegistration{{AssetID: "inventory", UpstreamURL: target, Schema: permissiveDependencySchema()}},
 		})
 	}
@@ -261,7 +261,7 @@ func TestDependencyUpstreamFailureRecords502AndTransportError(t *testing.T) {
 	control, _ := dependencyCaptureRuntime(t)
 	postDependencyJSON(t, control.URL, "/v1/startRun", map[string]any{})
 	session := postDependencyJSON(t, control.URL, "/v1/setupTest", map[string]any{
-		"name": "dependency unavailable", "generate_schema": true,
+		"name": "dependency unavailable", "schema_required": false,
 		"dependencies": []dependencyRegistration{{AssetID: "inventory", UpstreamURL: upstreamURL, Schema: permissiveDependencySchema()}},
 	})
 	response, err := http.Get(session["dependencies"].(map[string]any)["inventory"].(string) + "/items")
@@ -288,7 +288,7 @@ func TestDependencySchemaViolationsFailTheOwningTest(t *testing.T) {
 	control, _ := dependencyCaptureRuntime(t)
 	postDependencyJSON(t, control.URL, "/v1/startRun", map[string]any{})
 	session := postDependencyJSON(t, control.URL, "/v1/setupTest", map[string]any{
-		"name": "dependency contract drift", "generate_schema": true,
+		"name": "dependency contract drift", "schema_required": false,
 		"dependencies": []dependencyRegistration{{AssetID: "inventory", UpstreamURL: upstream.URL, Schema: permissiveDependencySchema()}},
 	})
 	response, err := http.Get(session["dependencies"].(map[string]any)["inventory"].(string) + "/items")
@@ -311,7 +311,7 @@ func TestDependencyCaptureAlwaysRequiresItsOwnReadableSchema(t *testing.T) {
 	control, _ := dependencyCaptureRuntime(t)
 	postDependencyJSON(t, control.URL, "/v1/startRun", map[string]any{})
 	payload, _ := json.Marshal(map[string]any{
-		"name": "missing dependency schema", "generate_schema": true,
+		"name": "missing dependency schema", "schema_required": false,
 		"dependencies": []dependencyRegistration{{AssetID: "inventory", UpstreamURL: "http://127.0.0.1:9090"}},
 	})
 	response, err := http.Post(control.URL+"/v1/setupTest", "application/json", bytes.NewReader(payload))

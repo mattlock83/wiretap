@@ -21,7 +21,7 @@ func TestTestLifecycleWritesRedactedBundle(t *testing.T) {
 	defer sut.Close()
 	control, _ := dependencyCaptureRuntime(t)
 	session := postDependencyJSON(t, control.URL, "/v1/setupTest", map[string]any{
-		"name": "redacted boundary", "sut_base_url": sut.URL, "generate_schema": true,
+		"name": "redacted boundary", "sut_base_url": sut.URL, "schema_required": false,
 		"redactions": []artifact.Redaction{{Field: "request.headers.authorization", Rule: "mask"}},
 	})
 	request, _ := http.NewRequest(http.MethodGet, session["sut_url"].(string)+"/items", nil)
@@ -60,15 +60,15 @@ func TestTestLifecycleWritesRedactedBundle(t *testing.T) {
 
 func TestOnlyCurrentControlRoutesAndFieldsAreAccepted(t *testing.T) {
 	control, _ := dependencyCaptureRuntime(t)
-	for _, path := range []string{"/v1/startServer", "/v1/killServer", "/v1/lifecycle/start", "/v1/lifecycle/stop", "/v1/proxy/start", "/v1/proxy/mode", "/v1/testcases/start", "/v1/testcases/finish", "/v1/testcases/status", "/v1/artifact", "/v1/redactions"} {
+	for _, path := range []string{"/v1/generateSchema", "/v1/startServer", "/v1/killServer", "/v1/lifecycle/start", "/v1/lifecycle/stop", "/v1/proxy/start", "/v1/proxy/mode", "/v1/testcases/start", "/v1/testcases/finish", "/v1/testcases/status", "/v1/artifact", "/v1/redactions"} {
 		apiStatus(t, control.URL, path, map[string]any{}, http.StatusNotFound)
 	}
+	apiStatus(t, control.URL, "/v1/setupTest", map[string]any{"name": "removed generation", "generate_schema": true}, http.StatusBadRequest)
 	for path, payload := range map[string]map[string]any{
-		"/v1/startRun":       {"target_url": "http://sut.test"},
-		"/v1/setupTest":      {"name": "old schema field", "sut_schemas": []any{}},
-		"/v1/report":         {"artifacts_dir": t.TempDir()},
-		"/v1/generateSchema": {"artifacts_dir": t.TempDir()},
-		"/v1/teardownTest":   {"session_id": "unused", "unknown": true},
+		"/v1/startRun":     {"target_url": "http://sut.test"},
+		"/v1/setupTest":    {"name": "old schema field", "sut_schemas": []any{}},
+		"/v1/report":       {"artifacts_dir": t.TempDir()},
+		"/v1/teardownTest": {"session_id": "unused", "unknown": true},
 	} {
 		apiStatus(t, control.URL, path, payload, http.StatusBadRequest)
 	}

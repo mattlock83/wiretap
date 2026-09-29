@@ -53,7 +53,7 @@ func TestParallelTestsUseExistingClientsWithSeparateRoots(t *testing.T) {
 		for i := 0; i < 4; i++ {
 			t.Run(fmt.Sprint(i), func(t *testing.T) {
 				t.Parallel()
-				session := runtime.StartTest(t, TestOptions{GenerateSchema: true, ExplicitSession: true})
+				session := runtime.StartTest(t, TestOptions{SchemaRequired: new(bool), ExplicitSession: true})
 				client := session.HTTPClient(original)
 				res, err := client.Get(session.SUTURL + "/" + t.Name())
 				if err != nil {

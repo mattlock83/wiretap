@@ -12,8 +12,7 @@ SUT, mock, and test processes. Any language can use this API directly.
 | POST | `/v1/setupTest` | Register a test attempt, trace, schemas, and redactions. |
 | POST | `/v1/teardownTest` | Drain, validate, and commit an attempt. |
 | POST | `/v1/finishRun` | Finalize the bundle and stop capture. |
-| POST | `/v1/report` | Rebuild bundle views. |
-| POST | `/v1/generateSchema` | Export an OpenAPI draft from bundle evidence. |
+| POST | `/v1/report` | Rebuild bundle views, including inferred mock OpenAPI drafts. |
 | GET | `/v1/proxy/ca` | Read the public proxy CA certificate. |
 
 ## Suite lifecycle
@@ -158,40 +157,14 @@ admission and waits for accepted exchanges, up to `drain_timeout_ms` (default
 `capture_diagnostics`, and failed status. Completion after finalization cannot
 mutate the attempt or enter another session. Await background work first.
 
-## Schema generation
+## Mock OpenAPI drafts
 
-Teams without an OpenAPI document must explicitly mark each bootstrap session:
-
-```json
-{
-  "name": "hello world happy flow",
-  "sut_base_url": "http://127.0.0.1:18090",
-  "generate_schema": true
-}
-```
-
-After the final test, `POST /v1/generateSchema` combines the captured attempts
-into a deterministic standard OpenAPI 3.1 document:
-
-```json
-{
-  "bundle_path": "artifacts/<run-id>",
-  "output_path": "artifacts/hello.generated.openapi.yaml",
-  "title": "Hello API",
-  "version": "1.0.0",
-  "force": false
-}
-```
-
-Passing tests are used for type and shape inference; failing tests are excluded,
-and captured values are never emitted as examples. Numeric and UUID path
-segments are conservatively converted to path parameters. Generated object
-schemas reject unobserved properties and require properties seen in every
-relevant capture. Existing files are not overwritten unless `force` is true.
-
-Supplying both `schemas` and `generate_schema` is rejected. Supplying neither
-is rejected unless inherited project defaults provide schemas or the SUT
-explicitly sets `schema_required: false`.
+Dependencies with `upstream_kind: mock` automatically get a separate inferred
+OpenAPI draft in the bundle, with or without a supplied schema. Without a schema,
+set `schema_required: false` explicitly. Drafts update at teardown and run
+finalization, describe observed traffic, and never replace supplied contracts or
+affect validation and coverage. The Dependencies page and HTML dashboard link
+to each draft. See [capture bundles](okf-bundles.md#inferred-mock-assumptions).
 
 ## Reports
 

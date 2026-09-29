@@ -29,7 +29,8 @@ func TestLoadRejectsMistakesAndKeepsSpecsRequired(t *testing.T) {
 		{"misspelled option", "version: 1\nsut: {schema: api.yaml}\noutputs: bad", "field outputs"},
 		{"missing variable", "version: 1\nsut: {schema: '${PHROND_TEST_MISSING_VARIABLE}'}", "is not set"},
 		{"extra document", "version: 1\nsut: {schema: api.yaml}\n---\nversion: 1", "one YAML document"},
-		{"dependency generation", "version: 1\nsut: {schema: api.yaml}\ndependencies:\n  dep: {generate_schema: true}", "only allowed for a SUT"},
+		{"SUT generation", "version: 1\nsut: {generate_schema: true}", "field generate_schema"},
+		{"dependency generation", "version: 1\nsut: {schema: api.yaml}\ndependencies:\n  dep: {generate_schema: true}", "field generate_schema"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), ".phrond.yaml")

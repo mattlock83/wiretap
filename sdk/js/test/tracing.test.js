@@ -19,7 +19,7 @@ async function fixture(t, config = {}) {
   server.listen(0, '127.0.0.1'); await once(server, 'listening');
   const url = `http://127.0.0.1:${server.address().port}`;
   t.after(() => new Promise(resolve => server.close(resolve)));
-  const runtime = await startCapture({ baseUrl: url, generateSchema: true, explicitSession: true, ...config });
+  const runtime = await startCapture({ baseUrl: url, schemaRequired: false, explicitSession: true, ...config });
   return { runtime, calls, requests, url };
 }
 const httpGet = url => new Promise((resolve, reject) => http.get(url, res => { res.resume(); res.on('end', resolve); }).on('error', reject));

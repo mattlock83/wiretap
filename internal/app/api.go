@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -14,7 +13,6 @@ import (
 	"github.com/phrond/evermock/internal/artifact"
 	"github.com/phrond/evermock/internal/bundle"
 	"github.com/phrond/evermock/internal/bundlereport"
-	"github.com/phrond/evermock/internal/coverage"
 	"github.com/phrond/evermock/internal/proxy"
 	"github.com/phrond/evermock/internal/tracecontext"
 	"go.opentelemetry.io/otel/trace"
@@ -94,7 +92,6 @@ type setupTestRequest struct {
 	SUTBaseURL      string                   `json:"sut_base_url,omitempty"`
 	Schemas         []artifact.SchemaRef     `json:"schemas,omitempty"`
 	Dependencies    []dependencyRegistration `json:"dependencies,omitempty"`
-	GenerateSchema  bool                     `json:"generate_schema,omitempty"`
 	ExplicitSession bool                     `json:"explicit_session,omitempty"`
 	TraceContext    *tracecontext.Context    `json:"trace_context,omitempty"`
 }
@@ -147,11 +144,11 @@ func (a *App) handleSetupTest(w http.ResponseWriter, r *http.Request) {
 			schemas[i].AssetID = payload.APIID
 		}
 	}
-	if err := validateSchemaSetup(schemas, payload.GenerateSchema || (!requiresSchema(payload.SchemaRequired) && len(schemas) == 0)); err != nil {
+	if err := validateSchemaSetup(schemas, !requiresSchema(payload.SchemaRequired)); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	if len(schemas) == 0 && !payload.GenerateSchema && !requiresSchema(payload.SchemaRequired) {
+	if len(schemas) == 0 && !requiresSchema(payload.SchemaRequired) {
 		schemas = []artifact.SchemaRef{omittedSchema(payload.APIID, "sut")}
 	}
 	dependencies, dependencySchemas, err := normalizeDependencies(payload.Dependencies)
@@ -210,9 +207,6 @@ func (a *App) handleSetupTest(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, schema := range dependencySchemas {
 		store.AddSchema(schema)
-	}
-	if payload.GenerateSchema {
-		store.SetSchemaGeneration(true)
 	}
 	for _, rule := range payload.Redactions {
 		store.AddRedaction(rule)
@@ -337,56 +331,6 @@ func (a *App) handleTeardownTest(w http.ResponseWriter, r *http.Request) {
 	a.writeCaptureResponse(w, artifactDoc, path, sessionID)
 }
 
-type generateSchemaRequest struct {
-	BundlePath string `json:"bundle_path,omitempty"`
-	OutputPath string `json:"output_path,omitempty"`
-	Title      string `json:"title,omitempty"`
-	Version    string `json:"version,omitempty"`
-	Force      bool   `json:"force,omitempty"`
-}
-
-func (a *App) handleGenerateSchema(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
-		return
-	}
-	var payload generateSchemaRequest
-	if err := decodeStrictJSON(r, &payload); err != nil && !errors.Is(err, io.EOF) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
-		return
-	}
-	bundlePath := strings.TrimSpace(payload.BundlePath)
-	if bundlePath == "" {
-		if current := a.currentBundle(); current != nil {
-			bundlePath = current.Path()
-		}
-	}
-	if bundlePath == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bundle_path is required when no capture run exists"})
-		return
-	}
-	outputPath := strings.TrimSpace(payload.OutputPath)
-	if outputPath == "" {
-		outputPath = filepath.Join(bundlePath, "generated.openapi.yaml")
-	}
-	report, err := coverage.Generate(r.Context(), bundlePath, payload.Title, false)
-	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
-		return
-	}
-	if err := writeGeneratedSchema(outputPath, report, coverage.GeneratedOpenAPIOptions{
-		Title: payload.Title, Version: payload.Version,
-	}, payload.Force); err != nil {
-		status := http.StatusInternalServerError
-		if errors.Is(err, os.ErrExist) {
-			status = http.StatusConflict
-		}
-		writeJSON(w, status, map[string]string{"error": err.Error()})
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"schema_path": outputPath, "artifact_count": report.ArtifactCount})
-}
-
 type runtimeReportRequest struct {
 	BundlePath string `json:"bundle_path,omitempty"`
 }
@@ -457,35 +401,6 @@ func (a *App) configureProxy(payload proxyOptions) error {
 		if err := a.setReverseTarget(target); err != nil {
 			return fmt.Errorf("invalid proxy target_url: %w", err)
 		}
-	}
-	return nil
-}
-
-func writeGeneratedSchema(path string, report *coverage.Report, options coverage.GeneratedOpenAPIOptions, force bool) error {
-	if strings.TrimSpace(path) == "" {
-		return errors.New("generated schema output path is required")
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	flags := os.O_WRONLY | os.O_CREATE
-	if force {
-		flags |= os.O_TRUNC
-	} else {
-		flags |= os.O_EXCL
-	}
-	file, err := os.OpenFile(path, flags, 0o644)
-	if err != nil {
-		if errors.Is(err, os.ErrExist) {
-			return fmt.Errorf("generated schema already exists at %s; set force to overwrite: %w", path, err)
-		}
-		return err
-	}
-	defer file.Close()
-	if err := coverage.WriteGeneratedOpenAPI(file, report, options); err != nil {
-		_ = file.Close()
-		_ = os.Remove(path)
-		return err
 	}
 	return nil
 }

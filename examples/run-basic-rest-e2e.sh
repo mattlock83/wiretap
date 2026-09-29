@@ -67,9 +67,6 @@ export PHROND_HTTP_LISTEN="127.0.0.1:${PHROND_PORT}"
 export PHROND_PROXY_LISTEN="127.0.0.1:${PROXY_PORT}"
 export PHROND_OUTPUT_DIR="$ARTIFACT_DIR"
 export PHROND_BASE_URL="http://127.0.0.1:${PHROND_PORT}"
-if [[ -n "${PHROND_GENERATE_SCHEMA:-}" ]]; then
-  export PHROND_GENERATED_SCHEMA_PATH="${PHROND_GENERATED_SCHEMA_PATH:-${ARTIFACT_DIR}/basic-rest.generated.openapi.yaml}"
-fi
 # Keep generated example artifacts intentionally small.
 export PHROND_MAX_CAPTURE_BYTES="${PHROND_MAX_CAPTURE_BYTES:-64}"
 
@@ -144,16 +141,10 @@ if [[ -z "${BUNDLE_DIR}" || ! -f "${BUNDLE_DIR}/evidence/run.json" || ! -f "${BU
 fi
 # Views must already exist from HTTP finalization; no report command is needed.
 node -e 'const fs = require("node:fs"); const run = JSON.parse(fs.readFileSync(process.argv[1])); if (run.run_state !== "complete") throw new Error("test hooks did not finalize capture")' "${BUNDLE_DIR}/evidence/run.json"
-if [[ -n "${PHROND_GENERATE_SCHEMA:-}" ]]; then
-  "${BUILD_DIR}/phrond-runtime" export --bundle "${BUNDLE_DIR}" --format openapi --output "${PHROND_GENERATED_SCHEMA_PATH}"
-fi
 
 popd >/dev/null
 
 echo "OKF bundle: ${BUNDLE_DIR}/index.md"
 echo "HTML dashboard: ${BUNDLE_DIR}/viewer/index.html"
-if [[ -n "${PHROND_GENERATE_SCHEMA:-}" ]]; then
-  echo "Generated OpenAPI: ${PHROND_GENERATED_SCHEMA_PATH}"
-fi
 
 exit "${TEST_STATUS}"

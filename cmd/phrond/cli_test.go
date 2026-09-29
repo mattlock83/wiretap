@@ -21,10 +21,12 @@ func TestCLIHelp(t *testing.T) {
 	}
 }
 
-func TestCLIRejectsWorkflowExport(t *testing.T) {
+func TestCLIRejectsRemovedExportFormats(t *testing.T) {
 	for _, command := range []string{"report", "export"} {
-		if code := execute(context.Background(), []string{command, "--bundle", t.TempDir(), "--format", "workflow"}); code != 2 {
-			t.Fatalf("%s accepted removed export format: exit %d", command, code)
+		for _, format := range []string{"workflow", "openapi"} {
+			if code := execute(context.Background(), []string{command, "--bundle", t.TempDir(), "--format", format}); code != 2 {
+				t.Fatalf("%s accepted removed %s export format: exit %d", command, format, code)
+			}
 		}
 	}
 }

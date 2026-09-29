@@ -78,15 +78,6 @@ type testCaseState struct {
 	flows              []artifact.Flow
 	schemas            []artifact.SchemaRef
 	redactions         []artifact.Redaction
-	generateSchema     bool
-}
-
-func (s *TestCaseStore) SetSchemaGeneration(enabled bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.active != nil {
-		s.active.generateSchema = enabled
-	}
 }
 
 func NewTestCaseStore(sink CaptureSink, maxBodyBytes int64) *TestCaseStore {
@@ -185,10 +176,6 @@ func (s *TestCaseStore) FinishCase(status string, env *artifact.Environment) (*a
 	if state.root.IsValid() {
 		art.TestCase.TraceID = state.root.TraceID().String()
 		art.TestCase.RootSpanID = state.root.SpanID().String()
-	}
-
-	if state.generateSchema {
-		art.Meta["schema_generation"] = true
 	}
 
 	applySchemaValidation(art)

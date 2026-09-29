@@ -8,7 +8,7 @@ const beforeCounts = {};
 beforeEach(t => { beforeCounts[t.name] = (beforeCounts[t.name] || 0) + 1; });
 before(async () => {
   server = await require('./outcomes-server.cjs')();
-  runtime = await startCapture({ baseUrl: server.url, generateSchema: true, tracerProvider: provider, manageRuntime: false });
+  runtime = await startCapture({ baseUrl: server.url, schemaRequired: false, tracerProvider: provider, manageRuntime: false });
 });
 const wrapped = bindTest(() => runtime, test);
 wrapped('pass', () => {});

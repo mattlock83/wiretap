@@ -25,7 +25,7 @@ func reportCommand(args []string) error {
 	flags.StringVar(&bundlePath, "bundle", "", "capture bundle directory")
 	flags.StringVar(&sutName, "sut-name", "", "SUT name to display in the report")
 	flags.StringVar(&outputPath, "output", "", "output file path (default: stdout)")
-	flags.StringVar(&format, "format", "okf", "output format: okf, openapi, json, yaml")
+	flags.StringVar(&format, "format", "okf", "output format: okf, json, yaml")
 	flags.BoolVar(&includeArtifacts, "include-artifacts", false, "include artifact file paths in the report")
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -38,7 +38,7 @@ func reportCommand(args []string) error {
 	}
 	format = strings.ToLower(strings.TrimSpace(format))
 	switch format {
-	case "okf", "openapi", "json", "yaml":
+	case "okf", "json", "yaml":
 	default:
 		return fmt.Errorf("%w: unsupported format: %s", errUsage, format)
 	}

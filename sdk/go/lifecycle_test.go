@@ -104,7 +104,7 @@ func runOutcomeFixture(t *testing.T) {
 	runtime := Runtime{BaseURL: server.URL, TracerProvider: provider}
 	for _, name := range []string{"fatal", "cleanup", "skip", "validation"} {
 		t.Run(name, func(t *testing.T) {
-			runtime.StartTest(t, TestOptions{GenerateSchema: true})
+			runtime.StartTest(t, TestOptions{SchemaRequired: new(bool)})
 			switch name {
 			case "fatal":
 				t.Fatal("original failure")

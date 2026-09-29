@@ -37,9 +37,8 @@ Phrond returns 409 while old untraced work could contaminate it.
 ## `setupTest` says an OpenAPI schema is required
 
 Attach the service's schema through `schemas`. If the service does not have one,
-configure `generate_schema: true` for the SUT, or explicitly set
-`schema_required: false` for the particular API missing a spec. Generation is intentionally
-explicit and cannot be combined with a supplied schema.
+explicitly set `schema_required: false` for the particular API missing a spec.
+Supplied specs are always validated, including on APIs with this setting.
 
 ## An attempt contains HTTP 502
 

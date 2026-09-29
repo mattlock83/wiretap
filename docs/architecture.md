@@ -17,7 +17,7 @@ Phrond owns capture, correlation, schema validation, and the resulting bundle.
 | `internal/redact` | Apply configured redaction before persistence. |
 | `internal/artifact` | In-memory capture model shared by recording, storage, and reporting. |
 | `internal/bundle` | Authoritative run inventory, immutable attempt JSON, frozen schemas, payload attachments, and integrity checks. |
-| `internal/coverage` | Calculate observed operation coverage and generate optional OpenAPI and diagnostic exports. |
+| `internal/coverage` | Calculate observed operation coverage and generate optional diagnostic exports. |
 | `internal/bundlereport` | Render OKF Markdown and the offline HTML dashboard from verified bundle evidence. |
 | `internal/project` | Discover and resolve `.phrond.yaml` once for the runtime. |
 | `internal/core` | Runtime configuration and component lifecycle. |
@@ -81,15 +81,17 @@ rebuilding views. Copy the complete bundle to preserve that evidence graph.
 
 OKF pages are browsable documentation for humans and agents. The HTML dashboard
 is a static, offline view over the same evidence and coverage calculation.
-Neither is an input to coverage or exports, and both can be rebuilt without the
+The same package generates one observed OpenAPI draft per mock dependency,
+linked from both views. These drafts are derived from verified captures, never
+from supplied contracts or previous drafts, and are not enforcement inputs.
+None of these views is an input to coverage or exports; all can be rebuilt without the
 original workspace or running application. There is one HTML renderer, owned by
 `internal/bundlereport`.
 
-OpenAPI schemas are required by default. Explicit SUT schema generation lets a
-team draft a contract from passing tests. Each API may explicitly permit an
+OpenAPI schemas are required by default. Each API may explicitly permit an
 absent spec with `schema_required: false`; omission is persisted and displayed
 as skipped validation with unknown coverage. Supplied specs always validate.
-Generated contracts need review before adoption. Reports and exports read only verified bundle evidence.
+Reports and exports read only verified bundle evidence.
 
 The maintained format contracts are [bundle evidence](bundle-evidence.md) and
 the [OKF profile](okf-profile.md). The [bundle guide](okf-bundles.md) describes

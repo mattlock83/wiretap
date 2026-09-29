@@ -101,7 +101,7 @@ func TestOTelParallelSessionsRouteBeforeDependencySelection(t *testing.T) {
 	sessions := make([]map[string]any, 2)
 	for i, upstream := range []string{first.URL, second.URL} {
 		sessions[i] = postDependencyJSON(t, control.URL, "/v1/setupTest", map[string]any{
-			"name": fmt.Sprintf("attempt-%d", i), "generate_schema": true, "explicit_session": true, "sut_base_url": sut.URL,
+			"name": fmt.Sprintf("attempt-%d", i), "schema_required": false, "explicit_session": true, "sut_base_url": sut.URL,
 			"trace_context": traceRegistration(i + 1), "dependencies": []dependencyRegistration{{AssetID: "inventory", UpstreamURL: upstream, Schema: permissiveDependencySchema()}},
 		})
 		if sessions[i]["dependencies"].(map[string]any)["inventory"] != dependencyURL {
@@ -149,8 +149,8 @@ func TestOTelParallelSessionsRouteBeforeDependencySelection(t *testing.T) {
 		}
 	}
 	// A finished trace cannot be registered again or fall into the next default.
-	apiStatus(t, control.URL, "/v1/setupTest", map[string]any{"name": "reuse", "generate_schema": true, "trace_context": traceRegistration(1)}, 409)
-	next := postDependencyJSON(t, control.URL, "/v1/setupTest", map[string]any{"name": "next", "generate_schema": true})
+	apiStatus(t, control.URL, "/v1/setupTest", map[string]any{"name": "reuse", "schema_required": false, "trace_context": traceRegistration(1)}, 409)
+	next := postDependencyJSON(t, control.URL, "/v1/setupTest", map[string]any{"name": "next", "schema_required": false})
 	requestStatus(t, proxyURL, traceRegistration(1)["traceparent"], "", 409)
 	art := dependencyArtifact(t, postDependencyJSON(t, control.URL, "/v1/teardownTest", map[string]any{"session_id": next["session_id"]}))
 	if len(art.Traffic) != 0 {
@@ -166,10 +166,10 @@ func TestOTelParallelSessionsRouteBeforeDependencySelection(t *testing.T) {
 func TestTraceRegistrationValidationAndImplicitIsolation(t *testing.T) {
 	control, _ := dependencyCaptureRuntime(t)
 	for _, parent := range []string{"bad", "00-00000000000000000000000000000000-1111111111111111-01", "00-11111111111111111111111111111111-0000000000000000-01"} {
-		apiStatus(t, control.URL, "/v1/setupTest", map[string]any{"name": "invalid", "generate_schema": true, "trace_context": map[string]string{"traceparent": parent}}, 400)
+		apiStatus(t, control.URL, "/v1/setupTest", map[string]any{"name": "invalid", "schema_required": false, "trace_context": map[string]string{"traceparent": parent}}, 400)
 	}
-	session := postDependencyJSON(t, control.URL, "/v1/setupTest", map[string]any{"name": "new", "generate_schema": true})
-	apiStatus(t, control.URL, "/v1/setupTest", map[string]any{"name": "overlap", "generate_schema": true}, 409)
+	session := postDependencyJSON(t, control.URL, "/v1/setupTest", map[string]any{"name": "new", "schema_required": false})
+	apiStatus(t, control.URL, "/v1/setupTest", map[string]any{"name": "overlap", "schema_required": false}, 409)
 	postDependencyJSON(t, control.URL, "/v1/teardownTest", map[string]any{"session_id": session["session_id"]})
 
 }
@@ -181,7 +181,7 @@ func TestCaptureDrainAndTimeoutDoNotReassignInFlightTraffic(t *testing.T) {
 			sut := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { close(entered); <-release; io.WriteString(w, "done") }))
 			defer sut.Close()
 			control, _ := dependencyCaptureRuntime(t)
-			session := postDependencyJSON(t, control.URL, "/v1/setupTest", map[string]any{"name": "slow", "sut_base_url": sut.URL, "generate_schema": true, "trace_context": traceRegistration(5)})
+			session := postDependencyJSON(t, control.URL, "/v1/setupTest", map[string]any{"name": "slow", "sut_base_url": sut.URL, "schema_required": false, "trace_context": traceRegistration(5)})
 			go func() {
 				defer close(completed)
 				res, err := http.Get(session["sut_url"].(string))
@@ -206,10 +206,10 @@ func TestCaptureDrainAndTimeoutDoNotReassignInFlightTraffic(t *testing.T) {
 				if !art.CaptureIncomplete || art.TestCase.Status != "fail" {
 					t.Fatal("timeout must produce incomplete failed artifact")
 				}
-				apiStatus(t, control.URL, "/v1/setupTest", map[string]any{"name": "next", "generate_schema": true}, http.StatusConflict)
+				apiStatus(t, control.URL, "/v1/setupTest", map[string]any{"name": "next", "schema_required": false}, http.StatusConflict)
 				close(release)
 				<-completed
-				next := postDependencyJSON(t, control.URL, "/v1/setupTest", map[string]any{"name": "next", "generate_schema": true})
+				next := postDependencyJSON(t, control.URL, "/v1/setupTest", map[string]any{"name": "next", "schema_required": false})
 				art = dependencyArtifact(t, postDependencyJSON(t, control.URL, "/v1/teardownTest", map[string]any{"session_id": next["session_id"]}))
 				if len(art.Traffic) != 0 {
 					t.Fatal("completion recorded into next session")
@@ -277,7 +277,7 @@ func TestSerialUninstrumentedDependencyRemainsUntraced(t *testing.T) {
 	}))
 	defer sut.Close()
 	control, _ := dependencyCaptureRuntime(t)
-	session := postDependencyJSON(t, control.URL, "/v1/setupTest", map[string]any{"name": "serial", "sut_base_url": sut.URL, "generate_schema": true, "trace_context": traceRegistration(8), "dependencies": []dependencyRegistration{{AssetID: "inventory", UpstreamURL: mock.URL, Schema: permissiveDependencySchema()}}})
+	session := postDependencyJSON(t, control.URL, "/v1/setupTest", map[string]any{"name": "serial", "sut_base_url": sut.URL, "schema_required": false, "trace_context": traceRegistration(8), "dependencies": []dependencyRegistration{{AssetID: "inventory", UpstreamURL: mock.URL, Schema: permissiveDependencySchema()}}})
 	dependencyURL = session["dependencies"].(map[string]any)["inventory"].(string)
 	requestStatus(t, session["sut_url"].(string), "invalid", "", 200)
 	art := dependencyArtifact(t, postDependencyJSON(t, control.URL, "/v1/teardownTest", map[string]any{"session_id": session["session_id"]}))

@@ -97,9 +97,11 @@ the [SDK guide](sdk/js/README.md) for these choices and shared-worker ownership.
 Shared-SUT parallel tests require inbound-to-outbound W3C propagation; otherwise
 serialize or isolate workers. No Phrond-specific propagation code is needed in the SUT.
 
-Specs are required by default. Explicit SUT schema generation can draft an
-OpenAPI contract from passing tests. An individual API may opt out with
+Specs are required by default. An individual API may opt out with
 `schema_required: false`, making skipped validation and unknown coverage visible.
+Each dependency marked as a mock also gets an inferred OpenAPI draft in the
+bundle, whether or not a spec was supplied. It describes observed mock assumptions;
+supplied specs still govern validation.
 See [configuration and runtime](docs/configuration.md) and the
 [existing-tests guide](docs/getting-started-existing-tests.md).
 
@@ -123,7 +125,7 @@ OKF pages and offline HTML dashboard are rebuildable views:
 
 ```bash
 phrond report --bundle ./artifacts/<run-id>
-phrond export --bundle ./artifacts/<run-id> --format openapi --output api.yaml
+phrond export --bundle ./artifacts/<run-id> --format json --output coverage.json
 ```
 
 Diagnostic JSON/YAML exports are also available. Retained bodies

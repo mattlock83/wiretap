@@ -23,7 +23,6 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("/v1/startRun", a.handleStartRun)
 	mux.HandleFunc("/v1/setupTest", a.handleSetupTest)
 	mux.HandleFunc("/v1/teardownTest", a.handleTeardownTest)
-	mux.HandleFunc("/v1/generateSchema", a.handleGenerateSchema)
 	mux.HandleFunc("/v1/report", a.handleRuntimeReport)
 	mux.HandleFunc("/v1/finishRun", a.handleFinishRun)
 	mux.HandleFunc("/v1/proxy/ca", a.handleProxyCA)
