@@ -1,7 +1,7 @@
 # JavaScript test integration
 
 The SDK is a library called from your existing test framework's lifecycle.
-It controls a separately running Phrond service over HTTP and creates standard
+It controls a separately running Wiretap service over HTTP and creates standard
 trace contexts for capture. It does not discover, schedule, or launch tests.
 TypeScript declarations are included. See [configuration](../../docs/configuration.md).
 
@@ -12,7 +12,7 @@ For a simple Node suite, retain the standard test function and hooks:
 ```js
 const { test, before, after } = require("node:test");
 const assert = require("node:assert/strict");
-const { startCapture } = require("@phrond/sdk");
+const { startCapture } = require("@wiretap/sdk");
 let capture;
 before(async () => { capture = await startCapture(); });
 after(async () => { if (capture) await capture.finishRun(); });
@@ -23,15 +23,15 @@ test("gets an order", () => capture.runTest("gets an order", async session => {
 }));
 ```
 
-Start `phrond` separately, then run the existing test command with tracing loaded
+Start `wiretap` separately, then run the existing test command with tracing loaded
 before client modules:
 
 ```bash
-node --require @phrond/sdk/tracing --test test/orders.test.js
+node --require @wiretap/sdk/tracing --test test/orders.test.js
 ```
 
 Retain your existing HTTP client, serialization, response parsing, status handling,
-and timeouts. Point it at the session's `sutUrl`. Phrond instruments Node HTTP/HTTPS
+and timeouts. Point it at the session's `sutUrl`. Wiretap instruments Node HTTP/HTTPS
 and native fetch. Custom transports need appropriate standard OTel instrumentation.
 There is no SDK request/response client.
 
@@ -72,8 +72,8 @@ required by the core library. Existing hooks retain their ordering.
 
 ## Optional Jest adapter and concurrency
 
-Use `createJestSuite` from `@phrond/sdk/jest` with
-`testEnvironment: "@phrond/sdk/jest-environment"`. The Jest 30 adapter supports
+Use `createJestSuite` from `@wiretap/sdk/jest` with
+`testEnvironment: "@wiretap/sdk/jest-environment"`. The Jest 30 adapter supports
 async callbacks, `.concurrent`, `.each`, `.only`, `.skip`, and retries.
 Ordinary tests default to serial capture. Use `--runInBand` for an uninstrumented
 shared SUT. Concurrent tests use explicit sessions; set `explicitSession: true`
@@ -86,9 +86,9 @@ outside that trace; put captured setup/cleanup within the callback. See
 
 ## Configuration and ownership
 
-Start the binary with `phrond [--config path]` using the existing harness. The
-SDK connects through HTTP at `PHROND_BASE_URL` or `http://127.0.0.1:18000`.
-It never invokes the CLI or launches the test process. `.phrond.yaml` supplies
+Start the binary with `wiretap [--config path]` using the existing harness. The
+SDK connects through HTTP at `WIRETAP_BASE_URL` or `http://127.0.0.1:18000`.
+It never invokes the CLI or launches the test process. `.wiretap.yaml` supplies
 shared defaults; SDK options can override them.
 
 A single suite can call `startCapture` in suite setup and `finishRun` in suite
@@ -104,7 +104,7 @@ the HTTP control process. Your harness owns that process and the SUT/mocks.
 No environment flag changes run ownership implicitly.
 
 SDK configuration can override project defaults, or supply the full setup when
-there is no `.phrond.yaml`:
+there is no `.wiretap.yaml`:
 
 ```js
 const capture = await startCapture({

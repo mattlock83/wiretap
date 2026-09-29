@@ -21,7 +21,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Refresh regenerates only Phrond-owned paths. Evidence and exports remain
+// Refresh regenerates only Wiretap-owned paths. Evidence and exports remain
 // usable if this operation fails or all Markdown files are removed.
 func Refresh(root string) (*coverage.Report, error) {
 	return render(root, false)
@@ -59,19 +59,19 @@ func render(root string, force bool) (*coverage.Report, error) {
 	generatedAt := run.UpdatedAt.Format("2006-01-02T15:04:05Z07:00")
 	base := map[string]any{"profile_version": "1.0", "run_id": run.RunID, "snapshot_revision": run.Revision}
 	write := func(rel, kind, title, description, body string, extra map[string]any) error {
-		phrond := map[string]any{}
+		wiretap := map[string]any{}
 		for k, v := range base {
-			phrond[k] = v
+			wiretap[k] = v
 		}
-		phrond["kind"] = kind
+		wiretap["kind"] = kind
 		for k, v := range extra {
-			phrond[k] = v
+			wiretap[k] = v
 		}
 		path := filepath.Join(root, filepath.FromSlash(rel))
 		if !force && unchangedPage(path, kind, title, description, extra, body) {
 			return nil
 		}
-		front := map[string]any{"type": title, "title": title, "description": description, "generated": map[string]string{"by": "phrond/1.0", "at": generatedAt}, "phrond": phrond}
+		front := map[string]any{"type": title, "title": title, "description": description, "generated": map[string]string{"by": "wiretap/1.0", "at": generatedAt}, "wiretap": wiretap}
 		if source, ok := extra["evidence"].(string); ok {
 			relative, err := filepath.Rel(filepath.Dir(path), filepath.Join(root, filepath.FromSlash(source)))
 			if err != nil {
@@ -102,7 +102,7 @@ func render(root string, force bool) (*coverage.Report, error) {
 		}
 		return writePage(path, []byte("---\n"+string(data)+"---\n\n"+body))
 	}
-	index := "---\nokf_version: \"0.2\"\n---\n\n# Phrond capture\n\n" +
+	index := "---\nokf_version: \"0.2\"\n---\n\n# Wiretap capture\n\n" +
 		"- [Interactive report](viewer/index.html)\n- [Run](run.md)\n- [Coverage](coverage.md)\n- [Provided APIs](apis/index.md)\n- [Dependencies](dependencies/index.md)\n- [Tests](tests/index.md)\n"
 	if err := writePage(filepath.Join(root, "index.md"), []byte(index)); err != nil {
 		return nil, err
@@ -369,12 +369,12 @@ func unchangedPage(path, kind, title, description string, extra map[string]any, 
 	if front["type"] != title || front["title"] != title || front["description"] != description {
 		return false
 	}
-	phrond, ok := front["phrond"].(map[string]any)
-	if !ok || phrond["kind"] != kind || phrond["profile_version"] != "1.0" {
+	wiretap, ok := front["wiretap"].(map[string]any)
+	if !ok || wiretap["kind"] != kind || wiretap["profile_version"] != "1.0" {
 		return false
 	}
 	for key, value := range extra {
-		left, err1 := json.Marshal(phrond[key])
+		left, err1 := json.Marshal(wiretap[key])
 		right, err2 := json.Marshal(value)
 		if err1 != nil || err2 != nil || !bytes.Equal(left, right) {
 			return false
@@ -396,8 +396,8 @@ func currentAttemptPage(path, runID, attemptID, evidencePath string) bool {
 	if yaml.Unmarshal(parts[1], &front) != nil {
 		return false
 	}
-	phrond, ok := front["phrond"].(map[string]any)
-	return ok && phrond["profile_version"] == "1.0" && phrond["kind"] == "attempt" && phrond["run_id"] == runID && phrond["attempt_id"] == attemptID && phrond["evidence"] == evidencePath
+	wiretap, ok := front["wiretap"].(map[string]any)
+	return ok && wiretap["profile_version"] == "1.0" && wiretap["kind"] == "attempt" && wiretap["run_id"] == runID && wiretap["attempt_id"] == attemptID && wiretap["evidence"] == evidencePath
 }
 
 func shortHash(s string) string { sum := sha256.Sum256([]byte(s)); return hex.EncodeToString(sum[:10]) }
@@ -449,7 +449,7 @@ func writePage(path string, data []byte) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	f, err := os.CreateTemp(filepath.Dir(path), ".phrond-view-*")
+	f, err := os.CreateTemp(filepath.Dir(path), ".wiretap-view-*")
 	if err != nil {
 		return err
 	}

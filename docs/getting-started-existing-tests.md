@@ -1,15 +1,15 @@
 # Capture existing tests and mocks
 
 Keep the application, test runner, HTTP client, assertions, and mock server you
-already use. Phrond captures the HTTP traffic routed through its proxy:
+already use. Wiretap captures the HTTP traffic routed through its proxy:
 
 ```text
-tests → Phrond → SUT → Phrond → existing mock or dependency
+tests → Wiretap → SUT → Wiretap → existing mock or dependency
 ```
 
 ## Configure the boundaries
 
-Put shared settings in `.phrond.yaml` at the project root:
+Put shared settings in `.wiretap.yaml` at the project root:
 
 ```yaml
 version: 1
@@ -25,11 +25,11 @@ dependencies:
     schema: schemas/inventory.openapi.yaml
 ```
 
-Use the existing harness to start Phrond, the SUT, and the mock.
-Start the runtime with `phrond --config .phrond.yaml`. Configure the SUT's inventory
-base URL to `http://127.0.0.1:18080/__phrond/dep/inventory`. Phrond forwards this
+Use the existing harness to start Wiretap, the SUT, and the mock.
+Start the runtime with `wiretap --config .wiretap.yaml`. Configure the SUT's inventory
+base URL to `http://127.0.0.1:18080/__wiretap/dep/inventory`. Wiretap forwards this
 route to `http://127.0.0.1:9090`. Your mock tooling still owns stubs and verification.
-Schema paths resolve relative to `.phrond.yaml`; environment substitution and
+Schema paths resolve relative to `.wiretap.yaml`; environment substitution and
 CI overrides are covered in [configuration and runtime](configuration.md).
 
 ## Connect test lifecycle
@@ -40,7 +40,7 @@ native setup/cleanup hooks and keep its existing `test` function:
 ```js
 const { test, before, after } = require("node:test");
 const assert = require("node:assert/strict");
-const { startCapture } = require("@phrond/sdk");
+const { startCapture } = require("@wiretap/sdk");
 let capture;
 before(async () => { capture = await startCapture(); });
 after(async () => { if (capture) await capture.finishRun(); });
@@ -61,7 +61,7 @@ Keep your existing HTTP client if you have one, pointing its base URL at the
 session's `sutUrl`. Run tests normally; load tracing before client modules:
 
 ```bash
-node --require @phrond/sdk/tracing --test test/orders.test.js
+node --require @wiretap/sdk/tracing --test test/orders.test.js
 ```
 
 `runTest` observes the supplied callback's outcome. It does not observe separate
@@ -73,7 +73,7 @@ handling. Go's `StartTest` uses `t.Cleanup` to observe the test's final result.
 
 The suite owns capture finalization. Shared workers finish their individual
 attempts; one global suite hook finalizes the run after all workers finish.
-The SDK only calls the running Phrond service over HTTP. See
+The SDK only calls the running Wiretap service over HTTP. See
 [JavaScript](../sdk/js/README.md), [Go](../sdk/go/README.md), and
 [Jest/tracing](otel-adoption.md) for integration details.
 
@@ -81,10 +81,10 @@ The SDK only calls the running Phrond service over HTTP. See
 
 A shared SUT must propagate W3C `traceparent` through its server and outbound
 clients for parallel test correlation. The mock does not need instrumentation.
-Without SUT propagation, run tests sequentially or use separate SUT/Phrond
+Without SUT propagation, run tests sequentially or use separate SUT/Wiretap
 runtimes per worker. Await all captured requests and dependency work before the
 test finishes. Several overlapping inbound requests can leave the downstream
-parent ambiguous even when the owning test is known; Phrond records that uncertainty.
+parent ambiguous even when the owning test is known; Wiretap records that uncertainty.
 
 ## Supply specs
 

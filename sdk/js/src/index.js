@@ -80,7 +80,7 @@ function normalizeDependencies(value) {
 
 class CoreClient {
   constructor(config = {}) {
-    this.baseUrl = config.baseUrl || process.env.PHROND_BASE_URL || DEFAULT_BASE_URL;
+    this.baseUrl = config.baseUrl || process.env.WIRETAP_BASE_URL || DEFAULT_BASE_URL;
     this.timeoutMs = config.timeoutMs || 0;
   }
 
@@ -204,7 +204,7 @@ class Runtime {
     const proxyBase = this.sutUrl;
     if (!proxyBase) throw new Error("proxy listen address is not available");
     const base = proxyBase.startsWith("http") ? proxyBase : `http://${proxyBase}`;
-    return `${base.replace(/\/$/, "")}/__phrond/dep/${encodeURIComponent(selected)}`;
+    return `${base.replace(/\/$/, "")}/__wiretap/dep/${encodeURIComponent(selected)}`;
   }
 
   async setupTest(options = {}) {
@@ -334,12 +334,12 @@ async function startCapture(config = {}) {
 function bindTest(runtimeOrGetter, testFn, defaults = {}) {
   const resolveRuntime = typeof runtimeOrGetter === "function" ? runtimeOrGetter : () => runtimeOrGetter;
   if (typeof testFn !== "function") throw new Error("bindTest requires a test function");
-  return function phrondTest(name, optionsOrFn, maybeFn) {
+  return function wiretapTest(name, optionsOrFn, maybeFn) {
     const fn = typeof optionsOrFn === "function" ? optionsOrFn : maybeFn;
     const testOptions = typeof optionsOrFn === "function" ? undefined : optionsOrFn;
     const run = async (t) => {
       const runtime = resolveRuntime();
-      if (!runtime) throw new Error("bindTest could not resolve a Phrond runtime");
+      if (!runtime) throw new Error("bindTest could not resolve a Wiretap runtime");
       if (typeof t?.test === "function" && typeof t?.after === "function") {
         return require("./node-test").runNodeTest(runtime, t, name, fn, defaults);
       }
@@ -375,7 +375,7 @@ function createNodeTestSuite(config = {}) {
       runtime = null;
       return active.finishRun();
     },
-    get runtime() { if (!runtime) throw new Error("Phrond capture runtime is not started yet"); return runtime; },
+    get runtime() { if (!runtime) throw new Error("Wiretap capture runtime is not started yet"); return runtime; },
     get sutUrl() { return this.runtime.sutUrl; },
     dependencyUrl(assetId) { return this.runtime.dependencyUrl(assetId); },
     report(options) { return this.runtime.report(options); }

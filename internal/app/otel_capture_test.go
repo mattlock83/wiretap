@@ -44,7 +44,7 @@ func requestStatus(t *testing.T, target, parent, session string, want int) {
 		req.Header.Set("traceparent", parent)
 	}
 	if session != "" {
-		req.Header.Set("X-Phrond-Session-Id", session)
+		req.Header.Set("X-Wiretap-Session-Id", session)
 	}
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -67,7 +67,7 @@ func TestOTelParallelSessionsRouteBeforeDependencySelection(t *testing.T) {
 	observed := map[string]int{}
 	mock := func(label string) *httptest.Server {
 		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.Header.Get("X-Phrond-Session-Id") != "" {
+			if r.Header.Get("X-Wiretap-Session-Id") != "" {
 				t.Error("session selection header reached mock")
 			}
 			sc := tracecontext.Extract(r.Header)
@@ -97,7 +97,7 @@ func TestOTelParallelSessionsRouteBeforeDependencySelection(t *testing.T) {
 	control, _ := dependencyCaptureRuntime(t)
 	info := postDependencyJSON(t, control.URL, "/v1/startRun", map[string]any{"proxy": map[string]string{"target_url": sut.URL}})
 	proxyURL := info["sut_url"].(string)
-	dependencyURL = proxyURL + "/__phrond/dep/inventory"
+	dependencyURL = proxyURL + "/__wiretap/dep/inventory"
 	sessions := make([]map[string]any, 2)
 	for i, upstream := range []string{first.URL, second.URL} {
 		sessions[i] = postDependencyJSON(t, control.URL, "/v1/setupTest", map[string]any{

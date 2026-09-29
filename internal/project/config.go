@@ -42,7 +42,7 @@ type Config struct {
 	Path         string         `yaml:"-"`
 }
 
-// Load discovers .phrond.yaml in the working directory or its ancestors.
+// Load discovers .wiretap.yaml in the working directory or its ancestors.
 // An explicitly requested path must exist; no discovered file is also valid.
 func Load(path string) (*Config, error) {
 	if path == "" {
@@ -51,7 +51,7 @@ func Load(path string) (*Config, error) {
 			return nil, err
 		}
 		for {
-			candidate := filepath.Join(dir, ".phrond.yaml")
+			candidate := filepath.Join(dir, ".wiretap.yaml")
 			if _, err := os.Stat(candidate); err == nil {
 				path = candidate
 				break

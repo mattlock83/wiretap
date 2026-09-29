@@ -1,4 +1,4 @@
-# Phrond bundle evidence 1.0
+# Wiretap bundle evidence 1.0
 
 `evidence/run.json` and `evidence/attempts/<attempt-id>.json` are the capture
 source of truth. This contract is separate from the generated OKF profile.

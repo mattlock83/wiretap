@@ -56,7 +56,7 @@ func (w *Writer) freezeSchema(ref artifact.SchemaRef) (artifact.SchemaRef, error
 			return ref, errors.New("schema URL credentials are not supported")
 		}
 	case "inline":
-		rootURL = &url.URL{Scheme: "phrond-inline", Host: digest([]byte(ref.Source.Content))}
+		rootURL = &url.URL{Scheme: "wiretap-inline", Host: digest([]byte(ref.Source.Content))}
 	default:
 		return ref, fmt.Errorf("unsupported schema source %q", ref.Source.Type)
 	}

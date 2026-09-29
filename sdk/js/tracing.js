@@ -1,2 +1,2 @@
-// Load before application/client modules, e.g. node --require @phrond/sdk/tracing.
+// Load before application/client modules, e.g. node --require @wiretap/sdk/tracing.
 require('./src/tracing').initializeTracing();

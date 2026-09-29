@@ -161,10 +161,10 @@ func observedMockAPI(assetID string, run *bundle.Run, captures []*artifact.Artif
 		description += " No complete HTTP exchanges have been captured for this mock."
 	}
 	return map[string]any{
-		"openapi":  "3.1.0",
-		"info":     map[string]any{"title": assetID + " — inferred mock assumptions", "version": "0.1.0", "description": description},
-		"paths":    paths,
-		"x-phrond": map[string]any{"kind": "inferred_mock_assumptions", "api_id": assetID, "run_id": run.RunID, "snapshot_revision": run.Revision, "inventory": "../../evidence/run.json", "used_for_validation": false, "observed_exchanges": draft.Exchanges, "excluded_exchanges": len(evidence) - draft.Exchanges, "evidence": evidence},
+		"openapi":   "3.1.0",
+		"info":      map[string]any{"title": assetID + " — inferred mock assumptions", "version": "0.1.0", "description": description},
+		"paths":     paths,
+		"x-wiretap": map[string]any{"kind": "inferred_mock_assumptions", "api_id": assetID, "run_id": run.RunID, "snapshot_revision": run.Revision, "inventory": "../../evidence/run.json", "used_for_validation": false, "observed_exchanges": draft.Exchanges, "excluded_exchanges": len(evidence) - draft.Exchanges, "evidence": evidence},
 	}, draft
 }
 
@@ -179,7 +179,7 @@ func sortMockEvidence(refs []mockEvidence) {
 
 func (o *mockOperation) document() map[string]any {
 	sortMockEvidence(o.evidence)
-	doc := map[string]any{"responses": map[string]any{}, "x-phrond-evidence": o.evidence}
+	doc := map[string]any{"responses": map[string]any{}, "x-wiretap-evidence": o.evidence}
 	parameters := []map[string]any{}
 	for _, name := range o.pathParams {
 		parameters = append(parameters, map[string]any{"name": name, "in": "path", "required": true, "schema": map[string]any{"type": "string"}})

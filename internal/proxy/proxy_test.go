@@ -142,7 +142,7 @@ func TestDependencyGatewayPreservesPathQueryTraceTrailersAndBoundedBodies(t *tes
 	recorder := &recordingRecorder{exchanges: make(chan HTTPExchange, 1)}
 	server := NewServer(Config{Mode: ModePassthrough, Recorder: recorder, MaxBodyBytes: 8})
 	server.SetDependencyResolver(func(request *http.Request, sessionID string) (DependencyRoute, bool, error) {
-		if !strings.HasPrefix(request.URL.Path, "/__phrond/dep/inventory/") {
+		if !strings.HasPrefix(request.URL.Path, "/__wiretap/dep/inventory/") {
 			return DependencyRoute{}, false, nil
 		}
 		return DependencyRoute{
@@ -157,13 +157,13 @@ func TestDependencyGatewayPreservesPathQueryTraceTrailersAndBoundedBodies(t *tes
 	defer server.Stop(t.Context())
 
 	request, err := http.NewRequest(http.MethodPost,
-		"http://"+info.ListenAddr+"/__phrond/dep/inventory/items%2Fidentifier?expand=true",
+		"http://"+info.ListenAddr+"/__wiretap/dep/inventory/items%2Fidentifier?expand=true",
 		bytes.NewReader(requestBody),
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	request.Header.Set("X-Phrond-Session-Id", "session-one")
+	request.Header.Set("X-Wiretap-Session-Id", "session-one")
 	request.Header.Set("traceparent", "00-11111111111111111111111111111111-2222222222222222-00")
 	response, err := http.DefaultClient.Do(request)
 	if err != nil {
@@ -181,7 +181,7 @@ func TestDependencyGatewayPreservesPathQueryTraceTrailersAndBoundedBodies(t *tes
 	if forwarded.URL.EscapedPath() != "/base/items%2Fidentifier" || forwarded.URL.RawQuery != "fixed=yes&expand=true" {
 		t.Fatalf("dependency target fidelity lost: %s", forwarded.URL.String())
 	}
-	if forwarded.Header.Get("X-Phrond-Session-Id") != "" || forwarded.Header.Get("traceparent") != "00-11111111111111111111111111111111-2222222222222222-00" {
+	if forwarded.Header.Get("X-Wiretap-Session-Id") != "" || forwarded.Header.Get("traceparent") != "00-11111111111111111111111111111111-2222222222222222-00" {
 		t.Fatalf("dependency capture headers incorrect: %#v", forwarded.Header)
 	}
 	if body := <-upstreamBodies; !bytes.Equal(body, requestBody) {

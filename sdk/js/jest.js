@@ -1,9 +1,9 @@
-const { startCapture } = globalThis.__phrondSDK || require('./src');
+const { startCapture } = globalThis.__wiretapSDK || require('./src');
 
-// Jest workers share an externally owned Phrond runtime. Each callback gets
+// Jest workers share an externally owned Wiretap runtime. Each callback gets
 // its own async context, including test.concurrent and each generated case.
 function createJestSuite(config = {}, api = globalThis) {
-  if (!globalThis.__phrondSDK) throw new Error("Set Jest testEnvironment to @phrond/sdk/jest-environment so native clients share the test trace context");
+  if (!globalThis.__wiretapSDK) throw new Error("Set Jest testEnvironment to @wiretap/sdk/jest-environment so native clients share the test trace context");
   let runtime;
   let starting;
   const getRuntime = async () => {
@@ -16,11 +16,11 @@ function createJestSuite(config = {}, api = globalThis) {
       const callback = async (...args) => {
         // Capture the handle before an await: a retry may replace the function's
         // current handle while an earlier timed-out callback is still running.
-        const attempt = await callback.__phrondAttempt;
-        if (!attempt) throw new Error("Phrond Jest environment did not start this attempt");
+        const attempt = await callback.__wiretapAttempt;
+        if (!attempt) throw new Error("Wiretap Jest environment did not start this attempt");
         return attempt.run(session => fn(...args, session));
       };
-      callback.__phrondStart = async (fullName) => {
+      callback.__wiretapStart = async (fullName) => {
         const active = await getRuntime();
         return active.createTestAttempt(fullName, {
           ...(config.testDefaults || {}),
@@ -45,7 +45,7 @@ function createJestSuite(config = {}, api = globalThis) {
   api.beforeAll(getRuntime);
   return {
     test,
-    get runtime() { if (!runtime) throw new Error('Phrond capture runtime is not started yet'); return runtime; },
+    get runtime() { if (!runtime) throw new Error('Wiretap capture runtime is not started yet'); return runtime; },
     get sutUrl() { return this.runtime.sutUrl; },
     dependencyUrl(assetId) { return this.runtime.dependencyUrl(assetId); }
   };

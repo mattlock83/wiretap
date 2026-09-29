@@ -23,7 +23,7 @@ func TestProjectDefaultsAndPerAPISchemaException(t *testing.T) {
 		t.Fatal("project defaults not returned")
 	}
 	session := postDependencyJSON(t, control.URL, "/v1/setupTest", map[string]any{"name": "configured test"})
-	for _, path := range []string{"/items/123", "/__phrond/dep/inventory/items/123"} {
+	for _, path := range []string{"/items/123", "/__wiretap/dep/inventory/items/123"} {
 		res, err := http.Get(session["sut_url"].(string) + path)
 		if err != nil {
 			t.Fatal(err)

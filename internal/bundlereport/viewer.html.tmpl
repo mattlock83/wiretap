@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src 'self' data:; connect-src 'none'">
-<title>Phrond · {{.RunID}}</title>
+<title>Wiretap · {{.RunID}}</title>
 <style>
 :root{color-scheme:light;--ink:#172033;--muted:#607087;--line:#dce3ed;--paper:#fff;--wash:#f3f6fb;--teal:#087d77;--blue:#2554bd;--amber:#a7660b;--red:#b12f48}
 *{box-sizing:border-box}body{margin:0;background:var(--wash);color:var(--ink);font:15px/1.5 system-ui,-apple-system,Segoe UI,sans-serif}
@@ -22,7 +22,7 @@ a{color:var(--blue);text-underline-offset:2px}button,input{font:inherit}button{c
 <body data-run-id="{{.RunID}}" data-revision="{{.Revision}}">
 <div class="shell">
 <header class="hero">
-<div class="eyebrow">Phrond capture bundle · {{.State}}</div>
+<div class="eyebrow">Wiretap capture bundle · {{.State}}</div>
 <h1>API evidence and coverage</h1>
 <p>Run {{.RunID}} · revision {{.Revision}} · updated {{.GeneratedAt}}</p>
 <div class="hero-links">

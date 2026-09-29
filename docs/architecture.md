@@ -1,15 +1,15 @@
-# Phrond architecture
+# Wiretap architecture
 
-Phrond captures HTTP exchanges during existing tests and turns them into a
+Wiretap captures HTTP exchanges during existing tests and turns them into a
 portable record of tested API behaviour and observed dependency assumptions.
 The test harness owns the application, mocks, test execution, and assertions.
-Phrond owns capture, correlation, schema validation, and the resulting bundle.
+Wiretap owns capture, correlation, schema validation, and the resulting bundle.
 
 ## Components
 
 | Component | Responsibility |
 | --- | --- |
-| `cmd/phrond` | Host the HTTP runtime; optional offline report/export and CA utilities. |
+| `cmd/wiretap` | Host the HTTP runtime; optional offline report/export and CA utilities. |
 | `sdk/js`, `sdk/go` | Test lifecycle helpers, standard trace context, and capture locations. JavaScript includes Node and Jest adapters. |
 | `internal/app` | Run and test sessions, dependency routes, draining, and schema validation. |
 | `internal/proxy`, `internal/capture` | Forward traffic and retain bounded request/response evidence. |
@@ -19,7 +19,7 @@ Phrond owns capture, correlation, schema validation, and the resulting bundle.
 | `internal/bundle` | Authoritative run inventory, immutable attempt JSON, frozen schemas, payload attachments, and integrity checks. |
 | `internal/coverage` | Calculate observed operation coverage and generate optional diagnostic exports. |
 | `internal/bundlereport` | Render OKF Markdown and the offline HTML dashboard from verified bundle evidence. |
-| `internal/project` | Discover and resolve `.phrond.yaml` once for the runtime. |
+| `internal/project` | Discover and resolve `.wiretap.yaml` once for the runtime. |
 | `internal/core` | Runtime configuration and component lifecycle. |
 
 Run start/finalization is controlled through the HTTP API. SDKs are libraries
@@ -34,16 +34,16 @@ convenient without requiring a special HTTP client.
 
 ## A run
 
-1. The existing harness starts Phrond, the SUT, and mocks or dependencies.
+1. The existing harness starts Wiretap, the SUT, and mocks or dependencies.
    Test framework hooks call the SDK/HTTP API to start capture. Test calls and
-   selected dependency endpoints are routed through Phrond.
+   selected dependency endpoints are routed through Wiretap.
 2. Capture startup creates a run bundle. Each test setup registers a named
    attempt, its schemas, and a fresh standard trace context.
 3. The proxy forwards requests and responses while retaining bounded evidence.
    Test-side instrumentation propagates the attempt context through ordinary
    HTTP clients. The application can continue using its existing OTel setup.
 4. Teardown stops admitting new work for the attempt and drains accepted
-   exchanges. Phrond records the test outcome, validation results, and any
+   exchanges. Wiretap records the test outcome, validation results, and any
    incomplete-capture diagnostics, then commits an immutable JSON attempt.
 5. The runtime refreshes the OKF pages and HTML dashboard. After all attempts
    finish, the suite-level owner closes the run through the HTTP API. Interrupted and pending work
@@ -58,7 +58,7 @@ attachments. These limits describe evidence completeness, not delivery limits.
 
 A test attempt is the root of a trace. W3C `traceparent`/`tracestate` provide
 context across the SUT when its server and outbound clients propagate them.
-Phrond's session IDs select capture sessions at the control/proxy boundary;
+Wiretap's session IDs select capture sessions at the control/proxy boundary;
 they do not require application-specific propagation.
 
 With working propagation, parallel tests can share the SUT and dependency

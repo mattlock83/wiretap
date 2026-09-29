@@ -1,4 +1,4 @@
-package phrond
+package wiretap
 
 import (
 	"context"
@@ -34,14 +34,14 @@ func TestCleanupHonorsLongDrainDeadline(t *testing.T) {
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 70*time.Second)
 	defer cancel()
-	runtime := Runtime{BaseURL: "http://phrond.test"}
+	runtime := Runtime{BaseURL: "http://wiretap.test"}
 	if err := runtime.call(ctx, "/v1/teardownTest", map[string]any{"drain_timeout_ms": 60000}, nil); err != nil {
 		t.Fatal(err)
 	}
 }
 
 func TestFinalGoTestOutcomes(t *testing.T) {
-	if os.Getenv("PHROND_GO_OUTCOMES") != "" {
+	if os.Getenv("WIRETAP_GO_OUTCOMES") != "" {
 		runOutcomeFixture(t)
 		return
 	}
@@ -53,7 +53,7 @@ func TestFinalGoTestOutcomes(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
 	defer cancel()
 	command := exec.CommandContext(ctx, binary, "-test.run=^TestFinalGoTestOutcomes$")
-	command.Env = append(os.Environ(), "PHROND_GO_OUTCOMES="+result)
+	command.Env = append(os.Environ(), "WIRETAP_GO_OUTCOMES="+result)
 	output, err := command.CombinedOutput()
 	if exit, ok := err.(*exec.ExitError); !ok || exit.ExitCode() != 1 {
 		t.Fatalf("expected failing fixture: %v\n%s", err, output)
@@ -121,7 +121,7 @@ func runOutcomeFixture(t *testing.T) {
 		outcomes[filepath.Base(span.Name())]["span"] = span.Status().Code.String()
 	}
 	data, _ := json.Marshal(outcomes)
-	if err := os.WriteFile(os.Getenv("PHROND_GO_OUTCOMES"), data, 0600); err != nil {
+	if err := os.WriteFile(os.Getenv("WIRETAP_GO_OUTCOMES"), data, 0600); err != nil {
 		t.Fatal(err)
 	}
 }

@@ -84,7 +84,7 @@ test("declared external dependencies retain strict schemas and session-scoped ca
         name: body.name,
         explicit: true,
         proxy_listen: "http://127.0.0.1:20010",
-        dependencies: { inventory: "http://127.0.0.1:20010/__phrond/session/session-1/dep/inventory" }
+        dependencies: { inventory: "http://127.0.0.1:20010/__wiretap/session/session-1/dep/inventory" }
       };
     }
     return { capture: { schema_validation: { status: "pass" } } };
@@ -99,7 +99,7 @@ test("declared external dependencies retain strict schemas and session-scoped ca
         inventory: { assetName: "Inventory API", upstreamUrl: "http://wiremock.test", schema: inventorySchema }
       }
     });
-    assert.equal(runtime.dependencyUrl("inventory"), "http://127.0.0.1:20010/__phrond/dep/inventory");
+    assert.equal(runtime.dependencyUrl("inventory"), "http://127.0.0.1:20010/__wiretap/dep/inventory");
     const session = await runtime.setupTest({ name: "orders call inventory", explicitSession: true });
     assert.deepEqual(calls[1].body.dependencies, [{
       asset_id: "inventory",
@@ -108,7 +108,7 @@ test("declared external dependencies retain strict schemas and session-scoped ca
       upstream_url: "http://wiremock.test",
       schemas: [inventorySchema]
     }]);
-    assert.equal(session.dependencyUrls.inventory, "http://127.0.0.1:20010/__phrond/session/session-1/dep/inventory");
+    assert.equal(session.dependencyUrls.inventory, "http://127.0.0.1:20010/__wiretap/session/session-1/dep/inventory");
     assert.equal(runtime.dependencyUrl("inventory"), session.dependencyUrls.inventory);
     assert.throws(() => runtime.dependencyUrl("payments"), /not configured/);
     assert.equal(JSON.stringify(calls).includes('"mock"'), false);
@@ -230,8 +230,8 @@ test("project defaults are inherited and shared suites leave finalization to the
     if (path === "/v1/teardownTest") return { capture: { schema_validation: { status: "partial", skipped: ["inventory"] } } };
     return {};
   });
-  const previousBase = process.env.PHROND_BASE_URL;
-  process.env.PHROND_BASE_URL = server.baseUrl;
+  const previousBase = process.env.WIRETAP_BASE_URL;
+  process.env.WIRETAP_BASE_URL = server.baseUrl;
   try {
     const runtime = await startCapture({ manageRuntime: false });
     await runtime.runTest("configured test", () => {});
@@ -245,7 +245,7 @@ test("project defaults are inherited and shared suites leave finalization to the
     assert.deepEqual(calls.filter(call => call.path === "/v1/setupTest")[1].body.dependencies, []);
     assert.equal(calls.some(call => call.path === "/v1/finishRun"), false);
   } finally {
-    if (previousBase === undefined) delete process.env.PHROND_BASE_URL; else process.env.PHROND_BASE_URL = previousBase;
+    if (previousBase === undefined) delete process.env.WIRETAP_BASE_URL; else process.env.WIRETAP_BASE_URL = previousBase;
     await server.close();
   }
 });

@@ -1,5 +1,5 @@
-// Package phrond integrates standard Go tests and HTTP clients with Phrond.
-package phrond
+// Package wiretap integrates standard Go tests and HTTP clients with Wiretap.
+package wiretap
 
 import (
 	"bytes"
@@ -21,7 +21,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-// Runtime connects to an externally managed Phrond process. It never launches
+// Runtime connects to an externally managed Wiretap process. It never launches
 // processes or changes global HTTP clients, providers, or propagators.
 type Runtime struct {
 	BaseURL        string
@@ -72,22 +72,22 @@ var fallbackProvider = sdktrace.NewTracerProvider()
 func (r *Runtime) StartTest(t testing.TB, options TestOptions) *Session {
 	t.Helper()
 	if options.DrainTimeout < 0 || options.DrainTimeout > time.Minute {
-		t.Fatal("Phrond DrainTimeout must be between zero and one minute")
+		t.Fatal("Wiretap DrainTimeout must be between zero and one minute")
 		return nil
 	}
 	provider := r.TracerProvider
 	if provider == nil {
 		provider = otel.GetTracerProvider()
 	}
-	ctx, span := provider.Tracer("phrond.tests").Start(context.Background(), t.Name(), trace.WithNewRoot())
+	ctx, span := provider.Tracer("wiretap.tests").Start(context.Background(), t.Name(), trace.WithNewRoot())
 	if !span.SpanContext().IsValid() {
 		span.End()
 		if r.TracerProvider != nil {
-			t.Fatal("Phrond requires a tracer provider that creates valid span contexts")
+			t.Fatal("Wiretap requires a tracer provider that creates valid span contexts")
 			return nil
 		}
 		provider = fallbackProvider
-		ctx, span = fallbackProvider.Tracer("phrond.tests").Start(context.Background(), t.Name(), trace.WithNewRoot())
+		ctx, span = fallbackProvider.Tracer("wiretap.tests").Start(context.Background(), t.Name(), trace.WithNewRoot())
 	}
 	carrier := propagation.MapCarrier{}
 	propagation.TraceContext{}.Inject(ctx, carrier)
@@ -129,7 +129,7 @@ func (r *Runtime) StartTest(t testing.TB, options TestOptions) *Session {
 		}
 		err := r.call(cleanupCtx, "/v1/teardownTest", map[string]any{"session_id": session.ID, "status": status, "drain_timeout_ms": timeout.Milliseconds()}, &response)
 		if err == nil && (response.Capture.CaptureIncomplete || response.Capture.TestCase.Status == "fail") {
-			err = fmt.Errorf("Phrond capture or validation failed for %s", t.Name())
+			err = fmt.Errorf("Wiretap capture or validation failed for %s", t.Name())
 		}
 		if err != nil {
 			span.RecordError(err)
@@ -180,7 +180,7 @@ func (r *Runtime) call(ctx context.Context, path string, payload, output any) er
 	}
 	baseURL := r.BaseURL
 	if baseURL == "" {
-		baseURL = os.Getenv("PHROND_BASE_URL")
+		baseURL = os.Getenv("WIRETAP_BASE_URL")
 	}
 	if baseURL == "" {
 		baseURL = "http://127.0.0.1:18000"
@@ -201,7 +201,7 @@ func (r *Runtime) call(ctx context.Context, path string, payload, output any) er
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(res.Body, 8192))
-		return fmt.Errorf("Phrond %s: HTTP %d: %s", path, res.StatusCode, body)
+		return fmt.Errorf("Wiretap %s: HTTP %d: %s", path, res.StatusCode, body)
 	}
 	if output != nil {
 		return json.NewDecoder(res.Body).Decode(output)

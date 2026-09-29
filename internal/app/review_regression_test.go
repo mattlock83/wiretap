@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"github.com/phrond/evermock/internal/bundle"
 	"github.com/phrond/evermock/internal/core"
-	phrond "github.com/phrond/evermock/sdk/go"
+	wiretap "github.com/phrond/evermock/sdk/go"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
@@ -162,16 +162,16 @@ func TestGoSDKCapturesParallelTestsThroughRealRuntime(t *testing.T) {
 	defer sut.Close()
 	control, app := dependencyCaptureRuntime(t)
 	info := postDependencyJSON(t, control.URL, "/v1/startRun", map[string]any{"proxy": map[string]string{"target_url": sut.URL}})
-	dependencyURL = info["sut_url"].(string) + "/__phrond/dep/inventory"
-	runtime := phrond.Runtime{BaseURL: control.URL}
+	dependencyURL = info["sut_url"].(string) + "/__wiretap/dep/inventory"
+	runtime := wiretap.Runtime{BaseURL: control.URL}
 	var mu sync.Mutex
 	expected := map[string]string{}
 	t.Run("parallel", func(t *testing.T) {
 		for i := 0; i < 2; i++ {
 			t.Run(fmt.Sprint(i), func(t *testing.T) {
 				t.Parallel()
-				session := runtime.StartTest(t, phrond.TestOptions{SUTBaseURL: sut.URL, SchemaRequired: new(bool), ExplicitSession: true,
-					Dependencies: []phrond.Dependency{{AssetID: "inventory", UpstreamURL: mock.URL, Schema: &phrond.Schema{ID: "inventory", Type: "openapi", Source: phrond.SchemaSource{Type: "inline", Content: permissiveDependencySchema().Source.Content}}}},
+				session := runtime.StartTest(t, wiretap.TestOptions{SUTBaseURL: sut.URL, SchemaRequired: new(bool), ExplicitSession: true,
+					Dependencies: []wiretap.Dependency{{AssetID: "inventory", UpstreamURL: mock.URL, Schema: &wiretap.Schema{ID: "inventory", Type: "openapi", Source: wiretap.SchemaSource{Type: "inline", Content: permissiveDependencySchema().Source.Content}}}},
 				})
 				mu.Lock()
 				expected[t.Name()] = trace.SpanContextFromContext(session.Context).TraceID().String()
@@ -224,7 +224,7 @@ func TestUnknownTracePreservedAndSelectorsRejected(t *testing.T) {
 	first := postDependencyJSON(t, control.URL, "/v1/setupTest", map[string]any{"name": "first", "sut_base_url": sut.URL, "schema_required": false, "explicit_session": true, "trace_context": traceRegistration(901)})
 	second := postDependencyJSON(t, control.URL, "/v1/setupTest", map[string]any{"name": "second", "schema_required": false, "explicit_session": true, "trace_context": traceRegistration(902)})
 	requestStatus(t, first["sut_url"].(string), foreign, first["session_id"].(string), 200)
-	scoped := first["sut_url"].(string) + "/__phrond/session/" + first["session_id"].(string) + "/dep/inventory"
+	scoped := first["sut_url"].(string) + "/__wiretap/session/" + first["session_id"].(string) + "/dep/inventory"
 	requestStatus(t, scoped, traceRegistration(902)["traceparent"], "", 409)
 	doc := dependencyArtifact(t, postDependencyJSON(t, control.URL, "/v1/teardownTest", map[string]any{"session_id": first["session_id"]}))
 	if len(doc.CaptureDiagnostics) != 1 || len(doc.Traffic) != 1 || doc.Traffic[0].TraceID != fmt.Sprintf("%032x", 900) || doc.Traffic[0].TestCorrelation != "explicit_session" {

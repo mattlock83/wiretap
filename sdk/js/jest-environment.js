@@ -3,21 +3,21 @@
 const { TestEnvironment } = require('jest-environment-node');
 const sdk = require('./src');
 
-class PhrondEnvironment extends TestEnvironment {
+class WiretapEnvironment extends TestEnvironment {
   attempts = new WeakMap();
 
   async setup() {
     await super.setup();
-    sdk.initializeTracing({ instrumentation: this.global.process.env.PHROND_EXISTING_OTEL !== '1' });
-    this.global.__phrondSDK = sdk;
+    sdk.initializeTracing({ instrumentation: this.global.process.env.WIRETAP_EXISTING_OTEL !== '1' });
+    this.global.__wiretapSDK = sdk;
   }
   async handleTestEvent(event) {
     const test = event.test;
-    if (event.name === 'test_started' && test.fn?.__phrondStart) {
+    if (event.name === 'test_started' && test.fn?.__wiretapStart) {
       const names = [];
       for (let current = test; current?.parent; current = current.parent) names.unshift(current.name);
-      const pending = test.fn.__phrondStart(names.join(' '));
-      test.fn.__phrondAttempt = pending;
+      const pending = test.fn.__wiretapStart(names.join(' '));
+      test.fn.__wiretapAttempt = pending;
       this.attempts.set(test, pending);
       // Observe setup errors through the test callback/completion path.
       pending.catch(() => {});
@@ -40,4 +40,4 @@ class PhrondEnvironment extends TestEnvironment {
     }
   }
 }
-module.exports = PhrondEnvironment;
+module.exports = WiretapEnvironment;

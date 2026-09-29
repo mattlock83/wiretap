@@ -8,7 +8,7 @@ const { promisify } = require('node:util');
 const execute = promisify(execFile);
 
 for (const runner of ['node', 'jest']) test(`${runner} final outcomes include timeouts, hooks and validation`, async t => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'phrond-outcomes-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wiretap-outcomes-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const resultPath = path.join(dir, 'result.json');
   const fixture = path.join(__dirname, 'fixtures', `${runner}-outcomes.cjs`);
@@ -18,7 +18,7 @@ for (const runner of ['node', 'jest']) test(`${runner} final outcomes include ti
   })];
   // The child suites intentionally fail. The parent verifies both the runner
   // result and capture lifecycle, without introducing failures in npm test.
-  const env = { ...process.env, PHROND_REVIEW_RESULT: resultPath };
+  const env = { ...process.env, WIRETAP_REVIEW_RESULT: resultPath };
   delete env.NODE_TEST_CONTEXT;
   await assert.rejects(execute(process.execPath, args, {
     env, timeout: 20000

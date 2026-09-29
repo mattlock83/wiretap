@@ -456,7 +456,7 @@ func writeAtomic(path string, data []byte) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	f, err := os.CreateTemp(filepath.Dir(path), ".phrond-*")
+	f, err := os.CreateTemp(filepath.Dir(path), ".wiretap-*")
 	if err != nil {
 		return err
 	}

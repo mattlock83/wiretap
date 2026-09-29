@@ -1,7 +1,7 @@
 {
-  "name": "@phrond/sdk",
+  "name": "@wiretap/sdk",
   "version": "0.1.0",
-  "description": "Test lifecycle and tracing SDK for Phrond boundary capture",
+  "description": "Test lifecycle and tracing SDK for Wiretap boundary capture",
   "main": "src/index.js",
   "type": "commonjs",
   "license": "UNLICENSED",

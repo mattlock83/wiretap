@@ -1,8 +1,8 @@
 # Runtime API
 
 The SDK calls this HTTP API from your existing test framework's lifecycle.
-Start the control process with `phrond [--config path]`; suite hooks own capture
-startup/finalization, and test hooks own attempts. Your harness owns the Phrond,
+Start the control process with `wiretap [--config path]`; suite hooks own capture
+startup/finalization, and test hooks own attempts. Your harness owns the Wiretap,
 SUT, mock, and test processes. Any language can use this API directly.
 
 | Method | Endpoint | Purpose |
@@ -31,10 +31,10 @@ SUT, mock, and test processes. Any language can use this API directly.
 The response contains `sut_url`, the reverse proxy address tests should call,
 and `dependency_base_url`, the reserved dependency gateway on that same proxy.
 It also returns `run_id`, `bundle_path`, `index_path`, and `viewer_path`. A new run gets a
-fresh bundle under `PHROND_OUTPUT_DIR` (default `./artifacts`). The response
-also includes `defaults`, the resolved project test settings from `.phrond.yaml`.
+fresh bundle under `WIRETAP_OUTPUT_DIR` (default `./artifacts`). The response
+also includes `defaults`, the resolved project test settings from `.wiretap.yaml`.
 Repeated startup calls reuse the active run.
-`target_url` is only a routing destination; Phrond never starts, configures,
+`target_url` is only a routing destination; Wiretap never starts, configures,
 waits for, or stops that application.
 
 `POST /v1/finishRun` stops the proxy after all tests are torn down. It returns
@@ -88,17 +88,17 @@ calls to `sut_url`. Configure the SUT's existing dependency base URL to the
 returned inventory URL, for example:
 
 ```text
-http://127.0.0.1:19000/__phrond/dep/inventory
+http://127.0.0.1:19000/__wiretap/dep/inventory
 ```
 
-Requests to `/__phrond/dep/inventory/products/123` are forwarded to
+Requests to `/__wiretap/dep/inventory/products/123` are forwarded to
 `http://127.0.0.1:9090/products/123`. Request methods, headers, bodies, query
 parameters, responses, and trailers retain the existing proxy's bounded-capture
-semantics. Phrond does not start, configure, stub, or verify the upstream.
+semantics. Wiretap does not start, configure, stub, or verify the upstream.
 Every dependency requires a readable, valid OpenAPI schema unless that
 dependency explicitly sets `schema_required: false`. Ordinary instrumented
 clients use W3C trace context; custom clients can select an explicit session
-with `X-Phrond-Session-Id` on requests to Phrond.
+with `X-Wiretap-Session-Id` on requests to Wiretap.
 
 Only one implicit session can be active. Unlabeled traffic falls back to it
 only when it is the sole active session. Optional standard trace registration:
@@ -118,11 +118,11 @@ attempt; the fixed value above is illustrative. Setup returns the accepted
 active or finished test trace returns 409. Sampling flags do not affect capture.
 
 For parallel tests, set `explicit_session: true` and supply `trace_context`.
-Traced sessions return stable `/__phrond/dep/<asset-id>` dependency URLs, selected
+Traced sessions return stable `/__wiretap/dep/<asset-id>` dependency URLs, selected
 by propagated trace **before** resolving the session's upstream and schema.
-Untraced explicit sessions retain `/__phrond/session/<session-id>/dep/<asset-id>`
+Untraced explicit sessions retain `/__wiretap/session/<session-id>/dep/<asset-id>`
 URLs and require independent routing/isolation; they cannot make a shared SUT
-propagate context. `X-Phrond-Session-Id` remains an optional selector on incoming
+propagate context. `X-Wiretap-Session-Id` remains an optional selector on incoming
 requests and is stripped before forwarding. It never needs to pass through the SUT.
 
 Conflicting header, URL, or registered trace selectors return 409 before
@@ -136,7 +136,7 @@ return 409; explicit traced sessions can still run.
 
 Missing/invalid inbound context may be replaced by the registered root when
 ownership is independently known. The flow says `trace_context_source: injected`
-and keeps its original `test_correlation` method. Phrond never injects test
+and keeps its original `test_correlation` method. Wiretap never injects test
 context into an untraced dependency request. Ambiguous unlabeled traffic returns
 409.
 
@@ -149,7 +149,7 @@ context into an untraced dependency request. Ambiguous unlabeled traffic returns
 The response contains `capture`, the completed test capture including
 `schema_validation`, plus `attempt_path` (canonical JSON), `attempt_page_path`
 (readable Markdown), `bundle_path`, `index_path`, and `viewer_path`. These paths
-are on the Phrond server's filesystem; a remote SDK cannot open them locally
+are on the Wiretap server's filesystem; a remote SDK cannot open them locally
 without copying or mounting that directory. OpenAPI
 violations change an otherwise passing artifact to `fail`. Teardown stops new
 admission and waits for accepted exchanges, up to `drain_timeout_ms` (default

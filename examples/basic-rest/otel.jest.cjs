@@ -1,12 +1,12 @@
 const { createJestSuite } = require('../../sdk/js/jest');
-const phrond = createJestSuite();
+const wiretap = createJestSuite();
 let entered = 0, release;
 const gate = new Promise(resolve => { release = resolve; });
-phrond.test.concurrent.each(['123', '456'])('processes %s', async id => {
+wiretap.test.concurrent.each(['123', '456'])('processes %s', async id => {
   if (++entered === 2) release();
   await gate; // Both sessions must exist before any request is sent.
-  expect((await fetch(`${phrond.sutUrl}/status`)).status).toBe(200);
-  const response = await fetch(`${phrond.sutUrl}/process`, {
+  expect((await fetch(`${wiretap.sutUrl}/status`)).status).toBe(200);
+  const response = await fetch(`${wiretap.sutUrl}/process`, {
     method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ id, action: 'process' })
   });
@@ -14,7 +14,7 @@ phrond.test.concurrent.each(['123', '456'])('processes %s', async id => {
 
 });
 afterAll(async () => {
-  const { report } = await phrond.runtime.report();
+  const { report } = await wiretap.runtime.report();
   expect(report.testcases).toHaveLength(2);
   expect(new Set(report.testcases.map(tc => tc.attempts[0].trace_id)).size).toBe(2);
   for (const tc of report.testcases) {

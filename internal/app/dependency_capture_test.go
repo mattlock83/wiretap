@@ -80,7 +80,7 @@ func TestExternalDependencyCaptureCorrelatesBothTrafficDirections(t *testing.T) 
 		if r.URL.Path != "/api/items" || r.URL.Query().Get("fixed") != "yes" || r.URL.Query().Get("include") != "stock" {
 			t.Errorf("unexpected forwarded dependency URL: %s", r.URL.String())
 		}
-		if r.Header.Get("X-Phrond-Session-Id") != "" {
+		if r.Header.Get("X-Wiretap-Session-Id") != "" {
 			t.Error("capture session header leaked to the external dependency")
 		}
 		if r.Header.Get("X-Consumer") != "orders" {
@@ -118,7 +118,7 @@ func TestExternalDependencyCaptureCorrelatesBothTrafficDirections(t *testing.T) 
 		"proxy": map[string]any{"target_url": sut.URL},
 	})
 	proxyURL := runtime["sut_url"].(string)
-	dependencyURL = proxyURL + "/__phrond/dep/inventory"
+	dependencyURL = proxyURL + "/__wiretap/dep/inventory"
 
 	setup := postDependencyJSON(t, control.URL, "/v1/setupTest", map[string]any{
 		"name":          "creates an order through an existing mock",
@@ -236,7 +236,7 @@ func TestExplicitDependencyCaptureSessionsStayIsolated(t *testing.T) {
 			t.Fatalf("session response = %q, want %q", body, scenario.want)
 		}
 	}
-	response, err := http.Get(runtime["sut_url"].(string) + "/__phrond/dep/inventory/items")
+	response, err := http.Get(runtime["sut_url"].(string) + "/__wiretap/dep/inventory/items")
 	if err != nil {
 		t.Fatal(err)
 	}

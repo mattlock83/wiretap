@@ -45,7 +45,7 @@ paths:
 `}}
 			}
 			session := postDependencyJSON(t, control.URL, "/v1/setupTest", map[string]any{"name": name, "schema_required": false, "dependencies": []dependencyRegistration{dependency}})
-			response, err := http.Get(session["sut_url"].(string) + "/__phrond/dep/inventory/items")
+			response, err := http.Get(session["sut_url"].(string) + "/__wiretap/dep/inventory/items")
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -44,7 +44,7 @@ func NewManager(baseDir string) *Manager {
 		if err != nil || cacheDir == "" {
 			cacheDir = os.TempDir()
 		}
-		baseDir = filepath.Join(cacheDir, "phrond", "ca")
+		baseDir = filepath.Join(cacheDir, "wiretap", "ca")
 	}
 	return &Manager{
 		baseDir:    baseDir,
@@ -221,8 +221,8 @@ func generateCA(now time.Time) (*x509.Certificate, *rsa.PrivateKey, []byte, []by
 	template := &x509.Certificate{
 		SerialNumber: serial,
 		Subject: pkix.Name{
-			CommonName:   "Phrond Proxy CA",
-			Organization: []string{"Phrond"},
+			CommonName:   "Wiretap Proxy CA",
+			Organization: []string{"Wiretap"},
 		},
 		NotBefore:             now.Add(-5 * time.Minute),
 		NotAfter:              now.Add(5 * 365 * 24 * time.Hour),

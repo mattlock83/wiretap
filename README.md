@@ -1,24 +1,24 @@
-# Phrond
+# Wiretap
 
-Phrond turns existing API tests into documentation of the behaviour they
+Wiretap turns existing API tests into documentation of the behaviour they
 exercise and the dependency assumptions they rely on. It captures request and
 response sequences at your system's boundaries and writes a portable OKF bundle
 for humans and agents to inspect.
 
 ```text
-tests → Phrond → your application
+tests → Wiretap → your application
                     ↓
-                 Phrond → existing mocks or services
+                 Wiretap → existing mocks or services
                     ↓
                OKF run bundle
          API · dependencies · tests · coverage
 ```
 
 Keep your test runner, HTTP client, assertions, and mock tooling. Route traffic
-through Phrond and connect test setup and teardown using the JavaScript or Go
+through Wiretap and connect test setup and teardown using the JavaScript or Go
 SDK, or the HTTP API. Your existing harness starts and configures the application
-and its dependencies, and starts Phrond as a separate service. The SDK is a
-library called by your test framework; Phrond never launches your tests.
+and its dependencies, and starts Wiretap as a separate service. The SDK is a
+library called by your test framework; Wiretap never launches your tests.
 
 ## Try it
 
@@ -29,13 +29,13 @@ npm ci --prefix sdk/js
 ./examples/run-basic-rest-e2e.sh
 ```
 
-The example uses `.phrond.yaml`, native test hooks, and ordinary `fetch` calls.
+The example uses `.wiretap.yaml`, native test hooks, and ordinary `fetch` calls.
 Open the resulting bundle's `viewer/index.html` for the offline HTML dashboard
 or `index.md` for linked OKF pages.
 
 ## Add it to existing tests
 
-Check in a `.phrond.yaml`:
+Check in a `.wiretap.yaml`:
 
 ```yaml
 version: 1
@@ -51,7 +51,7 @@ dependencies:
 ```
 
 Configure your application's inventory URL to
-`http://127.0.0.1:18080/__phrond/dep/inventory`. The proxy forwards those calls
+`http://127.0.0.1:18080/__wiretap/dep/inventory`. The proxy forwards those calls
 to the declared upstream. Omit `dependencies` to capture only inbound traffic.
 
 Call the SDK from your existing test framework. For a simple Node suite:
@@ -59,7 +59,7 @@ Call the SDK from your existing test framework. For a simple Node suite:
 ```js
 const { test, before, after } = require("node:test");
 const assert = require("node:assert/strict");
-const { startCapture } = require("@phrond/sdk");
+const { startCapture } = require("@wiretap/sdk");
 let capture;
 
 before(async () => { capture = await startCapture(); });
@@ -74,17 +74,17 @@ test("gets an order", () => capture.runTest("gets an order", async session => {
 Build and start the runtime alongside your application and mocks:
 
 ```bash
-go build -o /tmp/phrond ./cmd/phrond
-/tmp/phrond --config .phrond.yaml
+go build -o /tmp/wiretap ./cmd/wiretap
+/tmp/wiretap --config .wiretap.yaml
 ```
 
 Run tests separately using their existing command, with test-side instrumentation:
 
 ```bash
-node --require @phrond/sdk/tracing --test test/orders.test.js
+node --require @wiretap/sdk/tracing --test test/orders.test.js
 ```
 
-The SDK connects to `http://127.0.0.1:18000` by default; set `PHROND_BASE_URL`
+The SDK connects to `http://127.0.0.1:18000` by default; set `WIRETAP_BASE_URL`
 for another address. Suite hooks start and finalize capture over HTTP. The
 runtime automatically writes the bundle and its views; no report command is
 needed. SDK/API responses provide the exact output paths.
@@ -95,7 +95,7 @@ finish it from their completion hook with the framework's final result. Optional
 Node/Jest adapters implement runner-specific timeout and outcome handling. See
 the [SDK guide](sdk/js/README.md) for these choices and shared-worker ownership.
 Shared-SUT parallel tests require inbound-to-outbound W3C propagation; otherwise
-serialize or isolate workers. No Phrond-specific propagation code is needed in the SUT.
+serialize or isolate workers. No Wiretap-specific propagation code is needed in the SUT.
 
 Specs are required by default. An individual API may opt out with
 `schema_required: false`, making skipped validation and unknown coverage visible.
@@ -124,8 +124,8 @@ JSON evidence, frozen schemas, and retained payloads are authoritative. The
 OKF pages and offline HTML dashboard are rebuildable views:
 
 ```bash
-phrond report --bundle ./artifacts/<run-id>
-phrond export --bundle ./artifacts/<run-id> --format json --output coverage.json
+wiretap report --bundle ./artifacts/<run-id>
+wiretap export --bundle ./artifacts/<run-id> --format json --output coverage.json
 ```
 
 Diagnostic JSON/YAML exports are also available. Retained bodies

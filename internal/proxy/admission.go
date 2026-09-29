@@ -30,8 +30,8 @@ func (s *Server) admit(req *http.Request) (*Admission, error) {
 	s.reverseMu.RLock()
 	resolver := s.admissionResolver
 	s.reverseMu.RUnlock()
-	sessionID := strings.TrimSpace(req.Header.Get("X-Phrond-Session-Id"))
-	req.Header.Del("X-Phrond-Session-Id")
+	sessionID := strings.TrimSpace(req.Header.Get("X-Wiretap-Session-Id"))
+	req.Header.Del("X-Wiretap-Session-Id")
 	if resolver == nil {
 		return &Admission{SessionID: sessionID}, nil
 	}

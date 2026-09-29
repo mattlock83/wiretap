@@ -10,21 +10,21 @@ import (
 func TestApplyEnvProxySettings(t *testing.T) {
 	cfg := core.DefaultConfig()
 
-	t.Setenv("PHROND_PROXY_LISTEN", "127.0.0.1:18081")
-	t.Setenv("PHROND_PROXY_CA_DIR", "/tmp/phrond-ca")
-	t.Setenv("PHROND_PROXY_MODE", "passthrough")
-	t.Setenv("PHROND_MAX_CAPTURE_BYTES", "1024")
-	t.Setenv("PHROND_OUTPUT_DIR", "/tmp/phrond-bundles")
+	t.Setenv("WIRETAP_PROXY_LISTEN", "127.0.0.1:18081")
+	t.Setenv("WIRETAP_PROXY_CA_DIR", "/tmp/wiretap-ca")
+	t.Setenv("WIRETAP_PROXY_MODE", "passthrough")
+	t.Setenv("WIRETAP_MAX_CAPTURE_BYTES", "1024")
+	t.Setenv("WIRETAP_OUTPUT_DIR", "/tmp/wiretap-bundles")
 
 	applyEnv(&cfg)
 
-	if cfg.Artifact.OutputDir != "/tmp/phrond-bundles" {
+	if cfg.Artifact.OutputDir != "/tmp/wiretap-bundles" {
 		t.Fatalf("output root = %q", cfg.Artifact.OutputDir)
 	}
 	if cfg.Proxy.ListenAddr != "127.0.0.1:18081" {
 		t.Fatalf("expected proxy listen addr, got %q", cfg.Proxy.ListenAddr)
 	}
-	if cfg.Proxy.CABaseDir != "/tmp/phrond-ca" {
+	if cfg.Proxy.CABaseDir != "/tmp/wiretap-ca" {
 		t.Fatalf("expected proxy CA dir, got %q", cfg.Proxy.CABaseDir)
 	}
 	if cfg.Proxy.Mode != "passthrough" {
@@ -39,9 +39,9 @@ func TestApplyEnvKeepsDefaults(t *testing.T) {
 	cfg := core.DefaultConfig()
 	before := cfg
 
-	os.Unsetenv("PHROND_PROXY_LISTEN")
-	os.Unsetenv("PHROND_PROXY_CA_DIR")
-	os.Unsetenv("PHROND_PROXY_MODE")
+	os.Unsetenv("WIRETAP_PROXY_LISTEN")
+	os.Unsetenv("WIRETAP_PROXY_CA_DIR")
+	os.Unsetenv("WIRETAP_PROXY_MODE")
 
 	applyEnv(&cfg)
 

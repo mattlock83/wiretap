@@ -1,24 +1,24 @@
-# Phrond OKF profile 1.0
+# Wiretap OKF profile 1.0
 
-Phrond's generated pages follow [OKF v0.2](https://github.com/GoogleCloudPlatform/open-knowledge-format/blob/ad30107c/SPEC.md), reviewed at revision `ad30107c`.
+Wiretap's generated pages follow [OKF v0.2](https://github.com/GoogleCloudPlatform/open-knowledge-format/blob/ad30107c/SPEC.md), reviewed at revision `ad30107c`.
 This profile describes the readable projection. It is versioned separately
 from [JSON capture evidence](bundle-evidence.md). The
 [frontmatter JSON Schema](okf-profile.schema.json) applies after parsing YAML.
 
 The root `index.md` uses only `okf_version: "0.2"` in its optional frontmatter.
 Other `index.md` files are directory listings without frontmatter. Every other
-Phrond-generated `.md` file is a concept with `type`, `title`, `description`,
-`generated: {by: "phrond/1.0", at: ...}`, and
-`phrond: {profile_version: "1.0", kind, run_id, snapshot_revision}`.
+Wiretap-generated `.md` file is a concept with `type`, `title`, `description`,
+`generated: {by: "wiretap/1.0", at: ...}`, and
+`wiretap: {profile_version: "1.0", kind, run_id, snapshot_revision}`.
 `kind` is `run`, `coverage`, `api`, `operation`, `assumptions`, or `attempt`.
-Phrond does not set OKF `verified` merely because a test passed.
+Wiretap does not set OKF `verified` merely because a test passed.
 The bundle's `viewer/index.html` is a separate disposable HTML view over the
 same JSON evidence; it is not an OKF concept or an evidence source.
 Likewise, `dependencies/mocks/<dependency-hash>.openapi.yaml` files are disposable
 inferred mock assumptions, not OKF concepts or supplied contracts. They link to
-source evidence using file-relative `x-phrond-evidence` paths.
+source evidence using file-relative `x-wiretap-evidence` paths.
 
-Pages may carry `phrond.evidence`: a bundle-root-relative JSON path for a run
+Pages may carry `wiretap.evidence`: a bundle-root-relative JSON path for a run
 or attempt, or a list of `{attempt_id, flow_id, path}` pointers for an operation
 group. Supporting files also appear in OKF `sources` when applicable. Ordinary
 Markdown links lead to readable test pages and raw JSON or body attachments.
@@ -31,7 +31,7 @@ still be valid for its immutable attempt. A full rebuild rewrites all pages
 against one inventory snapshot. Evidence readers and exports do not parse
 frontmatter or Markdown, and missing pages do not block them.
 
-Phrond owns the documented generated paths (`index.md`, `run.md`,
+Wiretap owns the documented generated paths (`index.md`, `run.md`,
 `coverage.md`, `viewer/index.html`, `dependencies/mocks/*.openapi.yaml`, and its `apis/`, `dependencies/`, and `tests/` indexes/pages).
 Regeneration replaces those paths only. Unrecognized team-authored concepts
 and extensions are preserved.

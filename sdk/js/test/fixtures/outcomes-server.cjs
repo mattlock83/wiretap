@@ -18,7 +18,7 @@ module.exports = async function outcomesServer() {
   server.listen(0, '127.0.0.1'); await once(server, 'listening');
   const url = `http://127.0.0.1:${server.address().port}`;
   return { url, async finish(extra) {
-    fs.writeFileSync(process.env.PHROND_REVIEW_RESULT, JSON.stringify({ calls, ...extra }));
+    fs.writeFileSync(process.env.WIRETAP_REVIEW_RESULT, JSON.stringify({ calls, ...extra }));
     await new Promise(resolve => server.close(resolve));
   } };
 };

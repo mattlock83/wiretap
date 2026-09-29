@@ -28,7 +28,7 @@ type dependencyRegistration struct {
 	Schemas        []artifact.SchemaRef `json:"schemas,omitempty"`
 }
 
-// runtimeSession owns the capture state for one consumer test. Phrond does
+// runtimeSession owns the capture state for one consumer test. Wiretap does
 // not own the SUT lifecycle; it only records traffic routed through its proxy.
 type runtimeSession struct {
 	finishMu     sync.Mutex
@@ -107,15 +107,15 @@ func (a *App) resolveDependencyRoute(request *http.Request, requestSessionID str
 	path := request.URL.Path
 	var sessionID, assetID, remaining string
 	switch {
-	case strings.HasPrefix(path, "/__phrond/dep/"):
-		parts := strings.SplitN(strings.TrimPrefix(path, "/__phrond/dep/"), "/", 2)
+	case strings.HasPrefix(path, "/__wiretap/dep/"):
+		parts := strings.SplitN(strings.TrimPrefix(path, "/__wiretap/dep/"), "/", 2)
 		assetID = parts[0]
 		if len(parts) == 2 {
 			remaining = "/" + parts[1]
 		}
 		sessionID = strings.TrimSpace(requestSessionID)
-	case strings.HasPrefix(path, "/__phrond/session/"):
-		parts := strings.SplitN(strings.TrimPrefix(path, "/__phrond/session/"), "/", 4)
+	case strings.HasPrefix(path, "/__wiretap/session/"):
+		parts := strings.SplitN(strings.TrimPrefix(path, "/__wiretap/session/"), "/", 4)
 		if len(parts) < 3 || parts[1] != "dep" {
 			return proxy.DependencyRoute{}, true, fmt.Errorf("invalid session-scoped dependency capture URL")
 		}
@@ -137,10 +137,10 @@ func (a *App) resolveDependencyRoute(request *http.Request, requestSessionID str
 	}
 	escapedPath := request.URL.EscapedPath()
 	var escapedPrefix string
-	if sessionID != "" && strings.HasPrefix(path, "/__phrond/session/") {
-		escapedPrefix = "/__phrond/session/" + sessionID + "/dep/" + assetID
+	if sessionID != "" && strings.HasPrefix(path, "/__wiretap/session/") {
+		escapedPrefix = "/__wiretap/session/" + sessionID + "/dep/" + assetID
 	} else {
-		escapedPrefix = "/__phrond/dep/" + assetID
+		escapedPrefix = "/__wiretap/dep/" + assetID
 	}
 	rawRemaining := strings.TrimPrefix(escapedPath, escapedPrefix)
 	if rawRemaining == "" {
@@ -182,8 +182,8 @@ func (a *App) admitRequest(request *http.Request, headerSession string) (*proxy.
 	defer a.sessionsMu.Unlock()
 	selected := headerSession
 	explicit := selected != ""
-	if strings.HasPrefix(request.URL.Path, "/__phrond/session/") {
-		parts := strings.SplitN(strings.TrimPrefix(request.URL.Path, "/__phrond/session/"), "/", 4)
+	if strings.HasPrefix(request.URL.Path, "/__wiretap/session/") {
+		parts := strings.SplitN(strings.TrimPrefix(request.URL.Path, "/__wiretap/session/"), "/", 4)
 		if len(parts) < 3 || parts[1] != "dep" {
 			return nil, fmt.Errorf("invalid session-scoped dependency URL")
 		}
@@ -214,7 +214,7 @@ func (a *App) admitRequest(request *http.Request, headerSession string) (*proxy.
 	}
 	session := a.sessions[selected]
 	if session == nil {
-		if selected != "" || len(a.sessions) > 0 || strings.HasPrefix(request.URL.Path, "/__phrond/") {
+		if selected != "" || len(a.sessions) > 0 || strings.HasPrefix(request.URL.Path, "/__wiretap/") {
 			return nil, fmt.Errorf("no unambiguous capture session; propagate W3C trace context or use an explicit session")
 		}
 		// Traffic outside any test remains usable but must never be recorded later.

@@ -1,9 +1,9 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "okf-profile.schema.json",
-  "title": "Phrond OKF profile 1.0 concept frontmatter",
+  "title": "Wiretap OKF profile 1.0 concept frontmatter",
   "type": "object",
-  "required": ["type", "title", "description", "generated", "phrond"],
+  "required": ["type", "title", "description", "generated", "wiretap"],
   "properties": {
     "type": { "type": "string", "minLength": 1 },
     "title": { "type": "string", "minLength": 1 },
@@ -12,7 +12,7 @@
       "type": "object",
       "required": ["by", "at"],
       "properties": {
-        "by": { "const": "phrond/1.0" },
+        "by": { "const": "wiretap/1.0" },
         "at": { "type": "string", "format": "date-time" }
       }
     },
@@ -27,7 +27,7 @@
         }
       }
     },
-    "phrond": {
+    "wiretap": {
       "type": "object",
       "required": ["profile_version", "kind", "run_id", "snapshot_revision"],
       "properties": {

@@ -1,17 +1,17 @@
 # Go test integration
 
-Import `github.com/phrond/evermock/sdk/go` as `phrond`. The helper uses the root
-Go module and standard OTel APIs. Put addresses and specs in `.phrond.yaml` and
-start `phrond` alongside the SUT and mocks using your existing harness. Run tests
+Import `github.com/phrond/evermock/sdk/go` as `wiretap`. The helper uses the root
+Go module and standard OTel APIs. Put addresses and specs in `.wiretap.yaml` and
+start `wiretap` alongside the SUT and mocks using your existing harness. Run tests
 normally with `go test`. The SDK inherits runtime defaults over HTTP; it never
 invokes the CLI or launches test processes.
 
 ```go
-runtime := phrond.Runtime{} // PHROND_BASE_URL or http://127.0.0.1:18000
+runtime := wiretap.Runtime{} // WIRETAP_BASE_URL or http://127.0.0.1:18000
 
 t.Run("creates an order", func(t *testing.T) {
     t.Parallel() // only with working SUT propagation / isolated runtimes
-    session := runtime.StartTest(t, phrond.TestOptions{ExplicitSession: true})
+    session := runtime.StartTest(t, wiretap.TestOptions{ExplicitSession: true})
     client := session.HTTPClient(existingClient)
     response, err := client.Get(session.SUTURL + "/orders")
     if err != nil { t.Fatal(err) }
@@ -27,7 +27,7 @@ owned by one Go test package, use its existing `TestMain`:
 func TestMain(m *testing.M) {
     code := m.Run() // StartTest starts capture lazily; testing owns execution.
     ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-    runtime := phrond.Runtime{}
+    runtime := wiretap.Runtime{}
     if err := runtime.FinishRun(ctx); err != nil {
         fmt.Fprintln(os.Stderr, err)
         if code == 0 { code = 1 }
@@ -64,7 +64,7 @@ No exporter or collector is needed; unsampled contexts work.
 `TestOptions.Schemas` and `TestOptions.Dependencies` accept typed `Schema` and
 `Dependency` overrides. `SchemaSource` supports file, URL, and inline content. The returned `Dependencies` map
 contains capture URLs. Configure the SUT's dependency endpoints once to stable
-`/__phrond/dep/<asset-id>` URLs for traced sessions. Each API requires its spec unless its
+`/__wiretap/dep/<asset-id>` URLs for traced sessions. Each API requires its spec unless its
 `SchemaRequired` pointer is explicitly false; supplied specs always validate.
 Dependencies marked `UpstreamKind: "mock"` always get a separate inferred OpenAPI
 draft in the bundle, including with a supplied spec. It documents observed mock
@@ -75,11 +75,11 @@ Each runtime run writes an OKF bundle automatically. `Session.RunID`,
 `Session.BundlePath`, `Session.IndexPath`, and `Session.ViewerPath` identify it.
 Open `ViewerPath` for the offline HTML dashboard. Test cleanup commits the
 attempt's JSON evidence and regenerates both views. Set
-`PHROND_OUTPUT_DIR` on the runtime process to choose the output parent. See
+`WIRETAP_OUTPUT_DIR` on the runtime process to choose the output parent. See
 the [bundle guide](../../docs/okf-bundles.md) for coverage and optional exports.
 
 One runtime has one reverse SUT target. Distinct per-test `httptest.NewServer`
 instances need distinct runtimes if they overlap. Direct handler tests using
 `httptest.NewRecorder` bypass the network and cannot be captured. Without SUT
 propagation, keep tests and SUT requests sequential or isolate each worker's SUT,
-Phrond, and dependency routes. See [adoption notes](../../docs/otel-adoption.md).
+Wiretap, and dependency routes. See [adoption notes](../../docs/otel-adoption.md).

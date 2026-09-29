@@ -72,7 +72,7 @@ func (a *App) handleStartRun(w http.ResponseWriter, r *http.Request) {
 	response := map[string]any{
 		"proxy":               info,
 		"sut_url":             normalizeURL(info.ListenAddr),
-		"dependency_base_url": normalizeURL(info.ListenAddr) + "/__phrond/dep",
+		"dependency_base_url": normalizeURL(info.ListenAddr) + "/__wiretap/dep",
 		"defaults":            a.testDefaults(),
 	}
 	a.addBundleLocations(response)
@@ -232,9 +232,9 @@ func (a *App) handleSetupTest(w http.ResponseWriter, r *http.Request) {
 	dependencyURLs := make(map[string]string, len(dependencies))
 	for assetID := range dependencies {
 		if payload.ExplicitSession && !root.IsValid() {
-			dependencyURLs[assetID] = proxyURL + "/__phrond/session/" + sessionID + "/dep/" + assetID
+			dependencyURLs[assetID] = proxyURL + "/__wiretap/session/" + sessionID + "/dep/" + assetID
 		} else {
-			dependencyURLs[assetID] = proxyURL + "/__phrond/dep/" + assetID
+			dependencyURLs[assetID] = proxyURL + "/__wiretap/dep/" + assetID
 		}
 	}
 	response := map[string]any{

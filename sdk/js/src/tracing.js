@@ -11,7 +11,7 @@ function initializeTracing({ instrumentation = true } = {}) {
   if (initialized) return;
   initialized = true;
   // Registration is rejected by the API when the application already owns these.
-  const probeKey = api.createContextKey('phrond.context-probe');
+  const probeKey = api.createContextKey('wiretap.context-probe');
   const probe = api.context.active().setValue(probeKey, true);
   if (!api.context.with(probe, () => api.context.active().getValue(probeKey))) {
     const manager = new AsyncLocalStorageContextManager().enable();
@@ -37,11 +37,11 @@ function initializeTracing({ instrumentation = true } = {}) {
 
 function newTestSpan(name, provider) {
   initializeTracing();
-  let span = (provider || api.trace.getTracerProvider()).getTracer('phrond.tests').startSpan(name, {}, api.ROOT_CONTEXT);
+  let span = (provider || api.trace.getTracerProvider()).getTracer('wiretap.tests').startSpan(name, {}, api.ROOT_CONTEXT);
   if (!api.isSpanContextValid(span.spanContext())) {
     span.end();
-    if (provider) throw new Error('Phrond requires a tracer provider that creates valid test span contexts');
-    span = fallback.getTracer('phrond.tests').startSpan(name, {}, api.ROOT_CONTEXT);
+    if (provider) throw new Error('Wiretap requires a tracer provider that creates valid test span contexts');
+    span = fallback.getTracer('wiretap.tests').startSpan(name, {}, api.ROOT_CONTEXT);
   }
   return span;
 }

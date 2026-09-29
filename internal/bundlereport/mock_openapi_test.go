@@ -85,7 +85,7 @@ func TestMockDraftsArePerDependencyAndDoNotInventRequirements(t *testing.T) {
 	if parameters[0].(map[string]any)["required"] != true || parameters[1].(map[string]any)["required"] != nil {
 		t.Fatal("only path parameters may be required")
 	}
-	refs := operation["x-phrond-evidence"].([]any)
+	refs := operation["x-wiretap-evidence"].([]any)
 	if len(refs) != 2 || refs[1].(map[string]any)["test_status"] != "fail" || refs[0].(map[string]any)["path"] != "../../evidence/attempts/first.json" {
 		t.Fatal("evidence provenance lost")
 	}
@@ -120,7 +120,7 @@ func TestMockDraftBoundsIncompleteAndUnsupportedEvidence(t *testing.T) {
 	if childMap(parsed, "paths", "/compressed", "get", "responses", "200", "content", "application/json", "schema", "properties", "decoded")["type"] != "boolean" {
 		t.Fatal("decoded body shape lost")
 	}
-	if childMap(parsed, "x-phrond")["excluded_exchanges"] != 1 || !bytes.Contains(data, []byte("capture_incomplete: true")) {
+	if childMap(parsed, "x-wiretap")["excluded_exchanges"] != 1 || !bytes.Contains(data, []byte("capture_incomplete: true")) {
 		t.Fatal("incomplete evidence was hidden")
 	}
 	empty, _ := observedMockAPI("unused", run, nil)
@@ -176,7 +176,7 @@ func TestMockDraftsAreAutomaticRebuildableAndSeparateFromContracts(t *testing.T)
 			t.Fatal(err)
 		}
 		parsed := decodedDraft(t, data)
-		if childMap(parsed, "x-phrond")["api_id"] != id {
+		if childMap(parsed, "x-wiretap")["api_id"] != id {
 			t.Fatal("wrong mock identity")
 		}
 		originals[id] = data

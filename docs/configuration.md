@@ -1,6 +1,6 @@
 # Project configuration and runtime
 
-Check in one `.phrond.yaml` at the project root. Phrond discovers it in the
+Check in one `.wiretap.yaml` at the project root. Wiretap discovers it in the
 working directory or the nearest ancestor; `--config path` selects another file.
 The runtime loads it once, and SDKs inherit its defaults through the HTTP API.
 Test integrations can then focus on names, outcomes, and trace context.
@@ -27,8 +27,8 @@ configuration file. `${VARIABLE}` references in URLs, paths, and listener
 addresses resolve from the runtime's environment; missing variables are errors.
 Unknown fields and multiple YAML documents are rejected.
 
-`PHROND_HTTP_LISTEN`, `PHROND_PROXY_LISTEN`, `PHROND_OUTPUT_DIR`, and
-`PHROND_PROXY_CA_DIR` override file settings. Relative environment paths are
+`WIRETAP_HTTP_LISTEN`, `WIRETAP_PROXY_LISTEN`, `WIRETAP_OUTPUT_DIR`, and
+`WIRETAP_PROXY_CA_DIR` override file settings. Relative environment paths are
 relative to the process's working directory. Existing capture, timeout, logging,
 and proxy-mode environment settings still apply. Per-test SDK/API values override
 project test defaults; an explicitly supplied dependency list replaces that list.
@@ -39,21 +39,21 @@ use stable IDs when comparing repositories. `kind` is `mock`, `service`, or
 
 ## Start the runtime
 
-Build and start Phrond alongside the SUT and mocks using your existing service
+Build and start Wiretap alongside the SUT and mocks using your existing service
 harness, container setup, or a separate terminal:
 
 ```bash
-go build -o /tmp/phrond ./cmd/phrond
-/tmp/phrond --config ./test/.phrond.yaml
+go build -o /tmp/wiretap ./cmd/wiretap
+/tmp/wiretap --config ./test/.wiretap.yaml
 ```
 
-Without `--config`, the runtime discovers `.phrond.yaml`. It hosts the HTTP
+Without `--config`, the runtime discovers `.wiretap.yaml`. It hosts the HTTP
 control API and waits for SDK/API lifecycle calls to start capture. It does not
 launch test processes or choose their framework, ordering, concurrency, or exit
 status. Use your usual test command separately, such as `npm test` or `go test`.
-Phrond has one reverse SUT target per runtime.
+Wiretap has one reverse SUT target per runtime.
 
-Set `PHROND_BASE_URL` in the test process when the control API is not at its
+Set `WIRETAP_BASE_URL` in the test process when the control API is not at its
 default `http://127.0.0.1:18000`. The SDK reads configuration defaults over HTTP;
 it does not invoke the binary. Startup/session responses give the actual
 `sut_url` and dependency capture addresses. A proxy listener ending in `:0`
@@ -87,7 +87,7 @@ interrupted bundle and pending attempts. SDK cleanup failures should fail the
 owning test or suite; the test framework controls the test process exit code.
 
 Without a configuration file, supply schemas, addresses, and dependencies
-through the SDK or API. Phrond process usage/configuration errors return `2` and
+through the SDK or API. Wiretap process usage/configuration errors return `2` and
 runtime failures return `1`; those are independent of the test command's status.
 
 ## Specs remain required
@@ -116,7 +116,7 @@ some APIs have specs and others explicitly omit them, `skipped` when all omit
 them, and `fail` if any enforced schema fails. `skipped` lists the omitted API
 schema IDs. These exceptions never turn a validation failure into a pass.
 
-For dependencies marked `kind: mock`, Phrond always generates a separate OpenAPI
+For dependencies marked `kind: mock`, Wiretap always generates a separate OpenAPI
 draft from captured requests and responses, including when a spec was supplied.
 It appears in the bundle's Dependencies page and HTML dashboard. Omitted specs
 still need `schema_required: false`; inferred drafts do not enforce contracts or
@@ -125,9 +125,9 @@ change coverage. See [inferred mock assumptions](okf-bundles.md#inferred-mock-as
 ## Inspect and export
 
 ```bash
-phrond report --bundle artifacts/<run-id>
-phrond export --bundle artifacts/<run-id> --format json --output coverage.json
-phrond ca > phrond-ca.pem
+wiretap report --bundle artifacts/<run-id>
+wiretap export --bundle artifacts/<run-id> --format json --output coverage.json
+wiretap ca > wiretap-ca.pem
 ```
 
 `report` is an optional offline repair/rebuild tool for copied bundles. It

@@ -1,6 +1,6 @@
-package phrond
+package wiretap
 
-// Schema and Dependency are optional per-test overrides of .phrond.yaml defaults.
+// Schema and Dependency are optional per-test overrides of .wiretap.yaml defaults.
 type Schema struct {
 	ID     string       `json:"id,omitempty"`
 	Type   string       `json:"type"`

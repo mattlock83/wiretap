@@ -10,7 +10,7 @@ import (
 	"github.com/phrond/evermock/internal/app"
 	"github.com/phrond/evermock/internal/core"
 	"github.com/phrond/evermock/internal/project"
-	phrondtls "github.com/phrond/evermock/internal/tls"
+	wiretaptls "github.com/phrond/evermock/internal/tls"
 )
 
 func execute(ctx context.Context, args []string) int {
@@ -33,13 +33,13 @@ func execute(ctx context.Context, args []string) int {
 		return 0
 	}
 	if command != "" && command != "ca" {
-		fmt.Fprintf(os.Stderr, "unknown command %q; start the runtime with phrond, or use report, export, or ca\n", command)
+		fmt.Fprintf(os.Stderr, "unknown command %q; start the runtime with wiretap, or use report, export, or ca\n", command)
 		return 2
 	}
-	flags := flag.NewFlagSet("phrond "+command, flag.ContinueOnError)
-	configPath := flags.String("config", "", "project configuration (default: discover .phrond.yaml)")
+	flags := flag.NewFlagSet("wiretap "+command, flag.ContinueOnError)
+	configPath := flags.String("config", "", "project configuration (default: discover .wiretap.yaml)")
 	flags.Usage = func() {
-		fmt.Fprintln(flags.Output(), "Usage: phrond [--config path]\n  phrond ca [--config path]\n  phrond report --bundle <directory>\n  phrond export --bundle <directory> --format json --output coverage.json")
+		fmt.Fprintln(flags.Output(), "Usage: wiretap [--config path]\n  wiretap ca [--config path]\n  wiretap report --bundle <directory>\n  wiretap export --bundle <directory> --format json --output coverage.json")
 		flags.PrintDefaults()
 	}
 	if err := flags.Parse(args); err != nil {
@@ -49,7 +49,7 @@ func execute(ctx context.Context, args []string) int {
 		return 2
 	}
 	if len(flags.Args()) > 0 {
-		fmt.Fprintln(os.Stderr, "unexpected arguments: Phrond hosts the HTTP API; run tests with your existing test framework")
+		fmt.Fprintln(os.Stderr, "unexpected arguments: Wiretap hosts the HTTP API; run tests with your existing test framework")
 		return 2
 	}
 	cfg := core.DefaultConfig()
@@ -77,7 +77,7 @@ func execute(ctx context.Context, args []string) int {
 		return 2
 	}
 	if command == "ca" {
-		manager := phrondtls.NewManager(cfg.Proxy.CABaseDir)
+		manager := wiretaptls.NewManager(cfg.Proxy.CABaseDir)
 		pem, err := manager.CACertPEM()
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)

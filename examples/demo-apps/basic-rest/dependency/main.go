@@ -9,7 +9,7 @@ import (
 )
 
 // This process represents an independently owned dependency or mock server.
-// The example runner, never Phrond, owns its configuration and lifecycle.
+// The example runner, never Wiretap, owns its configuration and lifecycle.
 func main() {
 	listen := os.Getenv("DEPENDENCY_LISTEN")
 	if listen == "" {

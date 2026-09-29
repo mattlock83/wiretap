@@ -57,7 +57,7 @@ func TestW3CContextAcrossReverseForwardAndMITM(t *testing.T) {
 			req, _ := http.NewRequest("GET", target, nil)
 			req.Header.Set("traceparent", parent)
 			req.Header.Set("tracestate", "vendor=value")
-			req.Header.Set("X-Phrond-Session-Id", "owner")
+			req.Header.Set("X-Wiretap-Session-Id", "owner")
 			res, err := (&http.Client{Transport: transport, Timeout: 5 * time.Second}).Do(req)
 			if err != nil {
 				t.Fatal(err)
@@ -65,7 +65,7 @@ func TestW3CContextAcrossReverseForwardAndMITM(t *testing.T) {
 			io.Copy(io.Discard, res.Body)
 			res.Body.Close()
 			headers := <-observed
-			if headers.Get("traceparent") != parent || headers.Get("tracestate") != "vendor=value" || headers.Get("X-Phrond-Session-Id") != "" {
+			if headers.Get("traceparent") != parent || headers.Get("tracestate") != "vendor=value" || headers.Get("X-Wiretap-Session-Id") != "" {
 				t.Fatalf("context changed: %v", headers)
 			}
 			exchange := <-recorder.exchanges

@@ -1,7 +1,7 @@
 # Capture bundles
 
-Each Phrond runtime writes one portable run directory under `./artifacts` by
-default. Set `PHROND_OUTPUT_DIR` to choose another parent directory.
+Each Wiretap runtime writes one portable run directory under `./artifacts` by
+default. Set `WIRETAP_OUTPUT_DIR` to choose another parent directory.
 
 The `bundle_path` returned by `/v1/startRun` and `/v1/setupTest` identifies
 the exact run directory. Open `viewer/index.html` for the offline HTML dashboard,
@@ -9,7 +9,7 @@ or `index.md` for the OKF pages. Both browse the API, dependency observations,
 test attempts, and operation coverage. The runtime updates these views as
 attempts finish. `/v1/finishRun` finalizes the run after all attempts
 have been torn down. A copied bundle remains readable without the original
-workspace, source schemas, or a live Phrond process.
+workspace, source schemas, or a live Wiretap process.
 
 ```text
 artifacts/<run-id>/
@@ -34,7 +34,7 @@ each attempt/flow reference. Editing a Markdown summary cannot change coverage
 or exports. If views are missing or stale, rebuild them:
 
 ```bash
-go run ./cmd/phrond report --bundle ./artifacts/<run-id>
+go run ./cmd/wiretap report --bundle ./artifacts/<run-id>
 ```
 
 The command prints the absolute `index.md` path and also regenerates
@@ -52,10 +52,10 @@ exports. Those files are not generated during normal capture.
 ## Inferred mock assumptions
 
 Every dependency explicitly marked `upstream_kind: mock` (or `kind: mock` in
-`.phrond.yaml`) gets an OpenAPI 3.1 YAML draft under
+`.wiretap.yaml`) gets an OpenAPI 3.1 YAML draft under
 `dependencies/mocks/<dependency-hash>.openapi.yaml`. The Dependencies page and
-HTML dashboard link to it by dependency ID. Phrond refreshes these drafts as
-attempts are committed and when the run finishes; `phrond report --bundle ...`
+HTML dashboard link to it by dependency ID. Wiretap refreshes these drafts as
+attempts are committed and when the run finishes; `wiretap report --bundle ...`
 rebuilds them from the same verified evidence. No generation option or export
 command is needed.
 
@@ -66,7 +66,7 @@ spec, explicitly set `schema_required: false`; generated observations do not
 satisfy the spec requirement or give coverage a declared-operation denominator.
 Services, unknown upstream kinds, and the SUT do not get inferred drafts.
 An unused mock gets an empty `paths` document labelled as having no captured
-exchanges. Phrond cannot infer unused mock definitions.
+exchanges. Wiretap cannot infer unused mock definitions.
 
 Drafts describe **observed mock assumptions**, not provider contracts or proven
 consumer requirements:
@@ -79,9 +79,9 @@ consumer requirements:
 - Body fields, query parameters, and request bodies are not made required just
   because they appeared in every sample. Extra object properties remain allowed.
 - Failed test attempts are included so contract mismatches are visible. Each
-  operation has `x-phrond-evidence` references to attempt JSON and flow IDs, with
+  operation has `x-wiretap-evidence` references to attempt JSON and flow IDs, with
   test status and incomplete-capture flags. Reference paths are relative to the
-  draft file. Root `x-phrond` metadata identifies the dependency and run snapshot.
+  draft file. Root `x-wiretap` metadata identifies the dependency and run snapshot.
 - Transport failures and incomplete HTTP exchanges are excluded from operations
   and recorded with reasons in the root evidence list. Truncated or unreadable
   JSON bodies leave that content type's schema unconstrained. Redaction can also
@@ -96,12 +96,12 @@ start at `index.md` and follow the relative links. Keep the complete directory
 when copying or uploading it; the pages link to JSON evidence, frozen schemas,
 and retained body files. The HTML dashboard uses relative links and inline
 styling and script so it can be opened from a copied bundle without a server.
-Phrond's grouped pages and test pages also work as ordinary Markdown.
+Wiretap's grouped pages and test pages also work as ordinary Markdown.
 
 An outbound exchange says what the SUT received from a dependency during that
 test. If the upstream is declared `mock`, the exchange records behaviour the
 test's mock supplied. It does not show which response fields the SUT consumed,
-or prove a real provider gives the same response. Phrond records these unknowns
+or prove a real provider gives the same response. Wiretap records these unknowns
 explicitly. Compare provider and consumer repositories only after selecting
 the intended runs and source revisions; the bundle alone does not perform a
 provider agreement check.
@@ -114,5 +114,5 @@ details remain unknown; a test checkout revision is not automatically the
 revision of an externally running SUT.
 
 The format contracts are [JSON evidence](bundle-evidence.md) and the
-[Phrond OKF profile](okf-profile.md). Standard trace/serial guidance remains in
+[Wiretap OKF profile](okf-profile.md). Standard trace/serial guidance remains in
 the [adoption notes](otel-adoption.md).

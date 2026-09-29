@@ -15,7 +15,7 @@ import (
 
 var markdownLink = regexp.MustCompile(`!?\[[^]]*\]\(([^)]+)\)`)
 
-// Validate checks the disposable Phrond views and their local links. Evidence
+// Validate checks the disposable Wiretap views and their local links. Evidence
 // readers and exports deliberately never call this function.
 func Validate(root string) error {
 	run, captures, err := bundle.Load(root)
@@ -84,14 +84,14 @@ func validatePage(root, rel, runID string, runRevision uint64, flows map[string]
 			return fmt.Errorf("view %s: invalid YAML frontmatter", rel)
 		}
 	} else if requiredProfile || rel == "run.md" || rel == "coverage.md" {
-		return fmt.Errorf("view %s: missing Phrond frontmatter", rel)
+		return fmt.Errorf("view %s: missing Wiretap frontmatter", rel)
 	}
-	if phrond, exists := front["phrond"]; exists {
-		if err := validateProfile(root, path, rel, front, phrond, runID, runRevision, flows); err != nil {
+	if wiretap, exists := front["wiretap"]; exists {
+		if err := validateProfile(root, path, rel, front, wiretap, runID, runRevision, flows); err != nil {
 			return err
 		}
 	} else if requiredProfile || rel == "run.md" || rel == "coverage.md" {
-		return fmt.Errorf("view %s: missing Phrond profile", rel)
+		return fmt.Errorf("view %s: missing Wiretap profile", rel)
 	}
 	for _, match := range markdownLink.FindAllSubmatch(withoutFencedBlocks(data), -1) {
 		link := string(match[1])
@@ -128,7 +128,7 @@ func validateProfile(root, path, rel string, front map[string]any, value any, ru
 		}
 	}
 	generated, ok := front["generated"].(map[string]any)
-	if !ok || generated["by"] != "phrond/1.0" {
+	if !ok || generated["by"] != "wiretap/1.0" {
 		return fmt.Errorf("view %s: invalid generator", rel)
 	}
 	at, ok := generated["at"].(string)

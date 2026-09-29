@@ -2,7 +2,7 @@
 // actual test tree intact: an extra wrapper subtest would run inherited hooks
 // twice and change the user's test names.
 async function runNodeTest(runtime, t, name, fn, defaults) {
-  if (typeof t.passed !== 'boolean') throw new Error('The Phrond node:test adapter requires Node 20.12 or newer');
+  if (typeof t.passed !== 'boolean') throw new Error('The Wiretap node:test adapter requires Node 20.12 or newer');
   await Promise.all(runtime.pendingCleanup);
   if (t.signal.aborted) throw t.signal.reason || new Error('test already completed');
   const attempt = runtime.createTestAttempt(t.fullName || name, defaults);
@@ -48,7 +48,7 @@ async function runNodeTest(runtime, t, name, fn, defaults) {
   // also fires for timeouts whose callback never settles. In these cases the
   // runner already owns the failure, but capture must still be finalized.
   t.signal.addEventListener('abort', () => {
-    const pending = finish().catch(error => t.diagnostic(`Phrond cleanup: ${error.message}`));
+    const pending = finish().catch(error => t.diagnostic(`Wiretap cleanup: ${error.message}`));
     runtime.pendingCleanup.add(pending);
     pending.then(() => runtime.pendingCleanup.delete(pending));
   }, { once: true });

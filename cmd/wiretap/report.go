@@ -16,7 +16,7 @@ import (
 var errUsage = errors.New("usage")
 
 func reportCommand(args []string) error {
-	flags := flag.NewFlagSet("phrond report", flag.ContinueOnError)
+	flags := flag.NewFlagSet("wiretap report", flag.ContinueOnError)
 	var bundlePath string
 	var sutName string
 	var outputPath string
