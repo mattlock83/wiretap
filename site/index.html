@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#102820">
+  <meta name="description" content="Wiretap turns your existing HTTP API tests into clear evidence of what is covered, what your mocks assume, and what needs testing next.">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Wiretap">
+  <meta property="og:title" content="Wiretap — Know what your tests really cover.">
+  <meta property="og:description" content="Keep your tests. Capture the API conversation. Find contract gaps and make dependency assumptions visible.">
+  <meta name="color-scheme" content="light">
+  <title>Wiretap — Know what your tests really cover.</title>
+  <link rel="icon" type="image/svg+xml" href="./favicon.svg">
+  <link rel="stylesheet" href="./styles.css">
+  <script src="./site.js" defer></script>
+</head>
+<body id="top">
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <div class="container header-inner">
+      <a class="brand wiretap-brand" href="#top" aria-label="Wiretap, top of page"><svg class="wiretap-icon header-symbol" viewBox="0 0 64 48" fill="none" aria-hidden="true" focusable="false"><use href="./wiretap-icon.svg#mark"/></svg>wiretap</a>
+      <nav aria-label="Main navigation">
+        <a class="desktop-link" href="#how-it-works">How it works</a>
+        <a class="desktop-link" href="#explore">Explore</a>
+        <a href="https://github.com/phrond/wiretap/blob/main/docs/README.md">Docs</a>
+      </nav>
+      <a class="button button-small button-outline header-cta" href="https://github.com/phrond/wiretap">View on GitHub</a>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="hero container" aria-labelledby="hero-title">
+      <div class="hero-copy">
+        <p class="eyebrow product-eyebrow"><svg class="wiretap-icon product-symbol" viewBox="0 0 64 48" fill="none" aria-hidden="true" focusable="false"><use href="./wiretap-icon.svg#mark"/></svg> Wiretap</p>
+        <h1 id="hero-title">Know what your<br class="wide-break"> tests <span>really cover.</span></h1>
+        <p class="hero-description">Catch API mismatches earlier. Wiretap captures the calls behind your existing tests, makes mock assumptions visible, and shows what still needs testing.</p>
+        <div class="hero-actions">
+          <a class="button button-primary" href="#get-started">Try Wiretap</a>
+          <a class="text-link" href="#how-it-works">See how it works</a>
+        </div>
+        <p class="hero-note">Your test framework. Your HTTP client. Your mocks.</p>
+      </div>
+
+      <div class="evidence-demo" aria-label="Interactive example of Wiretap evidence">
+        <div class="demo-topbar"><div><svg class="wiretap-icon demo-logomark" viewBox="0 0 64 48" fill="none" aria-hidden="true" focusable="false"><use href="./wiretap-icon.svg#mark"/></svg><strong>orders</strong><span class="demo-slash">/</span><span>OKF bundle</span></div><span class="demo-example">Example</span></div>
+        <div class="demo-heading"><span class="eyebrow">One test. More to learn.</span><h2>Customer places an order</h2><p><span class="status-dot" aria-hidden="true"></span> Test passed <span class="middot">·</span> 2 captured exchanges</p></div>
+        <div class="demo-tabs" role="tablist" aria-label="Explore the example" hidden>
+          <button id="tab-traffic" type="button" role="tab" aria-selected="true" aria-controls="panel-traffic" tabindex="0">Test traffic</button>
+          <button id="tab-coverage" type="button" role="tab" aria-selected="false" aria-controls="panel-coverage" tabindex="-1">Coverage</button>
+          <button id="tab-assumptions" type="button" role="tab" aria-selected="false" aria-controls="panel-assumptions" tabindex="-1">Assumptions</button>
+        </div>
+        <div class="demo-panel" id="panel-traffic" role="tabpanel" aria-labelledby="tab-traffic" tabindex="0">
+          <div class="exchange"><div class="exchange-index">01</div><div class="exchange-body"><div class="exchange-meta">Your test <span aria-label="to">→</span> Orders API</div><div class="exchange-title"><code><b>POST</b> /orders</code><span class="status-code">201</span></div><div class="payload"><span>sku</span>: "COFFEE-01", <span>quantity</span>: 1</div></div></div>
+          <div class="exchange"><div class="exchange-index">02</div><div class="exchange-body"><div class="exchange-meta">Orders API <span aria-label="to">→</span> Inventory mock</div><div class="exchange-title"><code><b>GET</b> /stock/COFFEE-01</code><span class="status-code">200</span></div><div class="payload"><span>available</span>: true, <span>quantity</span>: 42</div></div></div>
+          <div class="demo-insight"><span class="insight-icon" aria-hidden="true">!</span><p>The mock says stock is available.<br><strong>Does the real inventory service agree?</strong></p></div>
+        </div>
+        <div class="demo-panel" id="panel-coverage" role="tabpanel" aria-labelledby="tab-coverage" tabindex="0" hidden>
+          <p class="panel-intro">One passing test can cover several contract conditions.</p>
+          <div class="condition"><span>Quantity is a whole number</span><span class="condition-state covered">Covered</span></div>
+          <div class="condition"><span>Quantity at its minimum of 1</span><span class="condition-state covered">Covered</span></div>
+          <div class="condition"><span>Optional reference is omitted</span><span class="condition-state covered">Covered</span></div>
+          <div class="condition"><span>Express shipping is selected</span><span class="condition-state gap">Gap</span></div>
+          <p class="panel-footnote">A green test is useful evidence. It does not exercise every case in your spec.</p>
+        </div>
+        <div class="demo-panel" id="panel-assumptions" role="tabpanel" aria-labelledby="tab-assumptions" tabindex="0" hidden>
+          <div class="assumption-heading"><span class="mini-label">Inventory dependency</span><span class="condition-state gap">Mock assumption</span></div>
+          <p class="assumption-copy">The order flow passed when inventory replied:</p>
+          <pre class="assumption-json"><code>{ "available": true, "quantity": 42 }</code></pre>
+          <div class="verification-line"><span>Real provider agreement</span><strong>Not verified</strong></div>
+          <p class="panel-footnote">Keep this assumption with the test evidence, ready to compare with the provider's own tests.</p>
+        </div>
+        <div class="demo-bottom"><span class="file-icon" aria-hidden="true"></span> Readable by people. Structured for agents.</div>
+      </div>
+    </section>
+
+    <div class="container"><div class="compatibility"><p>Fits around the way you test.</p><div><span>Any language over HTTP</span><span>OpenAPI</span><span>OpenTelemetry</span><span>OKF</span></div></div></div>
+
+    <section class="section container" id="how-it-works" aria-labelledby="how-title">
+      <div class="section-heading"><p class="eyebrow">Keep the tests. Add the evidence.</p><h2 id="how-title">A small addition to<br>your existing test setup.</h2><p>Run Wiretap alongside your application. It watches the HTTP requests and responses that pass through it, while your tests and mocks keep doing their jobs.</p></div>
+      <div class="flow-diagram" aria-label="Tests send requests through Wiretap to your application. Dependency calls pass through Wiretap to your mocks.">
+        <div class="flow-endpoint"><span class="flow-kicker">You already have</span><strong>Your tests</strong></div>
+        <div class="flow-wire" aria-hidden="true">
+          <svg focusable="false">
+            <defs><marker id="flow-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto" markerUnits="userSpaceOnUse"><path d="M1 1 7 4 1 7" fill="none" stroke="currentColor" stroke-width="1.2"/></marker></defs>
+            <line x1="0" y1="0" x2="100%" y2="100%" stroke="currentColor" stroke-width="1.2" marker-end="url(#flow-arrow)"/>
+          </svg>
+        </div>
+        <div class="flow-tap"><svg class="wiretap-icon tap-symbol" viewBox="0 0 64 48" fill="none" aria-hidden="true" focusable="false"><use href="./wiretap-icon.svg#mark"/></svg><strong>Wiretap</strong><span>captures</span></div>
+        <div class="flow-wire" aria-hidden="true">
+          <svg focusable="false">
+            <line x1="0" y1="100%" x2="100%" y2="0" stroke="currentColor" stroke-width="1.2" marker-end="url(#flow-arrow)"/>
+          </svg>
+        </div>
+        <div class="flow-endpoint flow-app"><span class="flow-kicker">System under test</span><strong>Your application</strong></div>
+        <div class="flow-wire" aria-hidden="true">
+          <svg focusable="false">
+            <line x1="0" y1="0" x2="100%" y2="100%" stroke="currentColor" stroke-width="1.2" marker-end="url(#flow-arrow)"/>
+          </svg>
+        </div>
+        <div class="flow-tap"><svg class="wiretap-icon tap-symbol" viewBox="0 0 64 48" fill="none" aria-hidden="true" focusable="false"><use href="./wiretap-icon.svg#mark"/></svg><strong>Wiretap</strong><span>captures</span></div>
+        <div class="flow-wire" aria-hidden="true">
+          <svg focusable="false">
+            <line x1="0" y1="100%" x2="100%" y2="0" stroke="currentColor" stroke-width="1.2" marker-end="url(#flow-arrow)"/>
+          </svg>
+        </div>
+        <div class="flow-endpoint"><span class="flow-kicker">You already have</span><strong>Your mocks</strong></div>
+      </div>
+      <div class="steps">
+        <article><span class="step-number">01</span><h3>Connect the boundaries</h3><p>Give Wiretap your API specs and route test and dependency calls through it.</p></article>
+        <article><span class="step-number">02</span><h3>Run your tests</h3><p>Use SDK or HTTP calls in your test setup and cleanup. Keep your existing assertions.</p></article>
+        <article><span class="step-number">03</span><h3>Keep the conversation</h3><p>Get a portable OKF bundle of API behaviour, dependency assumptions and coverage, tied to named tests.</p></article>
+      </div>
+    </section>
+
+    <section class="learning-section" id="what-you-learn" aria-labelledby="learn-title">
+      <div class="container">
+        <div class="section-heading"><p class="eyebrow">From a test result to a system picture</p><h2 id="learn-title">Make the blind spots visible.</h2></div>
+        <div class="learning-grid">
+          <article class="learning-item"><div class="feature-symbol" aria-hidden="true">{ }</div><h3>See your API<br>as it was tested.</h3><p>Follow requests, responses and their sequence. Check that the traffic matches your OpenAPI specs, with the exact test behind each observation.</p><a class="text-link" href="https://github.com/phrond/wiretap/blob/main/docs/okf-bundles.md">Inside a capture bundle</a></article>
+          <article class="learning-item"><div class="feature-symbol amber" aria-hidden="true">≈</div><h3>Know what your<br>mocks are assuming.</h3><p>A mocked reply is a claim about another system. Wiretap records those claims and generates an observed API draft for each mock, ready for review.</p><a class="text-link" href="https://github.com/phrond/wiretap/blob/main/docs/okf-bundles.md#inferred-mock-assumptions">Understand dependency evidence</a></article>
+          <article class="learning-item"><div class="feature-symbol blue" aria-hidden="true">[ ]</div><h3>Find the cases<br>you haven't covered.</h3><p>Go beyond “this endpoint was called.” See which enum values, optional fields and boundaries your tests exercised, and which still need evidence.</p><a class="text-link" href="https://github.com/phrond/wiretap/blob/main/docs/contract-coverage-rules.md">How coverage is measured</a></article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section container" id="explore" aria-labelledby="explore-title">
+      <div class="explore-layout">
+        <div class="explore-copy"><p class="eyebrow">Go further with explore</p><h2 id="explore-title">Start with a happy path.<br>Give the bad inputs a turn.</h2><p>Wiretap can replay a captured scenario with missing fields, wrong types and out-of-range values. Check that your API rejects them with the expected response.</p><p>Your hooks provide fresh authentication and fixtures, check side effects, and clean up. Write them in whatever language your team uses.</p><a class="text-link" href="https://github.com/phrond/wiretap/blob/main/docs/exploration.md">Meet the exploration runner</a><p class="scope-note">Bounded, targeted checks. A 401 or a server error is a failed check, not proof that input validation worked.</p></div>
+        <div class="explore-example"><div class="terminal-bar"><span class="terminal-dots" aria-hidden="true"><i></i><i></i><i></i></span><span>wiretap explore</span><span>Example checks</span></div><div class="terminal-body"><pre><code><span class="terminal-prompt">$</span> wiretap explore \
+    --bundle ./artifacts/order-flow \
+    --config .wiretap.yaml</code></pre><div class="generated-heading"><span>Input</span><span>Expected response</span></div><div class="generated-row"><span><span class="case-mark" aria-hidden="true">✓</span> Original happy path</span><span>201 Created</span></div><div class="generated-row"><span><span class="case-mark" aria-hidden="true">✓</span> Required quantity missing</span><span>400 / 422</span></div><div class="generated-row"><span><span class="case-mark" aria-hidden="true">✓</span> Text instead of a number</span><span>400 / 422</span></div><div class="generated-row"><span><span class="case-mark" aria-hidden="true">✓</span> Quantity below its minimum</span><span>400 / 422</span></div><div class="terminal-result"><span aria-hidden="true">＋</span> New tests. New evidence. A new bundle.</div></div></div>
+      </div>
+    </section>
+
+    <section class="knowledge-section" id="knowledge" aria-labelledby="knowledge-title">
+      <div class="container knowledge-layout">
+        <div class="knowledge-copy">
+          <p class="eyebrow">Open Knowledge Format (OKF)</p>
+          <h2 id="knowledge-title">Give people and agents<br>the same source of context.</h2>
+          <p>Every run produces an OKF bundle: linked Markdown pages with structured metadata, packaged alongside the captured API traffic and specs.</p>
+          <ul class="knowledge-benefits">
+            <li><strong>Portable, reviewable files.</strong> Keep the bundle with your build, share it, or review it in Git. No hosted service needed.</li>
+            <li><strong>Context for your agents.</strong> Links and metadata help knowledge bases and agents navigate APIs, tests and dependency assumptions.</li>
+            <li><strong>Evidence you can follow.</strong> Trace observations back to the named tests, requests and responses behind them.</li>
+          </ul>
+          <div class="knowledge-links">
+            <a class="text-link" href="https://github.com/phrond/wiretap/blob/main/docs/okf-bundles.md">Explore the OKF bundle</a>
+            <a class="text-link" href="https://github.com/GoogleCloudPlatform/open-knowledge-format/blob/ad30107c/SPEC.md">About the format</a>
+          </div>
+        </div>
+        <div class="bundle-files" aria-label="Contents of a Wiretap OKF bundle">
+          <div class="bundle-title"><span class="file-icon" aria-hidden="true"></span> One portable OKF bundle</div>
+          <div><code>index.md</code><span>Start with the linked overview</span></div>
+          <div><code>system.md</code><span>The tested API picture</span></div>
+          <div><code>verification.md</code><span>What needs checking</span></div>
+          <div><code>knowledge.json</code><span>Context for your agents</span></div>
+          <div><code>evidence/</code><span>The captured exchanges</span></div>
+          <div><code>viewer/index.html</code><span>An offline report for people</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section container questions-section" aria-labelledby="questions-title"><div><p class="eyebrow">A few practical details</p><h2 id="questions-title">Fits your tests.<br>Keeps its promises clear.</h2></div><div class="questions">
+      <details><summary>Do I need to change my test framework?</summary><p>No. Call Wiretap from the setup and cleanup hooks your framework already provides. JavaScript and Go SDKs help with the plumbing; other languages can use the HTTP API. Your framework still owns the tests and assertions.</p></details>
+      <details><summary>Does my application need Wiretap-specific code?</summary><p>Configure your test environment's URLs so traffic passes through Wiretap. For parallel tests sharing one application, reuse working OpenTelemetry/W3C trace propagation. Without it, run sequentially or isolate workers. There is no Wiretap-specific ID to propagate through the application.</p></details>
+      <details><summary>Do I need an OpenAPI spec?</summary><p>Specs are required by default so Wiretap can validate traffic and show coverage gaps. You can explicitly opt an individual API out while still capturing its traffic; its contract coverage will remain unknown.</p></details>
+      <details><summary>Does it prove my mocks match the real provider?</summary><p>Wiretap makes the assumptions visible and preserves the evidence needed to investigate them. A passing consumer test alone cannot prove provider agreement. Automatic comparison between provider and consumer repositories is not yet included.</p></details>
+    </div></section>
+
+    <section class="get-started-section" id="get-started" aria-labelledby="start-title"><div class="container start-layout"><div><p class="eyebrow">Put your existing tests to work</p><h2 id="start-title">Same tests.<br>A lot more insight.</h2><p>Run the example, open the bundle, and see the API conversation for yourself.</p><a class="button button-primary" href="https://github.com/phrond/wiretap/blob/main/docs/getting-started-existing-tests.md">Read the quickstart</a></div><div class="quickstart"><div class="quickstart-heading"><strong>Try the complete example</strong><button class="copy-button" type="button" data-copy="quickstart-code" hidden>Copy commands</button></div><pre><code id="quickstart-code">git clone https://github.com/phrond/wiretap.git
+cd wiretap
+npm ci --prefix sdk/js
+./examples/run-basic-rest-e2e.sh</code></pre><p>Requires Go 1.24+, Node.js 20.12+, Bash and curl.</p><span class="copy-status" role="status" aria-live="polite"></span></div></div></section>
+  </main>
+
+  <footer class="site-footer" id="footer"><div class="container footer-inner"><div><a class="brand" href="#top" aria-label="Phrond, top of page"><svg class="phrond-mark" viewBox="0 0 64 64" fill="none" aria-hidden="true" focusable="false"><use href="./phrond-icon.svg#mark"/></svg>phrond<span class="brand-period">.</span></a></div><nav aria-label="Footer navigation"><a href="https://github.com/phrond/wiretap">GitHub</a><a href="https://github.com/phrond/wiretap/blob/main/docs/README.md">Documentation</a><a href="https://github.com/phrond/wiretap/issues">Issues &amp; ideas</a></nav><span class="footer-note">A clearer picture of connected software.</span></div></footer>
+</body>
+</html>

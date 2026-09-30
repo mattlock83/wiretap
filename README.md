@@ -90,3 +90,6 @@ stay in your project; the source bundle remains unchanged. See
 
 Start with the [documentation index](docs/README.md) for setup, SDKs, commands,
 bundle formats, CI and troubleshooting.
+
+The [landing page guide](site/README.md) covers previewing and publishing the
+Wiretap website with GitHub Pages.
