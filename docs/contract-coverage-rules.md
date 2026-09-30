@@ -1,9 +1,9 @@
 # Contract coverage rules
 
-Status: implemented for the initial HTTP/OpenAPI 3.0 measurement scope below.
-The numbered rules describe the measurement contract; unsupported features stay
-explicit rather than silently receiving coverage. Test execution and live schema
-enforcement are unchanged.
+Wiretap measures contract conditions for HTTP/OpenAPI 3.0 under the scope
+below. The numbered rules define the measurement contract, including how to
+report unsupported features and evidence limits. For a guide to reading the
+results, start with [bundles and reports](okf-bundles.md).
 
 ## Using contract coverage
 
@@ -333,7 +333,7 @@ into an interaction that never occurred.
 For example, observing `status=cancelled` in one response and `items=[]` in another
 does not establish coverage of `status=cancelled` with `items=[]`.
 
-Initially list observed combinations and their evidence without a combination
+Observed combinations are listed with their evidence, without a combination
 coverage percentage. Full Cartesian-product coverage is not required. A future
 pairwise or selected-combination policy must define the target set, respect
 feasibility and conditional applicability, and disclose what it omits.
@@ -434,7 +434,7 @@ The coverage model is protocol neutral; extraction is protocol specific:
 
 These are adapter requirements, not claims of current transport support.
 
-## Acceptance criteria
+## Measurement guarantees
 
 - One response contributes to every applicable condition and preserves the
   combination without inventing additional scenarios.

@@ -65,7 +65,7 @@ does not change that captured contract.
 
 The SUT and its existing mocks must be available. Hooks can prepare that
 environment, but the runner does not infer mock definitions from captured traffic.
-This first mode sends provider requests directly and captures their responses;
+Exploration sends provider requests directly and captures their responses;
 it does not replay or capture downstream dependency calls. Rejection coverage
 is provider-only.
 
@@ -94,8 +94,8 @@ shell, name it explicitly: `[bash, tests/setup.sh]` or
 
 Standard output is either empty or one JSON object. Standard error is for logs.
 A nonzero exit, timeout or malformed output is an execution failure. Default
-timeout is 30 seconds per invocation; output is limited to 1 MiB. The initial
-runner executes cases serially. No Wiretap language SDK is required.
+timeout is 30 seconds per invocation; output is limited to 1 MiB. The runner
+executes cases serially. No Wiretap language SDK is required.
 
 Example input:
 
@@ -176,6 +176,19 @@ guarantee cleanup. Setup/check/signing failures also stop the run; ordinary HTTP
 or property failures are recorded and exploration continues within its budget.
 Name or tag fixtures with `run_id` and `case_id` when cleanup must recover them
 after setup fails before returning its bindings.
+
+## Apply hooks to selected requests
+
+Hook configuration is per lifecycle event, with no YAML path matcher. A
+`before_request` command can inspect `request.method` and the path in
+`request.url`, then return headers only for matching requests. Return `{}` for
+requests needing no changes; the command is still invoked for each request.
+
+Case hooks can branch on `scenario`, `mode` and `mutation.operation`. A baseline
+has no mutation, so handle it separately. A configured `check_case` must still
+return an applicable assertion; an empty result is not a skipped check.
+Bindings and response extraction can be restricted to a captured `flow_id` as
+shown below.
 
 ## Sequences and fresh values
 

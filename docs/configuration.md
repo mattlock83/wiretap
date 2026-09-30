@@ -1,16 +1,9 @@
-# Project configuration and runtime
+# Configuration and commands
 
 Check in one `.wiretap.yaml` at the project root. Wiretap discovers it in the
 working directory or the nearest ancestor; `--config path` selects another file.
 The runtime loads it once, and SDKs inherit its defaults through the HTTP API.
 Test integrations can then focus on names, outcomes, and trace context.
-
-The optional `explore` section configures the generated provider test runner:
-`hooks`, `expected_statuses` (default `[400, 422]`), `max_cases` (default `100`),
-`request_timeout` (default `15s`), runtime `bindings`, response `extract` rules,
-and additional `redactions`. Hook commands run relative to this file and inherit
-the environment. They are invoked only by `wiretap explore`; capture and report
-commands never execute them. See [exploration and hooks](exploration.md).
 
 ```yaml
 version: 1
@@ -36,9 +29,9 @@ Unknown fields and multiple YAML documents are rejected.
 
 `WIRETAP_HTTP_LISTEN`, `WIRETAP_PROXY_LISTEN`, `WIRETAP_OUTPUT_DIR`, and
 `WIRETAP_PROXY_CA_DIR` override file settings. Relative environment paths are
-relative to the process's working directory. Existing capture, timeout, logging,
-and proxy-mode environment settings still apply. Per-test SDK/API values override
-project test defaults; an explicitly supplied dependency list replaces that list.
+relative to the process's working directory. Additional capture and proxy
+settings are listed below. Per-test SDK/API values override project test
+defaults; an explicitly supplied dependency list replaces that list.
 
 The SUT `id` identifies the provided API. Dependency keys identify their APIs;
 use stable IDs when comparing repositories. `kind` is `mock`, `service`, or
@@ -101,7 +94,7 @@ runtime failures return `1`; those are independent of the test command's status.
 
 Both the SUT and each dependency require an OpenAPI spec by default.
 
-For an API that genuinely has no spec, make the exception explicit on that API:
+For an API without a spec, make the exception explicit on that API:
 
 ```yaml
 dependencies:
@@ -117,9 +110,9 @@ payloads remain available; they are not inferred contract operations. Other
 APIs remain strict. A supplied schema is always loaded and validated, even with
 `schema_required: false`; missing files and invalid specs remain errors.
 
-The API spelling is also `schema_required`; JavaScript uses `schemaRequired` and
-Go uses `SchemaRequired *bool`. An attempt's validation status is `partial` when
-some APIs have specs and others explicitly omit them, `skipped` when all omit
+The HTTP API spelling is also `schema_required`; JavaScript uses
+`schemaRequired` and Go uses `SchemaRequired *bool`. An attempt's validation
+status is `partial` when some APIs have specs and others explicitly omit them, `skipped` when all omit
 them, and `fail` if any enforced schema fails. `skipped` lists the omitted API
 schema IDs. These exceptions never turn a validation failure into a pass.
 
@@ -129,17 +122,42 @@ It appears in the bundle's Dependencies page and HTML dashboard. Omitted specs
 still need `schema_required: false`; inferred drafts do not enforce contracts or
 change coverage. See [inferred mock assumptions](okf-bundles.md#inferred-mock-assumptions).
 
-## Inspect and export
+## Capture and proxy settings
 
-```bash
-wiretap report --bundle artifacts/<run-id>
-wiretap export --bundle artifacts/<run-id> --format json --output coverage.json
-wiretap ca > wiretap-ca.pem
-```
+Set these on the Wiretap process:
 
-`report` is an optional offline repair/rebuild tool for copied bundles. It
-rebuilds OKF pages and the offline dashboard from verified evidence.
-`export` uses the same report implementation for diagnostic JSON/YAML output. Normal capture already writes the bundle views.
-`ca` prints the public CA certificate used by that runtime configuration; it
-creates the local CA if necessary. Trust setup is described in the
-[HTTPS guide](https-trust.md).
+| Environment variable | Default | Purpose |
+| --- | --- | --- |
+| `WIRETAP_MAX_CAPTURE_BYTES` | `4194304` (4 MiB) | Retained bytes per request or response body; `0` retains the full body. Delivery still streams through the proxy. |
+| `WIRETAP_PROXY_MODE` | `mitm` | Decrypt HTTPS with the proxy CA; `passthrough` retains connection metadata only. |
+| `WIRETAP_PROXY_CA_DIR` | System cache under `wiretap/ca` | Directory containing the proxy CA. |
+
+Test teardown drains accepted requests for five seconds by default. The SDK/API
+can override that per attempt. See [tracing and completion](otel-adoption.md#evidence-and-completion)
+and [HTTPS trust](https-trust.md).
+
+## Exploration settings
+
+The optional `explore` section configures the generated provider test runner:
+`hooks`, `expected_statuses` (default `[400, 422]`), `max_cases` (default `100`),
+`request_timeout` (default `15s`), runtime `bindings`, response `extract` rules,
+and additional `redactions`. Hook commands run relative to this file and inherit
+the environment. They are invoked only by `wiretap explore`; capture and report
+commands never execute them. See [exploration and hooks](exploration.md).
+
+## CLI commands
+
+The `wiretap` binary provides these commands. Capture lifecycle is controlled
+through the [HTTP API](runtime-api.md), usually via an SDK.
+
+| Command | Purpose |
+| --- | --- |
+| `wiretap [--config path]` | Start the HTTP control service; wait for capture lifecycle calls. |
+| `wiretap explore --bundle <path> [--config path]` | Execute provider rejection checks and write a new bundle. See [selection, targets and hooks](exploration.md#run-against-your-provider). |
+| `wiretap report --bundle <path>` | Rebuild a bundle's Markdown, HTML, knowledge and coverage views offline. |
+| `wiretap export --bundle <path> --format json` | Export a diagnostic coverage report to stdout; `--format yaml` and `--output <file>` are also supported. |
+| `wiretap ca [--config path]` | Print the public proxy CA certificate, creating the local CA if needed. |
+
+Normal capture already writes the bundle views. `report` is useful for copied
+bundles or after a viewer update; it does not execute tests. See the
+[bundle guide](okf-bundles.md#rebuild-or-export) for examples.

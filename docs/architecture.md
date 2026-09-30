@@ -21,7 +21,7 @@ cases and invokes external project commands for fixtures and business checks.
 | `internal/artifact` | In-memory capture model shared by recording, storage, and reporting. |
 | `internal/bundle` | Authoritative run inventory, immutable attempt JSON, frozen schemas, payload attachments, and integrity checks. |
 | `internal/coverage` | Calculate operation and contract-condition coverage from verified evidence; generate diagnostic exports. |
-| `internal/bundlereport` | Render OKF Markdown and the offline HTML dashboard from verified bundle evidence. |
+| `internal/bundlereport` | Derive system knowledge and verification tasks; render OKF Markdown, the offline viewer and inferred mock drafts. |
 | `internal/project` | Discover and resolve `.wiretap.yaml` once for the runtime. |
 | `internal/core` | Runtime configuration and component lifecycle. |
 
@@ -97,8 +97,8 @@ absent spec with `schema_required: false`; omission is persisted and displayed
 as skipped validation with unknown coverage. Supplied specs always validate.
 Reports and exports read only verified bundle evidence.
 
-The maintained format contracts are [bundle evidence](bundle-evidence.md) and
-the [OKF profile](okf-profile.md). The [bundle guide](okf-bundles.md) describes
+The format references cover [bundle evidence](bundle-evidence.md),
+[bundle knowledge](bundle-knowledge.md) and the [OKF profile](okf-profile.md). The [bundle guide](okf-bundles.md) describes
 viewing, rebuilding, and exports.
 
 ## Meaning and limits

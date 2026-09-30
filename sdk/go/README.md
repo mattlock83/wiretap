@@ -9,7 +9,7 @@ invokes the CLI or launches test processes.
 ```go
 runtime := wiretap.Runtime{} // WIRETAP_BASE_URL or http://127.0.0.1:18000
 
-t.Run("creates an order", func(t *testing.T) {
+t.Run("gets an order", func(t *testing.T) {
     t.Parallel() // only with working SUT propagation / isolated runtimes
     session := runtime.StartTest(t, wiretap.TestOptions{ExplicitSession: true})
     client := session.HTTPClient(existingClient)

@@ -48,7 +48,7 @@ lists its ID in `schema_validation.skipped`; mixed attempts have status `partial
 unless an enforced schema fails. Coverage remains unknown for the omitted API,
 while concrete observed paths and exchanges remain browsable.
 
-## Derived contract coverage
+## Generated provider attempts
 
 Generated provider attempts also contain optional `capture.exploration` evidence:
 generator version, source run/attempt/hash, baseline or rejection mode, targeted
@@ -64,9 +64,11 @@ execution metadata in the bundle. Captured message values follow redaction rules
 The source bundle stays immutable; exploration records freshly executed evidence
 in a separate run and never grants current coverage from old source observations.
 
-`contract-coverage.json`, `contract-coverage.md`, and the HTML Contract coverage tab are
-rebuildable views of this evidence and the supplied frozen contracts. They never
-become evidence inputs. The catalogue identifies the run snapshot, measurement
+## Derived contract coverage
+
+`contract-coverage.json`, `contract-coverage.md`, and the HTML **Contract coverage**
+tab are rebuildable views of this evidence and the supplied frozen contracts.
+They never become evidence inputs. The catalogue identifies the run snapshot, measurement
 rule version, content-based contract revision, and API/operation/condition keys.
 Each observation links back to an attempt path and flow ID, with phase, instance
 location, test name, outcome, message validation, capture completeness and

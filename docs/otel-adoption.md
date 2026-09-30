@@ -1,4 +1,4 @@
-# Adopting Wiretap with test traces
+# Tracing and concurrency
 
 Wiretap uses standard W3C trace context to associate captured HTTP exchanges with
 individual test attempts. Start with the [existing-tests guide](getting-started-existing-tests.md),
@@ -39,9 +39,9 @@ The mock only needs to receive normal HTTP requests; it does not need OTel.
 
 Wiretap still records request and response payloads at the proxy. OTel supplies
 context for correlation, not full body capture. No collector, exporter, or
-tracing backend is required for this feature, and capture must work even when
-trace sampling is disabled. Inspect existing SUT spans in the team's tracing backend; Wiretap records
-proxy exchanges and their context without importing those spans.
+tracing backend is required. Capture works when sampling is disabled. Wiretap
+records proxy exchanges and context; use your existing tracing backend to
+inspect application spans.
 
 One test trace can contain several inbound SUT requests. Knowing the test does
 not always prove which inbound request caused a dependency call: the SUT's
@@ -63,14 +63,16 @@ timing-based parent inferences and ambiguity.
 5. **Await the test's work before teardown.** Wait for HTTP calls and any expected
    background dependency activity. Closing the test early cannot establish the
    ownership of later work reliably.
-6. **Supply schemas.** Configure specs in `.wiretap.yaml`. Generation is an
-   explicit SUT option; an individual API can explicitly omit a spec with
-   `schema_required: false`. See [configuration](configuration.md).
+6. **Supply schemas.** Configure specs in `.wiretap.yaml`. An individual API
+   can explicitly omit a spec with `schema_required: false`. Inferred mock
+   drafts document observations and do not replace supplied contracts. See
+   [configuration](configuration.md).
 
 Your harness starts the Wiretap process; test framework hooks call its HTTP API
 through the SDK to start and finalize capture. Set `WIRETAP_BASE_URL` when needed.
-One suite-level owner finalizes after all workers finish. Serial capture remains the default, with one implicit session. Shared-SUT parallel
-mode uses explicit sessions and a stable dependency capture URL, configured once
+One suite-level owner finalizes after all workers finish. Serial capture remains
+the default, with one implicit session. Shared-SUT parallel mode uses explicit
+sessions and a stable dependency capture URL, configured once
 in the SUT; Wiretap selects the owning session using each request's trace. Select
 that mode only when propagation works on the relevant application path.
 
@@ -104,9 +106,9 @@ wiretap.test("creates an order", async () => {
 ```
 
 The SDK instruments Node `http`/`https` and native `fetch` through
-standard HTTP and Undici instrumentation. Keep existing calls and assertions;
-Other clients work when they use an instrumented stack, but custom transports, ESM module hooks, and in-process mock interception
-need separate verification. The SDK requires Node 18.19+ or 20.6+; its
+standard HTTP and Undici instrumentation. Keep existing calls and assertions.
+Other clients work when they use an instrumented stack; custom transports,
+ESM module hooks and in-process mock interception need separate verification. The SDK requires Node 18.19+ or 20.6+; its
 `node:test` adapter requires **Node 20.12+** for the runner's
 [final outcome API](https://nodejs.org/api/test.html#contextpassed).
 HTTP and native fetch are covered by SDK integration tests; HTTPS capture is
@@ -177,16 +179,16 @@ SUT propagation, or isolate each worker's runtime and SUT.
 Jest suites always use `manageRuntime: false`. Start Wiretap with the existing
 harness and call `POST /v1/finishRun` from Jest global teardown after **all**
 workers finish. See the [example teardown](../examples/basic-rest/jest-teardown.cjs).
-Bundles and views are automatic; schema exports are optional. Worker teardown
-never kills another worker's proxy. Existing
-host-level OTel instrumentation can be preloaded with `NODE_OPTIONS`; set
+Bundles and views are automatic. Worker teardown never stops another worker's
+proxy. Existing host-level OTel instrumentation can be preloaded with `NODE_OPTIONS`; set
 `WIRETAP_EXISTING_OTEL=1` to keep the Jest environment from installing duplicates.
 
 ### Go tests and `httptest`
 
 Keep the standard `http.Client` and wrap its transport with standard OTel HTTP
-instrumentation. Requests must carry the owning test's context. A per-test bound transport provides that association when changing request
-construction is impractical. Parallel tests must not depend on globally changing
+instrumentation. Requests must carry the owning test's context. A transport
+bound to the test provides that association when changing request construction
+is impractical. Parallel tests must not depend on globally changing
 the active test or mutating a shared client's transport.
 
 `httptest.NewServer` can be used as the real SUT destination behind Wiretap.
@@ -229,11 +231,11 @@ admission and waits up to five seconds for accepted requests; `drainTimeoutMs`
 (JS) or `drain_timeout_ms` (API) changes that bound, from 0 to 60000 milliseconds.
 A timeout writes a failed attempt with `capture_incomplete` and diagnostics;
 it does not silently claim a complete capture. Closed trace IDs cannot be reused
-until a successful runtime shutdown (`finishRun`). If a
-timed-out attempt still has accepted requests in flight, Wiretap rejects new
+until successful run finalization (`finishRun`), which leaves the control
+process running. If a timed-out attempt still has accepted requests in flight,
+Wiretap rejects new
 implicit sessions and unlabeled fallback traffic until they finish. Untraced
-late/background work cannot be
-reliably assigned, even in serial mode; drain or isolate that work in the harness.
+late/background work cannot be reliably assigned, even in serial mode; drain or isolate that work in the harness.
 
 ## Background
 
