@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/phrond/evermock/internal/artifact"
+	"github.com/phrond/wiretap/internal/artifact"
 )
 
 const defaultMask = "****"

@@ -17,7 +17,7 @@ import (
 	"github.com/getkin/kin-openapi/openapi3filter"
 	"github.com/getkin/kin-openapi/routers"
 	"github.com/getkin/kin-openapi/routers/legacy"
-	"github.com/phrond/evermock/internal/artifact"
+	"github.com/phrond/wiretap/internal/artifact"
 )
 
 type openapiSpec struct {

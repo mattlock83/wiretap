@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/phrond/evermock/internal/tracecontext"
+	"github.com/phrond/wiretap/internal/tracecontext"
 	"go.opentelemetry.io/otel/trace"
 )
 

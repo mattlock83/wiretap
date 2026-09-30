@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/phrond/evermock/internal/bundle"
-	"github.com/phrond/evermock/internal/coverage"
+	"github.com/phrond/wiretap/internal/bundle"
+	"github.com/phrond/wiretap/internal/coverage"
 	"gopkg.in/yaml.v3"
 )
 

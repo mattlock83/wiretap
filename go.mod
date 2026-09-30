@@ -1,4 +1,4 @@
-module github.com/phrond/evermock
+module github.com/phrond/wiretap
 
 go 1.24.0
 

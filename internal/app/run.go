@@ -5,8 +5,8 @@ import (
 	"errors"
 	"time"
 
-	"github.com/phrond/evermock/internal/bundlereport"
-	"github.com/phrond/evermock/internal/proxy"
+	"github.com/phrond/wiretap/internal/bundlereport"
+	"github.com/phrond/wiretap/internal/proxy"
 )
 
 func (a *App) startRun(ctx context.Context) error {

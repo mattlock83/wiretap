@@ -6,9 +6,9 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/phrond/evermock/internal/core"
-	"github.com/phrond/evermock/internal/proxy"
-	tlsmgr "github.com/phrond/evermock/internal/tls"
+	"github.com/phrond/wiretap/internal/core"
+	"github.com/phrond/wiretap/internal/proxy"
+	tlsmgr "github.com/phrond/wiretap/internal/tls"
 )
 
 type ProxyComponent struct {

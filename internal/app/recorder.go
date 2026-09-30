@@ -21,10 +21,10 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/phrond/evermock/internal/artifact"
-	"github.com/phrond/evermock/internal/capture"
-	"github.com/phrond/evermock/internal/proxy"
-	"github.com/phrond/evermock/internal/redact"
+	"github.com/phrond/wiretap/internal/artifact"
+	"github.com/phrond/wiretap/internal/capture"
+	"github.com/phrond/wiretap/internal/proxy"
+	"github.com/phrond/wiretap/internal/redact"
 	"go.opentelemetry.io/otel/trace"
 )
 

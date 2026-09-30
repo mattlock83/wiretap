@@ -16,8 +16,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/phrond/evermock/internal/capture"
-	tlsmgr "github.com/phrond/evermock/internal/tls"
+	"github.com/phrond/wiretap/internal/capture"
+	tlsmgr "github.com/phrond/wiretap/internal/tls"
 )
 
 // Mode controls how HTTPS traffic is handled.

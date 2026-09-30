@@ -3,7 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
-	"github.com/phrond/evermock/internal/tracecontext"
+	"github.com/phrond/wiretap/internal/tracecontext"
 	"go.opentelemetry.io/otel/trace"
 	"net/http"
 	"net/url"
@@ -12,8 +12,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/phrond/evermock/internal/artifact"
-	"github.com/phrond/evermock/internal/proxy"
+	"github.com/phrond/wiretap/internal/artifact"
+	"github.com/phrond/wiretap/internal/proxy"
 )
 
 var validDependencyAssetID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)

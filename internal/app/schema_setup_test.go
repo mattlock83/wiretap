@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/phrond/evermock/internal/artifact"
+	"github.com/phrond/wiretap/internal/artifact"
 )
 
 func TestSchemaSetupRequiresSpecsUnlessExplicitlyOmitted(t *testing.T) {

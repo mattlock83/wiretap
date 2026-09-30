@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/phrond/evermock/internal/artifact"
-	"github.com/phrond/evermock/internal/core"
-	"github.com/phrond/evermock/internal/coverage"
+	"github.com/phrond/wiretap/internal/artifact"
+	"github.com/phrond/wiretap/internal/core"
+	"github.com/phrond/wiretap/internal/coverage"
 )
 
 const dependencyCaptureSUTSchema = `openapi: 3.0.3

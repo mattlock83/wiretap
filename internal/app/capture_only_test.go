@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/phrond/evermock/internal/core"
+	"github.com/phrond/wiretap/internal/core"
 )
 
 func TestCaptureAPIRejectsUnknownFields(t *testing.T) {

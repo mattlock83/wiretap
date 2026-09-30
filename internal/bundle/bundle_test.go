@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/phrond/evermock/internal/artifact"
+	"github.com/phrond/wiretap/internal/artifact"
 )
 
 const testSchema = `openapi: 3.0.0

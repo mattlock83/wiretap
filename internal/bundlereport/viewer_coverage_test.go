@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/phrond/evermock/internal/artifact"
-	"github.com/phrond/evermock/internal/coverage"
+	"github.com/phrond/wiretap/internal/artifact"
+	"github.com/phrond/wiretap/internal/coverage"
 )
 
 func TestViewerCoverageGroupsWithoutChangingMeasurement(t *testing.T) {

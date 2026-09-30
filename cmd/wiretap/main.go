@@ -11,7 +11,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/phrond/evermock/internal/core"
+	"github.com/phrond/wiretap/internal/core"
 )
 
 func main() {

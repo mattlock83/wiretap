@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/phrond/evermock/internal/explore"
-	"github.com/phrond/evermock/internal/project"
+	"github.com/phrond/wiretap/internal/explore"
+	"github.com/phrond/wiretap/internal/project"
 )
 
 func exploreCommand(ctx context.Context, args []string) error {

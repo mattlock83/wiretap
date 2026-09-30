@@ -11,8 +11,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/phrond/evermock/internal/artifact"
-	"github.com/phrond/evermock/internal/explore"
+	"github.com/phrond/wiretap/internal/artifact"
+	"github.com/phrond/wiretap/internal/explore"
 	"gopkg.in/yaml.v3"
 )
 

@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/phrond/evermock/internal/artifact"
+	"github.com/phrond/wiretap/internal/artifact"
 )
 
 func TestApplyRedactions(t *testing.T) {

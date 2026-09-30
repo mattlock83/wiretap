@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	tlsmgr "github.com/phrond/evermock/internal/tls"
+	tlsmgr "github.com/phrond/wiretap/internal/tls"
 )
 
 type recordingRecorder struct {

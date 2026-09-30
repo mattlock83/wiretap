@@ -10,9 +10,9 @@ import (
 	"time"
 
 	"github.com/getkin/kin-openapi/openapi3"
-	"github.com/phrond/evermock/internal/artifact"
-	"github.com/phrond/evermock/internal/bundle"
-	"github.com/phrond/evermock/internal/coverage"
+	"github.com/phrond/wiretap/internal/artifact"
+	"github.com/phrond/wiretap/internal/bundle"
+	"github.com/phrond/wiretap/internal/coverage"
 	"gopkg.in/yaml.v3"
 )
 

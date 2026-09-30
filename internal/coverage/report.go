@@ -18,8 +18,8 @@ import (
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/getkin/kin-openapi/routers"
 	"github.com/getkin/kin-openapi/routers/legacy"
-	"github.com/phrond/evermock/internal/artifact"
-	"github.com/phrond/evermock/internal/bundle"
+	"github.com/phrond/wiretap/internal/artifact"
+	"github.com/phrond/wiretap/internal/bundle"
 	"gopkg.in/yaml.v3"
 )
 

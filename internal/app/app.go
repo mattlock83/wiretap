@@ -9,10 +9,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/phrond/evermock/internal/bundle"
-	"github.com/phrond/evermock/internal/bundlereport"
-	"github.com/phrond/evermock/internal/core"
-	"github.com/phrond/evermock/internal/project"
+	"github.com/phrond/wiretap/internal/bundle"
+	"github.com/phrond/wiretap/internal/bundlereport"
+	"github.com/phrond/wiretap/internal/core"
+	"github.com/phrond/wiretap/internal/project"
 )
 
 type Deps struct {

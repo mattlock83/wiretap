@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/phrond/evermock/internal/bundlereport"
-	"github.com/phrond/evermock/internal/coverage"
+	"github.com/phrond/wiretap/internal/bundlereport"
+	"github.com/phrond/wiretap/internal/coverage"
 )
 
 var errUsage = errors.New("usage")

@@ -15,9 +15,9 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/phrond/evermock/internal/artifact"
-	"github.com/phrond/evermock/internal/bundle"
-	"github.com/phrond/evermock/internal/coverage"
+	"github.com/phrond/wiretap/internal/artifact"
+	"github.com/phrond/wiretap/internal/bundle"
+	"github.com/phrond/wiretap/internal/coverage"
 )
 
 // The HTML dashboard is a disposable view. It uses the same verified snapshot

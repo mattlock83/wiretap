@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/phrond/evermock/internal/artifact"
+	"github.com/phrond/wiretap/internal/artifact"
 )
 
 func TestSameSchemaIDKeepsRevisionBoundaries(t *testing.T) {

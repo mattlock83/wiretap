@@ -29,7 +29,7 @@ from native Node test hooks.
 
 When working from this checkout, install its JavaScript dependencies with
 `npm ci --prefix sdk/js`. To use the checkout in another Node project, add it
-there with `npm install --save-dev /absolute/path/to/evermock/sdk/js`.
+there with `npm install --save-dev /absolute/path/to/wiretap/sdk/js`.
 
 ## 2. Configure the boundaries
 

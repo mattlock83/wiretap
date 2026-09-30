@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/phrond/evermock/internal/artifact"
+	"github.com/phrond/wiretap/internal/artifact"
 )
 
 type failOnceCaptureSink struct {

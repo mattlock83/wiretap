@@ -10,11 +10,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/phrond/evermock/internal/artifact"
-	"github.com/phrond/evermock/internal/bundle"
-	"github.com/phrond/evermock/internal/bundlereport"
-	"github.com/phrond/evermock/internal/proxy"
-	"github.com/phrond/evermock/internal/tracecontext"
+	"github.com/phrond/wiretap/internal/artifact"
+	"github.com/phrond/wiretap/internal/bundle"
+	"github.com/phrond/wiretap/internal/bundlereport"
+	"github.com/phrond/wiretap/internal/proxy"
+	"github.com/phrond/wiretap/internal/tracecontext"
 	"go.opentelemetry.io/otel/trace"
 )
 

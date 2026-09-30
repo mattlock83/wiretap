@@ -7,10 +7,10 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/phrond/evermock/internal/app"
-	"github.com/phrond/evermock/internal/core"
-	"github.com/phrond/evermock/internal/project"
-	wiretaptls "github.com/phrond/evermock/internal/tls"
+	"github.com/phrond/wiretap/internal/app"
+	"github.com/phrond/wiretap/internal/core"
+	"github.com/phrond/wiretap/internal/project"
+	wiretaptls "github.com/phrond/wiretap/internal/tls"
 )
 
 func execute(ctx context.Context, args []string) int {

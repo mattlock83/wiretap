@@ -1,6 +1,6 @@
 package app
 
-import "github.com/phrond/evermock/internal/artifact"
+import "github.com/phrond/wiretap/internal/artifact"
 
 func requiresSchema(required *bool) bool { return required == nil || *required }
 func omittedSchema(id, role string) artifact.SchemaRef {

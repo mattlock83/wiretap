@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/phrond/evermock/internal/coverage"
+	"github.com/phrond/wiretap/internal/coverage"
 )
 
 // These types are presentation-only: condition identity, measurement and

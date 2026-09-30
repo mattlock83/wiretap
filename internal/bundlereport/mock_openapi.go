@@ -14,8 +14,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/phrond/evermock/internal/artifact"
-	"github.com/phrond/evermock/internal/bundle"
+	"github.com/phrond/wiretap/internal/artifact"
+	"github.com/phrond/wiretap/internal/bundle"
 	"gopkg.in/yaml.v3"
 )
 

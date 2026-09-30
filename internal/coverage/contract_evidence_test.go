@@ -3,7 +3,7 @@ package coverage
 import (
 	"testing"
 
-	"github.com/phrond/evermock/internal/artifact"
+	"github.com/phrond/wiretap/internal/artifact"
 )
 
 func TestContractEvidencePreservesQualityAndValidation(t *testing.T) {

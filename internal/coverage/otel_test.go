@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/phrond/evermock/internal/artifact"
-	"github.com/phrond/evermock/internal/bundle"
+	"github.com/phrond/wiretap/internal/artifact"
+	"github.com/phrond/wiretap/internal/bundle"
 )
 
 func TestTraceMetadataSurvivesReports(t *testing.T) {

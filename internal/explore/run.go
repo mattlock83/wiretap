@@ -15,13 +15,13 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/phrond/evermock/internal/artifact"
-	"github.com/phrond/evermock/internal/bundle"
-	"github.com/phrond/evermock/internal/bundlereport"
-	"github.com/phrond/evermock/internal/capture"
-	"github.com/phrond/evermock/internal/coverage"
-	"github.com/phrond/evermock/internal/hooks"
-	"github.com/phrond/evermock/internal/redact"
+	"github.com/phrond/wiretap/internal/artifact"
+	"github.com/phrond/wiretap/internal/bundle"
+	"github.com/phrond/wiretap/internal/bundlereport"
+	"github.com/phrond/wiretap/internal/capture"
+	"github.com/phrond/wiretap/internal/coverage"
+	"github.com/phrond/wiretap/internal/hooks"
+	"github.com/phrond/wiretap/internal/redact"
 )
 
 type Options struct {

@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	tlsmgr "github.com/phrond/evermock/internal/tls"
-	"github.com/phrond/evermock/internal/tracecontext"
+	tlsmgr "github.com/phrond/wiretap/internal/tls"
+	"github.com/phrond/wiretap/internal/tracecontext"
 )
 
 func TestW3CContextAcrossReverseForwardAndMITM(t *testing.T) {

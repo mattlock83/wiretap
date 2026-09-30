@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/phrond/evermock/internal/artifact"
-	"github.com/phrond/evermock/internal/bundle"
-	"github.com/phrond/evermock/internal/capture"
-	"github.com/phrond/evermock/internal/proxy"
+	"github.com/phrond/wiretap/internal/artifact"
+	"github.com/phrond/wiretap/internal/bundle"
+	"github.com/phrond/wiretap/internal/capture"
+	"github.com/phrond/wiretap/internal/proxy"
 )
 
 func TestBodyFromHTTPDecompressesGzip(t *testing.T) {

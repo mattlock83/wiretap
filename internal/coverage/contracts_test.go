@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/phrond/evermock/internal/artifact"
-	"github.com/phrond/evermock/internal/bundle"
+	"github.com/phrond/wiretap/internal/artifact"
+	"github.com/phrond/wiretap/internal/bundle"
 )
 
 const conditionsSpec = `openapi: 3.0.3

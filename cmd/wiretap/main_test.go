@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/phrond/evermock/internal/core"
+	"github.com/phrond/wiretap/internal/core"
 )
 
 func TestApplyEnvProxySettings(t *testing.T) {

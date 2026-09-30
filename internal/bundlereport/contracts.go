@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/phrond/evermock/internal/coverage"
+	"github.com/phrond/wiretap/internal/coverage"
 )
 
 func contractCoverageMarkdown(report *coverage.ContractCoverage) string {

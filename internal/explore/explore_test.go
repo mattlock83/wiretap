@@ -19,11 +19,11 @@ import (
 
 	"github.com/getkin/kin-openapi/openapi3"
 
-	"github.com/phrond/evermock/internal/artifact"
-	"github.com/phrond/evermock/internal/bundle"
-	"github.com/phrond/evermock/internal/bundlereport"
-	"github.com/phrond/evermock/internal/coverage"
-	"github.com/phrond/evermock/internal/hooks"
+	"github.com/phrond/wiretap/internal/artifact"
+	"github.com/phrond/wiretap/internal/bundle"
+	"github.com/phrond/wiretap/internal/bundlereport"
+	"github.com/phrond/wiretap/internal/coverage"
+	"github.com/phrond/wiretap/internal/hooks"
 )
 
 const testSpec = `openapi: 3.0.3
