@@ -15,6 +15,19 @@ import (
 	"github.com/phrond/evermock/internal/schemajson"
 )
 
+// ReplayContractRevision shares coverage's canonical identity and precision
+// boundary with generated tests, so the two cannot silently disagree.
+func ReplayContractRevision(ref artifact.SchemaRef) (string, error) {
+	revision, precise, err := contractRevision(ref)
+	if err != nil {
+		return "", err
+	}
+	if !precise {
+		return "", fmt.Errorf("contract numbers exceed the validator's reliable precision")
+	}
+	return revision, nil
+}
+
 // Canonicalise the frozen document graph with traversal-assigned document names.
 // Frozen storage hashes include original source URIs, which are provenance, not
 // contract identity. Sorted traversal preserves refs and cycles without copying

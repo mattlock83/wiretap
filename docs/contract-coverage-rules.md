@@ -18,7 +18,7 @@ Every bundle contains:
 - `contract-coverage.json`: per-spec catalogue, keys, counts, violations,
   request/response combinations, and exact attempt/flow evidence references.
 - `contract-coverage.md`: the readable catalogue and evidence links.
-- `viewer/index.html`: a searchable **Conditions** tab over the same results.
+- `viewer/index.html`: a searchable **Contract coverage** tab over the same results.
 
 `wiretap report --bundle <path>` rebuilds these files from verified evidence.
 Optional JSON/YAML exports contain the same data under `contract_coverage`.
@@ -82,9 +82,10 @@ Explicit limitations:
 - Combination fingerprints describe condition keys and exact instance locations,
   not arbitrary payload equality. No value-normalisation or payload hashing is
   performed. Unsupported combinations are not invented.
-- Expected-rejection assertion evidence, full API inventory declarations, and
-  cross-revision target mapping remain future work. No inferred mock draft enters
-  a coverage denominator.
+- The optional exploration runner records expected-rejection assertion evidence
+  in a separate provider rejection catalogue. Full API inventory declarations,
+  expected-negative annotations for ordinary captured tests, and cross-revision
+  target mapping remain future work. No inferred mock draft enters a denominator.
 
 ## Purpose
 
@@ -294,10 +295,14 @@ Intentionally invalid requests need a separate **rejection coverage** result:
   not become a successful valid-response target merely because it tests consumer
   resilience. Such resilience intent needs its own explicit test evidence.
 
-This document does not introduce a new assertion API or change current strict
-validation. How a future version records expected negative cases without
-weakening normal enforcement must be designed before rejection coverage is
-implemented. Existing test frameworks continue to own assertions and execution.
+Ordinary capture retains strict validation and its existing framework-owned
+assertions. The optional [exploration framework](exploration.md) generates
+isolated invalid provider inputs, verifies the final violation before sending,
+and records explicit expected-status and response-schema assertions. Its baseline
+catalogue supplies the bounded rejection denominator, with covered, failed and
+not-covered targets. Authentication failures, server errors and unasserted
+rejections earn no rejection credit. Expected invalid requests remain ineligible
+for valid-request coverage, while valid error responses can earn response credit.
 
 ## 6. Measure individual conditions and combinations separately
 

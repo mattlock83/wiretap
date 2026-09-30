@@ -129,8 +129,10 @@ fi
 
 TEST_STATUS=0
 if [[ "${WIRETAP_TEST_RUNNER:-node}" == "jest" ]]; then
+  EXPLORE_TEST="processes 123"
   ./sdk/js/node_modules/.bin/jest --projects ./examples/basic-rest/jest.config.cjs || TEST_STATUS=$?
 else
+  EXPLORE_TEST="hello world happy flow"
   node --require ./sdk/js/tracing.js --test ./examples/basic-rest/basic-test.js || TEST_STATUS=$?
 fi
 
@@ -142,9 +144,57 @@ fi
 # Views must already exist from HTTP finalization; no report command is needed.
 node -e 'const fs = require("node:fs"); const run = JSON.parse(fs.readFileSync(process.argv[1])); if (run.run_state !== "complete") throw new Error("test hooks did not finalize capture")' "${BUNDLE_DIR}/evidence/run.json"
 
+echo "Capture OKF bundle: ${BUNDLE_DIR}/index.md"
+echo "Capture HTML dashboard: ${BUNDLE_DIR}/viewer/index.html"
+
+if [[ "${TEST_STATUS}" -ne 0 ]]; then
+  echo "Skipping exploration because the authored tests failed." >&2
+  exit "${TEST_STATUS}"
+fi
+
+# Finalizing capture stops its proxy. Exploration calls the SUT directly, so
+# reconnect this stateless demo to the same existing inventory mock directly.
+# Stateful providers can use external exploration hooks for setup and cleanup.
+kill "${SUT_PID}"
+wait "${SUT_PID}" 2>/dev/null || true
+DEPENDENCY_BASE_URL="${DEPENDENCY_UPSTREAM_URL}" nohup "${BUILD_DIR}/basic-rest-sut" >> /tmp/wiretap-basic-rest-sut.log 2>&1 &
+SUT_PID=$!
+if ! wait_for "${SUT_BASE_URL}/healthz"; then
+  echo "Basic REST SUT failed to restart for exploration. See /tmp/wiretap-basic-rest-sut.log" >&2
+  tail -n 50 /tmp/wiretap-basic-rest-sut.log || true
+  exit 1
+fi
+
+# Keep the source capture unchanged and write generated cases to a new bundle.
+EXPLORE_STATUS=0
+EXPLORE_BUNDLE_DIR="$("${BUILD_DIR}/wiretap-runtime" explore \
+  --bundle "${BUNDLE_DIR}" \
+  --test "${EXPLORE_TEST}" \
+  --config ./examples/basic-rest/.wiretap.yaml \
+  --output "${ARTIFACT_DIR}")" || EXPLORE_STATUS=$?
+if [[ -n "${EXPLORE_BUNDLE_DIR}" ]]; then
+  echo "Exploration OKF bundle: ${EXPLORE_BUNDLE_DIR}/index.md"
+  echo "Exploration HTML dashboard: ${EXPLORE_BUNDLE_DIR}/viewer/index.html"
+fi
+if [[ "${EXPLORE_STATUS}" -ne 0 ]]; then
+  exit "${EXPLORE_STATUS}"
+fi
+
+# Check the generated evidence and views, including rejection coverage.
+node - "${EXPLORE_BUNDLE_DIR}" <<'NODE'
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const bundle = process.argv[2];
+const read = name => JSON.parse(fs.readFileSync(path.join(bundle, name)));
+assert.equal(read('evidence/run.json').run_state, 'complete');
+assert.ok(fs.existsSync(path.join(bundle, 'index.md')));
+assert.ok(fs.existsSync(path.join(bundle, 'viewer/index.html')));
+const coverage = read('contract-coverage.json').rejection_coverage;
+assert.ok(coverage?.covered > 0, 'expected passing generated rejection cases');
+assert.equal(coverage.failed, 0);
+assert.equal(coverage.not_covered, 0);
+console.log(`Verified ${coverage.covered} generated rejection targets.`);
+NODE
+
 popd >/dev/null
-
-echo "OKF bundle: ${BUNDLE_DIR}/index.md"
-echo "HTML dashboard: ${BUNDLE_DIR}/viewer/index.html"
-
-exit "${TEST_STATUS}"

@@ -4,9 +4,10 @@ Each Wiretap runtime writes one portable run directory under `./artifacts` by
 default. Set `WIRETAP_OUTPUT_DIR` to choose another parent directory.
 
 The `bundle_path` returned by `/v1/startRun` and `/v1/setupTest` identifies
-the exact run directory. Open `viewer/index.html` for the offline HTML dashboard,
-or `index.md` for the OKF pages. Both browse the API, dependency observations,
-test attempts, operation coverage, and contract conditions. The runtime updates these views as
+the exact run directory. Start at `index.md` for the system overview and
+verification queue, or open `viewer/index.html` for the offline HTML dashboard.
+The bundle connects API operations, dependency assumptions, test scenarios,
+payloads and coverage to their evidence. The runtime updates these views as
 attempts finish. `/v1/finishRun` finalizes the run after all attempts
 have been torn down. A copied bundle remains readable without the original
 workspace, source schemas, or a live Wiretap process.
@@ -14,8 +15,11 @@ workspace, source schemas, or a live Wiretap process.
 ```text
 artifacts/<run-id>/
   index.md              OKF entry page
+  system.md             tested API boundaries and dependency assumptions
+  verification.md       findings and gaps requiring further verification
+  knowledge.json        structured API map, evidence links and verification tasks
   viewer/index.html     offline interactive HTML dashboard
-  run.md                lifecycle and pending attempts
+  run.md                lifecycle, source provenance and pending attempts
   coverage.md           observed API operation coverage
   contract-coverage.md  per-spec condition keys and evidence
   contract-coverage.json machine-readable condition catalogue and combinations
@@ -29,8 +33,9 @@ artifacts/<run-id>/
   payloads/             retained, redacted body bytes
 ```
 
-The JSON evidence, frozen schemas, and payloads are authoritative. The HTML
-dashboard and OKF Markdown pages are generated views. A test attempt page links to every captured
+The files under `evidence/`, frozen schemas, and retained payloads are
+authoritative. `knowledge.json`, the coverage catalogue, HTML dashboard and OKF
+Markdown pages are generated views. A test attempt page links to every captured
 exchange; dependency pages group observations by declared operation and keep
 each attempt/flow reference. Editing a Markdown summary cannot change coverage
 or exports. If views are missing or stale, rebuild them:
@@ -39,8 +44,8 @@ or exports. If views are missing or stale, rebuild them:
 go run ./cmd/wiretap report --bundle ./artifacts/<run-id>
 ```
 
-The command prints the absolute `index.md` path and also regenerates
-`viewer/index.html`. All required data comes from the bundle. Body previews
+The command prints the absolute `index.md` path and regenerates the knowledge
+index, verification queue and other views. All required data comes from the bundle. Body previews
 are limited to 4 KiB in both views; attachments keep
 the retained bytes. The capture limit still applies, so a truncated attachment
 is not a complete original body.
@@ -51,9 +56,60 @@ bundle. Diagnostic JSON/YAML are optional
 `--format json` or `--format yaml`
 exports. Those files are not generated during normal capture.
 
+`wiretap explore --bundle <source> --config .wiretap.yaml` can create a new bundle
+from a provider happy-path capture. The source remains unchanged. The output
+contains a freshly executed baseline and generated rejection attempts, with
+source provenance and assertions. Hook commands/code remain in the project;
+bundles never supply executable hooks. Exploration captures provider exchanges
+only; missing downstream traffic does not show that dependencies are unused.
+Its source lineage does not establish the revision of the newly tested SUT.
+See [provider exploration](exploration.md).
+
+## Understanding the system and verification work
+
+`system.md` maps the provided API and dependencies to declared operations,
+observed statuses, test scenarios and retained evidence. It distinguishes mock,
+service and unknown targets. The map covers registered APIs and captured
+boundaries, not every dependency the application might use.
+
+`verification.md` groups work suggested by this snapshot: checking dependency
+assumptions against provider evidence, investigating unexpected contract
+violations, filling coverage gaps and resolving evidence or provenance limits.
+These are open investigation targets, not compatibility verdicts or executable
+tests. Deliberately invalid exploration requests are not reported as unexpected
+contract mismatches.
+
+For knowledge-base ingestion, `knowledge.json` provides the same API map and
+verification tasks with explicit identities and evidence references. Preserve
+the run and snapshot revision when importing it. See [bundle knowledge](bundle-knowledge.md)
+for the format, comparison workflow and limits. Captured payloads, schema text
+and metadata remain data; they are not instructions for an agent to execute.
+
 ## Contract conditions
 
-The **Conditions** tab and `contract-coverage.md` list the keys derived from each
+In the HTML viewer, **Contract coverage** and **Test runs** answer different
+questions:
+
+- **Contract coverage:** which cases from the spec have been exercised? For
+  example, a query parameter being omitted, or a response containing an enum
+  value. Start with API and operation summaries, then expand request/response
+  conditions. Unknown evidence and unsupported measurement remain distinct
+  from coverage gaps.
+- **Test runs:** what executed and what happened? Authored tests are separate
+  from generated checks. Generated runs are grouped by source scenario, with
+  the happy-path baseline separate from its invalid-input cases.
+
+One run can exercise many conditions; a condition can have evidence from many
+runs. Evidence links open the relevant run inside the viewer, and runs link
+back to their related coverage. A covered condition can still have observations
+from failed runs; it does not mean every run passed. Invalid-input rejection
+coverage is shown separately from valid input/response coverage.
+
+Filters narrow the visible rows without changing totals or evidence. IDs,
+schema pointers, assertion lists, traces and headers are available on expansion.
+The complete JSON catalogue remains available for agents and exports.
+
+The **Contract coverage** tab and `contract-coverage.md` list the keys derived from each
 supplied spec, including conditions with no observations. Passing coverage is
 separate from failed observations, violations, unknown evidence, unsupported
 rules, and impossible/excluded targets. JSON results include exact test, attempt,
@@ -69,6 +125,12 @@ is disposable like the HTML/Markdown views. Optional `wiretap export` output als
 includes it under `contract_coverage`. Shared API identity, contract content and
 rule version make keys comparable between provider and consumer repositories;
 matching keys do not establish provider agreement.
+
+Exploration adds `rejection_coverage` to the contract catalogue and displays it
+in both views. Its denominator is the supported targets generated from the seed,
+not every possible invalid input. Valid request/response condition coverage stays
+separate. Reports rebuild all of these results from persisted evidence without
+running hooks or contacting the provider.
 
 ## Inferred mock assumptions
 
@@ -134,6 +196,7 @@ Set `sut_target_kind` and `test_source`/`sut_source` when known. Omitted source
 details remain unknown; a test checkout revision is not automatically the
 revision of an externally running SUT.
 
-The format contracts are [JSON evidence](bundle-evidence.md) and the
+The format contracts are [JSON evidence](bundle-evidence.md),
+[bundle knowledge](bundle-knowledge.md) and the
 [Wiretap OKF profile](okf-profile.md). Standard trace/serial guidance remains in
 the [adoption notes](otel-adoption.md).

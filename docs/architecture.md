@@ -2,14 +2,17 @@
 
 Wiretap captures HTTP exchanges during existing tests and turns them into a
 portable record of tested API behaviour and observed dependency assumptions.
-The test harness owns the application, mocks, test execution, and assertions.
-Wiretap owns capture, correlation, schema validation, and the resulting bundle.
+In capture mode, the test harness owns the application, mocks, test execution,
+and assertions. Wiretap owns capture, correlation, schema validation, and the
+resulting bundle. The optional exploration framework owns generated provider
+cases and invokes external project commands for fixtures and business checks.
 
 ## Components
 
 | Component | Responsibility |
 | --- | --- |
-| `cmd/wiretap` | Host the HTTP runtime; optional offline report/export and CA utilities. |
+| `cmd/wiretap` | Host the HTTP runtime; run exploration; offline report/export and CA utilities. |
+| `internal/explore`, `internal/hooks` | Generate isolated invalid provider inputs, replay sequences, execute external lifecycle commands and persist checks. |
 | `sdk/js`, `sdk/go` | Test lifecycle helpers, standard trace context, and capture locations. JavaScript includes Node and Jest adapters. |
 | `internal/app` | Run and test sessions, dependency routes, draining, and schema validation. |
 | `internal/proxy`, `internal/capture` | Forward traffic and retain bounded request/response evidence. |
@@ -22,9 +25,10 @@ Wiretap owns capture, correlation, schema validation, and the resulting bundle.
 | `internal/project` | Discover and resolve `.wiretap.yaml` once for the runtime. |
 | `internal/core` | Runtime configuration and component lifecycle. |
 
-Run start/finalization is controlled through the HTTP API. SDKs are libraries
-called from existing test frameworks; the binary never launches test processes.
-There is one session map, admission path, drain procedure, and bundle writer.
+Capture start/finalization is controlled through the HTTP API. SDKs are libraries
+called from existing test frameworks. Capture has one session map, admission
+path and drain procedure. Exploration is a separate CLI runner using the same
+bundle writer, coverage calculation and report renderer.
 
 The runtime exposes one control listener and one capture listener. The capture
 listener forwards inbound calls to the configured SUT and dependency calls to
@@ -111,8 +115,16 @@ Contract-condition coverage additionally derives a finite catalogue from each
 supplied contract, records individual observations and per-message combinations,
 and separates provider from mock/service provenance. The versioned rules and
 current support limits are in [contract coverage rules](contract-coverage-rules.md).
-Its generated JSON catalogue, Markdown page and HTML tab use the same calculation;
-no test runner, SDK instrumentation or live validation behaviour is added.
+Its generated JSON catalogue, Markdown page and HTML tab use the same calculation.
+Ordinary capture validation remains strict. Exploration explicitly records the
+intended invalid request and asserted rejection in a separate coverage catalogue.
+
+`wiretap explore` verifies a source bundle, selects a passing provider attempt,
+runs a fresh baseline, then replays prefixes with one invalid request at a time.
+It records provider exchanges directly and does not capture downstream traffic.
+Project-owned hooks exchange JSON through fresh command processes; code, runtime
+bindings and fixture state are never copied into the output bundle. See
+[exploration](exploration.md) for lifecycle, checks and current limits.
 
 Broader transport support (streaming, WebSocket, HTTP/2, and RPC-specific
 capture) remains future work. Current guarantees centre on bounded HTTP

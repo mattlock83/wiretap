@@ -18,7 +18,9 @@ Keep your test runner, HTTP client, assertions, and mock tooling. Route traffic
 through Wiretap and connect test setup and teardown using the JavaScript or Go
 SDK, or the HTTP API. Your existing harness starts and configures the application
 and its dependencies, and starts Wiretap as a separate service. The SDK is a
-library called by your test framework; Wiretap never launches your tests.
+library called by your test framework. An optional `wiretap explore` runner uses
+a captured happy flow to generate invalid-input provider tests, with project-owned
+commands supplying fixtures, authentication and property checks.
 
 ## Try it
 
@@ -30,8 +32,14 @@ npm ci --prefix sdk/js
 ```
 
 The example uses `.wiretap.yaml`, native test hooks, and ordinary `fetch` calls.
-Open the resulting bundle's `viewer/index.html` for the offline HTML dashboard
-or `index.md` for linked OKF pages.
+It captures a happy flow, then runs `wiretap explore` to check generated invalid
+inputs. It prints separate capture and exploration bundle paths. Open either
+bundle's `viewer/index.html` for the offline HTML dashboard or `index.md` for
+linked OKF pages.
+
+For a richer example using a real application image and an HTTP dependency mock,
+try [Microsvc Transactions](examples/microsvc-transactions/README.md). It captures
+withdrawal tests and explores invalid inputs with authentication and fixture hooks.
 
 ## Add it to existing tests
 
@@ -117,11 +125,19 @@ See [configuration and runtime](docs/configuration.md) and the
   and unknown provenance kept visible.
 - Per-spec contract condition keys: covered, not covered, unknown, unsupported,
   or excluded, with test/flow evidence and separate provider and mock results.
-  Open the HTML **Conditions** tab or `contract-coverage.md` / `.json` in the bundle.
+  Open the HTML **Contract coverage** tab or `contract-coverage.md` / `.json` in the bundle.
+- For exploration runs, which generated invalid inputs produced the expected
+  rejection, with separate rejection coverage and explicit check results.
+- A system overview (`system.md`) and verification queue (`verification.md`)
+  separating unverified dependency assumptions, contract mismatches, coverage
+  gaps and evidence limits. `knowledge.json` exposes the same identities and
+  evidence references for knowledge-base ingestion and agent follow-up.
 
 A mock response records an assumption made by the test. It does not establish
 which fields the application used or prove that the real provider behaves the
 same way. Cross-repository agreement checking is future work.
+The [knowledge index](docs/bundle-knowledge.md) helps select that verification
+work; it does not perform comparisons or execute its suggested tasks.
 
 JSON evidence, frozen schemas, and retained payloads are authoritative. The
 OKF pages and offline HTML dashboard are rebuildable views:
@@ -134,6 +150,22 @@ wiretap export --bundle ./artifacts/<run-id> --format json --output coverage.jso
 Diagnostic JSON/YAML exports are also available. Retained bodies
 are limited to 4 MiB each by default while delivery streams through the proxy.
 
+## Explore provider validation
+
+Keep lifecycle scripts in your project, configure them under `explore.hooks` in
+`.wiretap.yaml`, and run against a live test provider:
+
+```bash
+wiretap explore --bundle ./artifacts/<source-run> --test "creates an order" --config .wiretap.yaml
+```
+
+Wiretap first checks a fresh happy-path baseline, then executes bounded invalid
+variations with fresh fixtures. Expected validation errors default to 400/422;
+authentication failures and server errors do not count. The source stays unchanged;
+a new OKF bundle contains the attempts and updated coverage. Hooks receive JSON
+over standard input and can be written in any language. See the
+[exploration guide](docs/exploration.md), including the runnable SQLite example.
+
 ## Documentation
 
 - [Configuration and runtime](docs/configuration.md)
@@ -142,6 +174,7 @@ are limited to 4 MiB each by default while delivery streams through the proxy.
 - [Tracing and parallel tests](docs/otel-adoption.md)
 - [Capture bundles and reports](docs/okf-bundles.md)
 - [Contract coverage rules](docs/contract-coverage-rules.md)
+- [Provider exploration and external hooks](docs/exploration.md)
 - [Runtime HTTP API](docs/runtime-api.md) · [Architecture](docs/architecture.md)
 - [JSON evidence contract](docs/bundle-evidence.md) · [OKF profile](docs/okf-profile.md)
 - [CI example](docs/ci-example.md) · [HTTPS trust](docs/https-trust.md)

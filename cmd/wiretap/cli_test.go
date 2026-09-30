@@ -14,8 +14,16 @@ func TestCLIRejectsTestOrchestration(t *testing.T) {
 }
 
 func TestCLIHelp(t *testing.T) {
-	for _, args := range [][]string{{"--help"}, {"ca", "--help"}, {"report", "--help"}, {"export", "--help"}} {
+	for _, args := range [][]string{{"--help"}, {"ca", "--help"}, {"report", "--help"}, {"export", "--help"}, {"explore", "--help"}} {
 		if code := execute(context.Background(), args); code != 0 {
+			t.Fatalf("execute(%q) = %d", args, code)
+		}
+	}
+}
+
+func TestExploreCLIRequiresBundleAndTarget(t *testing.T) {
+	for _, args := range [][]string{{"explore"}, {"explore", "--bundle", t.TempDir(), "--max-cases", "-1"}} {
+		if code := execute(context.Background(), args); code != 2 {
 			t.Fatalf("execute(%q) = %d", args, code)
 		}
 	}

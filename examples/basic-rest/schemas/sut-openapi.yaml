@@ -32,6 +32,16 @@ paths:
                     type: string
                   action:
                     type: string
+        "400":
+          description: invalid request body or missing required strings
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [error]
+                properties:
+                  error:
+                    type: string
   /healthz:
     get:
       responses:

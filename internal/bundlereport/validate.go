@@ -42,7 +42,10 @@ func Validate(root string) error {
 	if err := validateContractCatalogue(root, run, flows); err != nil {
 		return err
 	}
-	for _, rel := range []string{"index.md", "run.md", "coverage.md", "contract-coverage.md", "apis/index.md", "dependencies/index.md", "tests/index.md"} {
+	if err := validateKnowledge(root, run, flows); err != nil {
+		return err
+	}
+	for _, rel := range []string{"index.md", "system.md", "verification.md", "run.md", "coverage.md", "contract-coverage.md", "apis/index.md", "dependencies/index.md", "tests/index.md"} {
 		if err := validatePage(root, rel, run.RunID, run.Revision, flows, false); err != nil {
 			return err
 		}
@@ -102,6 +105,18 @@ func validateContractCatalogue(root string, run *bundle.Run, flows map[string]ma
 		}
 		return nil
 	}
+	if report.Rejections != nil {
+		for _, target := range report.Rejections.Targets {
+			if target == nil {
+				return fmt.Errorf("view %s: null rejection target", name)
+			}
+			for _, evidence := range target.Evidence {
+				if err := checkEvidence(evidence); err != nil {
+					return err
+				}
+			}
+		}
+	}
 	for _, spec := range report.Specs {
 		if spec == nil {
 			return fmt.Errorf("view %s: null contract specification", name)
@@ -130,6 +145,103 @@ func validateContractCatalogue(root string, run *bundle.Run, flows map[string]ma
 	return nil
 }
 
+func validateKnowledge(root string, run *bundle.Run, flows map[string]map[string]bool) error {
+	data, err := os.ReadFile(filepath.Join(root, "knowledge.json"))
+	if err != nil {
+		return fmt.Errorf("view knowledge.json: %w", err)
+	}
+	var k knowledgeIndex
+	if err = json.Unmarshal(data, &k); err != nil {
+		return fmt.Errorf("view knowledge.json: %w", err)
+	}
+	if k.Version != "1.0" || k.RunID != run.RunID || k.SnapshotRevision != run.Revision || k.RunState != run.RunState || k.RulesVersion != coverage.ContractRulesVersion || k.APIs == nil || k.Attempts == nil || k.Verification == nil {
+		return fmt.Errorf("view knowledge.json: invalid identity or snapshot")
+	}
+	paths := map[string]string{}
+	for _, a := range run.Attempts {
+		paths[a.AttemptID] = a.Path
+	}
+	check := func(e knowledgeEvidence) error {
+		if !flows[e.AttemptID][e.FlowID] || e.Path != paths[e.AttemptID] {
+			return fmt.Errorf("view knowledge.json: evidence pointer does not identify a committed flow")
+		}
+		return nil
+	}
+	for _, api := range k.APIs {
+		if err = rootReference(root, api.Page); err != nil {
+			return err
+		}
+		if api.Schema != "" {
+			if err = rootReference(root, api.Schema); err != nil {
+				return err
+			}
+		}
+		for _, op := range api.Operations {
+			if err = rootReference(root, op.Page); err != nil {
+				return err
+			}
+			for _, e := range op.Evidence {
+				if err = check(e); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	seen := map[string]bool{}
+	for _, a := range k.Attempts {
+		if seen[a.ID] || paths[a.ID] == "" || paths[a.ID] != a.Path {
+			return fmt.Errorf("view knowledge.json: invalid attempt inventory")
+		}
+		seen[a.ID] = true
+		if err = rootReference(root, a.Page); err != nil {
+			return err
+		}
+	}
+	if len(seen) != len(run.Attempts) {
+		return fmt.Errorf("view knowledge.json: incomplete attempt inventory")
+	}
+	var contracts coverage.ContractCoverage
+	data, err = os.ReadFile(filepath.Join(root, "contract-coverage.json"))
+	if err != nil {
+		return err
+	}
+	if err = json.Unmarshal(data, &contracts); err != nil {
+		return err
+	}
+	keys := map[string]bool{}
+	for _, s := range contracts.Specs {
+		for _, t := range s.Targets {
+			keys[t.Key] = true
+		}
+	}
+	if contracts.Rejections != nil {
+		for _, t := range contracts.Rejections.Targets {
+			keys[t.Key] = true
+		}
+	}
+	seen = map[string]bool{}
+	for _, task := range k.Verification {
+		if task.ID == "" || seen[task.ID] || task.State != "open" {
+			return fmt.Errorf("view knowledge.json: invalid verification task")
+		}
+		seen[task.ID] = true
+		if err = rootReference(root, task.Page); err != nil {
+			return err
+		}
+		for _, key := range task.ConditionKeys {
+			if !keys[key] {
+				return fmt.Errorf("view knowledge.json: unknown condition key")
+			}
+		}
+		for _, e := range task.Evidence {
+			if err = check(e); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 func validatePage(root, rel, runID string, runRevision uint64, flows map[string]map[string]bool, requiredProfile bool) error {
 	path := filepath.Join(root, filepath.FromSlash(rel))
 	data, err := os.ReadFile(path)
@@ -142,14 +254,14 @@ func validatePage(root, rel, runID string, runRevision uint64, flows map[string]
 		if len(parts) != 3 || yaml.Unmarshal(parts[1], &front) != nil {
 			return fmt.Errorf("view %s: invalid YAML frontmatter", rel)
 		}
-	} else if requiredProfile || rel == "run.md" || rel == "coverage.md" || rel == "contract-coverage.md" {
+	} else if requiredProfile || rel == "run.md" || rel == "coverage.md" || rel == "contract-coverage.md" || rel == "system.md" || rel == "verification.md" {
 		return fmt.Errorf("view %s: missing Wiretap frontmatter", rel)
 	}
 	if wiretap, exists := front["wiretap"]; exists {
 		if err := validateProfile(root, path, rel, front, wiretap, runID, runRevision, flows); err != nil {
 			return err
 		}
-	} else if requiredProfile || rel == "run.md" || rel == "coverage.md" || rel == "contract-coverage.md" {
+	} else if requiredProfile || rel == "run.md" || rel == "coverage.md" || rel == "contract-coverage.md" || rel == "system.md" || rel == "verification.md" {
 		return fmt.Errorf("view %s: missing Wiretap profile", rel)
 	}
 	for _, match := range markdownLink.FindAllSubmatch(withoutFencedBlocks(data), -1) {
@@ -178,7 +290,7 @@ func validateProfile(root, path, rel string, front map[string]any, value any, ru
 		return fmt.Errorf("view %s: missing snapshot revision", rel)
 	}
 	kind, ok := profile["kind"].(string)
-	if !ok || !map[string]bool{"run": true, "coverage": true, "api": true, "operation": true, "assumptions": true, "attempt": true}[kind] {
+	if !ok || !map[string]bool{"run": true, "coverage": true, "api": true, "operation": true, "assumptions": true, "attempt": true, "system": true, "verification": true}[kind] {
 		return fmt.Errorf("view %s: unsupported concept kind", rel)
 	}
 	for _, key := range []string{"type", "title", "description"} {
@@ -235,7 +347,7 @@ func validateProfile(root, path, rel string, front map[string]any, value any, ru
 			}
 		}
 	case nil:
-		if kind == "run" || kind == "coverage" || kind == "attempt" {
+		if kind == "run" || kind == "coverage" || kind == "attempt" || kind == "system" || kind == "verification" {
 			return fmt.Errorf("view %s: missing evidence pointer", rel)
 		}
 	default:

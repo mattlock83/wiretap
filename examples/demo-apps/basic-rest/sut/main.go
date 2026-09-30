@@ -3,12 +3,13 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
-	"go.opentelemetry.io/otel/propagation"
 	"log"
 	"net/http"
 	"os"
 	"time"
+
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel/propagation"
 )
 
 type responsePayload struct {
@@ -50,11 +51,17 @@ func main() {
 			return
 		}
 		var request struct {
-			ID     string `json:"id"`
-			Action string `json:"action"`
+			ID     *string `json:"id"`
+			Action *string `json:"action"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
+			return
+		}
+		// The contract requires both strings; missing and null values are invalid.
+		// Pointers preserve the distinction between missing and valid empty strings.
+		if request.ID == nil || request.Action == nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "id and action are required strings"})
 			return
 		}
 		if dependencyURL := os.Getenv("DEPENDENCY_BASE_URL"); dependencyURL != "" {
@@ -81,7 +88,7 @@ func main() {
 				return
 			}
 		}
-		payload := responsePayload{Message: "processed", ID: request.ID, Action: request.Action}
+		payload := responsePayload{Message: "processed", ID: *request.ID, Action: *request.Action}
 		writeJSON(w, http.StatusOK, payload)
 	})
 

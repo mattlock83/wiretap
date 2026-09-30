@@ -50,7 +50,21 @@ while concrete observed paths and exchanges remain browsable.
 
 ## Derived contract coverage
 
-`contract-coverage.json`, `contract-coverage.md`, and the HTML Conditions tab are
+Generated provider attempts also contain optional `capture.exploration` evidence:
+generator version, source run/attempt/hash, baseline or rejection mode, targeted
+constraint, and whether the transmitted request was verified to violate that
+constraint. The baseline contains the generated target catalogue and generation
+limits/diagnostics. Ordinary `assertions` record expected rejection status,
+response schema conformance and any explicit property results. An intentionally
+invalid request has schema status `expected_rejection`; unrelated failures still
+fail the attempt. Normal capture enforcement is unchanged.
+
+Hook commands/code, runtime bindings, fixture state and credentials are not
+execution metadata in the bundle. Captured message values follow redaction rules.
+The source bundle stays immutable; exploration records freshly executed evidence
+in a separate run and never grants current coverage from old source observations.
+
+`contract-coverage.json`, `contract-coverage.md`, and the HTML Contract coverage tab are
 rebuildable views of this evidence and the supplied frozen contracts. They never
 become evidence inputs. The catalogue identifies the run snapshot, measurement
 rule version, content-based contract revision, and API/operation/condition keys.
@@ -58,3 +72,9 @@ Each observation links back to an attempt path and flow ID, with phase, instance
 location, test name, outcome, message validation, capture completeness and
 transport failure details. See [contract coverage rules](contract-coverage-rules.md)
 for status meanings and unsupported measurement scopes.
+
+Exploration's generated `rejection_coverage` catalogue is another derived view,
+separate from valid-condition targets. It counts only complete passing attempts
+with explicit request-verification, rejection-status and response-schema checks.
+Failed or unexecuted targets remain visible. No hook execution is required to
+rebuild or export it. See [exploration](exploration.md).

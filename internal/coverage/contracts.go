@@ -17,13 +17,14 @@ const ContractRulesVersion = "wiretap-contract-1"
 // ContractCoverage is a disposable measurement of one verified bundle snapshot.
 // It deliberately makes no all-API, assertion, or provider-compatibility claim.
 type ContractCoverage struct {
-	RulesVersion     string          `json:"rules_version" yaml:"rules_version"`
-	RunID            string          `json:"run_id" yaml:"run_id"`
-	RunState         string          `json:"run_state" yaml:"run_state"`
-	SnapshotRevision uint64          `json:"snapshot_revision" yaml:"snapshot_revision"`
-	Complete         bool            `json:"complete" yaml:"complete"`
-	Scope            string          `json:"scope" yaml:"scope"`
-	Specs            []*ContractSpec `json:"specs" yaml:"specs"`
+	Rejections       *RejectionCoverage `json:"rejection_coverage,omitempty" yaml:"rejection_coverage,omitempty"`
+	RulesVersion     string             `json:"rules_version" yaml:"rules_version"`
+	RunID            string             `json:"run_id" yaml:"run_id"`
+	RunState         string             `json:"run_state" yaml:"run_state"`
+	SnapshotRevision uint64             `json:"snapshot_revision" yaml:"snapshot_revision"`
+	Complete         bool               `json:"complete" yaml:"complete"`
+	Scope            string             `json:"scope" yaml:"scope"`
+	Specs            []*ContractSpec    `json:"specs" yaml:"specs"`
 }
 
 type ContractSpec struct {
@@ -82,6 +83,7 @@ type ContractEvidence struct {
 }
 
 type ContractViolation struct {
+	Expected       bool             `json:"expected,omitempty" yaml:"expected,omitempty"`
 	Constraint     string           `json:"constraint,omitempty" yaml:"constraint,omitempty"`
 	SchemaLocation string           `json:"schema_location,omitempty" yaml:"schema_location,omitempty"`
 	Evidence       ContractEvidence `json:"evidence" yaml:"evidence"`
@@ -153,6 +155,7 @@ func (t *ContractTarget) observe(e ContractEvidence) {
 
 func buildContractCoverage(run *bundle.Run, captures []*artifact.Artifact) *ContractCoverage {
 	out := &ContractCoverage{RulesVersion: ContractRulesVersion, RunID: run.RunID, RunState: run.RunState, SnapshotRevision: run.Revision, Complete: run.RunState == "complete" && len(run.Pending) == 0, Scope: "registered supplied contracts only; condition combinations are observations, not compatibility or assertion proof", Specs: []*ContractSpec{}}
+	out.Rejections = buildRejectionCoverage(run, captures)
 	refs := append([]artifact.SchemaRef{}, run.Schemas...)
 	for _, a := range captures {
 		refs = append(refs, a.Schemas...)

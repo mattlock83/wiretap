@@ -280,6 +280,9 @@ func validateHTTPAgainstSpec(flow artifact.Flow, spec openapiSpec) (error, error
 		PathParams: params,
 		Route:      route,
 		Options: &openapi3filter.Options{
+			// Credentials are verified by the provider. Schema conformance must
+			// not fail merely because Wiretap has no authentication backend.
+			AuthenticationFunc: openapi3filter.NoopAuthenticationFunc,
 			MultiError:         true,
 			ExcludeRequestBody: msg.Body != nil && msg.Body.Truncated,
 		},

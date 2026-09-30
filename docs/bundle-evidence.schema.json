@@ -99,11 +99,40 @@
         }
       }
     },
+    "rejectionTarget": {
+      "type": "object",
+      "required": ["key", "schema_id", "operation", "flow_id", "instance_location", "constraint", "expected_statuses"],
+      "properties": {
+        "key": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "schema_id": { "type": "string" },
+        "operation": { "type": "string" },
+        "flow_id": { "type": "string" },
+        "instance_location": { "type": "string" },
+        "constraint": { "type": "string" },
+        "expected_statuses": { "type": "array", "minItems": 1, "items": { "type": "integer", "minimum": 400, "maximum": 499 } }
+      }
+    },
+    "exploration": {
+      "type": "object",
+      "required": ["version", "source_run_id", "source_attempt_id", "source_sha256", "mode"],
+      "properties": {
+        "version": { "const": "wiretap-negative-1" },
+        "source_run_id": { "$ref": "#/$defs/id" },
+        "source_attempt_id": { "$ref": "#/$defs/id" },
+        "source_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "mode": { "enum": ["baseline", "rejection"] },
+        "target": { "$ref": "#/$defs/rejectionTarget" },
+        "catalogue": { "type": "array", "items": { "$ref": "#/$defs/rejectionTarget" } },
+        "notes": { "type": "array", "items": { "type": "string" } },
+        "request_verified": { "type": "boolean" }
+      }
+    },
     "capture": {
       "type": "object",
       "required": ["version", "testcase", "traffic"],
       "properties": {
         "version": { "type": "integer", "minimum": 1 },
+        "exploration": { "$ref": "#/$defs/exploration" },
         "testcase": {
           "type": "object",
           "required": ["id", "name", "started_at"],

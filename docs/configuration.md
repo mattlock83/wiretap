@@ -5,6 +5,13 @@ working directory or the nearest ancestor; `--config path` selects another file.
 The runtime loads it once, and SDKs inherit its defaults through the HTTP API.
 Test integrations can then focus on names, outcomes, and trace context.
 
+The optional `explore` section configures the generated provider test runner:
+`hooks`, `expected_statuses` (default `[400, 422]`), `max_cases` (default `100`),
+`request_timeout` (default `15s`), runtime `bindings`, response `extract` rules,
+and additional `redactions`. Hook commands run relative to this file and inherit
+the environment. They are invoked only by `wiretap explore`; capture and report
+commands never execute them. See [exploration and hooks](exploration.md).
+
 ```yaml
 version: 1
 output_dir: artifacts

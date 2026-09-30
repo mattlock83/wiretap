@@ -14,31 +14,36 @@ a{color:var(--blue);text-underline-offset:2px}button,input{font:inherit}button{c
 .metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:20px 0}.metric{background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:15px 18px}.metric strong{display:block;font-size:26px;line-height:1.1}.metric span{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.08em}
 .toolbar{display:flex;gap:16px;align-items:center;flex-wrap:wrap;justify-content:space-between;margin:20px 0}.tabs{display:flex;gap:5px;background:#e7edf6;border-radius:12px;padding:4px}.tabs button{border:0;background:transparent;color:#34445d;padding:9px 15px;border-radius:9px;font-weight:650}.tabs button.active{background:#fff;box-shadow:0 2px 6px #17203318;color:#0a625e}.search{min-width:min(100%,280px);border:1px solid #bcc9d9;border-radius:10px;padding:9px 12px;background:#fff}
 .pane[hidden],.item[hidden]{display:none!important}.pane{display:grid;gap:16px}.card{background:#fff;border:1px solid var(--line);border-radius:15px;padding:20px 22px;box-shadow:0 3px 14px #14284408}.card h2{font-size:19px;margin:0 0 12px}.card h3{font-size:16px;margin:0}.card-head{display:flex;justify-content:space-between;align-items:flex-start;gap:18px;flex-wrap:wrap}.subtle{color:var(--muted);font-size:13px}.badge{display:inline-block;border-radius:99px;padding:3px 9px;background:#e5f3f1;color:#076a64;font-size:12px;font-weight:700}.badge.warn{background:#fff1db;color:#925b08}.badge.fail{background:#fce8ed;color:#a62643}.badge.neutral{background:#ebeff5;color:#4a5a70}
-.progress{height:8px;border-radius:99px;background:#e9edf3;overflow:hidden;margin:13px 0 8px}.progress i{display:block;height:100%;background:#0c938a;width:var(--progress)}.operations{display:grid;gap:8px;margin-top:16px}.operation{border:1px solid var(--line);border-radius:10px;background:#f9fbfe}.operation summary,.flow summary{cursor:pointer;padding:10px 12px;display:flex;justify-content:space-between;gap:12px;align-items:center}.operation[open] summary,.flow[open] summary{border-bottom:1px solid var(--line)}.operation-body{padding:10px 13px}.sample{padding:9px 0;border-top:1px solid #e7edf4}.sample:first-child{border-top:0}
+.progress{height:8px;border-radius:99px;background:#e9edf3;overflow:hidden;margin:13px 0 8px}.progress i{display:block;height:100%;background:#0c938a;width:var(--progress)}.operations{display:grid;gap:8px;margin-top:16px}.operation{border:1px solid var(--line);border-radius:10px;background:#f9fbfe}.operation>summary,.flow>summary{cursor:pointer;padding:10px 12px;display:flex;justify-content:space-between;gap:12px;align-items:center}.operation[open]>summary,.flow[open]>summary{border-bottom:1px solid var(--line)}.operation-body{padding:10px 13px}.sample{padding:9px 0;border-top:1px solid #e7edf4}.sample:first-child{border-top:0}
 .flow{border:1px solid var(--line);border-radius:10px;margin-top:10px;background:#f9fbfe}.flow-body{padding:14px;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,330px),1fr));gap:14px}.message{background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px;min-width:0}.message h4{margin:0 0 8px;font-size:14px}.message pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#152235;color:#e7f1ff;border-radius:8px;padding:10px;font-size:12px;max-height:270px;overflow:auto}.message p{margin:6px 0}.note{border-left:3px solid #e6a33b;padding:7px 12px;background:#fff8eb;margin:12px 0}.links{display:flex;gap:14px;flex-wrap:wrap;font-size:13px}.empty{color:var(--muted);padding:16px 0}.footer{margin-top:28px;color:var(--muted);font-size:12px}
-@media(max-width:650px){.shell{padding:14px}.hero{padding:22px}.toolbar{align-items:stretch}.tabs{width:100%;justify-content:space-around}.tabs button{padding:8px}.search{width:100%}}
+.section-intro p{margin:6px 0 12px}.view-filter{display:flex;gap:8px;align-items:center;font-size:13px;color:var(--muted)}select{font:inherit;border:1px solid #bcc9d9;background:white;border-radius:8px;padding:7px 10px;color:var(--ink)}.legend,.counts{display:flex;gap:7px 14px;flex-wrap:wrap;font-size:12px;align-items:center}.legend{margin:14px 0}.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;background:#8594aa}.dot.covered{background:var(--teal)}.dot.gap{background:var(--amber)}.count{white-space:nowrap}.count.covered{color:var(--teal)}.count.gap{color:var(--amber)}.count.fail{color:var(--red)}.count.uncertain,.count.neutral{color:var(--muted)}.technical{font-size:13px;margin:12px 0;color:var(--muted)}.technical>summary{cursor:pointer;padding:5px 0;display:list-item}.technical[open]>summary{border-bottom:0;margin-bottom:8px}.technical p{margin:6px 0}.break{overflow-wrap:anywhere}.condition-group{border-top:1px solid var(--line);margin:7px 0}.condition-group>summary,.condition-row>summary{cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:14px;padding:10px 12px}.condition-group>summary{font-weight:650;background:#f3f6fb}.condition-list{padding:0 10px}.condition-row{border-bottom:1px solid var(--line);background:white}.condition-row:last-child{border-bottom:0}.condition-row>summary{padding:10px 6px}.condition-label{display:block;font-size:13px;font-weight:400;color:var(--muted);margin-top:2px}.condition-detail{padding:8px 12px 15px}.condition-detail h4{margin:6px 0;font-size:14px}.test-run{background:#fff;border:1px solid var(--line);border-radius:10px;margin:8px 0;overflow:hidden}.test-run>summary{cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 15px}.test-run[open]>summary{border-bottom:1px solid var(--line);background:#f5f8fc}.test-run summary strong{display:block}.run-kind{display:block;font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);margin-bottom:3px}.run-outcome{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}.run-body{padding:6px 18px 16px}.run-body h3{margin-top:16px}.assertions{display:grid;gap:8px}.assertion{display:grid;grid-template-columns:1fr auto;gap:4px 12px;padding:8px;background:#f5f8fc;border-radius:8px}.assertion p,.assertion>.subtle{grid-column:1/-1}.filter-leaf[hidden],.filter-group[hidden],.filter-empty[hidden]{display:none!important}details:target{outline:2px solid #78b9b5;outline-offset:3px}summary:focus-visible,a:focus-visible,button:focus-visible,select:focus-visible{outline:2px solid var(--teal);outline-offset:3px}.tabs{flex-wrap:wrap}
+.operation>summary::after,.condition-group>summary::after,.condition-row>summary::after,.test-run>summary::after,.flow>summary::after{content:"";width:7px;height:7px;border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);transform:rotate(-45deg);flex-shrink:0;margin:0 4px}.operation[open]>summary::after,.condition-group[open]>summary::after,.condition-row[open]>summary::after,.test-run[open]>summary::after,.flow[open]>summary::after{transform:rotate(45deg)}.operation>summary>:first-child,.condition-group>summary>:first-child,.condition-row>summary>:first-child,.test-run>summary>:first-child,.flow>summary>:first-child{margin-right:auto}
+@media(max-width:650px){.shell{padding:14px}.hero{padding:22px}.toolbar{align-items:stretch}.tabs{width:100%;justify-content:space-around}.tabs button{padding:8px}.search{width:100%}.test-run>summary,.operation>summary{align-items:flex-start;flex-wrap:wrap}.run-outcome{justify-content:flex-start}.card{padding:16px}.condition-list{padding:0}}
 </style>
 </head>
 <body data-run-id="{{.RunID}}" data-revision="{{.Revision}}">
 <div class="shell">
 <header class="hero">
 <div class="eyebrow">Wiretap capture bundle · {{.State}}</div>
-<h1>API evidence and coverage</h1>
+<h1>{{.APIID}}</h1>
+<p>API evidence and dependency assumptions · {{.TargetKind}} target</p>
 <p>Run {{.RunID}} · revision {{.Revision}} · updated {{.GeneratedAt}}</p>
 <div class="hero-links">
 <a href="../index.md">OKF index</a>
-<a href="../coverage.md">Coverage notes</a>
+<a href="../system.md">System overview</a>
+<a href="../verification.md">Verification work</a>
+<a href="../knowledge.json">Knowledge JSON</a>
 <a href="../evidence/run.json">Run evidence</a>
 </div>
 </header>
 <div class="metrics">
 <div class="metric">
 <strong>{{.Attempts}}</strong>
-<span>test attempts</span>
+<span>test executions</span>
 </div>
 <div class="metric">
 <strong>{{.Passed}}</strong>
-<span>passed</span>
+<span>executions passed</span>
 </div>
 <div class="metric">
 <strong>{{.Failed}}</strong>
@@ -60,8 +65,8 @@ a{color:var(--blue);text-underline-offset:2px}button,input{font:inherit}button{c
 <button type="button" class="active" data-pane="overview" aria-selected="true">Overview</button>
 <button type="button" data-pane="apis" aria-selected="false">APIs</button>
 <button type="button" data-pane="dependencies" aria-selected="false">Dependencies</button>
-<button type="button" data-pane="contracts" aria-selected="false">Conditions</button>
-<button type="button" data-pane="tests" aria-selected="false">Tests</button>
+<button type="button" data-pane="contracts" aria-selected="false">Contract coverage</button>
+<button type="button" data-pane="tests" aria-selected="false">Test runs</button>
 </nav>
 <input class="search" type="search" placeholder="Filter current section" aria-label="Filter current section">
 </div>
@@ -69,9 +74,16 @@ a{color:var(--blue);text-underline-offset:2px}button,input{font:inherit}button{c
 <section class="pane" id="overview">{{if .Pending}}<div class="card">
 <h2>Pending attempts</h2>
 <p class="note">These attempts started but have no committed capture yet.</p>{{range .Pending}}<p>{{.Name}} · {{.AttemptID}}</p>{{end}}</div>{{end}}<div class="card">
-<h2>What this run shows</h2>
-<p>Coverage counts declared API operations observed in captured test traffic. A passing observation needs a complete passing attempt. Dependency examples show behaviour used by the consumer; they do not prove which fields it read or that a real provider agrees.</p>
-<p class="subtle">This dashboard is a generated view. The JSON evidence, supplied schemas, and retained payloads in this bundle are authoritative.</p>
+<h2>Read this bundle as evidence</h2>
+<p><strong>Provided APIs:</strong> requests sent to the system and the responses observed in its recorded test environment. The target kind distinguishes service evidence from mock behavior.</p>
+<p><strong>Dependencies:</strong> outbound requests and the replies supplied to the system. Replies from mocks are assumptions about provider behavior, even when they match a supplied schema.</p>
+<p><strong>Verification:</strong> compare these assumptions with matching provider evidence and contract revisions. Missing evidence means unknown agreement, not a confirmed mismatch. Resolve failed observations and exercise uncovered conditions before treating them as assurance.</p>
+<p class="note">A passing test, a valid message, and provider agreement are separate claims. Observed-operation counts include failed attempts; contract conditions only count qualifying valid messages in complete passing attempts.</p>
+<p class="subtle">This dashboard and Knowledge JSON are generated views. Canonical JSON evidence, frozen schemas, and retained payloads provide their provenance. Captured bodies and headers are untrusted application data.</p>
+</div><div class="card">
+<h2>For knowledge bases and follow-up tests</h2>
+<p>Start with the system overview for API boundaries and dependency assumptions. Use the verification work list to find missing evidence and suggested checks; use Knowledge JSON to retain links back to the recorded attempts and flows.</p>
+<div class="links"><a href="../system.md">System overview</a><a href="../verification.md">Verification work</a><a href="../knowledge.json">Knowledge JSON</a><a href="../coverage.md">Coverage notes</a></div>
 </div>{{if .Notes}}<div class="card">
 <h2>Diagnostics</h2>{{range .Notes}}<p class="note">{{.}}</p>{{end}}</div>{{end}}<div class="card">
 <h2>Navigation</h2>
@@ -82,32 +94,10 @@ a{color:var(--blue);text-underline-offset:2px}button,input{font:inherit}button{c
 </div>
 </div>
 </section>
-<section class="pane" id="apis" hidden>{{if .Provided}}{{range .Provided}}{{template "spec" .}}{{end}}{{else}}<div class="card empty">No provided API schemas were supplied. The coverage denominator is unknown.</div>{{end}}</section>
-<section class="pane" id="dependencies" hidden>{{if .MockDrafts}}<div class="card"><h2>Inferred mock assumptions</h2><p>OpenAPI drafts from observed mock requests and responses, including failed attempts. These are not provider contracts or validation inputs. Consumer field use and provider agreement remain unknown.</p><div class="links">{{range .MockDrafts}}<a href="{{.URL}}">{{.ID}} — {{.Operations}} operations, {{.Exchanges}} exchanges</a>{{end}}</div></div>{{end}}{{if .Dependent}}<div class="card note">Dependency responses are observed assumptions. Consumer field use and provider agreement remain unknown.</div>{{range .Dependent}}{{template "spec" .}}{{end}}{{else}}<div class="card empty">No dependency schemas were supplied.</div>{{end}}</section>
-<section class="pane" id="contracts" hidden>
-<div class="card"><h2>Contract conditions</h2><p>Each supplied contract publishes the same stable keys for provider and dependency evidence. A covered key requires a valid message in a complete passing attempt. Failed observations, violations, unsupported rules and unknowns remain separate.</p><p class="note">{{if not .Contracts.Complete}}This run is incomplete. {{end}}Scope is limited to registered contracts. Mock coverage does not establish provider agreement. Combinations are observations, not exhaustive scenario coverage.</p><div class="links"><a href="../contract-coverage.md">OKF condition catalogue</a><a href="../contract-coverage.json">JSON keys, combinations and evidence</a></div></div>
-{{range $spec := .Contracts.Specs}}<article class="card"><h2>{{.APIID}} · {{.Origin}} · {{.TargetKind}}</h2><p class="subtle">Schema {{.SchemaID}} · revision {{.Revision}} · {{.Dialect}}</p>{{if not .DenominatorKnown}}<p class="note">Condition denominator is unknown or partial.</p>{{end}}{{range .Notes}}<p>{{.}}</p>{{end}}
-{{range $scope, $count := .Counts}}<p class="subtle">{{$scope}}: {{$count.Covered}} covered · {{$count.NotCovered}} not covered · {{$count.Unknown}} unknown · {{$count.Unsupported}} unsupported · {{$count.Excluded}} excluded</p>{{end}}
-{{range .Targets}}<details class="operation item" data-search="{{$spec.APIID}} {{$spec.SchemaID}} {{$spec.Origin}} {{$spec.TargetKind}} {{.Operation}} {{.OperationKey}} {{.Phase}} {{.Location}} {{.Family}} {{.Condition}} {{.State}} {{.Key}} {{.Reason}}{{range .Evidence}} {{.TestName}} {{.AttemptID}} {{.FlowID}} {{.InstanceLocation}} {{.Reason}}{{end}}"><summary><span>{{.Operation}} · {{.Phase}} · {{.Family}}: {{.Condition}}</span><span class="badge {{if ne .State "covered"}}neutral{{end}}">{{.State}}</span></summary><div class="operation-body"><p style="overflow-wrap:anywhere">Key: {{.Key}}<br>Schema: {{.Location}}</p><p class="subtle">Feasibility: {{.Feasibility}} · {{.AppliesWhen}}</p>{{if .Reason}}<p class="note">{{.Reason}}</p>{{end}}{{range .Evidence}}<div class="sample"><a href="../{{.Path}}">{{.TestName}} · flow {{.FlowID}}</a> · {{.Result}}<p class="subtle">{{.Phase}} {{.InstanceLocation}} · test {{.Outcome}} · validation {{.Validation}}{{if .CaptureIncomplete}} · capture incomplete{{end}}{{if .TransportError}} · {{.TransportError}}{{end}} {{.Reason}}</p></div>{{end}}</div></details>{{end}}
-{{range .Violations}}<p class="note"><a href="../{{.Evidence.Path}}">{{.Evidence.TestName}} · {{.Evidence.FlowID}}</a> · {{.Evidence.Phase}}: {{.Reason}}</p>{{end}}
-</article>{{end}}</section>
-<section class="pane" id="tests" hidden>{{if .Tests}}{{range .Tests}}<article class="card item" data-search="{{.Search}}">
-<div class="card-head">
-<div>
-<h2>{{.Name}}</h2>
-<div class="subtle">Attempt {{.ID}}{{if .TraceID}} · trace {{.TraceID}}{{end}}</div>
-</div>
-<span class="badge {{if ne .Status "pass"}}fail{{end}}">{{.Status}}</span>
-</div>{{if .Incomplete}}<p class="note">Capture incomplete; this attempt cannot count as a complete passing observation.</p>{{end}}{{if .ValidationStatus}}<p class="subtle">Schema validation: {{.ValidationStatus}}</p>{{end}}{{range .Diagnostics}}<p class="note">{{.}}</p>{{end}}<div class="links">
-<a href="{{.EvidenceURL}}">Canonical attempt JSON</a>
-<a href="{{.MarkdownURL}}">OKF attempt page</a>
-</div>{{if .Flows}}{{range .Flows}}<details class="flow">
-<summary>
-<span>{{.Request.Method}} {{.Request.URL}}</span>
-<span class="subtle">{{.Channel}} · HTTP {{.Response.Status}}</span>
-</summary>
-<div class="operation-body subtle">Flow {{.ID}}{{if .AssetID}} · dependency {{.AssetID}}{{end}}{{if .TraceID}} · trace {{.TraceID}}{{end}}{{if .ParentID}} · parent {{.ParentID}}{{end}}{{if .Correlation}} · test matched by {{.Correlation}}{{end}}{{if .ParentCorrelation}} · parent relationship {{.ParentCorrelation}}{{end}}{{if .ContextSource}} · trace context {{.ContextSource}}{{end}}</div>{{if .Error}}<p class="note">Transport error: {{.Error}}</p>{{end}}<div class="flow-body">{{template "message" .Request}}{{template "message" .Response}}</div>
-</details>{{end}}{{else}}<p class="empty">No captured traffic.</p>{{end}}</article>{{end}}{{else}}<div class="card empty">No committed attempts yet.</div>{{end}}</section>
+<section class="pane" id="apis" hidden>{{if .Provided}}{{range .Provided}}{{template "spec" .}}{{end}}{{else}}<div class="card empty">No provided API schemas were supplied. The coverage denominator is unknown. <a href="../system.md">Review the system inventory and captured evidence.</a></div>{{end}}</section>
+<section class="pane" id="dependencies" hidden><div class="card"><h2>Dependency evidence and assumptions</h2><p>Mock responses record what the consumer's tests assumed. Service responses record what a dependency returned in this environment. Neither establishes which response fields the consumer used, or agreement with another provider version.</p><div class="links"><a href="../verification.md">Checks needed to verify assumptions</a><a href="../system.md">All dependency boundaries</a></div></div>{{if .MockDrafts}}<div class="card"><h2>Inferred mock assumptions</h2><p>OpenAPI drafts from observed mock requests and responses, including failed attempts. These are not provider contracts or validation inputs. Consumer field use and provider agreement remain unknown.</p><div class="links">{{range .MockDrafts}}<a href="{{.URL}}">{{.ID}} — {{.Operations}} operations, {{.Exchanges}} exchanges</a>{{end}}</div></div>{{end}}{{if .Dependent}}{{range .Dependent}}{{template "spec" .}}{{end}}{{else}}<div class="card empty">No dependency schemas were supplied. This does not establish that the system has no dependencies; check the system inventory for observed or configured boundaries.</div>{{end}}</section>
+{{template "contractPane" .}}
+{{template "testPane" .}}
 </main>
 <p class="footer">Open this file directly from the bundle. No server or external scripts are required. Refresh the bundle views to regenerate this dashboard.</p>
 </div>
@@ -120,20 +110,63 @@ a{color:var(--blue);text-underline-offset:2px}button,input{font:inherit}button{c
     const pane = document.querySelector('.pane:not([hidden])');
     if (!pane) return;
     const query = search.value.trim().toLowerCase();
+    const mode = pane.querySelector('[data-filter-mode]')?.value || 'all';
     pane.querySelectorAll('.item').forEach((item) => {
       item.hidden = Boolean(query) && !item.dataset.search.toLowerCase().includes(query);
     });
-  }
-  tabs.forEach((tab) => tab.addEventListener('click', () => {
-    tabs.forEach((item) => {
-      item.classList.toggle('active', item === tab);
-      item.setAttribute('aria-selected', String(item === tab));
+    const leaves = [...pane.querySelectorAll('.filter-leaf')];
+    leaves.forEach((item) => {
+      // Group search contains aggregated child text for navigation; use only
+      // direct item data plus explicit API context to avoid matching siblings.
+      const context = item.closest('[data-api-search]')?.dataset.apiSearch || '';
+      const text = ((item.dataset.search || '') + ' ' + context).toLowerCase();
+      const stateMatch = mode === 'all' || (mode === 'attention' ? item.dataset.attention === 'true' : item.dataset.state === mode);
+      item.hidden = !stateMatch || Boolean(query) && !text.includes(query);
     });
-    panes.forEach((pane) => { pane.hidden = pane.id !== tab.dataset.pane; });
+    [...pane.querySelectorAll('.filter-group')].reverse().forEach((group) => {
+      const children = [...group.querySelectorAll('.filter-leaf')];
+      group.hidden = children.length ? !children.some((item) => !item.hidden) : Boolean(query) && !(group.dataset.search || '').toLowerCase().includes(query);
+      if (!group.hidden && (query || mode !== 'all') && group.tagName === 'DETAILS') group.open = true;
+    });
+    const empty = pane.querySelector('.filter-empty');
+    if (empty) empty.hidden = !leaves.length || leaves.some((item) => !item.hidden);
+  }
+  function activate(id) {
+    tabs.forEach((item) => {
+      item.classList.toggle('active', item.dataset.pane === id);
+      item.setAttribute('aria-selected', String(item.dataset.pane === id));
+    });
+    panes.forEach((pane) => { pane.hidden = pane.id !== id; });
     search.value = '';
     filter();
+  }
+  tabs.forEach((tab) => tab.addEventListener('click', () => {
+    activate(tab.dataset.pane);
   }));
+  function revealHash() {
+    let id;
+    try { id = decodeURIComponent(location.hash.slice(1)); } catch { return; }
+    const target = document.getElementById(id);
+    const pane = target?.closest('.pane');
+    if (!pane) return;
+    const mode = pane.querySelector('[data-filter-mode]');
+    if (mode) mode.value = 'all';
+    activate(pane.id);
+    for (let node = target; node && node !== pane; node = node.parentElement) {
+      if (node.tagName === 'DETAILS') node.open = true;
+    }
+    target.scrollIntoView({block: 'start'});
+  }
+  document.querySelectorAll('[data-reveal]').forEach((link) => link.addEventListener('click', (event) => {
+    event.preventDefault();
+    const hash = link.getAttribute('href');
+    if (location.hash === hash) revealHash();
+    else location.hash = hash;
+  }));
+  window.addEventListener('hashchange', revealHash);
+  document.querySelectorAll('[data-filter-mode]').forEach((select) => select.addEventListener('change', filter));
   search.addEventListener('input', filter);
+  revealHash();
 })();
 </script>
 </body>
@@ -145,27 +178,27 @@ a{color:var(--blue);text-underline-offset:2px}button,input{font:inherit}button{c
 <div class="subtle">{{.Kind}} · {{.TargetKind}} target · schema {{.ID}}{{if .AssetID}} · API ID {{.AssetID}}{{end}}</div>
 </div>
 <span class="badge {{if not .DenominatorKnown}}neutral{{end}}">{{if .DenominatorKnown}}{{.Observed}} / {{.Total}} observed{{else}}denominator unknown{{end}}</span>
-</div>{{if .SourceURL}}<div class="links">
+</div><p><span class="badge {{if eq .TargetKind "mock"}}warn{{else if eq .TargetKind "unknown"}}neutral{{end}}">{{.EvidenceLabel}}</span></p><p>{{.Interpretation}}</p>{{if .SourceURL}}<div class="links">
 <a href="{{.SourceURL}}">Frozen schema</a>
 </div>{{end}}{{if .DenominatorKnown}}<div class="progress" role="img" aria-label="{{.Observed}} of {{.Total}} operations observed">
 <i style="--progress:{{.Percent}}%">
 </i>
 </div>
-<p class="subtle">{{.Passing}} observed in complete passing attempts · {{.Total}} declared operations</p>{{else}}<p class="subtle">No trustworthy declared-operation denominator is available.</p>{{end}}<div class="operations">{{range .Operations}}<details class="operation">
+<p class="subtle">{{.Passing}} observed in complete passing attempts · {{.Total}} declared operations. Operation counts do not establish schema validity or provider agreement.</p>{{else}}<p class="subtle">No trustworthy declared-operation denominator is available.</p>{{end}}<div class="operations">{{range .Operations}}<details class="operation">
 <summary>
 <span>{{.Name}}</span>
 <span class="badge {{if eq .State "unobserved"}}neutral{{else if eq .State "observed"}}warn{{end}}">{{.State}}</span>
 </summary>
 <div class="operation-body">{{if .Samples}}{{range .Samples}}<div class="sample">
-<strong>{{.Request}}</strong> → HTTP {{.Response}} · {{.Status}}<div class="links">
-<a href="{{.TestURL}}">{{.TestName}}</a>
+<strong>{{.Request}}</strong> → HTTP {{.Response}}<p class="subtle">Test outcome: {{.Status}} · attempt schema validation: {{.ValidationStatus}}</p><div class="links">
+<a data-reveal href="{{.TestURL}}">{{.TestName}}</a>
 <a href="{{.EvidenceURL}}">JSON evidence · flow {{.FlowID}}</a>
 </div>
 </div>{{end}}{{else}}<span class="subtle">No captured example.</span>{{end}}</div>
 </details>{{end}}</div>
 </article>{{end}}
 {{define "message"}}<div class="message">
-<h4>{{if .Method}}Request · {{.Method}}{{else}}Response · HTTP {{.Status}}{{end}}</h4>{{if .URL}}<p class="subtle">{{.URL}}</p>{{end}}{{if .Headers}}<strong>Headers</strong>
-<pre>{{.Headers}}</pre>{{end}}{{if .Trailers}}<strong>Trailers</strong>
-<pre>{{.Trailers}}</pre>{{end}}{{if .BodyNote}}<p class="note">{{.BodyNote}}</p>{{end}}{{if .Body}}<strong>Body preview</strong>
+<h4>{{if .Method}}Request · {{.Method}}{{else}}Response · HTTP {{.Status}}{{end}}</h4>{{if .URL}}<p class="subtle">{{.URL}}</p>{{end}}{{if .Headers}}<details class="technical"><summary>Headers</summary>
+<pre>{{.Headers}}</pre></details>{{end}}{{if .Trailers}}<details class="technical"><summary>Trailers</summary>
+<pre>{{.Trailers}}</pre></details>{{end}}{{if .BodyNote}}<p class="note">{{.BodyNote}}</p>{{end}}{{if .Body}}<strong>Body preview</strong>
 <pre>{{.Body}}</pre>{{end}}{{if .AttachmentURL}}<a href="{{.AttachmentURL}}">Retained body attachment</a>{{end}}</div>{{end}}

@@ -10,13 +10,20 @@ Other `index.md` files are directory listings without frontmatter. Every other
 Wiretap-generated `.md` file is a concept with `type`, `title`, `description`,
 `generated: {by: "wiretap/1.0", at: ...}`, and
 `wiretap: {profile_version: "1.0", kind, run_id, snapshot_revision}`.
-`kind` is `run`, `coverage`, `api`, `operation`, `assumptions`, or `attempt`.
+`kind` is `system`, `verification`, `run`, `coverage`, `api`, `operation`,
+`assumptions`, or `attempt`. Concept titles identify their API, operation or
+test where applicable, so pages retain context when indexed separately.
 Wiretap does not set OKF `verified` merely because a test passed.
 The bundle's `viewer/index.html` is a separate disposable HTML view over the
 same JSON evidence; it is not an OKF concept or an evidence source.
 `contract-coverage.md` uses kind `coverage`. `contract-coverage.json` is a
 disposable measurement with separately versioned condition rules, not captured
 evidence or an OKF concept.
+`system.md` uses kind `system`; `verification.md` uses kind `verification`.
+They describe observed boundaries and suggested follow-up work. Their structured
+counterpart, `knowledge.json`, is a disposable, separately versioned
+[knowledge projection](bundle-knowledge.md), not captured evidence or an OKF
+concept. Its tasks do not supply executable code or establish provider agreement.
 Likewise, `dependencies/mocks/<dependency-hash>.openapi.yaml` files are disposable
 inferred mock assumptions, not OKF concepts or supplied contracts. They link to
 source evidence using file-relative `x-wiretap-evidence` paths.
@@ -34,7 +41,10 @@ still be valid for its immutable attempt. A full rebuild rewrites all pages
 against one inventory snapshot. Evidence readers and exports do not parse
 frontmatter or Markdown, and missing pages do not block them.
 
-Wiretap owns the documented generated paths (`index.md`, `run.md`,
-`coverage.md`, `contract-coverage.md`, `contract-coverage.json`, `viewer/index.html`, `dependencies/mocks/*.openapi.yaml`, and its `apis/`, `dependencies/`, and `tests/` indexes/pages).
+Wiretap owns the documented generated paths (`index.md`, `system.md`,
+`verification.md`, `knowledge.json`, `run.md`, `coverage.md`,
+`contract-coverage.md`, `contract-coverage.json`, `viewer/index.html`,
+`dependencies/mocks/*.openapi.yaml`, and its `apis/`, `dependencies/`, and
+`tests/` indexes/pages).
 Regeneration replaces those paths only. Unrecognized team-authored concepts
 and extensions are preserved.

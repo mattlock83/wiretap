@@ -32,7 +32,7 @@
       "required": ["profile_version", "kind", "run_id", "snapshot_revision"],
       "properties": {
         "profile_version": { "const": "1.0" },
-        "kind": { "enum": ["run", "coverage", "api", "operation", "assumptions", "attempt"] },
+        "kind": { "enum": ["run", "coverage", "api", "operation", "assumptions", "attempt", "system", "verification"] },
         "run_id": { "type": "string", "minLength": 1 },
         "snapshot_revision": { "type": "integer", "minimum": 1 },
         "evidence": {

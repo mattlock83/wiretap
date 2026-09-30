@@ -1,0 +1,28 @@
+version: 1
+http_listen: 0.0.0.0:18000
+proxy_listen: 0.0.0.0:18080
+output_dir: /artifacts
+sut:
+  id: microsvc-transactions
+  url: http://transactions:8080
+  kind: service
+  schema: schemas/transactions.yaml
+dependencies:
+  accounts:
+    url: http://accounts:8080
+    kind: mock
+    schema: schemas/accounts.yaml
+explore:
+  expected_statuses: [400]
+  request_timeout: 20s
+  hooks:
+    before_run:
+      command: [python3, hooks.py]
+    before_case:
+      command: [python3, hooks.py]
+    before_request:
+      command: [python3, hooks.py]
+    check_case:
+      command: [python3, hooks.py]
+    after_case:
+      command: [python3, hooks.py]

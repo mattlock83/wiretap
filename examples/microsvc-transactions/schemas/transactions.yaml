@@ -1,0 +1,121 @@
+openapi: 3.0.3
+info:
+  title: Microsvc Transactions API (example-maintained contract)
+  version: 1.0.0
+  description: >-
+    Aligned with the Controllers and DTOs in speedscale/microsvc revision
+    1433243aa37dc27f391f81d7c27e40ce7c757e95. Not an upstream-published contract.
+    Includes untested operations so their coverage gaps stay visible.
+paths:
+  /api/transactions:
+    get:
+      parameters:
+        - name: accountId
+          in: query
+          schema: {type: integer, format: int64}
+      responses:
+        '200':
+          description: Transactions belonging to the authenticated user
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/Transaction'}
+        '400': {$ref: '#/components/responses/Rejected'}
+  /api/transactions/withdraw:
+    post:
+      requestBody: {$ref: '#/components/requestBodies/AccountAmount'}
+      responses:
+        '201': {$ref: '#/components/responses/Created'}
+        '400': {$ref: '#/components/responses/Rejected'}
+  /api/transactions/deposit:
+    post:
+      requestBody: {$ref: '#/components/requestBodies/AccountAmount'}
+      responses:
+        '201': {$ref: '#/components/responses/Created'}
+        '400': {$ref: '#/components/responses/Rejected'}
+  /api/transactions/transfer:
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [fromAccountId, toAccountId, amount]
+              properties:
+                fromAccountId: {type: integer, format: int64}
+                toAccountId: {type: integer, format: int64}
+                amount: {$ref: '#/components/schemas/Amount'}
+                description: {type: string, nullable: true}
+      responses:
+        '201': {$ref: '#/components/responses/Created'}
+        '400': {$ref: '#/components/responses/Rejected'}
+  /api/transactions/create:
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [accountId, type, amount, currency]
+              properties:
+                accountId: {type: integer, format: int64}
+                toAccountId: {type: integer, format: int64, nullable: true}
+                type: {type: string, enum: [DEPOSIT, WITHDRAWAL, TRANSFER]}
+                amount: {$ref: '#/components/schemas/Amount'}
+                currency: {type: string, pattern: '^[A-Z]{3}$'}
+                description: {type: string, nullable: true}
+      responses:
+        '201': {$ref: '#/components/responses/Created'}
+        '400': {$ref: '#/components/responses/Rejected'}
+security:
+  - bearerAuth: []
+components:
+  securitySchemes:
+    bearerAuth: {type: http, scheme: bearer, bearerFormat: JWT}
+  requestBodies:
+    AccountAmount:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [accountId, amount]
+            properties:
+              accountId: {type: integer, format: int64}
+              amount: {$ref: '#/components/schemas/Amount'}
+              description: {type: string, nullable: true}
+  responses:
+    Created:
+      description: Completed transaction
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Transaction'}
+    Rejected:
+      description: >-
+        Invalid input or a rejected business operation. The application returns
+        field-error maps, Spring error objects, or an empty body depending on the
+        failure. This example asserts the status and side effects; no common
+        error-body schema is claimed.
+  schemas:
+    Amount:
+      type: number
+      minimum: 0
+      exclusiveMinimum: true
+    Transaction:
+      type: object
+      required: [id, userId, amount, type, status, createdAt]
+      properties:
+        id: {type: integer, format: int64}
+        userId: {type: integer, format: int64}
+        fromAccountId: {type: integer, format: int64, nullable: true}
+        toAccountId: {type: integer, format: int64, nullable: true}
+        amount: {$ref: '#/components/schemas/Amount'}
+        type: {type: string, enum: [DEPOSIT, WITHDRAWAL, TRANSFER]}
+        status: {type: string, enum: [PENDING, COMPLETED, FAILED, CANCELLED]}
+        description: {type: string, nullable: true}
+        # The Java DTO uses LocalDateTime, without the timezone required by RFC3339.
+        createdAt: {type: string}
+        processedAt: {type: string, nullable: true}

@@ -5,6 +5,14 @@ Start the control process with `wiretap [--config path]`; suite hooks own captur
 startup/finalization, and test hooks own attempts. Your harness owns the Wiretap,
 SUT, mock, and test processes. Any language can use this API directly.
 
+Generated provider testing uses the separate `wiretap explore` command and
+project-owned executable hooks. The HTTP API does not accept or execute hook
+commands. See [exploration](exploration.md).
+
+Schema validation checks message conformance; the provider validates credentials.
+Declaring OpenAPI security does not require an authentication backend inside
+Wiretap and does not itself establish that authentication was tested.
+
 | Method | Endpoint | Purpose |
 | --- | --- | --- |
 | GET | `/healthz` | Check that the control service is available. |

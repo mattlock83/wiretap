@@ -19,8 +19,14 @@ func execute(ctx context.Context, args []string) int {
 		command = args[0]
 		args = args[1:]
 	}
-	if command == "report" || command == "export" {
-		if err := reportCommand(args); err != nil {
+	if command == "report" || command == "export" || command == "explore" {
+		var err error
+		if command == "explore" {
+			err = exploreCommand(ctx, args)
+		} else {
+			err = reportCommand(args)
+		}
+		if err != nil {
 			if errors.Is(err, flag.ErrHelp) {
 				return 0
 			}
@@ -33,13 +39,13 @@ func execute(ctx context.Context, args []string) int {
 		return 0
 	}
 	if command != "" && command != "ca" {
-		fmt.Fprintf(os.Stderr, "unknown command %q; start the runtime with wiretap, or use report, export, or ca\n", command)
+		fmt.Fprintf(os.Stderr, "unknown command %q; use wiretap, explore, report, export, or ca\n", command)
 		return 2
 	}
 	flags := flag.NewFlagSet("wiretap "+command, flag.ContinueOnError)
 	configPath := flags.String("config", "", "project configuration (default: discover .wiretap.yaml)")
 	flags.Usage = func() {
-		fmt.Fprintln(flags.Output(), "Usage: wiretap [--config path]\n  wiretap ca [--config path]\n  wiretap report --bundle <directory>\n  wiretap export --bundle <directory> --format json --output coverage.json")
+		fmt.Fprintln(flags.Output(), "Usage: wiretap [--config path]\n  wiretap ca [--config path]\n  wiretap explore --bundle <directory> --config .wiretap.yaml\n  wiretap report --bundle <directory>\n  wiretap export --bundle <directory> --format json --output coverage.json")
 		flags.PrintDefaults()
 	}
 	if err := flags.Parse(args); err != nil {
