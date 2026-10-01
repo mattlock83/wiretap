@@ -53,7 +53,7 @@ A covered condition can also have observations from failed attempts; it does
 not mean every attempt passed. The catalogue preserves those observations and
 conditions exercised together in each message. See the versioned
 [contract coverage rules](contract-coverage-rules.md) for precise semantics and
-supported OpenAPI constraints.
+supported OpenAPI constraints and unary Protobuf field conditions.
 
 **Invalid-input coverage** is separate. Exploration counts the supported
 rejection targets generated from its selected scenario, not every possible
@@ -87,7 +87,7 @@ artifacts/<run-id>/
   tests/                  one readable page per test attempt
   evidence/run.json       versioned run inventory
   evidence/attempts/      immutable JSON capture per attempt
-  schemas/                frozen OpenAPI documents and references
+  schemas/                frozen OpenAPI documents or Protobuf descriptor sets
   payloads/               retained, redacted body bytes
 ```
 
@@ -131,7 +131,7 @@ exploration dependency list does not establish that the system has no dependenci
 
 ## Inferred mock assumptions
 
-Every dependency marked `kind: mock` in `.wiretap.yaml` (API:
+Every HTTP dependency marked `kind: mock` in `.wiretap.yaml` (API:
 `upstream_kind: mock`) gets an OpenAPI 3.1 YAML draft at
 `dependencies/mocks/<dependency-hash>.openapi.yaml`. The Dependencies view links
 to it. Drafts update automatically from observed traffic, including when a spec

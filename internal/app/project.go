@@ -26,10 +26,10 @@ func (a *App) testDefaults() setupTestRequest {
 	if id == "" {
 		id = "sut"
 	}
-	out := setupTestRequest{APIID: id, SUTBaseURL: cfg.SUT.TargetURL(), SUTTargetKind: cfg.SUT.Kind, Schemas: cfg.SUT.Schemas(id, "sut"), SchemaRequired: cfg.SUT.SchemaRequired}
+	out := setupTestRequest{APIID: id, SUTBaseURL: cfg.SUT.TargetURL(), SUTTargetKind: cfg.SUT.Kind, SUTProtocol: cfg.SUT.Protocol, Schemas: cfg.SUT.Schemas(id, "sut"), SchemaRequired: cfg.SUT.SchemaRequired}
 	for _, id := range cfg.DependencyIDs() {
 		dep := cfg.Dependencies[id]
-		out.Dependencies = append(out.Dependencies, dependencyRegistration{AssetID: id, UpstreamURL: dep.TargetURL(), UpstreamKind: dep.Kind, Schemas: dep.Schemas(id, "dependency"), SchemaRequired: dep.SchemaRequired})
+		out.Dependencies = append(out.Dependencies, dependencyRegistration{AssetID: id, UpstreamURL: dep.TargetURL(), UpstreamKind: dep.Kind, Protocol: dep.Protocol, Schemas: dep.Schemas(id, "dependency"), SchemaRequired: dep.SchemaRequired})
 	}
 	return out
 }

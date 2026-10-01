@@ -41,12 +41,55 @@ and `dependency_base_url`, the reserved dependency gateway on that same proxy.
 It also returns `run_id`, `bundle_path`, `index_path`, and `viewer_path`. A new run gets a
 fresh bundle under `WIRETAP_OUTPUT_DIR` (default `./artifacts`). The response
 also includes `defaults`, the resolved project test settings from `.wiretap.yaml`.
-Repeated startup calls reuse the active run.
+For gRPC projects, `sut_url` and `dependencies` contain direct listener origins
+with no path prefix. `startRun` allocates them before the SUT and mocks start;
+it reports contract inventory as unresolved. The first `setupTest` resolves
+all Protobuf contracts before traffic admission. See the [gRPC guide](grpc-user-guide.md).
+Repeated startup calls without new boundary definitions reuse the active run.
+
+Without a project file, register the same boundary definitions through HTTP:
+
+```json
+{
+  "boundaries": {
+    "sut": {
+      "id": "orders",
+      "protocol": "grpc",
+      "url": "http://127.0.0.1:50051",
+      "services": ["orders.v1.OrdersService"]
+    },
+    "dependencies": {
+      "inventory": {
+        "protocol": "grpc",
+        "url": "http://127.0.0.1:50052",
+        "kind": "mock",
+        "services": ["inventory.v1.InventoryService"]
+      }
+    }
+  }
+}
+```
+
+`boundaries` accepts only `sut` and `dependencies`, using the same API fields,
+source objects and TLS options as `.wiretap.yaml`. Local paths are relative to
+the Wiretap process's working directory. Environment expansion follows project
+configuration. Project-file boundaries cannot be overridden by HTTP. An active
+run rejects new boundary registrations; finish it before changing targets or
+contracts. Omitted gRPC `schema` selects reflection.
+
+The response and `evidence/run.json` include `contracts`, recording each gRPC
+boundary as `pending`, `failed` or `resolved`. Acquisition runs at most four
+boundaries concurrently, publishes the whole snapshot before admission, and is
+retryable after failure. Reflection is bounded to one minute per boundary;
+control-client timeouts must allow for all batches. Credentials stay outside
+this inventory and the returned defaults.
 `target_url` is only a routing destination; Wiretap never starts, configures,
 waits for, or stops that application.
 
 `POST /v1/finishRun` stops the proxy after all tests are torn down. It returns
-409 while any session is active. One orchestration
+409 while any session is active. Retired gRPC calls are cancelled after their
+bounded drain snapshot has been committed. Unresolved contracts must succeed
+before finalization, including runs with zero tests. One orchestration
 owner must control finalization when suites/workers share a runtime. This stops
 capture and completes the bundle; it leaves the control process running. The reverse SUT
 target cannot be changed while sessions are active.
@@ -56,9 +99,13 @@ target cannot be changed while sessions are active.
 `POST /v1/setupTest` creates a named capture session. It also starts the proxy
 if needed, so lower-level consumers do not have to call `startRun` first.
 Omitted fields inherit project defaults. Supplied arrays replace the defaults.
-OpenAPI specs are required and validated before the session starts; an API can
+OpenAPI specs are required and validated for HTTP before the session starts; an API can
 explicitly allow an absent spec with `schema_required: false`. An invalid
-supplied spec always fails. `redactions` can register per-attempt redaction rules.
+supplied spec always fails. gRPC boundaries require a Protobuf contract,
+configured with `protocol: grpc` and normally discovered through reflection.
+The `sut_protocol` and dependency `protocol` fields can be carried through
+the setup payload when inheriting project defaults. `redactions` can register
+per-attempt redaction rules.
 
 ```json
 {
@@ -103,7 +150,7 @@ Requests to `/__wiretap/dep/inventory/products/123` are forwarded to
 `http://127.0.0.1:9090/products/123`. Request methods, headers, bodies, query
 parameters, responses, and trailers retain the existing proxy's bounded-capture
 semantics. Wiretap does not start, configure, stub, or verify the upstream.
-Every dependency requires a readable, valid OpenAPI schema unless that
+Every HTTP dependency requires a readable, valid OpenAPI schema unless that
 dependency explicitly sets `schema_required: false`. Ordinary instrumented
 clients use W3C trace context; custom clients can select an explicit session
 with `X-Wiretap-Session-Id` on requests to Wiretap.

@@ -43,7 +43,8 @@ func (a *App) handleProxyCA(w http.ResponseWriter, r *http.Request) {
 }
 
 type startRunRequest struct {
-	Proxy proxyOptions `json:"proxy,omitempty"`
+	Proxy      proxyOptions    `json:"proxy,omitempty"`
+	Boundaries json.RawMessage `json:"boundaries,omitempty"`
 }
 
 func (a *App) handleStartRun(w http.ResponseWriter, r *http.Request) {
@@ -60,6 +61,10 @@ func (a *App) handleStartRun(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
 		return
 	}
+	if err := a.configureRunBoundaries(payload.Boundaries); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
 	if err := a.configureProxy(payload.Proxy); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
@@ -68,18 +73,29 @@ func (a *App) handleStartRun(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
+	if err := a.initializeRunContracts(); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
 	info := mergeProxyInfo(a.proxyComponent)
+	sutURL := normalizeURL(info.ListenAddr)
+	if a.project != nil && a.project.SUT.Protocol == "grpc" {
+		sutURL = a.grpcSUTURL()
+	}
 	response := map[string]any{
 		"proxy":               info,
-		"sut_url":             normalizeURL(info.ListenAddr),
-		"dependency_base_url": normalizeURL(info.ListenAddr) + "/__wiretap/dep",
+		"sut_url":             sutURL,
+		"dependency_base_url": sutURL + "/__wiretap/dep",
 		"defaults":            a.testDefaults(),
+		"dependencies":        a.grpcDependencyURLs(),
+		"contracts":           a.currentBundle().Snapshot().Contracts,
 	}
 	a.addBundleLocations(response)
 	writeJSON(w, http.StatusOK, response)
 }
 
 type setupTestRequest struct {
+	SUTProtocol     string                   `json:"sut_protocol,omitempty"`
 	SchemaRequired  *bool                    `json:"schema_required,omitempty"`
 	Redactions      []artifact.Redaction     `json:"redactions,omitempty"`
 	APIID           string                   `json:"api_id,omitempty"`
@@ -97,6 +113,7 @@ type setupTestRequest struct {
 }
 
 func (a *App) handleSetupTest(w http.ResponseWriter, r *http.Request) {
+	a.extendGRPCControlDeadline(w)
 	if r.Method != http.MethodPost {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 		return
@@ -144,17 +161,70 @@ func (a *App) handleSetupTest(w http.ResponseWriter, r *http.Request) {
 			schemas[i].AssetID = payload.APIID
 		}
 	}
-	if err := validateSchemaSetup(schemas, !requiresSchema(payload.SchemaRequired)); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+	if payload.SUTProtocol != "" && payload.SUTProtocol != "http" && payload.SUTProtocol != "grpc" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "sut_protocol must be http or grpc"})
 		return
 	}
-	if len(schemas) == 0 && !requiresSchema(payload.SchemaRequired) {
-		schemas = []artifact.SchemaRef{omittedSchema(payload.APIID, "sut")}
+	configuredGRPC := a.project != nil && a.project.SUT.Protocol == "grpc"
+	if (payload.SUTProtocol == "grpc") != configuredGRPC {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "gRPC SUT protocol must match the project configuration"})
+		return
+	}
+	if payload.SUTProtocol == "grpc" && !requiresSchema(payload.SchemaRequired) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "gRPC requires a Protobuf contract"})
+		return
+	}
+	if payload.SUTProtocol == "grpc" && (len(schemas) != 0 || payload.SUTBaseURL != a.project.SUT.TargetURL()) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "gRPC SUT target and contract are fixed by project configuration"})
+		return
+	}
+	if payload.SUTProtocol != "grpc" {
+		if err := validateSchemaSetup(schemas, !requiresSchema(payload.SchemaRequired)); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+		if len(schemas) == 0 && !requiresSchema(payload.SchemaRequired) {
+			schemas = []artifact.SchemaRef{omittedSchema(payload.APIID, "sut")}
+		}
 	}
 	dependencies, dependencySchemas, err := normalizeDependencies(payload.Dependencies)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
+	}
+	if a.project != nil {
+		for id, configured := range a.project.Dependencies {
+			if configured.Protocol != "grpc" {
+				continue
+			}
+			selected, ok := dependencies[id]
+			if !ok || selected.Protocol != "grpc" || selected.UpstreamURL != configured.TargetURL() {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("gRPC dependency %q must match the project configuration", id)})
+				return
+			}
+		}
+	}
+	for id, selected := range dependencies {
+		if selected.Protocol == "grpc" && (a.project == nil || a.project.Dependencies[id].Protocol != "grpc") {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("gRPC dependency %q requires project configuration", id)})
+			return
+		}
+		if selected.Protocol == "grpc" && len(selected.Schemas) != 0 {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("gRPC dependency %q contract is fixed by project configuration", id)})
+			return
+		}
+	}
+	grpcSchemas, grpcContracts, err := a.resolveGRPCContracts(r.Context())
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	for _, ref := range grpcSchemas {
+		if ref.Role == "sut" {
+			schemas = append(schemas, ref)
+		} else {
+			dependencySchemas = append(dependencySchemas, ref)
+		}
 	}
 	if target := strings.TrimSpace(payload.SUTBaseURL); target != "" {
 		if err := a.setReverseTarget(target); err != nil {
@@ -196,6 +266,7 @@ func (a *App) handleSetupTest(w http.ResponseWriter, r *http.Request) {
 	}
 	sessionID := a.nextSessionID()
 	store := NewTestCaseStore(bundleWriter, a.cfg.Capture.MaxBodyBytes)
+	store.SetGRPCContracts(grpcContracts)
 	tc, err := store.StartCase(name, payload.Tags, payload.Meta, payload.SUTBaseURL)
 	if err != nil {
 		a.sessionsMu.Unlock()
@@ -229,8 +300,15 @@ func (a *App) handleSetupTest(w http.ResponseWriter, r *http.Request) {
 	a.sessionsMu.Unlock()
 
 	proxyURL := normalizeURL(a.proxyComponent.ListenAddr())
+	if payload.SUTProtocol == "grpc" {
+		proxyURL = a.grpcSUTURL()
+	}
 	dependencyURLs := make(map[string]string, len(dependencies))
 	for assetID := range dependencies {
+		if dependencies[assetID].Protocol == "grpc" {
+			dependencyURLs[assetID] = a.grpcDependencyURL(assetID)
+			continue
+		}
 		if payload.ExplicitSession && !root.IsValid() {
 			dependencyURLs[assetID] = proxyURL + "/__wiretap/session/" + sessionID + "/dep/" + assetID
 		} else {
@@ -377,6 +455,7 @@ func (a *App) handleRuntimeReport(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleFinishRun(w http.ResponseWriter, r *http.Request) {
+	a.extendGRPCControlDeadline(w)
 	if r.Method != http.MethodPost {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 		return
@@ -389,6 +468,9 @@ func (a *App) handleFinishRun(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) configureProxy(payload proxyOptions) error {
+	if a.project != nil && a.project.SUT.Protocol == "grpc" && payload.TargetURL != "" && strings.TrimRight(payload.TargetURL, "/") != a.project.SUT.TargetURL() {
+		return errors.New("gRPC target is fixed by the run boundary definition")
+	}
 	if payload.TargetURL == "" && a.reverseTarget == "" {
 		payload.TargetURL = a.testDefaults().SUTBaseURL
 	}

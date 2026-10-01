@@ -1,7 +1,7 @@
 # Examples
 
-Run these commands from the repository root. Each example writes a capture
-bundle and a separate exploration bundle, and prints their paths. Open
+Run these commands from the repository root. Examples write capture bundles;
+the HTTP examples also write separate exploration bundles. They print their paths. Open
 `viewer/index.html` for the dashboard or `index.md` for the OKF pages.
 
 | Example | Demonstrates | Requirements |
@@ -9,6 +9,7 @@ bundle and a separate exploration bundle, and prints their paths. Open
 | [Basic REST](basic-rest/README.md) | Existing Node tests and an HTTP dependency mock; optional parallel Jest capture; generated invalid-input checks. | Go 1.24+, Node.js 20.12+, Bash and curl. |
 | [Provider exploration](../docs/exploration.md#try-the-complete-example) | SQLite fixtures, fresh authentication, cleanup and side-effect assertions through Python hooks. | Go 1.24+ and Python 3.9+. |
 | [Microsvc Transactions](microsvc-transactions/README.md) | A real service image, an Accounts mock, disposable database state and authenticated exploration. | Go 1.24+, Python 3.9+, Docker and the documented local images. |
+| [Native gRPC](grpc-boundaries/README.md) | Existing grpc-go test, gRPC SUT and gRPC mock, reflection/local contracts and OKF coverage. | Go 1.24+, Bash, Python 3 and curl. |
 
 ## Basic REST
 
@@ -37,3 +38,9 @@ python3 examples/provider-exploration/demo.py
 
 Read the [Microsvc guide](microsvc-transactions/README.md) for image requirements,
 contract scope and replaying an existing capture.
+
+## Native gRPC
+
+```bash
+./examples/grpc-boundaries/run.sh
+```

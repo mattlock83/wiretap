@@ -1,13 +1,13 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "bundle-evidence.schema.json",
-  "title": "Wiretap bundle evidence 1.x",
+  "title": "Wiretap bundle evidence 1.x and 2.x",
   "oneOf": [
     { "$ref": "#/$defs/run" },
     { "$ref": "#/$defs/attempt" }
   ],
   "$defs": {
-    "version": { "type": "string", "pattern": "^1\\.[0-9]+$" },
+    "version": { "type": "string", "pattern": "^[12]\\.[0-9]+$" },
     "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$" },
     "hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
     "relativePath": { "type": "string", "minLength": 1, "pattern": "^(?!/)(?![A-Za-z]:)(?!.*(?:^|/)\\.\\.(?:/|$)).+$" },
@@ -26,6 +26,20 @@
         "id": { "type": "string", "minLength": 1 },
         "role": { "type": "string" },
         "type": { "type": "string" },
+        "services": { "type": "array", "items": { "type": "string" } },
+        "acquired_from": { "type": "string" },
+        "acquisition": {
+          "type": "object",
+          "required": ["acquired_at", "normalization_profile"],
+          "properties": {
+            "acquired_at": { "type": "string", "format": "date-time" },
+            "reflection_version": { "enum": ["v1", "v1alpha"] },
+            "advertised_services": { "type": "array", "items": { "type": "string" } },
+            "excluded_services": { "type": "array", "items": { "type": "string" } },
+            "compiler_version": { "type": "string" },
+            "normalization_profile": { "type": "string" }
+          }
+        },
         "source": {
           "type": "object",
           "required": ["type"],
@@ -54,6 +68,22 @@
         "test_source": { "type": "object" },
         "sut_source": { "type": "object" },
         "schemas": { "type": "array", "items": { "$ref": "#/$defs/schemaRef" } },
+        "contracts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["api_id", "role", "protocol", "source", "contract_resolution"],
+            "properties": {
+              "api_id": { "type": "string", "minLength": 1 },
+              "role": { "enum": ["sut", "dependency"] },
+              "protocol": { "const": "grpc" },
+              "source": { "enum": ["reflection", "proto", "descriptor_set"] },
+              "contract_resolution": { "enum": ["pending", "resolved", "failed"] },
+              "services": { "type": "array", "items": { "type": "string" } },
+              "diagnostic": { "type": "string" }
+            }
+          }
+        },
         "pending": {
           "type": "array",
           "items": {
@@ -80,6 +110,8 @@
     "flow": {
       "type": "object",
       "required": ["id", "protocol", "channel", "request", "response"],
+      "if": { "properties": { "protocol": { "const": "grpc" } }, "required": ["protocol"] },
+      "then": { "properties": { "request": { "$ref": "#/$defs/grpcMessage" }, "response": { "$ref": "#/$defs/grpcMessage" } } },
       "properties": {
         "id": { "type": "string", "minLength": 1 },
         "protocol": { "type": "string" },
@@ -94,6 +126,44 @@
             "provider_check": {
               "type": "object",
               "properties": { "status": { "const": "not_checked" } }
+            }
+          }
+        }
+      }
+    },
+    "grpcMessage": {
+      "type": "object",
+      "required": ["kind", "procedure", "service", "method", "schema_ref"],
+      "if": { "required": ["http_status"] },
+      "then": { "required": ["grpc_status"] },
+      "properties": {
+        "kind": { "const": "grpc" },
+        "procedure": { "type": "string", "pattern": "^/[^/]+/[^/]+$" },
+        "service": { "type": "string" },
+        "method": { "type": "string" },
+        "schema_ref": { "type": "string" },
+        "stream_kind": { "enum": ["unary", "client_streaming", "server_streaming", "bidirectional", "unknown"] },
+        "observed_bytes": { "type": "integer", "minimum": 0 },
+        "status_source": { "type": "string" },
+        "metadata": { "type": "object" },
+        "trailers": { "type": "object" },
+        "http_status": { "type": "integer" },
+        "grpc_status": { "type": "integer", "minimum": -1, "maximum": 16 },
+        "grpc_message": { "type": "string" },
+        "capture_truncated": { "type": "boolean" },
+        "messages": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["index"],
+            "properties": {
+              "index": { "type": "integer", "minimum": 0 },
+              "type": { "type": "string" },
+              "compressed": { "type": "boolean" },
+              "redacted": { "type": "boolean" },
+              "body": { "type": "object" },
+              "wire": { "type": "object" },
+              "decode_error": { "type": "string" }
             }
           }
         }
@@ -156,6 +226,8 @@
             "flow_id": { "type": "string", "minLength": 1 },
             "phase": { "enum": ["request", "response"] },
             "representation": { "enum": ["text", "bytes"] },
+            "kind": { "enum": ["wire"] },
+            "message_index": { "type": "integer", "minimum": 0 },
             "retained_bytes": { "type": "integer", "minimum": 0 }
           }
         }

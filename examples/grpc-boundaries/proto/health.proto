@@ -1,0 +1,12 @@
+// Local contract for the standard generated HealthClient used by this demo.
+// Splitting messages into an import demonstrates local dependency resolution.
+syntax = "proto3";
+package grpc.health.v1;
+
+import "health-types.proto";
+
+service Health {
+  rpc Check(HealthCheckRequest) returns (HealthCheckResponse);
+  rpc List(HealthListRequest) returns (HealthListResponse);
+  rpc Watch(HealthCheckRequest) returns (stream HealthCheckResponse);
+}

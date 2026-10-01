@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"context"
 	"net/http"
 	"strings"
 
@@ -16,6 +17,9 @@ type Admission struct {
 	TestCorrelation string
 	Root            trace.SpanContext
 	Record          func(HTTPExchange)
+	RecordGRPC      func(GRPCExchange)
+	GRPCFlowID      string
+	TrackGRPC       func(context.CancelFunc, func()) func()
 	Release         func()
 }
 type AdmissionResolver func(*http.Request, string) (*Admission, error)

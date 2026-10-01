@@ -14,6 +14,9 @@ import (
 // ContractRulesVersion changes whenever target identity or measurement semantics change.
 const ContractRulesVersion = "wiretap-contract-1"
 
+// ProtobufRulesVersion keeps RPC measurement independent of HTTP identities.
+const ProtobufRulesVersion = "wiretap-protobuf-1"
+
 // ContractCoverage is a disposable measurement of one verified bundle snapshot.
 // It deliberately makes no all-API, assertion, or provider-compatibility claim.
 type ContractCoverage struct {
@@ -28,6 +31,7 @@ type ContractCoverage struct {
 }
 
 type ContractSpec struct {
+	RulesVersion     string                    `json:"rules_version" yaml:"rules_version"`
 	APIID            string                    `json:"api_id" yaml:"api_id"`
 	SchemaID         string                    `json:"schema_id" yaml:"schema_id"`
 	Revision         string                    `json:"contract_revision" yaml:"contract_revision"`
@@ -51,6 +55,7 @@ type ContractCounts struct {
 }
 
 type ContractTarget struct {
+	FieldPath    string             `json:"field_path,omitempty" yaml:"field_path,omitempty"`
 	Key          string             `json:"key" yaml:"key"`
 	OperationKey string             `json:"operation_key" yaml:"operation_key"`
 	Operation    string             `json:"operation" yaml:"operation"`
@@ -67,6 +72,7 @@ type ContractTarget struct {
 }
 
 type ContractEvidence struct {
+	MessageIndex      *int   `json:"message_index,omitempty" yaml:"message_index,omitempty"`
 	CaptureIncomplete bool   `json:"capture_incomplete" yaml:"capture_incomplete"`
 	TransportError    string `json:"transport_error,omitempty" yaml:"transport_error,omitempty"`
 	Validation        string `json:"validation" yaml:"validation"`
@@ -157,6 +163,19 @@ func buildContractCoverage(run *bundle.Run, captures []*artifact.Artifact) *Cont
 	out := &ContractCoverage{RulesVersion: ContractRulesVersion, RunID: run.RunID, RunState: run.RunState, SnapshotRevision: run.Revision, Complete: run.RunState == "complete" && len(run.Pending) == 0, Scope: "registered supplied contracts only; condition combinations are observations, not compatibility or assertion proof", Specs: []*ContractSpec{}}
 	out.Rejections = buildRejectionCoverage(run, captures)
 	refs := append([]artifact.SchemaRef{}, run.Schemas...)
+	for _, boundary := range run.Contracts {
+		if boundary.State == "resolved" {
+			continue
+		}
+		out.Complete = false
+		origin := "provided"
+		kind := run.SUTTargetKind
+		if boundary.Role == "dependency" {
+			origin = "dependency"
+			kind = run.DependencyKinds[boundary.APIID]
+		}
+		out.Specs = append(out.Specs, &ContractSpec{RulesVersion: ProtobufRulesVersion, APIID: boundary.APIID, SchemaID: boundary.APIID, Origin: origin, TargetKind: kind, Dialect: "protobuf", Notes: []string{"Contract resolution is " + boundary.State + "; declared API inventory and coverage denominator are unknown."}, Targets: []*ContractTarget{}, Counts: map[string]ContractCounts{}})
+	}
 	for _, a := range captures {
 		refs = append(refs, a.Schemas...)
 		if a.CaptureIncomplete {
@@ -199,10 +218,15 @@ func buildContractCoverage(run *bundle.Run, captures []*artifact.Artifact) *Cont
 			continue
 		}
 		seen[identity] = true
-		spec := &ContractSpec{APIID: id, SchemaID: ref.ID, Revision: revision, Origin: origin, TargetKind: kind, Targets: []*ContractTarget{}, Counts: map[string]ContractCounts{}}
+		spec := &ContractSpec{RulesVersion: ContractRulesVersion, APIID: id, SchemaID: ref.ID, Revision: revision, Origin: origin, TargetKind: kind, Targets: []*ContractTarget{}, Counts: map[string]ContractCounts{}}
 		out.Specs = append(out.Specs, spec)
 		if id == "" {
 			spec.Notes = append(spec.Notes, "API identity is missing; do not compare these keys across repositories")
+		}
+		if ref.Type == "protobuf" {
+			measureGRPCContract(spec, ref, run, captures, origin, id)
+			finishContractSpec(spec)
+			continue
 		}
 		if ref.Source.Type == "omitted" || ref.Type != "openapi" {
 			spec.Notes = append(spec.Notes, "No supplied OpenAPI contract; denominator unknown. Inferred drafts are not coverage inputs.")

@@ -18,6 +18,7 @@ import (
 	"github.com/getkin/kin-openapi/routers"
 	"github.com/getkin/kin-openapi/routers/legacy"
 	"github.com/phrond/wiretap/internal/artifact"
+	"github.com/phrond/wiretap/internal/grpccontract"
 )
 
 type openapiSpec struct {
@@ -121,6 +122,7 @@ func validateSchemas(art *artifact.Artifact) []artifact.SchemaValidationError {
 	}
 
 	openapiByRole := map[string][]openapiSpec{}
+	protobufByRole := map[string][]artifact.SchemaRef{}
 	var issues []artifact.SchemaValidationError
 
 	for role, schemas := range roleSchemas {
@@ -130,6 +132,8 @@ func validateSchemas(art *artifact.Artifact) []artifact.SchemaValidationError {
 			}
 			typ := strings.ToLower(strings.TrimSpace(schema.Type))
 			switch typ {
+			case "protobuf":
+				protobufByRole[role] = append(protobufByRole[role], schema)
 			case "openapi":
 				spec, err := loadOpenAPISpec(schema)
 				if err != nil {
@@ -164,6 +168,10 @@ func validateSchemas(art *artifact.Artifact) []artifact.SchemaValidationError {
 	}
 
 	for _, flow := range art.Traffic {
+		if flow.Protocol == "grpc" {
+			issues = append(issues, validateGRPCFlow(flow, protobufByRole)...)
+			continue
+		}
 		if !strings.EqualFold(flow.Protocol, "http") {
 			continue
 		}
@@ -197,6 +205,68 @@ func validateSchemas(art *artifact.Artifact) []artifact.SchemaValidationError {
 		issues = append(issues, validateHTTPFlow(flow, candidates)...)
 	}
 
+	return issues
+}
+
+func validateGRPCFlow(flow artifact.Flow, byRole map[string][]artifact.SchemaRef) []artifact.SchemaValidationError {
+	role := "sut"
+	if flow.Channel == "sut_to_dependency" {
+		role = "dependency"
+	}
+	issue := func(phase, id, message string) artifact.SchemaValidationError {
+		return artifact.SchemaValidationError{FlowID: flow.ID, Channel: flow.Channel, Protocol: "grpc", Phase: phase, SchemaID: id, Message: message}
+	}
+	if flow.Request.GRPC == nil || flow.Response.GRPC == nil {
+		return []artifact.SchemaValidationError{issue("capture", "", "missing gRPC request or response evidence")}
+	}
+	var schema *artifact.SchemaRef
+	for i := range byRole[role] {
+		candidate := &byRole[role][i]
+		if role == "sut" || candidate.AssetID == flow.AssetID {
+			schema = candidate
+			break
+		}
+	}
+	if schema == nil {
+		return []artifact.SchemaValidationError{issue("schema", "", "no protobuf contract for boundary")}
+	}
+	data, err := os.ReadFile(schema.Source.Path)
+	if err != nil {
+		return []artifact.SchemaValidationError{issue("schema", schema.ID, err.Error())}
+	}
+	contract, err := grpccontract.Parse(data, schema.Services)
+	if err != nil {
+		return []artifact.SchemaValidationError{issue("schema", schema.ID, err.Error())}
+	}
+	method := contract.Methods[flow.Request.GRPC.Procedure]
+	var issues []artifact.SchemaValidationError
+	if method == nil {
+		issues = append(issues, issue("request", schema.ID, "procedure is not in selected service inventory"))
+	}
+	for _, side := range []struct {
+		name string
+		msg  *artifact.GrpcMessage
+	}{{"request", flow.Request.GRPC}, {"response", flow.Response.GRPC}} {
+		for _, payload := range side.msg.Messages {
+			if payload.DecodeError != "" {
+				issues = append(issues, issue(side.name, schema.ID, fmt.Sprintf("message %d: %s", payload.Index, payload.DecodeError)))
+			}
+		}
+	}
+	if flow.Response.GRPC.HTTPStatus != http.StatusOK {
+		issues = append(issues, issue("response", schema.ID, fmt.Sprintf("gRPC transport returned HTTP %d", flow.Response.GRPC.HTTPStatus)))
+	}
+	if flow.Response.GRPC.StatusCode < 0 {
+		issues = append(issues, issue("response", schema.ID, "gRPC status is missing"))
+	}
+	if method != nil {
+		if !method.IsStreamingClient() && len(flow.Request.GRPC.Messages) != 1 {
+			issues = append(issues, issue("request", schema.ID, "unary request must contain exactly one message"))
+		}
+		if !method.IsStreamingServer() && flow.Response.GRPC.StatusCode == 0 && len(flow.Response.GRPC.Messages) != 1 {
+			issues = append(issues, issue("response", schema.ID, "successful unary response must contain exactly one message"))
+		}
+	}
 	return issues
 }
 

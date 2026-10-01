@@ -3,6 +3,7 @@ package capture
 import (
 	"bytes"
 	"io"
+	"sync"
 )
 
 const DefaultMaxBodyBytes int64 = 4 * 1024 * 1024
@@ -17,6 +18,7 @@ type Body struct {
 // Writer counts every byte written while retaining at most maxBodyBytes.
 // A zero limit explicitly means unlimited capture.
 type Writer struct {
+	mu           sync.Mutex
 	maxBodyBytes int64
 	total        int64
 	buf          bytes.Buffer
@@ -33,6 +35,8 @@ func (w *Writer) Write(p []byte) (int, error) {
 	if w == nil {
 		return len(p), nil
 	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	w.total += int64(len(p))
 	retain := len(p)
 	if w.maxBodyBytes > 0 {
@@ -54,6 +58,8 @@ func (w *Writer) Body() Body {
 	if w == nil {
 		return Body{}
 	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	data := append([]byte(nil), w.buf.Bytes()...)
 	return Body{
 		Bytes:         data,

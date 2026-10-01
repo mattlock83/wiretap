@@ -23,19 +23,21 @@ import (
 
 	"github.com/phrond/wiretap/internal/artifact"
 	"github.com/phrond/wiretap/internal/capture"
+	"github.com/phrond/wiretap/internal/grpccontract"
 	"github.com/phrond/wiretap/internal/proxy"
 	"github.com/phrond/wiretap/internal/redact"
 	"go.opentelemetry.io/otel/trace"
 )
 
 type TestCaseStore struct {
-	mu           sync.Mutex
-	sink         CaptureSink
-	active       *testCaseState
-	pending      *artifact.Artifact
-	flowSeq      int
-	schemaSeq    int
-	maxBodyBytes int64
+	mu            sync.Mutex
+	sink          CaptureSink
+	active        *testCaseState
+	pending       *artifact.Artifact
+	flowSeq       int
+	schemaSeq     int
+	maxBodyBytes  int64
+	grpcContracts map[string]*grpccontract.Contract
 }
 
 // CaptureSink stores registered attempts in a runtime-owned run.
@@ -84,6 +86,12 @@ func NewTestCaseStore(sink CaptureSink, maxBodyBytes int64) *TestCaseStore {
 	return &TestCaseStore{sink: sink, maxBodyBytes: maxBodyBytes}
 }
 
+func (s *TestCaseStore) SetGRPCContracts(contracts map[string]*grpccontract.Contract) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.grpcContracts = contracts
+}
+
 func (s *TestCaseStore) StartCase(name string, tags []string, meta map[string]any, sutBaseURL string) (*artifact.TestCase, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -119,6 +127,12 @@ func (s *TestCaseStore) HasPendingCommit() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.pending != nil
+}
+
+func (s *TestCaseStore) reserveFlowID() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.nextFlowID()
 }
 
 // FinishCase finalizes the active test case and writes its captured artifact.
@@ -164,7 +178,7 @@ func (s *TestCaseStore) FinishCase(status string, env *artifact.Environment) (*a
 	}
 
 	art := &artifact.Artifact{
-		Version:           1,
+		Version:           2,
 		CaptureIncomplete: state.captureIncomplete, CaptureDiagnostics: state.captureDiagnostics,
 		TestCase:   artifact.TestCase{ID: state.id, Name: state.name, StartedAt: state.startedAt, FinishedAt: finishedAt, Status: status, Tags: state.tags, Meta: state.meta},
 		Env:        env,
@@ -382,6 +396,15 @@ func (s *TestCaseStore) MarkCaptureIncomplete(message string) {
 // flowFingerprint hashes the interaction shape (not its values) so identical
 // interactions across runs and repos dedupe even when test data varies.
 func flowFingerprint(flow artifact.Flow) string {
+	if flow.Protocol == "grpc" && flow.Request.GRPC != nil && flow.Response.GRPC != nil {
+		channel := flow.Channel
+		if flow.AssetID != "" {
+			channel += ":" + flow.AssetID
+		}
+		canonical := strings.Join([]string{channel, flow.Request.GRPC.Procedure, strconv.Itoa(flow.Response.GRPC.StatusCode), grpcPayloadShape(flow.Request.GRPC.Messages), grpcPayloadShape(flow.Response.GRPC.Messages)}, "|")
+		sum := sha256.Sum256([]byte(canonical))
+		return hex.EncodeToString(sum[:])[:16]
+	}
 	var reqMethod, reqPath, reqShape, respShape string
 	status := 0
 	if flow.Request.HTTP != nil {
@@ -406,6 +429,18 @@ func flowFingerprint(flow artifact.Flow) string {
 	}, "|")
 	sum := sha256.Sum256([]byte(canonical))
 	return hex.EncodeToString(sum[:])[:16]
+}
+
+func grpcPayloadShape(messages []artifact.GrpcPayload) string {
+	parts := make([]string, 0, len(messages))
+	for _, m := range messages {
+		if m.Body == nil {
+			parts = append(parts, m.DecodeError)
+			continue
+		}
+		parts = append(parts, bodyShape(m.Body))
+	}
+	return strings.Join(parts, ",")
 }
 
 // bodyShape reduces a JSON body to its key/type structure; non-JSON bodies

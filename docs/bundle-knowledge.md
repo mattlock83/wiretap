@@ -20,7 +20,7 @@ The root records `knowledge_version: "1.0"`, `run_id`, `snapshot_revision`,
 | Collection | Contents |
 | --- | --- |
 | `apis` | API identity, provided/dependency role, mock/service/unknown target kind, supplied contract references and operations. |
-| `apis[].operations` | Declared or observed operation, supplied-operation match, observed HTTP statuses, evidence basis, provider-check status and exact observation references. |
+| `apis[].operations` | Declared or observed HTTP operation or gRPC method, supplied-operation match, observed HTTP or gRPC statuses, evidence basis, provider-check status and exact observation references. |
 | `attempts` | Named executions, result, authored/generated origin, readable page and canonical attempt path; generated attempts retain exploration lineage. |
 | `verification` | Open follow-up tasks with a kind, priority, reason, suggested action, prerequisites, supporting page, condition keys and evidence references. |
 

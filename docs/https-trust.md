@@ -1,5 +1,9 @@
 # HTTPS Trust Setup
 
+Native gRPC capture uses its own `capture_tls` and `upstream_tls` settings in
+`.wiretap.yaml`; see the [gRPC guide](grpc-user-guide.md#tls-and-tracing).
+The HTTP proxy CA described below is for HTTP/HTTPS capture.
+
 The proxy can run in MITM mode to capture HTTPS traffic. To allow TLS interception in test environments, your system or test runner must trust the Wiretap proxy CA certificate.
 
 Use `wiretap ca > wiretap-ca.pem` to export the public certificate for the current

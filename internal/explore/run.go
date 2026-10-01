@@ -85,6 +85,11 @@ func Run(ctx context.Context, opts Options) (result Result, err error) {
 	if e != nil {
 		return result, e
 	}
+	for _, flow := range seed.Traffic {
+		if flow.Channel == "test_to_sut" && flow.Protocol == "grpc" {
+			return result, fmt.Errorf("gRPC provider exploration is not supported; select a test with only HTTP provider requests")
+		}
+	}
 	cfg.Redactions = append(append([]artifact.Redaction(nil), seed.Redactions...), cfg.Redactions...)
 	var ref artifact.SchemaRef
 	for _, r := range seed.Schemas {

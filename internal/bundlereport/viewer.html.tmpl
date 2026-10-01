@@ -198,7 +198,7 @@ a{color:var(--blue);text-underline-offset:2px}button,input{font:inherit}button{c
 </details>{{end}}</div>
 </article>{{end}}
 {{define "message"}}<div class="message">
-<h4>{{if .Method}}Request · {{.Method}}{{else}}Response · HTTP {{.Status}}{{end}}</h4>{{if .URL}}<p class="subtle">{{.URL}}</p>{{end}}{{if .Headers}}<details class="technical"><summary>Headers</summary>
+<h4>{{if .Method}}Request · {{.Method}}{{else}}Response · {{if .Protocol}}{{.Protocol}}{{else}}HTTP{{end}} {{.Status}}{{end}}</h4>{{if .URL}}<p class="subtle">{{.URL}}</p>{{end}}{{if .Headers}}<details class="technical"><summary>Headers</summary>
 <pre>{{.Headers}}</pre></details>{{end}}{{if .Trailers}}<details class="technical"><summary>Trailers</summary>
 <pre>{{.Trailers}}</pre></details>{{end}}{{if .BodyNote}}<p class="note">{{.BodyNote}}</p>{{end}}{{if .Body}}<strong>Body preview</strong>
-<pre>{{.Body}}</pre>{{end}}{{if .AttachmentURL}}<a href="{{.AttachmentURL}}">Retained body attachment</a>{{end}}</div>{{end}}
+<pre>{{.Body}}</pre>{{end}}{{if .AttachmentURL}}<a href="{{.AttachmentURL}}">Retained body attachment</a>{{end}}{{range .Attachments}}<a href="{{.URL}}">{{.Label}} attachment</a>{{end}}</div>{{end}}

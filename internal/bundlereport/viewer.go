@@ -82,13 +82,17 @@ type viewerFlow struct {
 	Sequence                                                                                      int
 	Direction, EvidenceLabel                                                                      string
 	Operation                                                                                     string
+	Protocol                                                                                      string
 	Request, Response                                                                             viewerMessage
 }
 
 type viewerMessage struct {
 	Method, URL, Status, Headers, Trailers string
 	Body, AttachmentURL, BodyNote          string
+	Protocol                               string
+	Attachments                            []viewerAttachment
 }
+type viewerAttachment struct{ Label, URL string }
 
 func writeViewer(root string, run *bundle.Run, captures []*artifact.Artifact, report *coverage.Report, drafts []mockDraft) error {
 	data := viewerData{
@@ -147,9 +151,17 @@ func writeViewer(root string, run *bundle.Run, captures []*artifact.Artifact, re
 			if strings.HasPrefix(spec.Source, "schemas/") {
 				item.SourceURL = "../" + spec.Source
 			}
+			eligible := map[string]bool{}
 			for _, operation := range spec.Exercised {
-				entry := viewerOperation{Name: operation.Operation, State: "observed"}
-				if passingObservation(operation.Samples) {
+				eligible[operation.Operation] = true
+			}
+			operations := append(append([]coverage.OperationSamples{}, spec.Exercised...), spec.NotCovered...)
+			for _, operation := range operations {
+				entry := viewerOperation{Name: operation.Operation, State: "unobserved"}
+				if len(operation.Samples) > 0 {
+					entry.State = "observed"
+				}
+				if eligible[operation.Operation] && passingObservation(operation.Samples) {
 					entry.State = "passing"
 					item.Passing++
 				}
@@ -158,17 +170,20 @@ func writeViewer(root string, run *bundle.Run, captures []*artifact.Artifact, re
 					if capture := byID[sample.TestCaseID]; capture != nil && capture.SchemaValidation != nil {
 						validation = capture.SchemaValidation.Status
 					}
+					responseLabel := fmt.Sprint(sample.Response.Status)
+					requestLabel := strings.TrimSpace(sample.Request.Method + " " + sample.Request.URL)
+					if sample.Protocol == "grpc" {
+						requestLabel = sample.Request.Procedure
+						responseLabel = "gRPC " + grpcStatusLabel(sample.Response.Status)
+					}
 					entry.Samples = append(entry.Samples, viewerSample{
 						TestName: sample.TestCase, AttemptID: sample.TestCaseID, FlowID: sample.FlowID, Status: sample.TestStatus,
-						Request: strings.TrimSpace(sample.Request.Method + " " + sample.Request.URL), Response: fmt.Sprint(sample.Response.Status),
+						Request: requestLabel, Response: responseLabel,
 						EvidenceURL: paths[sample.TestCaseID], TestURL: "#attempt-" + shortHash(sample.TestCaseID),
 						ValidationStatus: validation,
 					})
 				}
 				item.Operations = append(item.Operations, entry)
-			}
-			for _, operation := range spec.NotCovered {
-				item.Operations = append(item.Operations, viewerOperation{Name: operation.Operation, State: "unobserved"})
 			}
 			sort.Slice(item.Operations, func(i, j int) bool { return item.Operations[i].Name < item.Operations[j].Name })
 			item.Search = strings.Join([]string{item.Name, item.ID, item.AssetID, item.Kind, item.TargetKind}, " ")
@@ -182,6 +197,21 @@ func writeViewer(root string, run *bundle.Run, captures []*artifact.Artifact, re
 	}
 	data.Provided = makeSpecs(report.Provided.Specs, "provided")
 	data.Dependent = makeSpecs(report.Dependent.Specs, "dependency")
+	for _, state := range run.Contracts {
+		if state.State == "resolved" {
+			continue
+		}
+		kind, target := "provided", run.SUTTargetKind
+		if state.Role == "dependency" {
+			kind, target = "dependency", run.DependencyKinds[state.APIID]
+		}
+		item := viewerSpec{Name: state.APIID, ID: state.APIID, AssetID: state.APIID, Kind: kind, TargetKind: target, EvidenceLabel: "gRPC contract " + state.State, Interpretation: "Contract acquisition is " + state.State + "; declared methods and coverage are unknown. " + state.Diagnostic, Search: state.APIID + " grpc " + state.State}
+		if kind == "provided" {
+			data.Provided = append(data.Provided, item)
+		} else {
+			data.Dependent = append(data.Dependent, item)
+		}
+	}
 	for _, ref := range run.Attempts {
 		capture := byID[ref.AttemptID]
 		if capture == nil {
@@ -261,13 +291,20 @@ func writeViewer(root string, run *bundle.Run, captures []*artifact.Artifact, re
 				direction = data.APIID + " → " + flow.AssetID
 				evidenceLabel, _ = viewerEvidence("dependency", run.DependencyKinds[flow.AssetID])
 			}
+			requestView, responseView := viewerHTTP(flow.Request.HTTP), viewerHTTP(flow.Response.HTTP)
+			protocolLabel := "HTTP"
+			if flow.Protocol == "grpc" {
+				requestView, responseView = viewerGRPC(flow.Request.GRPC, true), viewerGRPC(flow.Response.GRPC, false)
+				protocolLabel = "gRPC"
+			}
 			attempt.Flows = append(attempt.Flows, viewerFlow{
 				Sequence: index + 1, Direction: direction, EvidenceLabel: evidenceLabel,
 				Operation: flowOperation(flow),
+				Protocol:  protocolLabel,
 				ID:        flow.ID, Channel: flow.Channel, AssetID: flow.AssetID, TraceID: flow.TraceID,
 				ParentID: flow.ParentFlowID, Correlation: correlationLabel(flow.TestCorrelation), ParentCorrelation: correlationLabel(flow.ParentCorrelation),
 				ContextSource: flow.TraceContextSource, Error: flow.TransportError,
-				Request: viewerHTTP(flow.Request.HTTP), Response: viewerHTTP(flow.Response.HTTP),
+				Request: requestView, Response: responseView,
 			})
 			data.Flows++
 		}
@@ -332,6 +369,62 @@ func viewerHTTP(message *artifact.HttpMessage) viewerMessage {
 	if len(raw) > 0 {
 		hash := sha256.Sum256(raw)
 		view.AttachmentURL = "../payloads/" + hex.EncodeToString(hash[:]) + ".bin"
+	}
+	return view
+}
+
+func viewerGRPC(message *artifact.GrpcMessage, request bool) viewerMessage {
+	if message == nil {
+		return viewerMessage{Protocol: "gRPC"}
+	}
+	view := viewerMessage{Protocol: "gRPC", Headers: viewerHeaders(message.Metadata), Trailers: viewerHeaders(message.Trailers)}
+	if request {
+		view.Method = message.Procedure
+	} else {
+		view.Status = grpcStatusLabel(message.StatusCode)
+	}
+	var parts []string
+	for _, payload := range message.Messages {
+		label := fmt.Sprintf("Message %d", payload.Index+1)
+		if payload.Type != "" {
+			label += " · " + payload.Type
+		}
+		if payload.Compressed {
+			label += " (compressed)"
+		}
+		if payload.Redacted {
+			label += " (redacted)"
+		}
+		if payload.DecodeError != "" {
+			parts = append(parts, label+": "+payload.DecodeError)
+			continue
+		}
+		if payload.Body == nil {
+			parts = append(parts, label+": no retained body")
+			continue
+		}
+		parts = append(parts, label+":\n"+viewerPreview(payload.Body.Text))
+		if payload.Body.Text != "" {
+			sum := sha256.Sum256([]byte(payload.Body.Text))
+			view.Attachments = append(view.Attachments, viewerAttachment{Label: label, URL: "../payloads/" + hex.EncodeToString(sum[:]) + ".bin"})
+		}
+		if payload.Wire != nil {
+			raw, e := base64.StdEncoding.DecodeString(payload.Wire.Bytes)
+			if e == nil {
+				sum := sha256.Sum256(raw)
+				view.Attachments = append(view.Attachments, viewerAttachment{Label: label + " wire bytes", URL: "../payloads/" + hex.EncodeToString(sum[:]) + ".bin"})
+			}
+		}
+	}
+	view.Body = strings.Join(parts, "\n\n")
+	if message.StatusMessage != "" {
+		view.BodyNote = "gRPC message: " + message.StatusMessage
+	}
+	if message.CaptureTruncated {
+		view.BodyNote = strings.TrimSpace(view.BodyNote + " Capture limited; retained data is incomplete.")
+	}
+	if message.StreamKind != "" {
+		view.BodyNote = strings.TrimSpace(view.BodyNote + " Method kind: " + message.StreamKind + ".")
 	}
 	return view
 }

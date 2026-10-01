@@ -1,6 +1,6 @@
 # Contract coverage rules
 
-Wiretap measures contract conditions for HTTP/OpenAPI 3.0 under the scope
+Wiretap measures contract conditions for HTTP/OpenAPI 3.0 and unary gRPC messages under the scope
 below. The numbered rules define the measurement contract, including how to
 report unsupported features and evidence limits. For a guide to reading the
 results, start with [bundles and reports](okf-bundles.md).
@@ -39,7 +39,41 @@ The JSON separates `origin` (`provided` or `dependency`) and `target_kind`
 provider coverage identify evidence gaps, not automatic incompatibilities.
 The cross-bundle comparator itself is not implemented.
 
-## Current measurement scope: `wiretap-contract-1`
+## Current measurement profiles
+
+Each spec records its own `rules_version`. HTTP keeps `wiretap-contract-1`;
+adding gRPC does not change existing HTTP keys. Protobuf uses
+`wiretap-protobuf-1` for these structural classes:
+
+| Family | Measured cases |
+| --- | --- |
+| Method | Every selected method, including uncalled methods. Streaming is explicitly unsupported. |
+| Field presence | Present/absent where Protobuf exposes presence; required fields have no valid absent target. Implicit proto3 scalar defaults have value coverage, not invented presence. |
+| Oneof | Each member and unset; synthetic optional-field oneofs are excluded. |
+| Enum | Distinct declared numeric values, collapsing aliases. Unknown numbers remain observations without expanding the denominator. |
+| Boolean | True and false. |
+| Repeated/map | Empty and nonempty, plus supported value conditions at exact item indices/map keys. |
+| Nested messages | Supported nonrecursive fields, with recursive/dynamic Any/expansion limits explicit. |
+
+Measurement decodes the verified wire payload against the frozen descriptor.
+ProtoJSON is a readable projection, never the measurement input. Keys include
+API identity, fully qualified procedure, profile, contract revision, phase and
+field-number path; readable field names and exact message indices accompany
+observations. One message can cover many conditions and has a combination
+fingerprint, without a Cartesian-product denominator.
+
+Custom validation options are preserved but not evaluated. Affected targets
+remain unknown and unsupported scope stays visible. Unknown wire fields,
+truncated, redacted or undecodable messages cannot earn payload assurance.
+A complete passing unary call with structurally valid messages and a terminal
+gRPC status can cover a method, including a legitimate non-OK outcome. An error
+without a result does not cover the success response fields. RPC codes are
+observations; Protobuf does not declare a mandatory set of error codes.
+No invalid-value targets are generated for mocks, and gRPC exploration remains
+out of scope. Provider and dependency keys match when API identity, normalized
+contract and measurement profile match.
+
+The HTTP/OpenAPI rules follow.
 
 Supported: declared HTTP operations, exact/range/default response alternatives,
 media alternatives, JSON bodies, scalar path/query/header/cookie parameters and
@@ -426,9 +460,9 @@ The coverage model is protocol neutral; extraction is protocol specific:
 
 - HTTP uses route/method, parameters, request/response bodies, status, and media
   alternatives from the selected OpenAPI dialect.
-- Future gRPC support would use fully qualified service/method, protobuf
-  descriptors, explicit/implicit presence rules, request/response messages, and
-  final status. A descriptor alone may not declare length or business bounds.
+- gRPC currently uses fully qualified service/method, request/response messages,
+  and final status, with structural presence/value conditions. Length bounds
+  and business validation annotations remain outside the current measurement.
 - Streaming would require ordered message and stream-completion semantics;
   unary message coverage cannot imply sequence coverage.
 

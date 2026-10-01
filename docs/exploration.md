@@ -240,6 +240,12 @@ below roughly 10,000 elements/characters. OpenAPI 3.1, non-JSON request bodies,
 compressed requests, truncated or redacted seed request bodies, concurrent provider
 sequences, general property generation and failure shrinking are not supported.
 
+Exploration replays HTTP provider requests only. A selected test containing any
+gRPC provider call, including a mixed HTTP/gRPC provider sequence, is rejected
+before hooks or network traffic. HTTP provider tests may have captured gRPC
+dependency calls; these remain source evidence and are not replayed or claimed
+as new dependency observations.
+
 By default an invalid request must produce **400 or 422**, and its response must
 match the frozen contract. Configure other validation 4xx statuses explicitly.
 401, 403, 429, redirects, server errors and unexpected success never satisfy the

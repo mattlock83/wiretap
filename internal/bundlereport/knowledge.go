@@ -31,20 +31,25 @@ type knowledgeIndex struct {
 }
 
 type knowledgeAPI struct {
-	ID               string               `json:"api_id"`
-	Role             string               `json:"role"`
-	TargetKind       string               `json:"target_kind"`
-	SchemaID         string               `json:"schema_id,omitempty"`
-	SchemaSet        string               `json:"schema_set,omitempty"`
-	ContractRevision string               `json:"contract_revision,omitempty"`
-	Schema           string               `json:"schema_path,omitempty"`
-	Page             string               `json:"page"`
-	DenominatorKnown bool                 `json:"denominator_known"`
-	Operations       []knowledgeOperation `json:"operations"`
+	Protocol           string               `json:"protocol,omitempty"`
+	RulesVersion       string               `json:"condition_rules_version,omitempty"`
+	ContractResolution string               `json:"contract_resolution,omitempty"`
+	ContractDiagnostic string               `json:"contract_diagnostic,omitempty"`
+	ID                 string               `json:"api_id"`
+	Role               string               `json:"role"`
+	TargetKind         string               `json:"target_kind"`
+	SchemaID           string               `json:"schema_id,omitempty"`
+	SchemaSet          string               `json:"schema_set,omitempty"`
+	ContractRevision   string               `json:"contract_revision,omitempty"`
+	Schema             string               `json:"schema_path,omitempty"`
+	Page               string               `json:"page"`
+	DenominatorKnown   bool                 `json:"denominator_known"`
+	Operations         []knowledgeOperation `json:"operations"`
 }
 
 type knowledgeOperation struct {
 	Operation      string              `json:"operation"`
+	Protocol       string              `json:"protocol,omitempty"`
 	Declared       bool                `json:"declared"`
 	ContractMatch  string              `json:"contract_match"`
 	Page           string              `json:"page"`
@@ -52,10 +57,13 @@ type knowledgeOperation struct {
 	ProviderCheck  string              `json:"provider_check"`
 	ConsumedFields string              `json:"consumed_fields"`
 	Statuses       []int               `json:"observed_statuses"`
+	RPCStatuses    []int               `json:"observed_grpc_statuses,omitempty"`
 	Evidence       []knowledgeEvidence `json:"evidence"`
 }
 
 type knowledgeEvidence struct {
+	Protocol             string `json:"protocol,omitempty"`
+	GRPCStatus           *int   `json:"grpc_status,omitempty"`
 	AttemptID            string `json:"attempt_id"`
 	FlowID               string `json:"flow_id"`
 	Path                 string `json:"path"`
@@ -146,7 +154,7 @@ func buildKnowledge(root string, run *bundle.Run, captures []*artifact.Artifact,
 		if a := byAttempt[s.TestCaseID]; a != nil && a.SchemaValidation != nil && a.SchemaValidation.Status != "" {
 			validation = a.SchemaValidation.Status
 		}
-		e := knowledgeEvidence{AttemptID: s.TestCaseID, FlowID: s.FlowID, Path: paths[s.TestCaseID], TestName: s.TestCase, TestStatus: s.TestStatus, SchemaValidation: validation, CaptureIncomplete: s.CaptureIncomplete, TransportError: s.TransportError, TestCorrelation: s.TestCorrelation, ParentFlowID: s.ParentFlowID, ParentCorrelation: s.ParentCorrelation}
+		e := knowledgeEvidence{Protocol: s.Protocol, AttemptID: s.TestCaseID, FlowID: s.FlowID, Path: paths[s.TestCaseID], TestName: s.TestCase, TestStatus: s.TestStatus, SchemaValidation: validation, CaptureIncomplete: s.CaptureIncomplete, TransportError: s.TransportError, TestCorrelation: s.TestCorrelation, ParentFlowID: s.ParentFlowID, ParentCorrelation: s.ParentCorrelation}
 		if a := byAttempt[s.TestCaseID]; a != nil {
 			e.AttemptKind = "authored"
 			if a.Exploration != nil {
@@ -161,9 +169,22 @@ func buildKnowledge(root string, run *bundle.Run, captures []*artifact.Artifact,
 				if f.Response.HTTP != nil {
 					e.ResponseStatus = f.Response.HTTP.Status
 				}
+				if f.Response.GRPC != nil {
+					status := f.Response.GRPC.StatusCode
+					e.GRPCStatus = &status
+					e.Protocol = "grpc"
+				}
 				for _, msg := range []artifact.Message{f.Request, f.Response} {
 					if msg.HTTP != nil && msg.HTTP.Body != nil && msg.HTTP.Body.Truncated {
 						e.BodyTruncated = true
+					}
+					if msg.GRPC != nil {
+						e.BodyTruncated = e.BodyTruncated || msg.GRPC.CaptureTruncated
+						for _, payload := range msg.GRPC.Messages {
+							if payload.Body != nil && payload.Body.Truncated {
+								e.BodyTruncated = true
+							}
+						}
 					}
 				}
 			}
@@ -186,25 +207,45 @@ func buildKnowledge(root string, run *bundle.Run, captures []*artifact.Artifact,
 				kind = "unknown"
 			}
 			apiDir := group.dir + "/" + shortHash(group.dir+"|"+spec.AssetID+"|"+spec.SchemaID+"|"+spec.SchemaSet)
-			api := knowledgeAPI{ID: id, Role: group.role, TargetKind: kind, SchemaID: spec.SchemaID, SchemaSet: spec.SchemaSet, Page: apiDir + "/api.md", DenominatorKnown: spec.DenominatorKnown, Operations: []knowledgeOperation{}}
+			protocol := "http"
+			if spec.Type == "protobuf" {
+				protocol = "grpc"
+			}
+			api := knowledgeAPI{Protocol: protocol, ID: id, Role: group.role, TargetKind: kind, SchemaID: spec.SchemaID, SchemaSet: spec.SchemaSet, Page: apiDir + "/api.md", DenominatorKnown: spec.DenominatorKnown, Operations: []knowledgeOperation{}}
+			if report.Contracts != nil {
+				for _, contract := range report.Contracts.Specs {
+					if contract.SchemaID == spec.SchemaID && contract.APIID == id && contract.Origin == group.role {
+						api.RulesVersion = contract.RulesVersion
+						break
+					}
+				}
+			}
 			if strings.HasPrefix(spec.Source, "schemas/") {
 				api.Schema = spec.Source
-				api.ContractRevision, _ = coverage.ReplayContractRevision(artifact.SchemaRef{Type: spec.Type, Source: artifact.SchemaSource{Type: "file", Path: filepath.Join(root, filepath.FromSlash(spec.Source))}})
+				if spec.Type == "protobuf" {
+					api.ContractRevision = spec.SchemaSet
+				} else {
+					api.ContractRevision, _ = coverage.ReplayContractRevision(artifact.SchemaRef{Type: spec.Type, Source: artifact.SchemaSource{Type: "file", Path: filepath.Join(root, filepath.FromSlash(spec.Source))}})
+				}
 			}
 			ops := append(append([]coverage.OperationSamples{}, spec.Exercised...), spec.NotCovered...)
 			sort.Slice(ops, func(i, j int) bool { return ops[i].Operation < ops[j].Operation })
 			for _, op := range ops {
-				item := knowledgeOperation{Operation: op.Operation, Declared: spec.DenominatorKnown, Page: apiDir + "/operations/" + shortHash(op.Operation) + ".md", EvidenceBasis: knowledgeBasis(group.role, kind), ProviderCheck: "not_performed", ConsumedFields: "unknown", Statuses: []int{}, Evidence: []knowledgeEvidence{}}
+				item := knowledgeOperation{Operation: op.Operation, Protocol: protocol, Declared: spec.DenominatorKnown, Page: apiDir + "/operations/" + shortHash(op.Operation) + ".md", EvidenceBasis: knowledgeBasis(group.role, kind), ProviderCheck: "not_performed", ConsumedFields: "unknown", Statuses: []int{}, Evidence: []knowledgeEvidence{}}
 				for _, s := range op.Samples {
 					item.Evidence = append(item.Evidence, ref(s))
 					if s.TransportError == "" {
-						item.Statuses = appendStatus(item.Statuses, s.Response.Status)
+						if s.Protocol == "grpc" {
+							item.RPCStatuses = appendRPCStatus(item.RPCStatuses, s.Response.Status)
+						} else {
+							item.Statuses = appendStatus(item.Statuses, s.Response.Status)
+						}
 					}
 					seen[s.TestCaseID+"/"+s.FlowID] = true
 				}
 				if len(item.Evidence) == 0 {
 					item.EvidenceBasis = "declared_only"
-				} else if len(item.Statuses) == 0 {
+				} else if len(item.Statuses) == 0 && len(item.RPCStatuses) == 0 {
 					item.EvidenceBasis = "incomplete_exchange"
 				}
 				item.ContractMatch = "not_evaluated"
@@ -224,7 +265,7 @@ func buildKnowledge(root string, run *bundle.Run, captures []*artifact.Artifact,
 	// generalized into speculative route templates.
 	for _, a := range captures {
 		for _, f := range a.Traffic {
-			if seen[a.TestCase.ID+"/"+f.ID] || f.Request.HTTP == nil {
+			if seen[a.TestCase.ID+"/"+f.ID] || (f.Request.HTTP == nil && f.Request.GRPC == nil) {
 				continue
 			}
 			role, id, kind, page := "provided", run.APIID, run.SUTTargetKind, "apis/index.md"
@@ -238,6 +279,10 @@ func buildKnowledge(root string, run *bundle.Run, captures []*artifact.Artifact,
 			}
 			i := -1
 			for j := range k.APIs {
+				if f.Request.GRPC != nil && k.APIs[j].Role == role && k.APIs[j].ID == id && k.APIs[j].SchemaID == f.Request.GRPC.SchemaRef {
+					i = j
+					break
+				}
 				if k.APIs[j].Role == role && k.APIs[j].ID == id && k.APIs[j].SchemaID == "" {
 					i = j
 					break
@@ -248,11 +293,17 @@ func buildKnowledge(root string, run *bundle.Run, captures []*artifact.Artifact,
 				i = len(k.APIs) - 1
 			}
 			api := &k.APIs[i]
-			path := f.Request.HTTP.URL
-			if u, err := url.Parse(path); err == nil {
-				path = u.EscapedPath()
+			operation := ""
+			if f.Request.GRPC != nil {
+				operation = f.Request.GRPC.Procedure
+				api.Protocol = "grpc"
+			} else {
+				path := f.Request.HTTP.URL
+				if u, err := url.Parse(path); err == nil {
+					path = u.EscapedPath()
+				}
+				operation = f.Request.HTTP.Method + " " + path
 			}
-			operation := f.Request.HTTP.Method + " " + path
 			j := -1
 			for n := range api.Operations {
 				if api.Operations[n].Operation == operation {
@@ -261,14 +312,45 @@ func buildKnowledge(root string, run *bundle.Run, captures []*artifact.Artifact,
 				}
 			}
 			if j < 0 {
-				api.Operations = append(api.Operations, knowledgeOperation{Operation: operation, Page: page, EvidenceBasis: knowledgeBasis(role, kind), ProviderCheck: "not_performed", ConsumedFields: "unknown", Statuses: []int{}, Evidence: []knowledgeEvidence{}})
+				api.Operations = append(api.Operations, knowledgeOperation{Operation: operation, Protocol: f.Protocol, Page: page, ContractMatch: "unmatched", EvidenceBasis: knowledgeBasis(role, kind), ProviderCheck: "not_performed", ConsumedFields: "unknown", Statuses: []int{}, Evidence: []knowledgeEvidence{}})
 				j = len(api.Operations) - 1
 			}
 			s := coverage.FlowSample{TestCaseID: a.TestCase.ID, TestCase: a.TestCase.Name, TestStatus: a.TestCase.Status, FlowID: f.ID, CaptureIncomplete: a.CaptureIncomplete, TransportError: f.TransportError, TestCorrelation: f.TestCorrelation, ParentFlowID: f.ParentFlowID, ParentCorrelation: f.ParentCorrelation}
 			api.Operations[j].Evidence = append(api.Operations[j].Evidence, ref(s))
+			if api.Operations[j].Declared {
+				api.Operations[j].ContractMatch = "matched"
+			}
+			api.Operations[j].EvidenceBasis = knowledgeBasis(role, kind)
+			if f.Response.GRPC != nil && f.TransportError == "" {
+				api.Operations[j].RPCStatuses = appendRPCStatus(api.Operations[j].RPCStatuses, f.Response.GRPC.StatusCode)
+			}
 			if f.Response.HTTP != nil && f.TransportError == "" {
 				api.Operations[j].Statuses = appendStatus(api.Operations[j].Statuses, f.Response.HTTP.Status)
 			}
+		}
+	}
+	// Unresolved contracts are declared boundaries, even when no test could run.
+	for _, state := range run.Contracts {
+		role, kind, page := "provided", run.SUTTargetKind, "apis/index.md"
+		if state.Role == "dependency" {
+			role, kind, page = "dependency", run.DependencyKinds[state.APIID], "dependencies/index.md"
+		}
+		found := -1
+		for i := range k.APIs {
+			if k.APIs[i].ID == state.APIID && k.APIs[i].Role == role {
+				found = i
+				break
+			}
+		}
+		if found < 0 {
+			k.APIs = append(k.APIs, knowledgeAPI{ID: state.APIID, Role: role, TargetKind: kind, Protocol: state.Protocol, Page: page, RulesVersion: coverage.ProtobufRulesVersion, Operations: []knowledgeOperation{}})
+			found = len(k.APIs) - 1
+		}
+		api := &k.APIs[found]
+		api.ContractResolution, api.ContractDiagnostic = state.State, state.Diagnostic
+		if state.State != "resolved" {
+			api.DenominatorKnown = false
+			k.addTask(*api, "resolve_contract", "high", "", "gRPC contract acquisition is "+state.State+"; the method inventory and coverage denominator are unknown.", "Start the configured upstream and repair reflection credentials or supply local Protobuf sources, then run capture again.", page, nil, nil)
 		}
 	}
 	// Registration without traffic still belongs in the system map.
@@ -307,14 +389,14 @@ func buildKnowledge(root string, run *bundle.Run, captures []*artifact.Artifact,
 				hasRegisteredSchema = hasRegisteredSchema || candidate.SchemaID != ""
 			}
 		}
-		if !api.DenominatorKnown && !hasSuppliedContract && (api.SchemaID != "" || !hasRegisteredSchema) {
+		if !api.DenominatorKnown && !hasSuppliedContract && (api.SchemaID != "" || !hasRegisteredSchema) && api.ContractResolution == "" {
 			k.addTask(api, "supply_contract", "normal", "", "Declared operation coverage is unknown for these observations.", "Supply or repair the intended provider contract and validate retained exchanges. An inferred mock draft is not a provider contract.", api.Page, nil, nil)
 		}
 		for _, op := range api.Operations {
-			if !op.Declared && hasSuppliedContract && api.SchemaID == "" {
+			if !op.Declared && hasSuppliedContract && (api.SchemaID == "" || op.ContractMatch == "unmatched") {
 				k.addTask(api, "reconcile_unmatched_operation", "high", op.Operation, "Captured exchanges did not match any supplied operation for this API.", "Compare the captured method and path with the intended frozen contract and API version. Investigate undocumented routes, wrong routing or a stale contract before deriving coverage or generating permutations.", op.Page, op.Evidence, nil)
 			}
-			if api.Role == "dependency" && len(op.Statuses) > 0 {
+			if api.Role == "dependency" && (len(op.Statuses) > 0 || len(op.RPCStatuses) > 0) {
 				k.addTask(api, "verify_dependency", "normal", op.Operation, "Observed dependency behavior has not been checked against provider evidence; consumed fields are unknown.", "Select the provider run for this API and intended revision. Compare request acceptance, response statuses, payload constraints and condition combinations. A missing provider test is a gap, not a contradiction. Add or run a provider test when evidence is missing.", op.Page, op.Evidence, nil)
 			}
 			var failedTransport []knowledgeEvidence
@@ -413,7 +495,7 @@ func buildKnowledge(root string, run *bundle.Run, captures []*artifact.Artifact,
 			}
 			for j := range api.Operations {
 				api.Operations[j].ContractMatch = matched
-				if len(api.Operations[j].Evidence) > 0 && len(api.Operations[j].Statuses) == 0 {
+				if len(api.Operations[j].Evidence) > 0 && len(api.Operations[j].Statuses) == 0 && len(api.Operations[j].RPCStatuses) == 0 {
 					api.Operations[j].EvidenceBasis = "incomplete_exchange"
 				}
 			}
@@ -476,6 +558,20 @@ func appendStatus(statuses []int, value int) []int {
 	return statuses
 }
 
+func appendRPCStatus(statuses []int, value int) []int {
+	if value < 0 || value > 16 {
+		return statuses
+	}
+	for _, status := range statuses {
+		if status == value {
+			return statuses
+		}
+	}
+	statuses = append(statuses, value)
+	sort.Ints(statuses)
+	return statuses
+}
+
 func writeKnowledge(root string, k *knowledgeIndex, write func(string, string, string, string, string, map[string]any) error) error {
 	data, err := json.MarshalIndent(k, "", "  ")
 	if err != nil {
@@ -503,6 +599,9 @@ func writeKnowledge(root string, k *knowledgeIndex, write func(string, string, s
 			}
 			found = true
 			fmt.Fprintf(&system, "### %s\n\nTarget: **%s**. [API details](%s).\n\n", escape(orUnknown(api.ID)), escape(knowledgeTargetLabel(api.TargetKind)), api.Page)
+			if api.ContractResolution != "" && api.ContractResolution != "resolved" {
+				fmt.Fprintf(&system, "gRPC contract acquisition: **%s**. %s\n\n", escape(api.ContractResolution), escape(api.ContractDiagnostic))
+			}
 			if api.DenominatorKnown {
 				system.WriteString("The supplied contract defines the declared operations used to measure coverage.\n\n")
 			} else {
@@ -542,6 +641,15 @@ func writeKnowledge(root string, k *knowledgeIndex, write func(string, string, s
 					}
 					evidence = fmt.Sprintf("%d %s; %s", len(op.Evidence), unit, knowledgeBasisLabel(op.EvidenceBasis))
 					statuses = knowledgeStatuses(op.Statuses)
+					if op.Protocol == "grpc" {
+						labels := make([]string, 0, len(op.RPCStatuses))
+						for _, status := range op.RPCStatuses {
+							labels = append(labels, "gRPC "+grpcStatusLabel(status))
+						}
+						if len(labels) > 0 {
+							statuses = strings.Join(labels, ", ")
+						}
+					}
 				}
 				fmt.Fprintf(&system, "| [%s](%s) | %s | %s |\n", tableCell(op.Operation), op.Page, tableCell(evidence), tableCell(statuses))
 			}
@@ -694,6 +802,8 @@ func knowledgeScenarioLabel(value string) string {
 
 func knowledgeTaskLabel(kind string) string {
 	switch kind {
+	case "resolve_contract":
+		return "Resolve gRPC contract acquisition"
 	case "supply_contract":
 		return "Supply or repair contracts"
 	case "transport_failure":

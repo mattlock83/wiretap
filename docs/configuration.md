@@ -92,7 +92,11 @@ runtime failures return `1`; those are independent of the test command's status.
 
 ## Specs remain required
 
-Both the SUT and each dependency require an OpenAPI spec by default.
+HTTP SUTs and dependencies require an OpenAPI spec by default. For gRPC,
+`protocol: grpc` requires a Protobuf contract. Omitting `schema` chooses server
+reflection; local `.proto` sources and descriptor sets are alternatives. gRPC
+does not allow `schema_required: false`. See the [gRPC guide](grpc-user-guide.md)
+for listener, service selection, TLS and lifecycle examples.
 
 For an API without a spec, make the exception explicit on that API:
 
@@ -116,7 +120,7 @@ status is `partial` when some APIs have specs and others explicitly omit them, `
 them, and `fail` if any enforced schema fails. `skipped` lists the omitted API
 schema IDs. These exceptions never turn a validation failure into a pass.
 
-For dependencies marked `kind: mock`, Wiretap always generates a separate OpenAPI
+For HTTP dependencies marked `kind: mock`, Wiretap always generates a separate OpenAPI
 draft from captured requests and responses, including when a spec was supplied.
 It appears in the bundle's Dependencies page and HTML dashboard. Omitted specs
 still need `schema_required: false`; inferred drafts do not enforce contracts or

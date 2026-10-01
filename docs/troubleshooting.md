@@ -91,7 +91,12 @@ the proxy and finalizes the bundle; the control process stays available.
 
 ## Schemas, exploration and reports
 
-### Setup requires an OpenAPI schema
+### Setup requires an OpenAPI or Protobuf contract
+
+For gRPC, reflection is the default source. If the upstream does not expose it,
+configure local `.proto` files or a descriptor set as shown in the
+[gRPC guide](grpc-user-guide.md). Every gRPC boundary requires a contract;
+`schema_required: false` applies only to HTTP.
 
 Set `schema` in `.wiretap.yaml`, or supply the schema through the SDK/API.
 For an API with no spec, explicitly set `schema_required: false` on that API.

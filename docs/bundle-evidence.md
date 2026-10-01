@@ -1,4 +1,4 @@
-# Wiretap bundle evidence 1.0
+# Wiretap bundle evidence 2.0
 
 `evidence/run.json` and `evidence/attempts/<attempt-id>.json` are the capture
 source of truth. This contract is separate from the generated OKF profile.
@@ -29,8 +29,37 @@ before the attempt is admitted. Each `schemas/<hash>/manifest.json` records the
 set hash, root document, and all local document hashes. The reader checks the
 manifest identity and every file.
 
-Evidence version `1.x` is the reader's additive compatibility range. Writers
-currently produce `1.0`. Unknown optional fields are ignored by readers.
+For gRPC, the run inventory freezes each selected boundary's binary
+`FileDescriptorSet` under `schemas/<hash>/descriptor-set.protoset`, including
+its imported descriptors. The schema reference names the selected services and
+contract provenance. Each RPC flow has `protocol: grpc` and typed request and
+response messages with procedure, metadata, ordered Protobuf messages, trailers,
+HTTP/2 status and a separate gRPC application status. Decoded JSON and raw
+Protobuf message bytes are separate, hash-checked attachments with a message
+index. An application error can have HTTP 200 and a nonzero `grpc_status`.
+Redacted payloads do not retain raw wire bytes.
+Run-level `contracts` retain each declared gRPC boundary while acquisition is
+`pending`, `resolved`, or `failed`. Unresolved boundaries have an unknown
+coverage denominator and an acquisition task in the knowledge view. A complete
+run requires resolved contracts; each resolved entry must match its frozen
+descriptor and selected services.
+An empty Protobuf message still has a zero-byte wire attachment; it is distinct
+from a missing or incomplete message. Readers verify the projection against the
+frozen descriptor and wire message, and reject inconsistent protocol tags,
+schema references, ordered message indices, and duplicate attachment references.
+
+gRPC redaction accepts `request.messages[*].body.<proto_field>` and its
+`request.body.<proto_field>` shorthand (likewise for responses). Repeated values
+and map values support `[*]`, while numeric indices and named map keys target
+individual values. Paths use proto field names in the ProtoJSON projection.
+For decoded `Any` values, select fields in that projection; if decoding fails,
+a configured body rule removes the wire payload and records the limitation.
+Redacting `grpc-message` removes its copies from metadata, trailers and the
+status summary. A `response.status_details.<field>` rule conservatively omits
+the opaque `grpc-status-details-bin` value until rich-detail decoding is supported.
+
+The reader accepts older HTTP-only `1.x` evidence and current `2.x` evidence. Writers
+currently produce `2.0`. Unknown optional fields are ignored by readers.
 Unsupported major versions and corrupt or missing required evidence fail
 explicitly. A stable exchange identity is `{run_id, attempt_id, flow_id}`.
 Test names, trace IDs, Markdown paths, ephemeral ports, and timestamps are
@@ -41,7 +70,7 @@ For outbound flows, `assumption` says `evidence_basis: observed_exchange`,
 later, explicit provider comparison changes that separate result. Capturing a
 field in a mock response does not mean the consumer required it.
 
-An API explicitly configured with `schema_required: false` and no supplied spec
+An HTTP API explicitly configured with `schema_required: false` and no supplied spec
 has a schema reference with `source.type: omitted` and no source bytes. This is
 a declared exception. Validation
 lists its ID in `schema_validation.skipped`; mixed attempts have status `partial`
@@ -80,3 +109,13 @@ separate from valid-condition targets. It counts only complete passing attempts
 with explicit request-verification, rejection-status and response-schema checks.
 Failed or unexecuted targets remain visible. No hook execution is required to
 rebuild or export it. See [exploration](exploration.md).
+
+### gRPC contract readiness
+
+`evidence/run.json` includes `contracts` for declared gRPC boundaries before
+schema discovery: API ID, role, source, service selection and
+`contract_resolution` (`pending`, `failed`, `resolved`). Failed acquisition keeps
+the run open and the denominator unknown. A resolved entry must match a frozen
+Protobuf schema; a complete run cannot contain pending or failed contracts.
+Diagnostics omit reflection credentials and filesystem paths. Successful
+acquisition provenance is stored on the boundary's schema reference.

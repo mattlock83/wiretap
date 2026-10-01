@@ -7,6 +7,8 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
 	"io"
 	"log"
 	"net"
@@ -45,7 +47,9 @@ type Config struct {
 	ReverseTarget string
 	// MaxBodyBytes bounds the request/response prefix retained for recording.
 	// Zero explicitly means unlimited.
-	MaxBodyBytes int64
+	MaxBodyBytes       int64
+	CaptureTLSCertFile string
+	CaptureTLSKeyFile  string
 }
 
 // DependencyRoute describes an externally owned dependency reached through
@@ -83,6 +87,9 @@ type Server struct {
 	dependencyResolver DependencyResolver
 
 	admissionResolver AdmissionResolver
+	grpcHandler       http.HandlerFunc
+	grpcProvider      bool
+	connections       Connections
 }
 
 // Recorder receives captured HTTP exchanges.
@@ -196,7 +203,8 @@ func (s *Server) Start(ctx context.Context) (Info, error) {
 
 	s.listener = ln
 	s.server = &http.Server{
-		Handler:           s,
+		ConnState:         s.connections.State,
+		Handler:           h2c.NewHandler(s, &http2.Server{}),
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       s.cfg.IdleTimeout,
 	}
@@ -204,7 +212,13 @@ func (s *Server) Start(ctx context.Context) (Info, error) {
 	shutdownCh := s.shutdownCh
 	server := s.server
 	go func() {
-		if err := server.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		var err error
+		if s.cfg.CaptureTLSCertFile != "" {
+			err = server.ServeTLS(ln, s.cfg.CaptureTLSCertFile, s.cfg.CaptureTLSKeyFile)
+		} else {
+			err = server.Serve(ln)
+		}
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			if s.cfg.Logger != nil {
 				s.cfg.Logger.Printf("proxy serve error: %v", err)
 			}
@@ -215,6 +229,22 @@ func (s *Server) Start(ctx context.Context) (Info, error) {
 	return Info{ListenAddr: ln.Addr().String(), Mode: s.cfg.Mode}, nil
 }
 
+func (s *Server) SetCaptureTLS(certFile, keyFile string) error {
+	if s.server != nil {
+		return ErrAlreadyStarted
+	}
+	if (certFile == "") != (keyFile == "") {
+		return errors.New("both capture TLS certificate and key are required")
+	}
+	if certFile != "" {
+		if _, err := tls.LoadX509KeyPair(certFile, keyFile); err != nil {
+			return err
+		}
+	}
+	s.cfg.CaptureTLSCertFile, s.cfg.CaptureTLSKeyFile = certFile, keyFile
+	return nil
+}
+
 // Stop gracefully stops the proxy server.
 func (s *Server) Stop(ctx context.Context) error {
 	if s.server == nil {
@@ -223,6 +253,8 @@ func (s *Server) Stop(ctx context.Context) error {
 	var err error
 	s.once.Do(func() {
 		err = s.server.Shutdown(ctx)
+		_ = s.server.Close()
+		s.connections.Close()
 	})
 	shutdownCh := s.shutdownCh
 	if shutdownCh != nil {
@@ -267,11 +299,26 @@ func (s *Server) CACertPEM() ([]byte, error) {
 
 // ServeHTTP handles proxy requests.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	s.reverseMu.RLock()
+	grpcProvider := s.grpcProvider
+	s.reverseMu.RUnlock()
+	if !strings.HasPrefix(r.URL.Path, "/__wiretap/") && (grpcProvider || strings.HasPrefix(strings.ToLower(r.Header.Get("Content-Type")), "application/grpc")) && s.grpcHandler != nil {
+		s.grpcHandler(w, r)
+		return
+	}
 	if r.Method == http.MethodConnect {
 		s.handleConnect(w, r)
 		return
 	}
 	s.handleHTTP(w, r)
+}
+
+func (s *Server) SetGRPCHandler(handler http.HandlerFunc) { s.grpcHandler = handler }
+
+func (s *Server) SetGRPCProvider(enabled bool) {
+	s.reverseMu.Lock()
+	s.grpcProvider = enabled
+	s.reverseMu.Unlock()
 }
 
 func (s *Server) handleHTTP(w http.ResponseWriter, r *http.Request) {

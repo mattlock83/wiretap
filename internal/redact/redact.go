@@ -1,6 +1,7 @@
 package redact
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"strconv"
@@ -44,18 +45,71 @@ func applyRule(flow *artifact.Flow, rule artifact.Redaction) {
 	path := strings.Join(parts[2:], ".")
 
 	var msg *artifact.HttpMessage
+	var grpc *artifact.GrpcMessage
 	switch section {
 	case "request":
-		if flow.Request.HTTP == nil {
+		if flow.Request.HTTP == nil && flow.Request.GRPC == nil {
 			return
 		}
 		msg = flow.Request.HTTP
+		grpc = flow.Request.GRPC
 	case "response":
-		if flow.Response.HTTP == nil {
+		if flow.Response.HTTP == nil && flow.Response.GRPC == nil {
 			return
 		}
 		msg = flow.Response.HTTP
+		grpc = flow.Response.GRPC
 	default:
+		return
+	}
+	if grpc != nil {
+		if strings.HasPrefix(target, "messages[") {
+			// The public message selector uses the same field paths as the
+			// convenient request.body/response.body aliases.
+			path = strings.TrimPrefix(path, "body.")
+			target = "body"
+		}
+		switch target {
+		case "headers", "metadata":
+			applyHeaderRule(grpc.Metadata, path, rule)
+			redactGRPCStatus(grpc, path, rule)
+		case "trailers":
+			applyHeaderRule(grpc.Trailers, path, rule)
+			redactGRPCStatus(grpc, path, rule)
+		case "status_details":
+			// Rich details remain an opaque binary value until their message
+			// types are decoded. Never retain it under a field-level rule.
+			remove := artifact.Redaction{Rule: "remove"}
+			applyHeaderRule(grpc.Metadata, "grpc-status-details-bin", remove)
+			applyHeaderRule(grpc.Trailers, "grpc-status-details-bin", remove)
+		case "body", "messages":
+			path = strings.TrimPrefix(path, "[*].body.")
+			for i := range grpc.Messages {
+				payload := &grpc.Messages[i]
+				payload.Wire = nil
+				payload.Redacted = true
+				if payload.Body == nil {
+					payload.DecodeError = "payload omitted: configured redaction could not be applied"
+					continue
+				}
+				var projection any
+				decoder := json.NewDecoder(strings.NewReader(payload.Body.Text))
+				decoder.UseNumber()
+				if payload.Body.Bytes != "" || decoder.Decode(&projection) != nil {
+					payload.Body = nil
+					payload.DecodeError = "payload omitted: configured redaction could not be applied"
+					continue
+				}
+				switch projection.(type) {
+				case map[string]any, []any:
+				default:
+					payload.Body = nil
+					payload.DecodeError = "payload omitted: field redaction cannot select a scalar ProtoJSON value"
+					continue
+				}
+				applyBodyRule(&artifact.HttpMessage{Body: payload.Body}, path, rule)
+			}
+		}
 		return
 	}
 
@@ -66,6 +120,25 @@ func applyRule(flow *artifact.Flow, rule artifact.Redaction) {
 		applyHeaderRule(msg.Trailers, path, rule)
 	case "body":
 		applyBodyRule(msg, path, rule)
+	}
+}
+
+func redactGRPCStatus(msg *artifact.GrpcMessage, key string, rule artifact.Redaction) {
+	if !strings.EqualFold(key, "grpc-message") && !strings.EqualFold(key, "grpc-status-details-bin") {
+		return
+	}
+	// Status may have arrived in headers or trailers. Redact every persisted
+	// copy, including the convenience status-message field used by viewers.
+	applyHeaderRule(msg.Metadata, key, rule)
+	applyHeaderRule(msg.Trailers, key, rule)
+	if strings.EqualFold(key, "grpc-message") && msg.StatusMessage != "" {
+		if strings.EqualFold(rule.Rule, "remove") {
+			msg.StatusMessage = ""
+		} else if rule.Replacement != "" {
+			msg.StatusMessage = rule.Replacement
+		} else {
+			msg.StatusMessage = defaultMask
+		}
 	}
 }
 
@@ -108,7 +181,9 @@ func applyBodyRule(msg *artifact.HttpMessage, jsonPath string, rule artifact.Red
 	}
 
 	var payload any
-	if err := json.Unmarshal([]byte(msg.Body.Text), &payload); err != nil {
+	decoder := json.NewDecoder(bytes.NewReader([]byte(msg.Body.Text)))
+	decoder.UseNumber()
+	if err := decoder.Decode(&payload); err != nil {
 		return
 	}
 
@@ -131,6 +206,7 @@ func applyBodyRule(msg *artifact.HttpMessage, jsonPath string, rule artifact.Red
 type pathToken struct {
 	key   string
 	index *int
+	all   bool
 }
 
 func parsePath(path string) []pathToken {
@@ -155,7 +231,9 @@ func parsePath(path string) []pathToken {
 				return tokens
 			}
 			idx, err := strconv.Atoi(path[start:i])
-			if err == nil {
+			if path[start:i] == "*" {
+				tokens = append(tokens, pathToken{all: true})
+			} else if err == nil {
 				idxCopy := idx
 				tokens = append(tokens, pathToken{index: &idxCopy})
 			}
@@ -180,6 +258,42 @@ func applyJSONRule(payload *any, tokens []pathToken, rule artifact.Redaction) bo
 	}
 
 	current := *payload
+	for i, token := range tokens {
+		if !token.all {
+			continue
+		}
+		parent := current
+		for _, prefix := range tokens[:i] {
+			switch node := parent.(type) {
+			case map[string]any:
+				parent = node[prefix.key]
+			case []any:
+				if prefix.index == nil || *prefix.index < 0 || *prefix.index >= len(node) {
+					return false
+				}
+				parent = node[*prefix.index]
+			default:
+				return false
+			}
+		}
+		changed := false
+		switch node := parent.(type) {
+		case []any:
+			for index := range node {
+				index := index
+				replaced := append(append([]pathToken{}, tokens[:i]...), pathToken{index: &index})
+				replaced = append(replaced, tokens[i+1:]...)
+				changed = applyJSONRule(payload, replaced, rule) || changed
+			}
+		case map[string]any:
+			for key := range node {
+				replaced := append(append([]pathToken{}, tokens[:i]...), pathToken{key: key})
+				replaced = append(replaced, tokens[i+1:]...)
+				changed = applyJSONRule(payload, replaced, rule) || changed
+			}
+		}
+		return changed
+	}
 	for i := 0; i < len(tokens)-1; i++ {
 		tok := tokens[i]
 		switch node := current.(type) {

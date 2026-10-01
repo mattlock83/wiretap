@@ -119,7 +119,16 @@ const capture = await startCapture({
 });
 ```
 
-API-provided file paths resolve on the runtime host. Schemas are required by
+For a gRPC project, `.wiretap.yaml` supplies `protocol: grpc`, service selection
+and reflection or local Protobuf sources. The SDK inherits those defaults and
+returns direct capture origins in `sutUrl` and `dependencyUrl`; use your existing
+generated gRPC clients. `sutProtocol: "grpc"` and a dependency's
+`protocol: "grpc"` pass through configured project boundaries; they cannot
+create or retarget a gRPC boundary per test. gRPC contracts cannot be disabled and this SDK
+does not instrument `@grpc/grpc-js` automatically; use standard OTel gRPC
+instrumentation for parallel test ownership. See the [gRPC guide](../../docs/grpc-user-guide.md).
+
+API-provided file paths resolve on the runtime host. HTTP schemas are required by
 default. Set `schemaRequired: false` only on an API whose spec is intentionally
 absent; supplied specs still validate strictly. Dependencies retain this same
 per-API requirement. Dependencies marked `upstreamKind: "mock"` automatically get

@@ -103,3 +103,19 @@ func TestHTTPMessageJSONRejectsInvalidFields(t *testing.T) {
 		t.Fatalf("null message: %v", err)
 	}
 }
+
+func TestGRPCMessageRequiresTagAndExplicitStatus(t *testing.T) {
+	for _, raw := range []string{`{"procedure":"/a/b"}`, `{"grpc_status":0}`, `{"messages":[]}`, `{"kind":"future"}`, `{"kind":"grpc","http_status":200}`, `{"kind":"grpc","http_status":200,"grpc_status":null}`} {
+		var message Message
+		if err := json.Unmarshal([]byte(raw), &message); err == nil {
+			t.Fatalf("invalid gRPC message accepted: %s", raw)
+		}
+	}
+	var message Message
+	if err := json.Unmarshal([]byte(`{"kind":"grpc","http_status":200,"grpc_status":0}`), &message); err != nil {
+		t.Fatal(err)
+	}
+	if message.GRPC == nil || message.GRPC.StatusCode != 0 {
+		t.Fatal("explicit OK status not restored")
+	}
+}

@@ -1,8 +1,8 @@
 # Wiretap
 
-Wiretap turns existing HTTP API tests into a portable record of your system's
+Wiretap turns existing HTTP and gRPC API tests into a portable record of your system's
 APIs and the assumptions your tests make about its dependencies. It captures requests,
-responses and their sequence, checks them against OpenAPI specs, and writes an
+responses and their sequence, checks them against OpenAPI or Protobuf contracts, and writes an
 OKF bundle for people and agents to read.
 
 ```text
@@ -12,7 +12,7 @@ Existing tests → Wiretap → Your application → Wiretap → Existing mocks o
                    APIs · assumptions · tests · coverage
 ```
 
-Keep your test framework, HTTP client, assertions and mocks. Start Wiretap as
+Keep your test framework, HTTP or gRPC client, assertions and mocks. Start Wiretap as
 another service in your test environment, route traffic through it, and call
 its JavaScript SDK, Go SDK or HTTP API from test lifecycle hooks.
 
@@ -31,11 +31,12 @@ invalid-input checks from its happy path. It prints two bundle locations. Open
 Markdown pages. No report server is needed.
 
 [More examples](examples/README.md) cover parallel Jest tests, database fixtures,
-and the Speedscale Microsvc Transactions service with authentication hooks.
+the Speedscale Microsvc Transactions service with authentication hooks, and
+[native gRPC with a mock dependency](examples/grpc-boundaries/README.md).
 
 ## Add Wiretap to your tests
 
-1. Put the application URL, dependency URLs and OpenAPI specs in `.wiretap.yaml`.
+1. Put the application URL, dependency URLs and OpenAPI or Protobuf contracts in `.wiretap.yaml`.
 2. Start Wiretap alongside your application and mocks using your existing harness.
 3. Point test requests and the application's dependency endpoints at Wiretap.
 4. Connect suite/test setup and cleanup through an SDK or the HTTP API.
@@ -45,7 +46,11 @@ Follow the [existing-tests guide](docs/getting-started-existing-tests.md) for a
 complete setup, or go directly to the [JavaScript](sdk/js/README.md),
 [Go](sdk/go/README.md) or [HTTP API](docs/runtime-api.md) reference.
 
-OpenAPI specs are required by default; individual APIs can explicitly opt out.
+OpenAPI specs are required by default for HTTP; individual HTTP APIs can explicitly
+opt out. gRPC requires a Protobuf contract: reflection is the default source,
+with local `.proto` files or a descriptor set as alternatives. See the
+[gRPC guide](docs/grpc-user-guide.md). gRPC exploration and streaming coverage
+are not yet available.
 Parallel tests sharing one application need working W3C trace propagation from
 its server to its outbound clients. Otherwise run sequentially or isolate
 workers. The application does not need to propagate a Wiretap-specific ID.

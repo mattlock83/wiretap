@@ -249,3 +249,31 @@ test("project defaults are inherited and shared suites leave finalization to the
     await server.close();
   }
 });
+
+test("gRPC project defaults preserve protocol and direct dependency targets", async () => {
+  const calls = [];
+  const server = await controlServer((path, body) => {
+    calls.push({ path, body });
+    if (path === "/v1/startRun") return {
+      sut_url: "http://127.0.0.1:20010",
+      dependencies: { inventory: "http://127.0.0.1:20011" },
+      defaults: { sut_base_url: "http://sut.test", sut_protocol: "grpc", api_id: "orders",
+        dependencies: [{ asset_id: "inventory", protocol: "grpc", upstream_url: "http://mock.test", upstream_kind: "mock" }] }
+    };
+    if (path === "/v1/setupTest") return { session_id: "grpc", sut_url: "http://127.0.0.1:20010", dependencies: { inventory: "http://127.0.0.1:20011" } };
+    if (path === "/v1/teardownTest") return { capture: { schema_validation: { status: "pass" } } };
+    return {};
+  });
+  try {
+    const runtime = await startCapture({ baseUrl: server.baseUrl });
+    assert.equal(runtime.dependencyUrl("inventory"), "http://127.0.0.1:20011");
+    await runtime.runTest("grpc provider and mock", () => {});
+    const setup = calls.find(call => call.path === "/v1/setupTest").body;
+    assert.equal(setup.sut_protocol, "grpc");
+    assert.equal(setup.dependencies[0].protocol, "grpc");
+    assert.deepEqual(setup.schemas, []);
+    await runtime.finishRun();
+  } finally {
+    await server.close();
+  }
+});

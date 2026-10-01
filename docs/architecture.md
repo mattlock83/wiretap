@@ -1,6 +1,6 @@
 # Wiretap architecture
 
-Wiretap captures HTTP exchanges during existing tests and turns them into a
+Wiretap captures HTTP and unary gRPC exchanges during existing tests and turns them into a
 portable record of tested API behaviour and observed dependency assumptions.
 In capture mode, the test harness owns the application, mocks, test execution,
 and assertions. Wiretap owns capture, correlation, schema validation, and the
@@ -78,24 +78,26 @@ as inferences; ambiguous relationships are left unset. See
 
 ## Evidence and views
 
-The bundle contains versioned JSON evidence, frozen OpenAPI documents and their
+The bundle contains versioned JSON evidence, frozen OpenAPI documents or Protobuf
+descriptor sets and their
 references, and retained payload attachments. Its inventory records hashes and
 attempt identity. Readers verify evidence before calculating coverage or
 rebuilding views. Copy the complete bundle to preserve that evidence graph.
 
 OKF pages are browsable documentation for humans and agents. The HTML dashboard
 is a static, offline view over the same evidence and coverage calculation.
-The same package generates one observed OpenAPI draft per mock dependency,
+The same package generates one observed OpenAPI draft per HTTP mock dependency,
 linked from both views. These drafts are derived from verified captures, never
 from supplied contracts or previous drafts, and are not enforcement inputs.
 None of these views is an input to coverage or exports; all can be rebuilt without the
 original workspace or running application. There is one HTML renderer, owned by
 `internal/bundlereport`.
 
-OpenAPI schemas are required by default. Each API may explicitly permit an
+OpenAPI schemas are required by default for HTTP. An HTTP API may explicitly permit an
 absent spec with `schema_required: false`; omission is persisted and displayed
 as skipped validation with unknown coverage. Supplied specs always validate.
-Reports and exports read only verified bundle evidence.
+gRPC APIs require a Protobuf contract from reflection, local sources or a
+descriptor set; they cannot opt out. Reports and exports read only verified bundle evidence.
 
 The format references cover [bundle evidence](bundle-evidence.md),
 [bundle knowledge](bundle-knowledge.md) and the [OKF profile](okf-profile.md). The [bundle guide](okf-bundles.md) describes
@@ -126,7 +128,7 @@ Project-owned hooks exchange JSON through fresh command processes; code, runtime
 bindings and fixture state are never copied into the output bundle. See
 [exploration](exploration.md) for lifecycle, checks and current limits.
 
-Broader transport support (streaming, WebSocket, HTTP/2, and RPC-specific
-capture) remains future work. Current guarantees centre on bounded HTTP
+Broader transport support (complete gRPC streaming, WebSocket and gRPC-Web)
+remains future work. Current guarantees centre on bounded HTTP and unary gRPC
 request/response evidence, with HTTPS trust configured as described in the
 [trust guide](https-trust.md).

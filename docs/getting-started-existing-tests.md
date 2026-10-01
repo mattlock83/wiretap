@@ -1,5 +1,8 @@
 # Capture existing tests
 
+This walkthrough uses HTTP. For native gRPC with existing generated clients and
+reflection or local Protobuf contracts, follow the [gRPC guide](grpc-user-guide.md).
+
 Keep your application, test framework, HTTP client, assertions and mock server.
 Wiretap captures the HTTP traffic you route through its proxy and groups it by
 test attempt.

@@ -1,4 +1,4 @@
-// Package wiretap integrates standard Go tests and HTTP clients with Wiretap.
+// Package wiretap integrates standard Go tests with HTTP and gRPC capture.
 package wiretap
 
 import (
@@ -44,12 +44,16 @@ type TestOptions struct {
 	TestSource      map[string]any `json:"test_source,omitempty"`
 	SUTSource       map[string]any `json:"sut_source,omitempty"`
 	SUTBaseURL      string         `json:"sut_base_url,omitempty"`
+	SUTProtocol     string         `json:"sut_protocol,omitempty"`
 	Schemas         []Schema       `json:"schemas,omitempty"`
 	Dependencies    []Dependency   `json:"dependencies,omitempty"`
 	ExplicitSession bool           `json:"explicit_session,omitempty"`
 	Tags            []string       `json:"tags,omitempty"`
 	Meta            map[string]any `json:"meta,omitempty"`
 	DrainTimeout    time.Duration  `json:"-"`
+	// SetupTimeout includes first-test contract discovery for every boundary.
+	// Zero uses 30 seconds. Increase it for larger or slower gRPC inventories.
+	SetupTimeout time.Duration `json:"-"`
 }
 
 type Session struct {
@@ -75,6 +79,10 @@ func (r *Runtime) StartTest(t testing.TB, options TestOptions) *Session {
 		t.Fatal("Wiretap DrainTimeout must be between zero and one minute")
 		return nil
 	}
+	if options.SetupTimeout < 0 {
+		t.Fatal("Wiretap SetupTimeout must not be negative")
+		return nil
+	}
 	provider := r.TracerProvider
 	if provider == nil {
 		provider = otel.GetTracerProvider()
@@ -97,7 +105,11 @@ func (r *Runtime) StartTest(t testing.TB, options TestOptions) *Session {
 		TraceContext map[string]string `json:"trace_context"`
 	}{options, t.Name(), map[string]string{"traceparent": carrier["traceparent"], "tracestate": carrier["tracestate"]}}
 	session := &Session{Context: ctx, provider: provider}
-	setupCtx, cancelSetup := context.WithTimeout(context.Background(), 30*time.Second)
+	setupTimeout := options.SetupTimeout
+	if setupTimeout == 0 {
+		setupTimeout = 30 * time.Second
+	}
+	setupCtx, cancelSetup := context.WithTimeout(context.Background(), setupTimeout)
 	defer cancelSetup()
 	if err := r.call(setupCtx, "/v1/setupTest", payload, session); err != nil {
 		span.RecordError(err)

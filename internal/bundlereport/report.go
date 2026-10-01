@@ -245,9 +245,13 @@ func render(root string, force bool) (*coverage.Report, error) {
 				apiBody.WriteString("SUT target kind: **" + escape(kind) + "**.\n\n")
 			}
 			if strings.HasPrefix(spec.Source, "schemas/") {
-				apiBody.WriteString("[Frozen OpenAPI schema](../../" + spec.Source + ")\n\n")
+				label := "Frozen OpenAPI schema"
+				if spec.Type == "protobuf" {
+					label = "Frozen Protobuf descriptor set"
+				}
+				apiBody.WriteString("[" + label + "](../../" + spec.Source + ")\n\n")
 			}
-			if role.dir == "dependencies" && run.DependencyKinds[spec.AssetID] == "mock" {
+			if role.dir == "dependencies" && run.DependencyKinds[spec.AssetID] == "mock" && spec.Type == "openapi" {
 				apiBody.WriteString("[Inferred mock assumptions — OpenAPI](../../" + mockDraftPath(spec.AssetID) + ")\n\nThis separate draft describes observed mock traffic; it does not replace the supplied schema or establish provider agreement.\n\n")
 			}
 			apiBody.WriteString("## Declared operations\n\n")
@@ -278,7 +282,11 @@ func render(root string, force bool) (*coverage.Report, error) {
 					}
 					opBody.WriteString(fmt.Sprintf("- [Attempt %s: %s](../../../tests/%s.md#%s), flow `%s`; [JSON](../../../%s); result `%s`\n", sample.TestCaseID, escape(testName), sample.TestCaseID, flowAnchor(sample.FlowID), escape(sample.FlowID), path, escape(sample.TestStatus)))
 					if i < 3 {
-						opBody.WriteString("  - Example: `" + escape(sample.Request.Method) + " " + escape(sample.Request.URL) + "` → HTTP " + fmt.Sprint(sample.Response.Status) + "\n")
+						if sample.Protocol == "grpc" {
+							opBody.WriteString("  - Example: `" + escape(sample.Request.Procedure) + "` → gRPC " + grpcStatusLabel(sample.Response.Status) + "\n")
+						} else {
+							opBody.WriteString("  - Example: `" + escape(sample.Request.Method) + " " + escape(sample.Request.URL) + "` → HTTP " + fmt.Sprint(sample.Response.Status) + "\n")
+						}
 					}
 				}
 				opBody.WriteString("\nPreviews show at most three examples; the evidence list includes every observation.\n")
@@ -391,6 +399,9 @@ func flowAnchor(id string) string   { return "flow-" + shortHash(id) }
 func tableCell(value string) string { return strings.ReplaceAll(escape(value), "|", "&#124;") }
 
 func flowOperation(flow artifact.Flow) string {
+	if flow.Protocol == "grpc" && flow.Request.GRPC != nil {
+		return flow.Request.GRPC.Procedure
+	}
 	if flow.Request.HTTP == nil {
 		return orUnknown(flow.Protocol) + " exchange"
 	}
@@ -511,6 +522,9 @@ func attemptMarkdown(run *bundle.Run, capture *artifact.Artifact, evidencePath s
 		if flow.Response.HTTP != nil {
 			status = fmt.Sprintf("HTTP %d", flow.Response.HTTP.Status)
 		}
+		if flow.Response.GRPC != nil {
+			status = fmt.Sprintf("gRPC %s (HTTP/2 %d)", grpcStatusLabel(flow.Response.GRPC.StatusCode), flow.Response.GRPC.HTTPStatus)
+		}
 		if flow.TransportError != "" {
 			status += " (transport error)"
 		}
@@ -562,6 +576,63 @@ func attemptMarkdown(run *bundle.Run, capture *artifact.Artifact, evidencePath s
 			name string
 			msg  artifact.Message
 		}{{"Request", flow.Request}, {"Response", flow.Response}} {
+			if part.msg.GRPC != nil {
+				m := part.msg.GRPC
+				page.WriteString("### " + part.name + " (gRPC)\n\n")
+				if m.StreamKind != "" {
+					page.WriteString("Method kind: `" + escape(m.StreamKind) + "`.\n\n")
+				}
+				if m.CaptureTruncated {
+					page.WriteString("Capture limited; retained data is incomplete.\n\n")
+				}
+				if part.name == "Request" {
+					page.WriteString("Procedure: `" + escape(m.Procedure) + "`.\n\n")
+				} else {
+					fmt.Fprintf(&page, "Application status: **%s**; HTTP/2 status: **%d**.\n\n", grpcStatusLabel(m.StatusCode), m.HTTPStatus)
+				}
+				for _, name := range sortedHeaderNames(m.Metadata) {
+					for _, value := range m.Metadata[name] {
+						page.WriteString("- Metadata " + escape(name) + ": " + escape(value) + "\n")
+					}
+				}
+				for _, name := range sortedHeaderNames(m.Trailers) {
+					for _, value := range m.Trailers[name] {
+						page.WriteString("- Trailer " + escape(name) + ": " + escape(value) + "\n")
+					}
+				}
+				page.WriteString("\n")
+				for _, payload := range m.Messages {
+					fmt.Fprintf(&page, "#### Message %d\n\n", payload.Index+1)
+					if payload.Type != "" {
+						page.WriteString("Protobuf type: `" + escape(payload.Type) + "`.\n\n")
+					}
+					if payload.DecodeError != "" {
+						page.WriteString("Decode/retention: " + escape(payload.DecodeError) + ".\n\n")
+						continue
+					}
+					if payload.Redacted {
+						page.WriteString("Fields redacted before bundle persistence.\n\n")
+					}
+					if payload.Body == nil {
+						page.WriteString("No payload retained.\n\n")
+						continue
+					}
+					if payload.Body.Text != "" {
+						raw := []byte(payload.Body.Text)
+						hash := sha256.Sum256(raw)
+						fmt.Fprintf(&page, "[Retained JSON payload](../payloads/%s.bin).\n\n", hex.EncodeToString(hash[:]))
+						page.WriteString(preview(payload.Body.Text))
+					}
+					if payload.Wire != nil {
+						raw, e := base64.StdEncoding.DecodeString(payload.Wire.Bytes)
+						if e == nil {
+							sum := sha256.Sum256(raw)
+							fmt.Fprintf(&page, "[Retained Protobuf wire message](../payloads/%s.bin).\n\n", hex.EncodeToString(sum[:]))
+						}
+					}
+				}
+				continue
+			}
 			if part.msg.HTTP == nil {
 				continue
 			}

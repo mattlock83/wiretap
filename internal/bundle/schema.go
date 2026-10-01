@@ -2,6 +2,7 @@ package bundle
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/phrond/wiretap/internal/artifact"
+	"github.com/phrond/wiretap/internal/grpccontract"
 	"github.com/phrond/wiretap/internal/schemajson"
 )
 
@@ -33,6 +35,9 @@ type schemaManifest struct {
 // freezeSchema loads transitive file/URL references and rewrites them to
 // deterministic local names. The snapshot is used for live validation too.
 func (w *Writer) freezeSchema(ref artifact.SchemaRef) (artifact.SchemaRef, error) {
+	if ref.Type == "protobuf" {
+		return w.freezeProtobuf(ref)
+	}
 	var rootURL *url.URL
 	switch strings.ToLower(ref.Source.Type) {
 	case "omitted":
@@ -213,6 +218,39 @@ func (w *Writer) freezeSchema(ref artifact.SchemaRef) (artifact.SchemaRef, error
 	if err := loaded.Validate(context.Background()); err != nil {
 		return ref, fmt.Errorf("validate frozen schema: %w", err)
 	}
+	return ref, nil
+}
+
+func (w *Writer) freezeProtobuf(ref artifact.SchemaRef) (artifact.SchemaRef, error) {
+	if ref.Source.Type != "protobuf_inline" {
+		return ref, fmt.Errorf("protobuf schema requires a resolved descriptor set")
+	}
+	raw, err := base64.StdEncoding.DecodeString(ref.Source.Content)
+	if err != nil {
+		return ref, err
+	}
+	contract, err := grpccontract.Parse(raw, ref.Services)
+	if err != nil {
+		return ref, fmt.Errorf("validate descriptor set: %w", err)
+	}
+	if ref.Source.SHA256 != "" && ref.Source.SHA256 != contract.SHA256 {
+		return ref, errors.New("descriptor set hash mismatch")
+	}
+	base := "schemas/" + contract.SHA256
+	rel := base + "/descriptor-set.protoset"
+	if err := writeContent(w.root, rel, raw); err != nil {
+		return ref, err
+	}
+	manifest := schemaManifest{SetHash: contract.SHA256, Root: rel, Files: []schemaFile{{Path: rel, SHA256: contract.SHA256}}}
+	data, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		return ref, err
+	}
+	if err := writeContent(w.root, base+"/manifest.json", append(data, '\n')); err != nil {
+		return ref, err
+	}
+	ref.Source = artifact.SchemaSource{Type: "file", Path: filepath.Join(w.root, filepath.FromSlash(rel)), SHA256: contract.SHA256, Format: "file_descriptor_set"}
+	ref.AssetSHA = contract.SHA256
 	return ref, nil
 }
 

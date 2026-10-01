@@ -17,7 +17,7 @@ happy-path scenario.
 | Guide | Use it to |
 | --- | --- |
 | [Capture existing tests](getting-started-existing-tests.md) | Configure boundaries, connect lifecycle hooks and run your first capture. |
-| [Runnable examples](../examples/README.md) | Try basic HTTP capture, database hooks or Microsvc Transactions. |
+| [Runnable examples](../examples/README.md) | Try HTTP and gRPC capture, database hooks or Microsvc Transactions. |
 | [Configuration and commands](configuration.md) | Configure `.wiretap.yaml`, runtime ownership, specs and CLI commands. |
 | [JavaScript SDK](../sdk/js/README.md) | Integrate native hooks or the optional Node/Jest adapters. |
 | [Go SDK](../sdk/go/README.md) | Integrate `testing`, existing HTTP clients and suite cleanup. |
@@ -43,6 +43,13 @@ happy-path scenario.
 | [Bundle evidence](bundle-evidence.md) | Authoritative JSON records, identity, integrity and attachments. |
 | [OKF profile](okf-profile.md) | Generated Markdown, frontmatter and ownership of bundle paths. |
 | [Architecture](architecture.md) | Runtime, SDK, proxy, exploration, storage and reporting responsibilities. |
+
+## gRPC
+
+| Plan | Scope |
+| --- | --- |
+| [gRPC implementation plan](grpc-support-plan.md) | Design, unary scope and remaining streaming/interoperability work. |
+| [gRPC user guide](grpc-user-guide.md) | Reflection by default, local contracts, existing clients and test lifecycle. |
 
 A **run bundle** contains **test attempts** (shown as *Test runs* in the viewer).
 Each attempt contains request/response **exchanges**. A contract **condition** is

@@ -11,6 +11,7 @@ export interface Dependency {
   assetName?: string;
   upstreamUrl: string;
   upstreamKind?: 'mock' | 'service' | 'unknown';
+  protocol?: 'http' | 'grpc';
   schema?: Schema;
   schemas?: Schema[];
   schemaRequired?: boolean;
@@ -22,6 +23,7 @@ export interface TestOptions {
   schemas?: Schema[];
   schemaRequired?: boolean;
   sutBaseUrl?: string;
+  sutProtocol?: 'http' | 'grpc';
   dependencies?: Record<string, Dependency> | Dependency[];
   apiId?: string;
   sutTargetKind?: 'mock' | 'service' | 'unknown';

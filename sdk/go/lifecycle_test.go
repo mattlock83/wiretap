@@ -22,6 +22,24 @@ type inspectTransport func(*http.Request) (*http.Response, error)
 
 func (f inspectTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
+func TestSetupAllowsConfiguredContractDiscoveryDeadline(t *testing.T) {
+	setups := 0
+	runtime := Runtime{BaseURL: "http://wiretap.test", Client: &http.Client{Transport: inspectTransport(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Path == "/v1/setupTest" {
+			setups++
+			deadline, ok := r.Context().Deadline()
+			if !ok || time.Until(deadline) < time.Minute {
+				t.Fatalf("discovery deadline was shortened: %v", deadline)
+			}
+		}
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{"session_id":"test"}`)), Header: http.Header{}}, nil
+	})}}
+	runtime.StartTest(t, TestOptions{SetupTimeout: 2 * time.Minute})
+	if setups != 1 {
+		t.Fatalf("setup requests = %d", setups)
+	}
+}
+
 func TestCleanupHonorsLongDrainDeadline(t *testing.T) {
 	previous := http.DefaultTransport
 	t.Cleanup(func() { http.DefaultTransport = previous })

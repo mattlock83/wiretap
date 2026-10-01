@@ -48,9 +48,11 @@ are still active. Use a bounded context and propagate finalization errors.
 last. Cleanup records the final test result, handles `t.Fatal`/skip, drains
 accepted traffic, and fails the test if capture/schema validation fails.
 It uses an independent cleanup context so a cancelled request context does not
-prevent teardown. Setup has a 30-second deadline; cleanup allows the configured
-drain plus ten seconds. An explicitly supplied `Runtime.Client` retains its own
-timeout, which must allow that cleanup window. The root span ends after teardown.
+prevent teardown. Setup defaults to a 30-second deadline; set
+`TestOptions.SetupTimeout` to allow a larger first-test contract discovery budget,
+for example `2 * time.Minute`. Cleanup allows the configured drain plus ten
+seconds. An explicitly supplied `Runtime.Client` retains its own timeout, which
+must allow both setup and cleanup windows. The root span ends after teardown.
 
 `Session.HTTPClient` clones the supplied standard client and wraps its transport
 with `otelhttp`. It binds requests to the test without mutating the shared client.
@@ -61,12 +63,18 @@ keep it and create requests using `http.NewRequestWithContext(session.Context,
 one, the global provider is used, with a local fallback for a no-op global setup.
 No exporter or collector is needed; unsampled contexts work.
 
+For gRPC projects, configure `protocol: grpc` and reflection or local Protobuf
+sources in `.wiretap.yaml`. `Session.SUTURL` and `Session.Dependencies` contain
+direct capture origins for ordinary generated gRPC clients. Pass
+`Session.Context` into RPCs and use the application's existing OTel gRPC
+instrumentation for parallel ownership. See the [gRPC guide](../../docs/grpc-user-guide.md).
+
 `TestOptions.Schemas` and `TestOptions.Dependencies` accept typed `Schema` and
 `Dependency` overrides. `SchemaSource` supports file, URL, and inline content. The returned `Dependencies` map
 contains capture URLs. Configure the SUT's dependency endpoints once to stable
 `/__wiretap/dep/<asset-id>` URLs for traced sessions. Each API requires its spec unless its
 `SchemaRequired` pointer is explicitly false; supplied specs always validate.
-Dependencies marked `UpstreamKind: "mock"` always get a separate inferred OpenAPI
+HTTP dependencies marked `UpstreamKind: "mock"` always get a separate inferred OpenAPI
 draft in the bundle, including with a supplied spec. It documents observed mock
 traffic and never changes enforcement. The bundle's Dependencies view links to it.
 `DrainTimeout` defaults to five seconds; use a positive duration up to one minute.

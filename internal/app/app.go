@@ -9,10 +9,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/phrond/wiretap/internal/artifact"
 	"github.com/phrond/wiretap/internal/bundle"
 	"github.com/phrond/wiretap/internal/bundlereport"
 	"github.com/phrond/wiretap/internal/core"
+	"github.com/phrond/wiretap/internal/grpccontract"
 	"github.com/phrond/wiretap/internal/project"
+	"golang.org/x/net/http2"
 )
 
 type Deps struct {
@@ -31,7 +34,15 @@ type App struct {
 	bundleMu  sync.Mutex
 	bundle    *bundle.Writer
 
-	proxyComponent *ProxyComponent
+	proxyComponent  *ProxyComponent
+	grpcMu          sync.RWMutex
+	grpcContracts   map[string]*grpccontract.Contract
+	grpcSchemas     []artifact.SchemaRef
+	grpcListeners   map[string]*grpcCaptureListener
+	grpcTransportMu sync.Mutex
+	grpcTransports  map[string]*http2.Transport
+	grpcCallsMu     sync.Mutex
+	grpcCalls       map[*activeGRPCCall]struct{}
 
 	controlMu     sync.Mutex
 	traceOwners   map[string]string
@@ -119,8 +130,14 @@ func New(deps Deps) (*App, error) {
 
 	if component, ok := proxy.(*ProxyComponent); ok {
 		app.proxyComponent = component
+		if deps.Project != nil && deps.Project.SUT.Protocol == "grpc" {
+			if err := component.server.SetCaptureTLS(deps.Project.SUT.CaptureTLS.CertFile, deps.Project.SUT.CaptureTLS.KeyFile); err != nil {
+				return nil, err
+			}
+		}
 		component.SetDependencyResolver(app.resolveDependencyRoute)
 		component.server.SetAdmissionResolver(app.admitRequest)
+		component.server.SetGRPCHandler(func(w http.ResponseWriter, r *http.Request) { app.forwardGRPC(w, r, "") })
 	}
 
 	app.server = &http.Server{

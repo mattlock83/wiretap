@@ -24,6 +24,10 @@ function normalizeProxyConfig(config = {}) {
 
 function schemaConfiguration(config = {}, allowInherited = false) {
   const schemas = Array.isArray(config.schemas) ? config.schemas : [];
+  if (config.sutProtocol === "grpc") {
+    if (config.schemaRequired === false) throw new Error("gRPC requires a Protobuf contract");
+    return { schemas };
+  }
   if (schemas.length === 0 && config.schemaRequired !== false && !allowInherited) {
     throw new Error("OpenAPI schemas are required; supply schemas or explicitly set schemaRequired: false for this API");
   }
@@ -52,6 +56,8 @@ function normalizeDependencies(value) {
     if (seen.has(assetId)) throw new Error(`dependency assetId "${assetId}" is declared more than once`);
     seen.add(assetId);
     const upstreamUrl = pickFirstString(dependency.upstreamUrl);
+    const protocol = pickFirstString(dependency.protocol) || "http";
+    if (!["http", "grpc"].includes(protocol)) throw new Error(`dependency "${assetId}" protocol must be http or grpc`);
     let parsed;
     try { parsed = new URL(upstreamUrl); } catch (_) { /* validated below */ }
     if (!parsed || !["http:", "https:"].includes(parsed.protocol)) {
@@ -59,7 +65,10 @@ function normalizeDependencies(value) {
     }
     const schemas = Array.isArray(dependency.schemas) ? [...dependency.schemas] : [];
     if (dependency.schema) schemas.push(dependency.schema);
-    if (schemas.length === 0 && dependency.schemaRequired !== false) {
+    if (protocol === "grpc" && dependency.schemaRequired === false) {
+      throw new Error(`dependency "${assetId}" requires a Protobuf contract`);
+    }
+    if (protocol === "http" && schemas.length === 0 && dependency.schemaRequired !== false) {
       throw new Error(`dependency "${assetId}" requires an OpenAPI schema`);
     }
     const assetName = pickFirstString(dependency.assetName);
@@ -71,6 +80,7 @@ function normalizeDependencies(value) {
       asset_id: assetId,
       ...(assetName ? { asset_name: assetName } : {}),
       upstream_kind: upstreamKind,
+      ...(protocol === "grpc" ? { protocol } : {}),
       ...(dependency.schemaRequired === false ? { schema_required: false } : {}),
       upstream_url: upstreamUrl,
       ...(schemas.length > 0 ? { schemas } : {})
@@ -123,6 +133,8 @@ class Runtime {
     this.client = client;
     this.runtimeInfo = runtimeInfo;
     this.defaultSutBaseUrl = config.sutBaseUrl || null;
+    this.sutProtocol = config.sutProtocol || "http";
+    if (!["http", "grpc"].includes(this.sutProtocol)) throw new Error("sutProtocol must be http or grpc");
     const schemaConfig = schemaConfiguration(config);
     this.defaultSchemas = [...schemaConfig.schemas];
     this.schemaRequired = config.schemaRequired;
@@ -133,6 +145,7 @@ class Runtime {
     this.testSource = config.testSource;
     this.sutSource = config.sutSource;
     this.sutUrl = runtimeInfo.sut_url;
+    this.runDependencyUrls = runtimeInfo.dependencies || {};
     this.sessions = new AsyncLocalStorage();
     this.manualSession = null;
     this.manageRuntime = config.manageRuntime !== false;
@@ -198,6 +211,7 @@ class Runtime {
     const selected = assetId.trim();
     const dependencies = this.activeSession?.dependencyUrls;
     if (dependencies && dependencies[selected]) return dependencies[selected];
+    if (this.runDependencyUrls[selected]) return this.runDependencyUrls[selected];
     if (!this.defaultDependencies.some((dependency) => dependency.asset_id === selected)) {
       throw new Error(`dependency "${selected}" is not configured`);
     }
@@ -212,7 +226,8 @@ class Runtime {
     if (owner.closed) throw new Error("capture attempt is already closed");
     if (this.activeSession || owner.setupPending) throw new Error("a capture session is already active");
     const selectedSchemas = Array.isArray(options.schemas) ? options.schemas : this.defaultSchemas;
-    const schemaConfig = schemaConfiguration({ schemas: selectedSchemas, schemaRequired: options.schemaRequired ?? this.schemaRequired });
+    const sutProtocol = options.sutProtocol || this.sutProtocol;
+    const schemaConfig = schemaConfiguration({ schemas: selectedSchemas, schemaRequired: options.schemaRequired ?? this.schemaRequired, sutProtocol });
     const dependencies = options.dependencies === undefined
       ? this.defaultDependencies
       : normalizeDependencies(options.dependencies);
@@ -225,6 +240,7 @@ class Runtime {
       test_source: options.testSource || this.testSource,
       sut_source: options.sutSource || this.sutSource,
       sut_base_url: options.sutBaseUrl || this.defaultSutBaseUrl,
+      ...(sutProtocol === "grpc" ? { sut_protocol: "grpc" } : {}),
       explicit_session: Boolean(options.explicitSession ?? this.explicitSession),
       schemas: schemaConfig.schemas,
       schema_required: options.schemaRequired ?? this.schemaRequired,
@@ -310,6 +326,7 @@ async function startCapture(config = {}) {
   const defaults = runtimeInfo.defaults || {};
   const resolved = {
     sutBaseUrl: defaults.sut_base_url,
+    sutProtocol: defaults.sut_protocol,
     apiId: defaults.api_id,
     sutTargetKind: defaults.sut_target_kind,
     schemas: defaults.schemas,
@@ -322,6 +339,7 @@ async function startCapture(config = {}) {
       assetName: dependency.asset_name,
       upstreamUrl: dependency.upstream_url,
       upstreamKind: dependency.upstream_kind,
+      protocol: dependency.protocol,
       schemas: dependency.schemas,
       schema: dependency.schema,
       schemaRequired: dependency.schema_required

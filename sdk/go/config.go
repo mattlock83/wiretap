@@ -18,6 +18,7 @@ type Dependency struct {
 	AssetName      string   `json:"asset_name,omitempty"`
 	UpstreamURL    string   `json:"upstream_url"`
 	UpstreamKind   string   `json:"upstream_kind,omitempty"`
+	Protocol       string   `json:"protocol,omitempty"`
 	Schema         *Schema  `json:"schema,omitempty"`
 	Schemas        []Schema `json:"schemas,omitempty"`
 	SchemaRequired *bool    `json:"schema_required,omitempty"`

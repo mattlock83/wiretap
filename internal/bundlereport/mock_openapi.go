@@ -62,6 +62,16 @@ func mockIDs(run *bundle.Run) []string {
 	var ids []string
 	for id, kind := range run.DependencyKinds {
 		if kind == "mock" {
+			grpc := false
+			for _, schema := range run.Schemas {
+				if schema.Role == "dependency" && schema.AssetID == id && schema.Type == "protobuf" {
+					grpc = true
+					break
+				}
+			}
+			if grpc {
+				continue
+			}
 			ids = append(ids, id)
 		}
 	}
