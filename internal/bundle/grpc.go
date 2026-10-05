@@ -82,7 +82,7 @@ func grpcSchemaFor(flow artifact.Flow, refs []artifact.SchemaRef) *artifact.Sche
 		if ref.Type != "protobuf" || flow.Request.GRPC == nil || ref.ID != flow.Request.GRPC.SchemaRef {
 			continue
 		}
-		if flow.Channel == "test_to_sut" && ref.Role == "sut" || flow.Channel == "sut_to_dependency" && ref.Role == "dependency" && ref.AssetID == flow.AssetID {
+		if flow.Channel == "test_to_sut" && (ref.Role == "sut" || ref.Role == "provided" && ref.AssetID == flow.AssetID) || flow.Channel == "sut_to_dependency" && ref.Role == "dependency" && ref.AssetID == flow.AssetID {
 			return ref
 		}
 	}
@@ -91,6 +91,9 @@ func grpcSchemaFor(flow artifact.Flow, refs []artifact.SchemaRef) *artifact.Sche
 
 func validateGRPCMessages(version string, capture artifact.Artifact) error {
 	for _, flow := range capture.Traffic {
+		if err := artifact.ValidateGRPCObservation(flow); err != nil {
+			return fmt.Errorf("gRPC flow %q: %w", flow.ID, err)
+		}
 		if flow.Interaction != nil {
 			continue
 		}
@@ -165,6 +168,19 @@ func verifyGRPCPayloads(capture artifact.Artifact) error {
 			contracts[ref.Source.Path+strings.Join(ref.Services, ",")] = contract
 		}
 		method := contract.Methods[flow.Request.GRPC.Procedure]
+		if method != nil && flow.Request.GRPC.Observation != nil {
+			kind := "unary"
+			if method.IsStreamingClient() && method.IsStreamingServer() {
+				kind = "bidirectional"
+			} else if method.IsStreamingClient() {
+				kind = "client_streaming"
+			} else if method.IsStreamingServer() {
+				kind = "server_streaming"
+			}
+			if flow.Request.GRPC.StreamKind != kind || flow.Response.GRPC.StreamKind != kind {
+				return fmt.Errorf("gRPC flow %q stream kind disagrees with descriptor", flow.ID)
+			}
+		}
 		for direction, msg := range []*artifact.GrpcMessage{flow.Request.GRPC, flow.Response.GRPC} {
 			var desc protoreflect.MessageDescriptor
 			if method != nil {
@@ -211,7 +227,7 @@ func verifyGRPCPayloads(capture artifact.Artifact) error {
 					}
 				}
 				message := dynamicpb.NewMessage(desc)
-				if err := proto.Unmarshal(raw, message); err != nil {
+				if err := (proto.UnmarshalOptions{RecursionLimit: 100, Resolver: dynamicpb.NewTypes(contract.Files)}).Unmarshal(raw, message); err != nil {
 					return fmt.Errorf("gRPC flow %q wire decode: %w", flow.ID, err)
 				}
 				projection, err := (protojson.MarshalOptions{UseProtoNames: true, Resolver: dynamicpb.NewTypes(contract.Files)}).Marshal(message)

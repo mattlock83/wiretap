@@ -1,4 +1,4 @@
-# Wiretap bundle format 3.0
+# Wiretap bundle format 3.1
 
 A bundle is a portable recording of tests at API boundaries. The same recorded
 tests support documentation, coverage, comparison and execution. There is no
@@ -149,11 +149,48 @@ and map values support `[*]`, while numeric indices and named map keys target
 individual values. Paths use proto field names in the ProtoJSON projection.
 For decoded `Any` values, select fields in that projection; if decoding fails,
 a configured body rule removes the wire payload and records the limitation.
-Redacting `grpc-message` removes its copies from metadata, trailers and the
-status summary. A `response.status_details.<field>` rule conservatively omits
-the opaque `grpc-status-details-bin` value until rich-detail decoding is supported.
+Rich RPC errors have a separate response `status_details` object. It records
+where the `google.rpc.Status` envelope arrived, its code/message, decoding state
+and ordered `Any` details. The terminal `grpc_status` stays authoritative;
+contradictory envelope codes are labelled `inconsistent`. A missing object means
+no retained status-detail metadata was observed; an empty envelope, malformed
+metadata, truncated evidence and redaction have distinct representations. Missing
+metadata in an incomplete capture is not proof that the server sent none.
 
-Writers produce `3.0`, and readers accept `3.x`. This is a breaking layout and
+Custom detail types use the frozen boundary descriptors. Standard `google.rpc`
+error types absent from that boundary use a separately hashed auxiliary
+`FileDescriptorSet` attachment. The auxiliary set does not change the boundary
+contract bytes or semantic revision. Conflicting helper definitions are refused;
+unknown types remain opaque. No type URLs are fetched and no fresh reflection
+is needed to decode or rebuild the bundle.
+
+Status attachments use `kind: status-envelope`, `status-descriptors`,
+`status-detail-wire` or `status-detail-json`; the latter two use a zero-based
+`status_detail_index`. These indices are independent of application message
+indices. The binary metadata envelope moves into its attachment instead of
+also being retained in headers/trailers. Readers verify detail bytes against
+that envelope, descriptor hashes and ProtoJSON projections. Redacted
+projections explicitly cannot make that original-byte verification claim.
+
+Raw envelope bytes, retained detail bytes, readable projections and captured
+response metadata share a 64 KiB budget. At most 256 detail records and a
+Protobuf recursion depth of 100 are supported. Auxiliary descriptors have the
+normal descriptor limits; they are shared schema data, not user payloads.
+Exhausted limits produce explicit truncated/unavailable detail states and never
+limit the bytes forwarded to the client. Error details are observations, not
+additional response messages or coverage conditions: a service declaration does
+not enumerate its allowed rich errors.
+
+Use `response.status_details[*].body.<proto_field>` for all details or
+`response.status_details[0].body.<proto_field>` for one. Repeated/map field
+selectors work as for message bodies. A selected field rule removes the raw
+selected detail, containing status envelope and binary metadata copies; it
+retains only the redacted projection when decoding is possible. Unknown or
+undecodable selected details are omitted. Redacting `grpc-message` also removes
+its envelope copy and redacts the status summary. Whole-value header/trailer
+redaction of `grpc-status-details-bin` removes all detail representations.
+
+Writers produce `3.1`, and readers accept `3.x`. This is a breaking layout and
 manifest revision; earlier bundles should be regenerated using the current
 Wiretap version. `required_capabilities` declares structural features a reader
 must understand. Readers reject unknown required capabilities and recordings
@@ -270,12 +307,58 @@ import or validated the schema's semantics.
 
 This envelope represents these protocols; it does not enable their live capture,
 semantic validation, replay or coverage adapters. Live capture and contract
-measurement currently cover HTTP/OpenAPI and native unary gRPC/Protobuf;
-execution currently supports HTTP provider exploration. Event recordings remain visible as
-unsupported for measurement/execution until the relevant adapter is implemented.
+measurement currently cover HTTP/OpenAPI and native gRPC/Protobuf, including
+all four RPC shapes. Execution currently supports HTTP provider exploration.
+Generic event recordings remain visible as unsupported for measurement/execution
+until the relevant adapter is implemented. Native gRPC uses its typed RPC record
+and the observation fields below; it does not duplicate payloads into generic events.
 GraphQL `errors` can coexist with `data` and HTTP 200; Kafka acknowledgement does
 not prove downstream processing; a complete stream does not prove every message
 was asserted. Readers must preserve those distinctions.
+
+## Native gRPC observations
+
+Format 3.1 adds `grpc-observation.v1` and `grpc-status-details.v1` required
+capabilities. Older readers must reject these features rather than discard their
+meaning. The layout and HTTP evidence stay unchanged. Old captures without
+observation counters cannot establish streaming completeness.
+
+Native RPCs retain typed `request` and `response` records. Each direction has an
+`observation` with `complete_frames`, `retained_frames`, `omitted_frames`,
+`observed_bytes`, `counts_complete`, `eof` and `end`. Complete observed frames equal
+retained plus omitted frames. `end` distinguishes `open`, `eof`, `error` and
+`closed`; closing after an early response is not proof of EOF. Count completeness
+refers to the observed interval, not hypothetical later traffic. Framing errors
+make subsequent counts unknown. A partial frame has its index, header/payload
+byte counts and start observation, without a fabricated completion time.
+
+Retention stops at the first omitted frame. Retained indices are a contiguous
+wire prefix; `omitted: {first_index, count}` summarizes the remaining complete
+frames in bounded space. The observer counts zero-byte frames and oversized
+frames after retention stops. Partial frames are separate from complete counts.
+Each direction retains at most 1,024 complete messages and its byte budget.
+Decode work and readable projections have a finite aggregate budget too.
+
+Each retained message has an `observation` containing `wire_bytes`,
+`started_offset_ns`, `completed_offset_ns`, `start_sequence` and
+`complete_sequence`. Offsets use the invocation's monotonic start; `started_at`
+provides its UTC anchor. `grpc_events` references lifecycle observations through
+`sequence`, `offset_ns`, `direction` (`request`, `response`, `rpc`) and `kind`.
+Initial metadata, half-close, end, trailers, cancellation and errors share this
+observation order. Message bodies remain stored once, on their direction.
+Missing fields are unavailable, never inferred from array lengths or report time.
+
+`decode_state` distinguishes `decoded`, `invalid` and `unavailable`, with a
+`decode_error` reason for the latter two. Unsupported compression, capture limits,
+recursion limits or an unavailable JSON projection are not fabricated wire
+violations. `schema_validation.unavailable` explains partial checks; malformed
+Protobuf still fails validation. Retention, completeness and decoding limits
+prevent successful stream coverage even when the test itself passes.
+
+Loaders verify counter relationships, omission ranges, wire lengths, original
+indices, monotonic timing and sequence uniqueness, as well as the existing hashes,
+Protobuf bytes and JSON projections. A drain snapshot is immutable: subsequent
+traffic cannot update the committed attempt or migrate into the next test.
 
 ## Execute recorded tests with external hooks
 

@@ -1,62 +1,59 @@
 # gRPC support implementation plan
 
-Status: native unary gRPC capture, bounded structural coverage and reporting
-implemented; reviewed against this plan on 2026-10-01. The complete acceptance
-matrix is not yet satisfied: the specific remaining items are recorded below.
-Written 2026-09-30 against `1c66250`; the work packages below retain the original
-design and acceptance checklist for subsequent hardening.
+Status: native gRPC unary and streaming implementation reviewed and completed
+against the A–C handoff on 2026-10-05. The original design is retained below as
+an audit checklist; current scope and verification are summarized here.
 
 ### Review status
 
-The unary implementation now includes project and run-level API boundary
-registration; reflection v1/v1alpha, local source and descriptor-set acquisition;
-frozen per-boundary provenance; direct h2c/TLS forwarding; standard trace-based
-ownership; bounded capture and conservative incomplete-call handling; typed,
-verified OKF evidence; and method/field coverage shared by the reports and viewer.
-Supported Protobuf field conditions include presence, oneof selection, enum and
-boolean values, collections and nested messages. Recursive scopes, unresolved
-dynamic `Any` values and custom validation semantics remain explicitly unsupported.
+All four native RPC shapes use incremental bounded observation, exact frame
+counts, per-message timing, explicit omissions and immutable lifecycle snapshots.
+Provider, consumer and mixed paths support h2c and TLS. Parallel capture uses
+ordinary W3C trace propagation; sequential capture needs no application tracing.
+The review fixed cancellation of an open bidirectional request during run shutdown.
 
-Regression fixtures cover native grpc-go and Connect clients in gRPC mode;
-provider, consumer and mixed HTTP/gRPC boundaries; reflection fallback and local
-contracts; TLS capture/upstream; parallel ownership; zero-test inventory and
-retryable acquisition failure; early response, framing, gzip, status/trailers,
-capture limits and drain cancellation; empty payload integrity and redaction;
-field coverage quality gates; and gRPC exploration rejection before hooks or
-traffic. The runnable example has reflection, proto-source, descriptor-set and
-mixed-source modes, using dynamic capture addresses returned before SUT startup.
+Reflection v1/v1alpha remains the default, with local proto sources and descriptor
+sets available when reflection is absent. Frozen contracts support offline bundle
+verification and report rebuilding. Native grpc-go, Connect in gRPC mode and Node
+`@grpc/grpc-js` clients are exercised without a mandatory Wiretap RPC client.
 
-The following are still outside the verified release scope; the unchecked work
-packages below remain the full checklist, not a claim of completion:
+Rich `google.rpc.Status` errors retain a verified envelope and ordered typed or
+opaque details. Contract-local types and separately frozen standard error types
+resolve offline. Redaction removes containing wire/envelope copies. Decode,
+retention and recursion budgets produce explicit unavailable evidence.
 
-- A native Node gRPC interoperability fixture is still missing. Node adoption
-  guidance uses standard OTel instrumentation and the ordinary generated client;
-  the JavaScript SDK lifecycle suite is covered, but it is not that protocol fixture.
-- Rich `grpc-status-details-bin` messages remain opaque. Decoding their `Any`
-  details and presenting their typed contents is future work; a status-detail
-  redaction rule currently removes the entire opaque value.
-- Full streaming capture/coverage, individual message timestamps and total
-  observed message counts remain the streaming milestone. Passing traffic
-  through and retaining bounded diagnostic evidence does not count as stream
-  assurance.
-- gRPC exploration, Connect's own wire format, gRPC-Web, mTLS and arbitrary
-  Protovalidate/CEL rules remain intentionally deferred as described below.
+The `wiretap-protobuf-2` measurement profile covers declared methods and supported
+field conditions in every complete message, including streams. It preserves
+presence, oneofs, enums, booleans, collections and nested message conditions.
+Incomplete, omitted, redacted or undecodable evidence receives no successful
+coverage credit. Empty streams do not invent payload conditions. Protobuf does
+not declare allowed status codes, stream lengths or cross-message business rules;
+those do not become artificial coverage denominators. Recursive scopes, dynamic
+`Any` values and arbitrary custom validation semantics remain qualified limits.
+Descriptor normalization stays `wiretap-protobuf-1`.
 
-## Remaining implementation handoff
+Bundle evidence is **3.1**, with mandatory `grpc-observation.v1` and
+`grpc-status-details.v1` capabilities when those structures are present. Earlier
+3.x evidence remains readable without acquiring guarantees it never recorded;
+readers that do not understand a required capability reject it. The generic
+interaction envelope remains available for future protocol adapters; native gRPC
+uses its typed message evidence, not duplicate generic payloads.
 
-This section is the actionable continuation of the 2026-10-01 review. Complete
-A, B and C below; A is independent, B establishes rich-error evidence, and C
-completes the streaming milestone. The original unchecked work packages later
-in this document preserve the design and audit checklist. They do **not** mean
-that every earlier package needs implementing again. Use the existing code and
-regression tests as the baseline, and record any additional acceptance gaps
-found rather than silently treating an untested row as complete.
+### Implementation and verification record
+
+A, B and C below are implemented. Their checklists describe the delivered design;
+the later original work packages remain historical audit material. Regression
+coverage includes all four RPC shapes across provider/consumer/mixed boundaries,
+TLS, reflection/local contracts, framing fragmentation, empty messages, gzip,
+limits, cancellation, parallel ownership, rich errors, redaction, integrity and
+offline rebuilding. The Node companion includes serial and parallel Go/Node and
+HTTP/gRPC paths, metadata, trailers-only failures, deadlines and TLS.
 
 Keep capture integrated with the user's test lifecycle. No mandatory Wiretap
 RPC client, application-specific trace IDs, automatic client instrumentation,
 reflection requirement, or new test framework. Keep payload attachments as
 hashed `.bin` files. gRPC exploration, Connect's wire protocol, gRPC-Web, mTLS
-and semantic validation engines are separate follow-ups, not part of A–C.
+and semantic validation engines remain separate follow-ups.
 
 ### A. Native Node interoperability and adoption example
 
@@ -66,36 +63,36 @@ and semantic validation engines are separate follow-ups, not part of A–C.
 Connect client in native gRPC mode. JavaScript lifecycle tests alone do not
 exercise the native Node gRPC stack.
 
-- [ ] Add an optional `examples/grpc-boundaries/node/` package with a lockfile,
+- [x] Add an optional `examples/grpc-boundaries/node/` package with a lockfile,
   `@grpc/grpc-js`, and either ordinary generated clients or `@grpc/proto-loader`
   loading the checked-in protos. Pin tested dependencies in the lockfile. Keep
   gRPC and OTel gRPC instrumentation dependencies in the example, not mandatory
   dependencies of the JavaScript SDK. If generating clients, check in the
   generated files and a regeneration command; normal runs must not need protoc.
-- [ ] Run the example through Node's existing test lifecycle and the JS SDK.
+- [x] Run the example through Node's existing test lifecycle and the JS SDK.
   Reuse the current servers and capture addresses from `startRun`; retain the
   default Go example without a Node requirement. Add an explicit Node mode or
   companion runner that fails clearly if dependencies are missing. Document
   installation, execution, output path and cleanup; do not silently download
   packages inside an ordinary test run.
-- [ ] Exercise Node as both the test client and an existing dependency server
+- [x] Exercise Node as both the test client and an existing dependency server
   (mock) against the Go fixture. Include gRPC provider→gRPC mock and an HTTP
   provider→Node gRPC mock case. Use a local proto or descriptor source for the
   Node mock if it does not expose reflection; do not require reflection solely
   to make this example work.
-- [ ] Show serial capture without trace propagation. Separately initialize
+- [x] Show serial capture without trace propagation. Separately initialize
   standard OTel gRPC instrumentation **before importing** the client/server
   modules and prove parallel ownership through a provider and its outgoing
   dependency client. Instrument the fixture provider normally or use a Node
   provider; the current serial Go example does not propagate context by itself.
   Preserve an existing provider/context manager, use W3C propagation, and do
   not require a collector or replace the user's HTTP/gRPC clients.
-- [ ] Test a reused multiplexed channel with at least two overlapping tests,
+- [x] Test a reused multiplexed channel with at least two overlapping tests,
   success, trailers-only non-OK status, repeated/binary metadata, a valid empty
   message, deadline/cancellation, and TLS with a local CA. Compare results seen
   by the same native client directly and through Wiretap; request paths and
   application payloads must match.
-- [ ] Assert canonical bundle evidence, not only the client's result: correct
+- [x] Assert canonical bundle evidence, not only the client's result: correct
   test/flow ownership and boundary roles, frozen schemas, preserved numeric RPC
   status including zero, payload attachments, and no reflection calls credited
   as test traffic. Run without reflection using local contracts, then rebuild
@@ -104,8 +101,8 @@ exercise the native Node gRPC stack.
 **Done when:** a documented command runs the Node fixture from a clean checkout
 after dependency installation, all cases above pass, and its README states which
 fixture processes require Go. Add the fixture to a
-repeatable verification command or CI job; the repository currently has a Pages
-workflow, not a general test workflow. Update `sdk/js/README.md`, the gRPC user
+repeatable verification command or CI job. The delivered Node companion runs in
+`.github/workflows/grpc-node.yml`. Update `sdk/js/README.md`, the gRPC user
 guide and examples index with the tested Node/OTel setup and requirements.
 
 ### B. Decode rich RPC errors without leaking duplicate values
@@ -117,13 +114,13 @@ guide and examples index with the tested Node/OTel setup and requirements.
 and `internal/bundlereport/grpc.go` own persistence, privacy and presentation.
 The pinned Go module graph already includes `google.golang.org/genproto/googleapis/rpc`.
 
-- [ ] Add a shared bounded decoder for `grpc-status-details-bin` as
+- [x] Add a shared bounded decoder for `grpc-status-details-bin` as
   `google.rpc.Status`. Accept valid padded/unpadded binary-metadata base64;
   handle headers versus trailers consistently with `grpcTerminalStatus`.
   Duplicates, malformed envelopes and contradictions with the terminal
   `grpc-status` must produce explicit diagnostics, not an assumed successful
   decode. Never change bytes delivered to the native client.
-- [ ] Resolve each `Any` against the frozen boundary registry. When standard
+- [x] Resolve each `Any` against the frozen boundary registry. When standard
   `google.rpc` error-detail types are absent, freeze their pinned descriptors
   as a separately hashed auxiliary descriptor set and reference it in the bundle.
   Preserve supplied contract bytes and semantic revisions; do not quietly add
@@ -132,25 +129,25 @@ The pinned Go module graph already includes `google.golang.org/genproto/googleap
   the contract decodes locally; unknown type URLs remain opaque with a reason.
   Do not depend on a global application registry, fetch a type URL, contact a
   registry or perform fresh reflection while recording/reporting.
-- [ ] Add explicit response error-detail evidence: the envelope's numeric code
+- [x] Add explicit response error-detail evidence: the envelope's numeric code
   and message, plus ordered details with index, type URL, fully qualified type
   when resolved, raw attachment reference, readable ProtoJSON projection and
   decoding/redaction/retention state. Distinguish absent details from an empty
   `Status`, undecodable data and omitted data. The terminal RPC status remains
   authoritative; detail content does not invent a second successful outcome.
-- [ ] Extend attachment identity to distinguish a status envelope/detail from
+- [x] Extend attachment identity to distinguish a status envelope/detail from
   an application message. Keep a single verified raw source per representation
   and verify derived JSON against it and the frozen descriptors on bundle load.
   Reject duplicate/mismatched indices, references and projection tampering.
   Do not overload ordinary response-message indices or count details as output
   messages when checking RPC cardinality or field coverage.
-- [ ] Share the existing 64 KiB/256-entry metadata budget with the raw status
+- [x] Share the existing 64 KiB/256-entry metadata budget with the raw status
   envelope. Bound decoded projection bytes to 64 KiB per response, detail records
   to 256, and recursion depth to 100; stop with explicit unavailable/truncated
   markers on exhaustion. These are observation limits, not upstream delivery
   limits. Count duplicate representations against retention limits instead of
   creating an unbounded decoded copy beside bounded raw metadata.
-- [ ] Define `response.status_details[*].body.<proto_field>` selectors, including
+- [x] Define `response.status_details[*].body.<proto_field>` selectors, including
   repeated/map fields, and document selection by index. Apply a rule to the
   decoded projection and remove **every original containing representation**:
   the selected detail bytes, raw `google.rpc.Status` envelope, and the binary
@@ -158,7 +155,7 @@ The pinned Go module graph already includes `google.golang.org/genproto/googleap
   must also remove/mask its scalar and envelope copies. For an undecodable or
   unknown selected detail, omit it safely; never retain it because matching
   could not be evaluated. Keep current whole-value header/trailer redaction.
-- [ ] Render typed details beneath the RPC outcome in Markdown, knowledge and
+- [x] Render typed details beneath the RPC outcome in Markdown, knowledge and
   the viewer, linked to the same test and flow. Label opaque, truncated and
   redacted states. Do not create error-detail coverage targets: a service
   declaration does not enumerate allowed rich errors, and capturing a mock's
@@ -175,38 +172,38 @@ without falsely covering a successful application response message.
 
 ### C. Complete streaming evidence and coverage
 
-**Starting points:** `internal/proxy/grpc.go` currently observes a bounded frame
-prefix; `internal/app/grpc_record.go:parseGRPCFrames` parses that prefix only at
-completion. That design cannot recover per-message arrival times or total
-message counts after the retention limit. Extend the existing
+**Original starting point:** the proxy retained a bounded raw prefix and parsed
+frames only at completion. This has been replaced by incremental observers in
+`internal/capture/grpc.go`, retaining a bounded prefix while counting all observed
+frames. The implementation extends the existing
 `internal/app/grpc_lifecycle.go` drain/once-only commit mechanism instead of
 creating a second session or stream ownership system.
 
 #### C1. Incremental observation and explicit accounting
 
-- [ ] Implement an envelope observer under `internal/capture` that consumes
+- [x] Implement an envelope observer under `internal/capture` that consumes
   arbitrary byte chunks while forwarding. Track the five-byte header, remaining
   payload length, compression flag and direction-local index incrementally.
   Skip unretained payload bytes without allocating the advertised length. Never
   buffer an entire stream or change backpressure, flushing, half-close, retries
   or cancellation behaviour to improve evidence.
-- [ ] Record timing at observation time: message-start and complete-frame offsets
+- [x] Record timing at observation time: message-start and complete-frame offsets
   from the RPC's monotonic start, alongside the flow's UTC start. A zero-byte
   message completes when its envelope arrives. Do not stamp every message at
   teardown or claim cross-direction observation order proves causal order.
   Incomplete frames have a start but no fabricated completion timestamp.
-- [ ] Extend each direction with complete frames observed, messages retained,
+- [x] Extend each direction with complete frames observed, messages retained,
   complete frames omitted, observed bytes, count completeness, EOF/completion
   state and any partial-frame state. `observed_bytes` includes envelopes; record
   per-message wire payload length separately. Keep counting valid envelopes
   after retention stops, including zero-byte messages; count an oversized but
   fully forwarded frame once even if none of its payload is retained.
-- [ ] Define counts precisely: complete observed frames = retained complete
+- [x] Define counts precisely: complete observed frames = retained complete
   frames + omitted complete frames. A partially received frame is separate.
   Malformed framing means subsequent counts are unknown; do not guess where to
   resume. Count completeness describes the interval actually observed, not
   traffic that might have occurred after cancellation or a committed snapshot.
-- [ ] Keep the current finite byte, decoded-byte, metadata and 1,024-record
+- [x] Keep the current finite byte, decoded-byte, metadata and 1,024-record
   direction budgets. Preserve original wire indices when records are omitted;
   use a bounded aggregate omission summary rather than one record per dropped
   message. Keep parse/decode work bounded and unknown/unsupported compression
@@ -214,48 +211,48 @@ creating a second session or stream ownership system.
 
 #### C2. Immutable lifecycle and verified persistence
 
-- [ ] Keep one admitted flow ID and owner for the entire invocation. Snapshot
+- [x] Keep one admitted flow ID and owner for the entire invocation. Snapshot
   observer state safely while each direction is active. Drain expiry commits
   that bounded incomplete snapshot exactly once; a later upstream result cannot
   mutate it or appear under the next test. `finishRun` and shutdown cancel and
   release retired work within the existing grace period, including h2c channels.
-- [ ] Persist direction completeness separately from terminal RPC status. A
+- [x] Persist direction completeness separately from terminal RPC status. A
   complete, expected non-OK application result can belong to a passing test;
   a client/proxy cancellation, missing status, partial frame or omitted evidence
   cannot be relabelled as a complete provider result. Do not infer request EOF
   merely because an early response completed.
-- [ ] Update `GrpcMessage`/`GrpcPayload`, their codec, bundle loader and evidence
-  schema together. The current loader requires dense `payload.Index == position`;
-  replace that only with explicit monotonic unique wire-index and omission-range
-  validation. Enforce counter/timing/completion consistency and bounded attachment
-  counts. Missing timestamps/counters stay unavailable; never reconstruct them
+- [x] Update `GrpcMessage`/`GrpcPayload`, their codec, bundle loader and evidence
+  schema together. Retention stops permanently at the first byte/record limit,
+  so retained indices remain a dense wire prefix. Validate the contiguous omitted suffix,
+  monotonic unique timing sequences and original wire indices. Enforce counter/timing/completion
+  consistency and bounded attachment counts. Missing timestamps/counters stay unavailable; never reconstruct them
   from retained array length or report-generation time.
-- [ ] Preserve known message type, raw/compressed bytes, ProtoJSON, flags and
+- [x] Preserve known message type, raw/compressed bytes, ProtoJSON, flags and
   exact `(run, attempt, flow, direction, message index)` references. Use the
   same redaction rules on every retained message and remove raw duplicates.
   Update the once-only drain and bundle-integrity tests before enabling coverage.
 
 #### C3. Stream measurement and views
 
-- [ ] Extend `internal/app/schema_validation.go` and
+- [x] Extend `internal/app/schema_validation.go` and
   `internal/coverage/contract_grpc.go` to evaluate every retained complete message
   with `protoreflect` and the frozen contract. Preserve explicit presence,
   numeric precision and unknown/custom-option limits. Remove the unary-only
   gates in `internal/coverage/report.go` only after the transport matrix passes.
-- [ ] Define cardinality by descriptor: unary has one request and one response
+- [x] Define cardinality by descriptor: unary has one request and one response
   on OK; server streaming has one request and zero or more responses; client
   streaming has zero or more requests and one response on OK; bidirectional
   streaming has zero or more in each direction. Non-OK termination can omit a
   result but cannot justify extra messages on a unary side. Missing required
   unary messages are not the same as a valid zero-byte message.
-- [ ] Credit method and payload conditions only from complete, passing RPC
+- [x] Credit method and payload conditions only from complete, passing RPC
   evidence with valid terminal status, structurally valid messages, and no
   truncation/omissions/redaction/decode or transport uncertainty in the affected
   scope. Retain incomplete observations with reasons. A valid empty stream can
   exercise a streaming method but covers no payload conditions in that direction.
   Do not invent a denominator for stream lengths, message combinations or
   cross-message business invariants.
-- [ ] Attach field observations and combination fingerprints to their exact
+- [x] Attach field observations and combination fingerprints to their exact
   message indices. Render one RPC with expandable ordered request/response
   messages, completion and omission summaries. Keep Markdown, JSON knowledge,
   exports and static viewer consistent. Do not flatten streams into the first
@@ -283,12 +280,12 @@ per-message links/redaction across all views before advertising streaming suppor
    together; do not expose readable details before duplicate-source redaction.
 2. Land C1–C2 with streaming coverage still marked unsupported, then C3 with the
    full stream matrix. Keep incomplete/unknown scope visible throughout.
-3. Introduce evidence **3.0** with the first B/C persistence change that adds
-   authoritative detail or stream-completeness semantics. Update writer, reader,
-   JSON Schema, integrity fixtures and docs in the same change. Ensure older
-   readers reject the new major. Do not build a migration layer: earlier bundles
-   can be regenerated, and an accepted older bundle must never be treated as
-   having new timing/count guarantees it did not record.
+3. Evidence 3.0 was established by the separate bundle-format work. This
+   implementation writes **3.1**, with required capabilities for new authoritative
+   detail and observation structures. Writer, reader, JSON Schema, integrity tests
+   and docs move together. Capability checks make older readers reject unsupported
+   semantics. An accepted earlier bundle never gains timing/count guarantees it
+   did not record; no migration layer is needed.
 4. Keep HTTP `wiretap-contract-1` identities unchanged. Version the Protobuf
    measurement profile when streaming measurement changes its semantics;
    document that comparison requires matching profiles. Do not change descriptor
@@ -300,8 +297,8 @@ per-message links/redaction across all views before advertising streaming suppor
    exceptions; a checkmark requires evidence, not just new code.
 
 Run focused packages while developing, then the release checks below from the
-repository root. A must add its explicit Node verification command beside these
-checks when its runner exists; there is no such command in the current checkout.
+repository root. The Node companion requires dependency installation as documented
+in its README; its runner never silently installs packages.
 
 ```bash
 go test -race ./...
@@ -310,8 +307,18 @@ npm --prefix sdk/js test
 WIRETAP_GRPC_CONTRACT_SOURCE=proto ./examples/grpc-boundaries/run.sh
 WIRETAP_GRPC_CONTRACT_SOURCE=descriptor_set ./examples/grpc-boundaries/run.sh
 WIRETAP_GRPC_CONTRACT_SOURCE=mixed ./examples/grpc-boundaries/run.sh
+./examples/grpc-boundaries/run-node.sh
+./examples/grpc-streaming/run.sh
 git diff --check
 ```
+
+Verified on 2026-10-05: the full Go race suite, JavaScript SDK suite, all four
+original contract-source modes, the Node companion (5 groups, 15 attempts), and
+the streaming example (8 cases) passed. Live integration tests cover all four RPC
+shapes across provider, consumer and mixed paths, including TLS and parallel
+ownership. Bundle tests verify offline rebuilding, attachment integrity,
+redaction, omissions and rejected tampering. One existing JavaScript test remains
+marked skipped by that suite.
 
 Inspect actual generated bundles as well: each declared boundary has one resolved
 contract snapshot, observed statuses include `OK (0)`, payloads and descriptors
@@ -346,13 +353,13 @@ the fallback when the application does not propagate context.
 
 | Area | Decision |
 | --- | --- |
-| First release | Native gRPC with Protobuf messages: unary capture, contract inventory, structural validation, bounded condition coverage, OKF/knowledge/viewer output. |
+| Current release | Native gRPC with Protobuf messages: all four RPC shapes, contract inventory, structural validation, bounded condition coverage, OKF/knowledge/viewer output. |
 | Transport | Direct reverse capture endpoints using HTTP/2, with h2c and TLS. Preserve the RPC procedure path. |
 | Dependencies | A direct capture address per gRPC dependency; keep existing mocks and their generated clients. |
 | Schema | Mandatory resolved Protobuf contract per gRPC boundary. Reflection, local `.proto` sources and precompiled descriptor sets converge on the same frozen descriptor model. |
 | Reflection | Default source when no schema is configured. Query the configured upstream once per run before test admission, with bounded requests; reports never query it. |
 | Source compilation | Compile local `.proto` files inside Wiretap with Buf's `protocompile`; users do not need to install Buf/protoc or generate Wiretap clients. |
-| Streaming | The evidence model and forwarding path support streams from the start. A second milestone completes and verifies capture/coverage for all four RPC shapes. |
+| Streaming | Implemented for all four RPC shapes, with explicit evidence quality, message timing, bounded retention and structural coverage. |
 | Validation | Observe and report contract violations at test finalization, as today. Never reject or rewrite an application message because passive validation failed. |
 | Reports | Extend existing bundle evidence, coverage, OKF, knowledge and static viewer; no separate RPC reporting pipeline. |
 | Exploration | Remains HTTP-only initially. Preserve explicit rejection of unsupported provider sequences. |

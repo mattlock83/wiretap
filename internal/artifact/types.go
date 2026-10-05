@@ -119,6 +119,7 @@ type ContractFile struct {
 // Flow captures one request/response exchange.
 type Flow struct {
 	Interaction *Interaction `json:"interaction,omitempty"`
+	GRPCEvents  []GrpcEvent  `json:"grpc_events,omitempty"`
 	ID          string       `json:"id"`
 	Protocol    string       `json:"protocol"`
 	Channel     string       `json:"channel"`
@@ -164,31 +165,35 @@ type Message struct {
 // GrpcMessage describes one side of a native gRPC exchange. Application status
 // is distinct from the HTTP/2 transport status.
 type GrpcMessage struct {
-	Kind             string        `json:"kind"`
-	Procedure        string        `json:"procedure,omitempty"`
-	Service          string        `json:"service,omitempty"`
-	Method           string        `json:"method,omitempty"`
-	SchemaRef        string        `json:"schema_ref,omitempty"`
-	StreamKind       string        `json:"stream_kind,omitempty"`
-	ObservedBytes    int64         `json:"observed_bytes,omitempty"`
-	Metadata         Headers       `json:"metadata,omitempty"`
-	Trailers         Headers       `json:"trailers,omitempty"`
-	HTTPStatus       int           `json:"http_status,omitempty"`
-	StatusCode       int           `json:"grpc_status,omitempty"`
-	StatusMessage    string        `json:"grpc_message,omitempty"`
-	StatusSource     string        `json:"status_source,omitempty"`
-	CaptureTruncated bool          `json:"capture_truncated,omitempty"`
-	Messages         []GrpcPayload `json:"messages,omitempty"`
+	Observation      *GrpcObservation   `json:"observation,omitempty"`
+	Kind             string             `json:"kind"`
+	Procedure        string             `json:"procedure,omitempty"`
+	Service          string             `json:"service,omitempty"`
+	Method           string             `json:"method,omitempty"`
+	SchemaRef        string             `json:"schema_ref,omitempty"`
+	StreamKind       string             `json:"stream_kind,omitempty"`
+	ObservedBytes    int64              `json:"observed_bytes,omitempty"`
+	Metadata         Headers            `json:"metadata,omitempty"`
+	Trailers         Headers            `json:"trailers,omitempty"`
+	HTTPStatus       int                `json:"http_status,omitempty"`
+	StatusCode       int                `json:"grpc_status,omitempty"`
+	StatusMessage    string             `json:"grpc_message,omitempty"`
+	StatusSource     string             `json:"status_source,omitempty"`
+	CaptureTruncated bool               `json:"capture_truncated,omitempty"`
+	Messages         []GrpcPayload      `json:"messages,omitempty"`
+	StatusDetails    *GrpcStatusDetails `json:"status_details,omitempty"`
 }
 
 type GrpcPayload struct {
-	Index       int    `json:"index"`
-	Type        string `json:"type,omitempty"`
-	Compressed  bool   `json:"compressed,omitempty"`
-	Redacted    bool   `json:"redacted,omitempty"`
-	Body        *Body  `json:"body,omitempty"`
-	Wire        *Body  `json:"wire,omitempty"`
-	DecodeError string `json:"decode_error,omitempty"`
+	Observation *GrpcPayloadObservation `json:"observation,omitempty"`
+	Index       int                     `json:"index"`
+	Type        string                  `json:"type,omitempty"`
+	Compressed  bool                    `json:"compressed,omitempty"`
+	Redacted    bool                    `json:"redacted,omitempty"`
+	Body        *Body                   `json:"body,omitempty"`
+	Wire        *Body                   `json:"wire,omitempty"`
+	DecodeError string                  `json:"decode_error,omitempty"`
+	DecodeState string                  `json:"decode_state,omitempty"`
 }
 
 // HttpMessage represents a request or response payload.
@@ -244,9 +249,10 @@ type Assertion struct {
 
 // SchemaValidation captures schema validation results.
 type SchemaValidation struct {
-	Skipped []string                `json:"skipped,omitempty"`
-	Status  string                  `json:"status,omitempty"`
-	Errors  []SchemaValidationError `json:"errors,omitempty"`
+	Unavailable []SchemaValidationError `json:"unavailable,omitempty"`
+	Skipped     []string                `json:"skipped,omitempty"`
+	Status      string                  `json:"status,omitempty"`
+	Errors      []SchemaValidationError `json:"errors,omitempty"`
 }
 
 // SchemaValidationError describes a single schema validation failure.

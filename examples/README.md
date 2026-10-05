@@ -10,6 +10,8 @@ the HTTP examples also write separate exploration bundles. They print their path
 | [Provider exploration](../docs/exploration.md#try-the-complete-example) | SQLite fixtures, fresh authentication, cleanup and side-effect assertions through Python hooks. | Go 1.24+ and Python 3.9+. |
 | [Microsvc Transactions](microsvc-transactions/README.md) | A real service image, an Accounts mock, disposable database state and authenticated exploration. | Go 1.24+, Python 3.9+, Docker and the documented local images. |
 | [Native gRPC](grpc-boundaries/README.md) | Existing grpc-go test, gRPC SUT and gRPC mock, reflection/local contracts and OKF coverage. | Go 1.24+, Bash, Python 3 and curl. |
+| [Streaming gRPC](grpc-streaming/README.md) | All four RPC shapes, traced provider and dependency calls, per-message evidence and structural coverage. | Go 1.24+, Bash, Python 3 and curl. |
+| [Native Node gRPC](grpc-boundaries/node/README.md) | Ordinary Node clients/mocks, a Go provider, local contracts, traced parallel and mixed paths, TLS and offline bundle rebuilding. | Go 1.24+, Node.js 20.12+, Bash and OpenSSL. |
 
 ## Basic REST
 
@@ -43,4 +45,18 @@ contract scope and replaying an existing capture.
 
 ```bash
 ./examples/grpc-boundaries/run.sh
+```
+
+For the Node interoperability companion:
+
+```bash
+npm ci --prefix sdk/js
+npm ci --prefix examples/grpc-boundaries/node
+./examples/grpc-boundaries/run-node.sh
+```
+
+For all four RPC shapes and their bundle timelines:
+
+```bash
+./examples/grpc-streaming/run.sh
 ```

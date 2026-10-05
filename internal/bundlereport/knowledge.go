@@ -64,25 +64,28 @@ type knowledgeOperation struct {
 }
 
 type knowledgeEvidence struct {
-	InteractionKind      string `json:"interaction_kind,omitempty"`
-	Measurement          string `json:"measurement,omitempty"`
-	Protocol             string `json:"protocol,omitempty"`
-	GRPCStatus           *int   `json:"grpc_status,omitempty"`
-	AttemptID            string `json:"attempt_id"`
-	FlowID               string `json:"flow_id"`
-	Path                 string `json:"path"`
-	TestName             string `json:"test_name"`
-	TestStatus           string `json:"test_status"`
-	AttemptKind          string `json:"attempt_kind"`
-	ResponseStatus       int    `json:"response_status,omitempty"`
-	SchemaValidation     string `json:"attempt_schema_validation"`
-	CaptureIncomplete    bool   `json:"capture_incomplete"`
-	TransportError       string `json:"transport_error,omitempty"`
-	TestCorrelation      string `json:"test_correlation"`
-	ParentFlowID         string `json:"parent_flow_id,omitempty"`
-	ParentCorrelation    string `json:"parent_correlation,omitempty"`
-	BodyTruncated        bool   `json:"body_truncated"`
-	RedactionsConfigured bool   `json:"redactions_configured"`
+	ValidationUnavailable []artifact.SchemaValidationError `json:"schema_validation_unavailable,omitempty"`
+	GRPCCapture           *knowledgeGRPCCapture            `json:"grpc_capture,omitempty"`
+	GRPCStatusDetails     *knowledgeStatusDetails          `json:"grpc_status_details,omitempty"`
+	InteractionKind       string                           `json:"interaction_kind,omitempty"`
+	Measurement           string                           `json:"measurement,omitempty"`
+	Protocol              string                           `json:"protocol,omitempty"`
+	GRPCStatus            *int                             `json:"grpc_status,omitempty"`
+	AttemptID             string                           `json:"attempt_id"`
+	FlowID                string                           `json:"flow_id"`
+	Path                  string                           `json:"path"`
+	TestName              string                           `json:"test_name"`
+	TestStatus            string                           `json:"test_status"`
+	AttemptKind           string                           `json:"attempt_kind"`
+	ResponseStatus        int                              `json:"response_status,omitempty"`
+	SchemaValidation      string                           `json:"attempt_schema_validation"`
+	CaptureIncomplete     bool                             `json:"capture_incomplete"`
+	TransportError        string                           `json:"transport_error,omitempty"`
+	TestCorrelation       string                           `json:"test_correlation"`
+	ParentFlowID          string                           `json:"parent_flow_id,omitempty"`
+	ParentCorrelation     string                           `json:"parent_correlation,omitempty"`
+	BodyTruncated         bool                             `json:"body_truncated"`
+	RedactionsConfigured  bool                             `json:"redactions_configured"`
 }
 
 type knowledgeAttempt struct {
@@ -170,6 +173,13 @@ func buildKnowledge(root string, run *bundle.Run, captures []*artifact.Artifact,
 				if f.ID != s.FlowID {
 					continue
 				}
+				if a.SchemaValidation != nil {
+					for _, issue := range a.SchemaValidation.Unavailable {
+						if issue.FlowID == "" || issue.FlowID == f.ID {
+							e.ValidationUnavailable = append(e.ValidationUnavailable, issue)
+						}
+					}
+				}
 				e.Protocol = f.Protocol
 				if f.Interaction != nil {
 					e.InteractionKind = f.Interaction.Kind
@@ -186,8 +196,10 @@ func buildKnowledge(root string, run *bundle.Run, captures []*artifact.Artifact,
 					e.ResponseStatus = f.Response.HTTP.Status
 				}
 				if f.Response.GRPC != nil {
+					e.GRPCCapture = knowledgeGRPC(f)
 					status := f.Response.GRPC.StatusCode
 					e.GRPCStatus = &status
+					e.GRPCStatusDetails = knowledgeRichStatus(f.Response.GRPC.StatusDetails)
 					e.Protocol = "grpc"
 				}
 				for _, msg := range []artifact.Message{f.Request, f.Response} {

@@ -23,7 +23,7 @@ import (
 	"github.com/phrond/wiretap/internal/grpccontract"
 )
 
-const EvidenceVersion = "3.0"
+const EvidenceVersion = "3.1"
 
 type FileRef struct {
 	Path   string `json:"path"`
@@ -158,13 +158,14 @@ func sameJSON(a, b any) bool {
 }
 
 type BodyRef struct {
-	EventID        string `json:"event_id,omitempty"`
-	PayloadName    string `json:"payload_name,omitempty"`
-	FlowID         string `json:"flow_id"`
-	Phase          string `json:"phase"`
-	Kind           string `json:"kind,omitempty"`
-	MessageIndex   *int   `json:"message_index,omitempty"`
-	Representation string `json:"representation"`
+	EventID           string `json:"event_id,omitempty"`
+	PayloadName       string `json:"payload_name,omitempty"`
+	FlowID            string `json:"flow_id"`
+	Phase             string `json:"phase"`
+	Kind              string `json:"kind,omitempty"`
+	MessageIndex      *int   `json:"message_index,omitempty"`
+	StatusDetailIndex *int   `json:"status_detail_index,omitempty"`
+	Representation    string `json:"representation"`
 	FileRef
 	RetainedBytes int `json:"retained_bytes"`
 }
@@ -348,6 +349,11 @@ func (w *Writer) Commit(art *artifact.Artifact) (string, error) {
 	if err := artifact.ValidateInteractions(art); err != nil {
 		return "", err
 	}
+	for _, flow := range art.Traffic {
+		if err := artifact.ValidateGRPCObservation(flow); err != nil {
+			return "", err
+		}
+	}
 	for _, ref := range art.Schemas {
 		if err := validateSchemaBoundary(ref); err != nil {
 			return "", err
@@ -460,6 +466,9 @@ func (w *Writer) Commit(art *artifact.Artifact) (string, error) {
 			attempt.Bodies = append(attempt.Bodies, BodyRef{FlowID: flow.ID, Phase: phase, Representation: representation, FileRef: FileRef{Path: rel, SHA256: hash}, RetainedBytes: len(raw)})
 			body.Text, body.Bytes = "", ""
 		}
+	}
+	if err := w.attachGRPCStatus(&attempt); err != nil {
+		return "", err
 	}
 	if err := w.attachEvents(&attempt); err != nil {
 		return "", err
@@ -730,6 +739,15 @@ func Load(root string) (*Run, []*artifact.Artifact, error) {
 		}
 		seenBodies := map[string]bool{}
 		for _, bodyRef := range attempt.Bodies {
+			if strings.HasPrefix(bodyRef.Kind, "status-") {
+				if err := restoreGRPCStatusBody(root, flowMap, seenBodies, bodyRef); err != nil {
+					return nil, nil, err
+				}
+				continue
+			}
+			if bodyRef.StatusDetailIndex != nil {
+				return nil, nil, errors.New("status selector on non-status attachment")
+			}
 			if bodyRef.Phase == "event" {
 				if err := restoreEventBody(root, flowMap, seenBodies, bodyRef); err != nil {
 					return nil, nil, err
@@ -835,6 +853,9 @@ func Load(root string) (*Run, []*artifact.Artifact, error) {
 					}
 				}
 			}
+		}
+		if err := verifyGRPCStatus(attempt.Capture, seenBodies); err != nil {
+			return nil, nil, err
 		}
 		if err := verifyGRPCPayloads(attempt.Capture); err != nil {
 			return nil, nil, err

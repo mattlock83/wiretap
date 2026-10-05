@@ -80,6 +80,8 @@ type viewerAttempt struct {
 }
 
 type viewerFlow struct {
+	GRPCTimeline                                                                                  []grpcTimelineEntry
+	GRPCTimelineNote                                                                              string
 	Events                                                                                        []viewerEvent
 	EventNote                                                                                     string
 	ID, Channel, AssetID, TraceID, ParentID, Correlation, ParentCorrelation, ContextSource, Error string
@@ -91,6 +93,9 @@ type viewerFlow struct {
 }
 
 type viewerMessage struct {
+	Observation                            string
+	Messages                               []viewerGRPCPayload
+	StatusDetails                          *viewerStatusDetails
 	Method, URL, Status, Headers, Trailers string
 	Body, AttachmentURL, BodyNote          string
 	Protocol                               string
@@ -262,8 +267,11 @@ func writeViewer(root string, run *bundle.Run, captures []*artifact.Artifact, re
 			for _, issue := range capture.SchemaValidation.Errors {
 				attempt.Diagnostics = append(attempt.Diagnostics, issue.Message)
 			}
+			for _, issue := range capture.SchemaValidation.Unavailable {
+				attempt.Diagnostics = append(attempt.Diagnostics, fmt.Sprintf("Validation unavailable (%s %s, schema %s): %s", issue.FlowID, issue.Phase, issue.SchemaID, issue.Message))
+			}
 		}
-		attempt.Attention = capture.TestCase.Status != "pass" || capture.CaptureIncomplete || attempt.ValidationStatus == "fail"
+		attempt.Attention = capture.TestCase.Status != "pass" || capture.CaptureIncomplete || attempt.ValidationStatus == "fail" || attempt.ValidationStatus == "partial"
 		for _, check := range capture.Assertions {
 			if check.Result == "pass" {
 				attempt.ChecksPassed++
@@ -303,6 +311,12 @@ func writeViewer(root string, run *bundle.Run, captures []*artifact.Artifact, re
 			label := protocolLabel(flow.Protocol)
 			if flow.Protocol == "grpc" {
 				requestView, responseView = viewerGRPC(flow.Request.GRPC, true), viewerGRPC(flow.Response.GRPC, false)
+				for i := range requestView.Messages {
+					requestView.Messages[i].Anchor = grpcMessageAnchor(attempt.ID+"/"+flow.ID, "request", requestView.Messages[i].Index)
+				}
+				for i := range responseView.Messages {
+					responseView.Messages[i].Anchor = grpcMessageAnchor(attempt.ID+"/"+flow.ID, "response", responseView.Messages[i].Index)
+				}
 			}
 			var events []viewerEvent
 			eventNote := ""
@@ -314,6 +328,9 @@ func writeViewer(root string, run *bundle.Run, captures []*artifact.Artifact, re
 				attempt.Attention = true
 			}
 			attempt.Flows = append(attempt.Flows, viewerFlow{
+				GRPCTimeline: grpcTimeline(flow, func(direction string, index int) string {
+					return grpcMessageAnchor(attempt.ID+"/"+flow.ID, direction, index)
+				}), GRPCTimelineNote: grpcTimelineNote,
 				Events: events, EventNote: eventNote,
 				Sequence: index + 1, Direction: direction, EvidenceLabel: evidenceLabel,
 				Operation: flowOperation(flow),
@@ -394,46 +411,14 @@ func viewerGRPC(message *artifact.GrpcMessage, request bool) viewerMessage {
 	if message == nil {
 		return viewerMessage{Protocol: "gRPC"}
 	}
-	view := viewerMessage{Protocol: "gRPC", Headers: viewerHeaders(message.Metadata), Trailers: viewerHeaders(message.Trailers)}
+	view := viewerMessage{Protocol: "gRPC", Headers: viewerHeaders(message.Metadata), Trailers: viewerHeaders(message.Trailers), StatusDetails: viewerRichStatus(message.StatusDetails)}
 	if request {
 		view.Method = message.Procedure
 	} else {
 		view.Status = grpcStatusLabel(message.StatusCode)
 	}
-	var parts []string
-	for _, payload := range message.Messages {
-		label := fmt.Sprintf("Message %d", payload.Index+1)
-		if payload.Type != "" {
-			label += " · " + payload.Type
-		}
-		if payload.Compressed {
-			label += " (compressed)"
-		}
-		if payload.Redacted {
-			label += " (redacted)"
-		}
-		if payload.DecodeError != "" {
-			parts = append(parts, label+": "+payload.DecodeError)
-			continue
-		}
-		if payload.Body == nil {
-			parts = append(parts, label+": no retained body")
-			continue
-		}
-		parts = append(parts, label+":\n"+viewerPreview(payload.Body.Text))
-		if payload.Body.Text != "" {
-			sum := sha256.Sum256([]byte(payload.Body.Text))
-			view.Attachments = append(view.Attachments, viewerAttachment{Label: label, URL: "../payloads/" + hex.EncodeToString(sum[:]) + ".bin"})
-		}
-		if payload.Wire != nil {
-			raw, e := base64.StdEncoding.DecodeString(payload.Wire.Bytes)
-			if e == nil {
-				sum := sha256.Sum256(raw)
-				view.Attachments = append(view.Attachments, viewerAttachment{Label: label + " wire bytes", URL: "../payloads/" + hex.EncodeToString(sum[:]) + ".bin"})
-			}
-		}
-	}
-	view.Body = strings.Join(parts, "\n\n")
+	view.Observation = grpcObservationSummary(message.Observation)
+	view.Messages = viewerGRPCPayloads(message)
 	if message.StatusMessage != "" {
 		view.BodyNote = "gRPC message: " + message.StatusMessage
 	}

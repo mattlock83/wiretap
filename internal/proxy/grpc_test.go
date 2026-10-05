@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -97,6 +98,12 @@ func TestGRPCForwardsTrailersAndFramesWithoutModification(t *testing.T) {
 	if !bytes.Equal(response.Body.Bytes(), responseFrame) || exchange.StatusCode != 0 || exchange.Error != "" || exchange.RequestTruncated {
 		t.Fatalf("response=%x exchange=%#v", response.Body.Bytes(), exchange)
 	}
+	if exchange.RequestObservation == nil || exchange.ResponseObservation == nil || !exchange.RequestObservation.EOF || !exchange.ResponseObservation.EOF || exchange.RequestObservation.CompleteFrames != 1 || exchange.ResponseObservation.CompleteFrames != 1 {
+		t.Fatalf("missing complete observations: %#v", exchange)
+	}
+	if !bytes.Equal(exchange.RequestObservation.Frames[0].Payload, requestFrame[5:]) || !bytes.Equal(exchange.ResponseObservation.Frames[0].Payload, responseFrame[5:]) {
+		t.Fatal("observer changed payloads")
+	}
 	if got := response.Result().Trailer.Values("Example-Bin"); len(got) != 2 {
 		t.Fatalf("lost binary trailers: %v", got)
 	}
@@ -133,8 +140,18 @@ func TestGRPCEarlyResponseClosesRequestAndRetainsSafeSnapshot(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("upstream response did not close request body")
 	}
-	if !exchange.RequestTruncated || len(exchange.RequestFrames) > 1024 {
-		t.Fatalf("early response snapshot: %#v", exchange)
+	if exchange.RequestObservation == nil || exchange.RequestObservation.EOF {
+		t.Fatal("early response invented request half-close")
+	}
+	retainedBytes := 0
+	for _, frame := range exchange.RequestObservation.Frames {
+		retainedBytes += 5 + len(frame.Payload)
+	}
+	if partial := exchange.RequestObservation.Partial; partial != nil {
+		retainedBytes += len(partial.Header) + len(partial.Payload)
+	}
+	if !exchange.RequestTruncated || retainedBytes > 1024 {
+		t.Fatalf("early response snapshot: %d retained bytes, %#v", retainedBytes, exchange)
 	}
 }
 
@@ -166,3 +183,98 @@ func (b *trailerBody) Read(data []byte) (int, error) {
 	return n, err
 }
 func (b *trailerBody) Close() error { return nil }
+
+func TestGRPCBidirectionalObservationPreservesForwardingAndInterleaving(t *testing.T) {
+	requestFrames := [][]byte{{0, 0, 0, 0, 1, 1}, {0, 0, 0, 0, 1, 2}}
+	responseFrames := [][]byte{{0, 0, 0, 0, 1, 3}, {0, 0, 0, 0, 1, 4}}
+	upstream := httptest.NewServer(h2c.NewHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/grpc")
+		w.Header().Set("Trailer", "Grpc-Status")
+		for i := range requestFrames {
+			frame := make([]byte, len(requestFrames[i]))
+			if _, err := io.ReadFull(r.Body, frame); err != nil {
+				t.Error(err)
+				return
+			}
+			if !bytes.Equal(frame, requestFrames[i]) {
+				t.Errorf("changed request %x", frame)
+			}
+			if _, err := w.Write(responseFrames[i]); err != nil {
+				t.Error(err)
+				return
+			}
+			w.(http.Flusher).Flush()
+		}
+		if _, err := io.Copy(io.Discard, r.Body); err != nil {
+			t.Error(err)
+			return
+		}
+		w.Header().Set("Grpc-Status", "0")
+	}), &http2.Server{}))
+	defer upstream.Close()
+	transport := NewGRPCTransport("http", nil)
+	defer transport.CloseIdleConnections()
+	reader, writer := io.Pipe()
+	downstream := &signalGRPCResponseWriter{ResponseRecorder: httptest.NewRecorder(), first: make(chan struct{})}
+	sent := make(chan error, 1)
+	go func() {
+		defer writer.Close()
+		if _, err := writer.Write(requestFrames[0]); err != nil {
+			sent <- err
+			return
+		}
+		select {
+		case <-downstream.first:
+		case <-time.After(5 * time.Second):
+			sent <- io.ErrNoProgress
+			return
+		}
+		_, err := writer.Write(requestFrames[1])
+		sent <- err
+	}()
+	request := httptest.NewRequest("POST", "http://capture/example.Service/Chat", reader)
+	request.ProtoMajor = 2
+	request.Header.Set("Content-Type", "application/grpc")
+	var exchange GRPCExchange
+	ForwardGRPC(downstream, request, upstream.URL, "test_to_sut", "", &Admission{RecordGRPC: func(ex GRPCExchange) { exchange = ex }}, 1024, transport)
+	if err := <-sent; err != nil {
+		t.Fatal(err)
+	}
+	if exchange.Error != "" || exchange.StatusCode != 0 || exchange.RequestTruncated || exchange.ResponseTruncated {
+		t.Fatalf("%+v", exchange)
+	}
+	req, res := exchange.RequestObservation, exchange.ResponseObservation
+	if req == nil || res == nil || req.CompleteFrames != 2 || res.CompleteFrames != 2 || !req.EOF || !res.EOF {
+		t.Fatalf("request=%+v response=%+v", req, res)
+	}
+	if req.Frames[0].CompleteSequence >= res.Frames[0].StartSequence || res.Frames[0].CompleteSequence >= req.Frames[1].StartSequence {
+		t.Fatalf("interleaving lost: request=%+v response=%+v", req.Frames, res.Frames)
+	}
+	if !bytes.Equal(downstream.Body.Bytes(), append(responseFrames[0], responseFrames[1]...)) {
+		t.Fatal("forwarded response changed")
+	}
+	foundHalfClose, foundTrailers := false, false
+	for _, event := range exchange.Events {
+		if event.Direction == "request" && event.Kind == "half_close" {
+			foundHalfClose = true
+		}
+		if event.Direction == "response" && event.Kind == "trailers" {
+			foundTrailers = true
+		}
+	}
+	if !foundHalfClose || !foundTrailers {
+		t.Fatalf("lifecycle lost: %+v", exchange.Events)
+	}
+}
+
+type signalGRPCResponseWriter struct {
+	*httptest.ResponseRecorder
+	first chan struct{}
+	once  sync.Once
+}
+
+func (w *signalGRPCResponseWriter) Write(p []byte) (int, error) {
+	n, err := w.ResponseRecorder.Write(p)
+	w.once.Do(func() { close(w.first) })
+	return n, err
+}

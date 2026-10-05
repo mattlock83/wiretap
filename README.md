@@ -49,8 +49,8 @@ complete setup, or go directly to the [JavaScript](sdk/js/README.md),
 OpenAPI specs are required by default for HTTP; individual HTTP APIs can explicitly
 opt out. gRPC requires a Protobuf contract: reflection is the default source,
 with local `.proto` files or a descriptor set as alternatives. See the
-[gRPC guide](docs/grpc-user-guide.md). gRPC exploration and streaming coverage
-are not yet available.
+[gRPC guide](docs/grpc-user-guide.md). Unary and all three streaming shapes support capture and structural coverage.
+gRPC exploration is not yet available.
 Parallel tests sharing one application need working W3C trace propagation from
 its server to its outbound clients. Otherwise run sequentially or isolate
 workers. The application does not need to propagate a Wiretap-specific ID.
@@ -61,7 +61,7 @@ See [configuration](docs/configuration.md) and [tracing](docs/otel-adoption.md).
 | Bundle view | What it tells you |
 | --- | --- |
 | `bundle.json` | The provided APIs and dependencies, their contracts and the recorded tests that exercised them. |
-| APIs and dependencies | Which boundaries and operations were observed, with requests, responses and inferred OpenAPI drafts for mocks. |
+| APIs and dependencies | Which boundaries and operations were observed, with requests, responses and inferred OpenAPI drafts for HTTP mocks. |
 | Contract coverage | Which specified cases were exercised, such as enum values, optional fields and boundaries; gaps and uncertain results remain visible. |
 | Test runs | What executed and what happened, with authored tests separate from generated checks and links to the conditions they exercised. |
 | System overview and verification work | How the recorded APIs fit together and which assumptions, mismatches or gaps need further checks. |
@@ -80,9 +80,9 @@ The bundle format supports consumer-only systems such as UIs, provider-only
 systems without mocks, and mixed systems. Application identity is independent of
 the provided/dependency inventories. Its event representation can retain
 bidirectional gRPC streams, publish/consume messaging, Kafka/Avro and GraphQL
-subscriptions, alongside frozen AsyncAPI or other contract packages. These are
-format capabilities; live capture, validation and coverage adapters currently
-support HTTP and unary gRPC. The existing runtime configuration remains centred
+subscriptions, alongside frozen AsyncAPI or other contract packages. Kafka/Avro, AsyncAPI and GraphQL remain format capabilities. Live capture,
+validation and coverage adapters currently
+support HTTP and native gRPC, including bidirectional streams. The existing runtime configuration remains centred
 on a SUT. See the [format's support boundaries](docs/bundle-evidence.md).
 
 The bundle contains authoritative JSON evidence, frozen schemas and retained

@@ -28,3 +28,24 @@ func TestGRPCFailedCallsRemainOperationObservationsWithoutCoverage(t *testing.T)
 		t.Fatalf("failed observation missing from test: %+v", tests)
 	}
 }
+
+func TestGRPCSamplesPreserveStreamsWithoutFirstMessageShorthand(t *testing.T) {
+	for _, kind := range []string{"unary", "client_streaming", "server_streaming", "bidirectional", ""} {
+		t.Run(kind, func(t *testing.T) {
+			observation := &artifact.GrpcObservation{CompleteFrames: 10, RetainedFrames: 1, OmittedFrames: 9, ObservedBytes: 128, CountsComplete: false, End: "open"}
+			msg := &artifact.GrpcMessage{StreamKind: kind, HTTPStatus: 200, StatusCode: 0, Observation: observation, Messages: []artifact.GrpcPayload{{Index: 0, Body: &artifact.Body{Text: `{"first":true}`}}}}
+			sample := grpcMessageSample(msg)
+			if sample.StreamKind != kind || sample.Observation != observation || sample.GRPCStatus == nil || *sample.GRPCStatus != 0 {
+				t.Fatalf("sample changed authoritative RPC semantics: %+v", sample)
+			}
+			if kind == "unary" && sample.Body != `{"first":true}` || kind != "unary" && sample.Body != "" {
+				t.Fatalf("incorrect first-message shorthand for %s: %q", kind, sample.Body)
+			}
+			msg.Messages = append(msg.Messages, artifact.GrpcPayload{Index: 1, Body: &artifact.Body{Text: `{"second":true}`}})
+			sample = grpcMessageSample(msg)
+			if sample.Body != "" || len(sample.Messages) != 2 || sample.Messages[1].Index != 1 || sample.Observation.CompleteFrames != 10 {
+				t.Fatalf("stream flattened or observed counts derived from retention: %+v", sample)
+			}
+		})
+	}
+}

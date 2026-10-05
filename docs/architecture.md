@@ -1,6 +1,6 @@
 # Wiretap architecture
 
-Wiretap captures HTTP and unary gRPC exchanges during existing tests and turns them into a
+Wiretap captures HTTP and native gRPC exchanges during existing tests and turns them into a
 portable record of tested API behaviour and observed dependency assumptions.
 In capture mode, the test harness owns the application, mocks, test execution,
 and assertions. Wiretap owns capture, correlation, schema validation, and the
@@ -128,7 +128,8 @@ Project-owned hooks exchange JSON through fresh command processes; code, runtime
 bindings and fixture state are never copied into the output bundle. See
 [exploration](exploration.md) for lifecycle, checks and current limits.
 
-Broader transport support (complete gRPC streaming, WebSocket and gRPC-Web)
-remains future work. Current guarantees centre on bounded HTTP and unary gRPC
-request/response evidence, with HTTPS trust configured as described in the
+Native gRPC includes unary and all streaming shapes, with bounded incremental
+observation, per-message evidence and direction-completeness checks. WebSocket,
+Connect wire format and gRPC-Web adapters remain future work. Current guarantees
+centre on bounded HTTP and native gRPC evidence, with HTTPS trust configured as described in the
 [trust guide](https-trust.md).

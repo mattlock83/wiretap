@@ -511,6 +511,9 @@ func attemptMarkdown(run *bundle.Run, capture *artifact.Artifact, evidencePath s
 		for _, issue := range capture.SchemaValidation.Errors {
 			fmt.Fprintf(&page, "- %s (`%s`, %s, schema `%s`): %s\n", escape(orUnknown(issue.FlowID)), escape(issue.Channel), escape(issue.Phase), escape(issue.SchemaID), escape(issue.Message))
 		}
+		for _, issue := range capture.SchemaValidation.Unavailable {
+			fmt.Fprintf(&page, "- Validation unavailable: %s (`%s`, %s, schema `%s`): %s\n", escape(orUnknown(issue.FlowID)), escape(issue.Channel), escape(issue.Phase), escape(issue.SchemaID), escape(issue.Message))
+		}
 	} else {
 		page.WriteString("Schema validation outcome was not recorded.\n\n")
 	}
@@ -594,6 +597,7 @@ func attemptMarkdown(run *bundle.Run, capture *artifact.Artifact, evidencePath s
 			writeInteractionMarkdown(&page, flow)
 			continue
 		}
+		writeGRPCTimeline(&page, flow)
 		for _, part := range []struct {
 			name string
 			msg  artifact.Message
@@ -607,6 +611,7 @@ func attemptMarkdown(run *bundle.Run, capture *artifact.Artifact, evidencePath s
 				if m.CaptureTruncated {
 					page.WriteString("Capture limited; retained data is incomplete.\n\n")
 				}
+				page.WriteString(escape(grpcObservationSummary(m.Observation)) + "\n\n")
 				if part.name == "Request" {
 					page.WriteString("Procedure: `" + escape(m.Procedure) + "`.\n\n")
 				} else {
@@ -623,23 +628,26 @@ func attemptMarkdown(run *bundle.Run, capture *artifact.Artifact, evidencePath s
 					}
 				}
 				page.WriteString("\n")
+				writeRichStatus(&page, m.StatusDetails)
 				for _, payload := range m.Messages {
-					fmt.Fprintf(&page, "#### Message %d\n\n", payload.Index+1)
+					fmt.Fprintf(&page, "<a id=\"%s\"></a>\n\n#### Message %d\n\n", grpcMessageAnchor(flow.ID, strings.ToLower(part.name), payload.Index), payload.Index)
+					page.WriteString(grpcPayloadTiming(payload.Observation) + "\n\n")
 					if payload.Type != "" {
 						page.WriteString("Protobuf type: `" + escape(payload.Type) + "`.\n\n")
 					}
+					if payload.DecodeState != "" {
+						page.WriteString("Payload decoding: **" + escape(payload.DecodeState) + "**.\n\n")
+					}
 					if payload.DecodeError != "" {
 						page.WriteString("Decode/retention: " + escape(payload.DecodeError) + ".\n\n")
-						continue
 					}
 					if payload.Redacted {
 						page.WriteString("Fields redacted before bundle persistence.\n\n")
 					}
 					if payload.Body == nil {
-						page.WriteString("No payload retained.\n\n")
-						continue
+						page.WriteString("No decoded payload retained.\n\n")
 					}
-					if payload.Body.Text != "" {
+					if payload.Body != nil && payload.Body.Text != "" {
 						raw := []byte(payload.Body.Text)
 						hash := sha256.Sum256(raw)
 						fmt.Fprintf(&page, "[Retained JSON payload](../../payloads/%s.bin).\n\n", hex.EncodeToString(hash[:]))

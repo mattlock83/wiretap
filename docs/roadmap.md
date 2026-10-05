@@ -118,7 +118,7 @@ Wiretap already provides:
 
 - A local binary, HTTP control interface, CLI and thin Go/JavaScript lifecycle
   integrations for existing tests.
-- HTTP/OpenAPI and native unary gRPC/Protobuf capture, validation and bounded
+- HTTP/OpenAPI and native gRPC/Protobuf capture for all four RPC shapes, validation and bounded
   contract-condition coverage. gRPC uses reflection by default, with local
   contracts as an alternative.
 - OKF bundles containing authoritative JSON evidence, frozen contracts and
@@ -426,9 +426,9 @@ resulting examples and checks; duplicate events do not produce duplicate PRs.
 
 ### Phase 5: extend coverage without fragmenting the product
 
-Close the documented unary gRPC interoperability and rich-error gaps, then add
-streaming capture, execution and coverage with explicit message and lifecycle
-semantics. Extend exploration to Protobuf constraints that can actually be
+Native gRPC interoperability, rich errors and streaming capture/coverage are
+implemented with explicit message and lifecycle semantics. Build gRPC execution
+on that evidence. Extend exploration to Protobuf constraints that can actually be
 evaluated; do not invent error-code or validation requirements from structural
 types alone.
 
@@ -447,7 +447,7 @@ examples; round-trippable portable evidence; truthful coverage limits; and local
 CI execution. A new transport can be added without replacing users' test
 frameworks or changing the meaning of earlier results.
 
-Small gRPC completion work and schema fixes should ship earlier where useful.
+Schema fixes and protocol hardening should ship earlier where useful.
 Broadening the protocol list must not delay the first complete assurance loop.
 
 ## Registry and interactive workspace design
@@ -767,8 +767,7 @@ Add a bounded registry design/spike alongside that implementation:
 4. Recruit an open-source maintainer and a two-team private design partner; test
    useful reuse, willingness to pay and a complete export path.
 
-Run the bounded Hegel feasibility spike and finish small unary gRPC gaps as
-capacity permits. Defer broad protocol expansion, generalized simulation,
+Run the bounded Hegel feasibility spike as capacity permits. Defer broad protocol expansion, generalized simulation,
 hosted execution and richer search until the initial comparison-to-verification
 loop is trustworthy. Registry design can proceed early; commercial coordination
 must build on working local capabilities.

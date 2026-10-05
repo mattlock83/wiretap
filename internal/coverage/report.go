@@ -104,6 +104,7 @@ type SpecOperationSamples struct {
 }
 
 type FlowSample struct {
+	GRPCEvents         []artifact.GrpcEvent  `json:"grpc_events,omitempty" yaml:"grpc_events,omitempty"`
 	Interaction        *artifact.Interaction `json:"interaction,omitempty" yaml:"interaction,omitempty"`
 	CaptureIncomplete  bool                  `json:"capture_incomplete,omitempty" yaml:"capture_incomplete,omitempty"`
 	RequestSpanID      string                `json:"request_span_id,omitempty" yaml:"request_span_id,omitempty"`
@@ -129,17 +130,20 @@ type FlowSample struct {
 }
 
 type InteractionMessage struct {
-	Procedure    string                 `json:"procedure,omitempty" yaml:"procedure,omitempty"`
-	GRPCStatus   *int                   `json:"grpc_status,omitempty" yaml:"grpc_status,omitempty"`
-	HTTPStatus   int                    `json:"http_status,omitempty" yaml:"http_status,omitempty"`
-	Messages     []artifact.GrpcPayload `json:"messages,omitempty" yaml:"messages,omitempty"`
-	Method       string                 `json:"method,omitempty" yaml:"method,omitempty"`
-	URL          string                 `json:"url,omitempty" yaml:"url,omitempty"`
-	Status       int                    `json:"status,omitempty" yaml:"status,omitempty"`
-	Headers      artifact.Headers       `json:"headers,omitempty" yaml:"headers,omitempty"`
-	Trailers     artifact.Headers       `json:"trailers,omitempty" yaml:"trailers,omitempty"`
-	Body         string                 `json:"body,omitempty" yaml:"body,omitempty"`
-	ArtifactBody *artifact.Body         `json:"-" yaml:"-"`
+	StreamKind    string                      `json:"stream_kind,omitempty" yaml:"stream_kind,omitempty"`
+	Observation   *artifact.GrpcObservation   `json:"observation,omitempty" yaml:"observation,omitempty"`
+	StatusDetails *artifact.GrpcStatusDetails `json:"status_details,omitempty" yaml:"status_details,omitempty"`
+	Procedure     string                      `json:"procedure,omitempty" yaml:"procedure,omitempty"`
+	GRPCStatus    *int                        `json:"grpc_status,omitempty" yaml:"grpc_status,omitempty"`
+	HTTPStatus    int                         `json:"http_status,omitempty" yaml:"http_status,omitempty"`
+	Messages      []artifact.GrpcPayload      `json:"messages,omitempty" yaml:"messages,omitempty"`
+	Method        string                      `json:"method,omitempty" yaml:"method,omitempty"`
+	URL           string                      `json:"url,omitempty" yaml:"url,omitempty"`
+	Status        int                         `json:"status,omitempty" yaml:"status,omitempty"`
+	Headers       artifact.Headers            `json:"headers,omitempty" yaml:"headers,omitempty"`
+	Trailers      artifact.Headers            `json:"trailers,omitempty" yaml:"trailers,omitempty"`
+	Body          string                      `json:"body,omitempty" yaml:"body,omitempty"`
+	ArtifactBody  *artifact.Body              `json:"-" yaml:"-"`
 }
 
 type loadedSchema struct {
@@ -448,7 +452,7 @@ func loadSchemas(schemas []artifact.SchemaRef) ([]*loadedSchema, []string) {
 				notes = append(notes, fmt.Sprintf("Protobuf schema %q failed to read: %v", schema.ID, err))
 			}
 		} else {
-			notes = append(notes, fmt.Sprintf("Schema %q has unsupported measurement type %q; only OpenAPI and unary Protobuf RPC coverage are supported. Its coverage denominator is unknown.", schema.ID, schema.Type))
+			notes = append(notes, fmt.Sprintf("Schema %q has unsupported measurement type %q; only OpenAPI and Protobuf RPC coverage are supported. Its coverage denominator is unknown.", schema.ID, schema.Type))
 		}
 		seen[key] = entry
 	}
@@ -733,6 +737,7 @@ func flowSampleFromFlow(entry flowEntry) FlowSample {
 	flow := entry.Flow
 	sample := FlowSample{
 		Interaction:        flow.Interaction,
+		GRPCEvents:         flow.GRPCEvents,
 		CaptureIncomplete:  entry.CaptureIncomplete,
 		TestCase:           entry.TestCase,
 		TestStatus:         entry.Status,
@@ -776,13 +781,13 @@ func grpcMessageSample(msg *artifact.GrpcMessage) InteractionMessage {
 	if msg == nil {
 		return InteractionMessage{}
 	}
-	result := InteractionMessage{Procedure: msg.Procedure, Method: msg.Procedure, URL: msg.Procedure, Headers: msg.Metadata, Trailers: msg.Trailers, Messages: msg.Messages, HTTPStatus: msg.HTTPStatus}
+	result := InteractionMessage{StreamKind: msg.StreamKind, Observation: msg.Observation, StatusDetails: msg.StatusDetails, Procedure: msg.Procedure, Method: msg.Procedure, URL: msg.Procedure, Headers: msg.Metadata, Trailers: msg.Trailers, Messages: msg.Messages, HTTPStatus: msg.HTTPStatus}
 	if msg.HTTPStatus != 0 {
 		status := msg.StatusCode
 		result.GRPCStatus = &status
 		result.Status = msg.StatusCode
 	}
-	if len(msg.Messages) > 0 {
+	if msg.StreamKind == "unary" && len(msg.Messages) == 1 {
 		result.Body = bodyPreview(msg.Messages[0].Body)
 	}
 	return result
@@ -794,16 +799,15 @@ func grpcCoverageEligible(entry flowEntry, schema *loadedSchema) bool {
 		return false
 	}
 	method := schema.GRPC.Methods[flow.Request.GRPC.Procedure]
-	if method == nil || method.IsStreamingClient() || method.IsStreamingServer() {
+	if method == nil {
 		return false
 	}
-	if _, err := decodeGRPCCoverage(flow.Request.GRPC, method.Input(), schema.GRPC); err != nil {
+	requireObservation := method.IsStreamingClient() || method.IsStreamingServer()
+	if _, err := decodeGRPCDirection(flow.Request.GRPC, method.Input(), schema.GRPC, method.IsStreamingClient(), true, requireObservation); err != nil {
 		return false
 	}
-	if flow.Response.GRPC.StatusCode == 0 || len(flow.Response.GRPC.Messages) > 0 {
-		if _, err := decodeGRPCCoverage(flow.Response.GRPC, method.Output(), schema.GRPC); err != nil {
-			return false
-		}
+	if _, err := decodeGRPCDirection(flow.Response.GRPC, method.Output(), schema.GRPC, method.IsStreamingServer(), flow.Response.GRPC.StatusCode == 0, requireObservation); err != nil {
+		return false
 	}
 	return true
 }

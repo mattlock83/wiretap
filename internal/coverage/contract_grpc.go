@@ -277,11 +277,25 @@ func (n *grpcConditions) measure(msg protoreflect.Message, path string, e Contra
 	}
 }
 
-func decodeGRPCCoverage(side *artifact.GrpcMessage, desc protoreflect.MessageDescriptor, contract *grpccontract.Contract) (protoreflect.Message, error) {
-	if side == nil || side.CaptureTruncated || len(side.Messages) != 1 {
-		return nil, fmt.Errorf("unary message missing, truncated or has invalid cardinality")
+func decodeGRPCDirection(side *artifact.GrpcMessage, desc protoreflect.MessageDescriptor, contract *grpccontract.Contract, streaming, required, observationRequired bool) ([]protoreflect.Message, error) {
+	if !artifact.GRPCDirectionComplete(side, observationRequired) {
+		return nil, fmt.Errorf("message direction is incomplete, omitted or unavailable")
 	}
-	p := side.Messages[0]
+	if !streaming && (len(side.Messages) > 1 || required && len(side.Messages) != 1) {
+		return nil, fmt.Errorf("invalid unary-side message cardinality")
+	}
+	messages := make([]protoreflect.Message, 0, len(side.Messages))
+	for _, payload := range side.Messages {
+		msg, err := decodeGRPCPayloadCoverage(side, payload, desc, contract)
+		if err != nil {
+			return messages, err
+		}
+		messages = append(messages, msg)
+	}
+	return messages, nil
+}
+
+func decodeGRPCPayloadCoverage(side *artifact.GrpcMessage, p artifact.GrpcPayload, desc protoreflect.MessageDescriptor, contract *grpccontract.Contract) (protoreflect.Message, error) {
 	if p.Redacted || p.DecodeError != "" || p.Wire == nil || p.Wire.Truncated {
 		return nil, fmt.Errorf("payload is redacted, undecodable or unavailable")
 	}
@@ -371,7 +385,7 @@ func measureGRPCContract(spec *ContractSpec, ref artifact.SchemaRef, run *bundle
 		spec.Notes = append(spec.Notes, "Invalid descriptor: "+err.Error())
 		return
 	}
-	spec.Notes = append(spec.Notes, "Structural Protobuf conditions use field presence and values, not JSON defaults. Statuses are observations, not a required set. Semantic annotations and streaming are unsupported.")
+	spec.Notes = append(spec.Notes, "Structural Protobuf conditions use field presence and values, not JSON defaults. Statuses are observations, not a required set. Semantic annotations and cross-message business invariants are not inferred. Stream length is not a coverage denominator.")
 	for _, procedure := range sortedMapKeys(contract.Methods) {
 		if len(spec.Targets) >= grpcMaxConditionTargets-1 {
 			(&grpcConditionBuilder{spec: spec, procedure: procedure, phase: "method"}).limit(procedure, "")
@@ -380,10 +394,6 @@ func measureGRPCContract(spec *ContractSpec, ref artifact.SchemaRef, run *bundle
 		method := contract.Methods[procedure]
 		b := &grpcConditionBuilder{spec: spec, procedure: procedure, phase: "method", opKey: contractDigest([]string{ProtobufRulesVersion, "grpc", id, procedure})}
 		op := b.add(procedure, "", "operation", "exercised")
-		if method.IsStreamingClient() || method.IsStreamingServer() {
-			op.State, op.Feasibility, op.Reason = "unsupported", "unknown", "Streaming capture and coverage are not yet verified"
-			continue
-		}
 		b.phase = "request"
 		request := b.node(method.Input(), "/fields", string(method.Input().FullName()), map[protoreflect.FullName]bool{})
 		b.phase = "response"
@@ -425,29 +435,30 @@ func measureGRPCContract(spec *ContractSpec, ref artifact.SchemaRef, run *bundle
 				if a.TestCase.Status != "pass" || a.CaptureIncomplete || f.TransportError != "" {
 					e.Result, e.Reason = "unknown", "Failed, incomplete or transport-failed attempt cannot earn coverage"
 				}
-				in, inErr := decodeGRPCCoverage(f.Request.GRPC, method.Input(), contract)
-				var out protoreflect.Message
+				requireObservation := method.IsStreamingClient() || method.IsStreamingServer()
+				in, inErr := decodeGRPCDirection(f.Request.GRPC, method.Input(), contract, method.IsStreamingClient(), true, requireObservation)
+				var out []protoreflect.Message
 				var outErr error
 				res := f.Response.GRPC
 				validStatus := res != nil && res.HTTPStatus == 200 && res.StatusCode >= 0 && res.StatusCode <= 16 && !res.CaptureTruncated
-				if validStatus && (res.StatusCode == 0 || len(res.Messages) > 0) {
-					out, outErr = decodeGRPCCoverage(res, method.Output(), contract)
+				if validStatus {
+					out, outErr = decodeGRPCDirection(res, method.Output(), contract, method.IsStreamingServer(), res.StatusCode == 0, requireObservation)
 				}
 				if !validStatus || inErr != nil || outErr != nil {
-					e.Result, e.Validation, e.Reason = "unknown", "unknown", "Incomplete terminal status or invalid/unavailable unary protobuf message"
+					e.Result, e.Validation, e.Reason = "unknown", "unknown", "Incomplete terminal status or invalid/unavailable protobuf message evidence"
 				}
 				op.observe(e)
 				for _, side := range []struct {
-					phase   string
-					node    *grpcConditions
-					message protoreflect.Message
-					err     error
+					phase    string
+					node     *grpcConditions
+					messages []protoreflect.Message
+					err      error
 				}{{"request", request, in, inErr}, {"response", response, out, outErr}} {
 					ce := e
 					ce.Phase = side.phase
-					if side.message == nil {
+					if len(side.messages) == 0 {
 						// A legitimate non-OK response without a result does not exercise output fields.
-						if side.phase == "response" && validStatus && res.StatusCode != 0 && len(res.Messages) == 0 {
+						if side.err == nil && validStatus {
 							continue
 						}
 						for _, target := range side.node.targets {
@@ -455,33 +466,35 @@ func measureGRPCContract(spec *ContractSpec, ref artifact.SchemaRef, run *bundle
 						}
 						continue
 					}
-					zero := 0
-					ce.MessageIndex = &zero
-					if grpcMessageUnknown(side.message) {
-						ce.Result, ce.Validation, ce.Reason = "unknown", "unknown", "Unknown protobuf wire fields, enum numbers or extensions limit payload assurance"
-						for _, target := range side.node.targets {
-							target.observe(ce)
-						}
-					}
-					hits := []ConditionHit{}
-					side.node.measure(side.message, "/messages/0/body", ce, &hits)
-					if len(hits) >= grpcMaxConditionTargets {
-						unavailable := ce
-						unavailable.Result, unavailable.Validation, unavailable.Reason = "unknown", "unknown", "Per-message condition observation limit reached"
-						for _, target := range side.node.targets {
-							if target.State != "covered" {
-								target.observe(unavailable)
+					for messageIndex, message := range side.messages {
+						ce := ce
+						ce.MessageIndex = &messageIndex
+						if grpcMessageUnknown(message) {
+							ce.Result, ce.Validation, ce.Reason = "unknown", "unknown", "Unknown protobuf wire fields, enum numbers or extensions limit payload assurance"
+							for _, target := range side.node.targets {
+								target.observe(ce)
 							}
 						}
-					}
-					if len(hits) > 0 {
-						sort.Slice(hits, func(i, j int) bool {
-							return hits[i].Key+hits[i].InstanceLocation < hits[j].Key+hits[j].InstanceLocation
-						})
-						spec.Combinations = append(spec.Combinations, ContractCombination{Fingerprint: contractDigest(struct {
-							Profile, Operation, Phase string
-							Hits                      []ConditionHit
-						}{ProtobufRulesVersion, b.opKey, side.phase, hits}), OperationKey: b.opKey, Phase: side.phase, Hits: hits, Evidence: ce})
+						hits := []ConditionHit{}
+						side.node.measure(message, fmt.Sprintf("/messages/%d/body", messageIndex), ce, &hits)
+						if len(hits) >= grpcMaxConditionTargets {
+							unavailable := ce
+							unavailable.Result, unavailable.Validation, unavailable.Reason = "unknown", "unknown", "Per-message condition observation limit reached"
+							for _, target := range side.node.targets {
+								if target.State != "covered" {
+									target.observe(unavailable)
+								}
+							}
+						}
+						if len(hits) > 0 {
+							sort.Slice(hits, func(i, j int) bool {
+								return hits[i].Key+hits[i].InstanceLocation < hits[j].Key+hits[j].InstanceLocation
+							})
+							spec.Combinations = append(spec.Combinations, ContractCombination{Fingerprint: contractDigest(struct {
+								Profile, Operation, Phase string
+								Hits                      []ConditionHit
+							}{ProtobufRulesVersion, b.opKey, side.phase, hits}), OperationKey: b.opKey, Phase: side.phase, Hits: hits, Evidence: ce})
+						}
 					}
 				}
 			}

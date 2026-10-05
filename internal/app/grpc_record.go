@@ -4,12 +4,12 @@ import (
 	"bytes"
 	"compress/gzip"
 	"encoding/base64"
-	"encoding/binary"
-	"fmt"
 	"io"
 	"strings"
 
 	"github.com/phrond/wiretap/internal/artifact"
+	"github.com/phrond/wiretap/internal/capture"
+	"github.com/phrond/wiretap/internal/grpccontract"
 	"github.com/phrond/wiretap/internal/proxy"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
@@ -64,114 +64,117 @@ func (s *TestCaseStore) RecordGRPC(ex proxy.GRPCExchange) {
 		}
 		request.StreamKind, response.StreamKind = kind, kind
 	}
-	request.Messages = parseGRPCFrames(ex.RequestFrames, ex.RequestTruncated, encoding, in, s.maxBodyBytes, resolver)
-	response.Messages = parseGRPCFrames(ex.ResponseFrames, ex.ResponseTruncated, firstHeaderValue(response.Metadata, "Grpc-Encoding"), out, s.maxBodyBytes, resolver)
+	request.Observation, request.Messages = observedGRPCMessages(ex.RequestObservation, encoding, in, s.maxBodyBytes, resolver)
+	response.Observation, response.Messages = observedGRPCMessages(ex.ResponseObservation, firstHeaderValue(response.Metadata, "Grpc-Encoding"), out, s.maxBodyBytes, resolver)
+	grpccontract.CaptureStatusDetails(response, contract)
 	if ex.ID == "" {
 		ex.ID = s.nextFlowID()
 	}
 	flow := artifact.Flow{ID: ex.ID, Protocol: "grpc", Channel: ex.Channel, AssetID: ex.AssetID, TraceID: ex.TraceID, RequestSpanID: ex.RequestSpanID, TraceContextSource: ex.TraceContextSource, TestCorrelation: ex.TestCorrelation, StartedAt: ex.StartedAt, DurationMS: ex.Duration.Milliseconds(), TransportError: ex.Error, Request: artifact.Message{GRPC: request}, Response: artifact.Message{GRPC: response}}
+	for _, event := range ex.Events {
+		flow.GRPCEvents = append(flow.GRPCEvents, artifact.GrpcEvent{Sequence: event.Sequence, OffsetNS: event.OffsetNS, Direction: event.Direction, Kind: event.Kind})
+	}
 	s.active.flows = append(s.active.flows, flow)
 }
 
-func parseGRPCFrames(raw []byte, truncated bool, encoding string, desc protoreflect.MessageDescriptor, maxBytes int64, resolvers ...*dynamicpb.Types) []artifact.GrpcPayload {
-	var payloads []artifact.GrpcPayload
-	if maxBytes <= 0 || maxBytes > 16<<20 {
-		maxBytes = 16 << 20
+func decodeGRPCPayload(message []byte, compressed bool, encoding string, desc protoreflect.MessageDescriptor, remaining *int64, resolver *dynamicpb.Types) artifact.GrpcPayload {
+	item := artifact.GrpcPayload{Compressed: compressed, Wire: &artifact.Body{Encoding: "base64", Bytes: base64.StdEncoding.EncodeToString(message), OriginalBytes: int64(len(message))}}
+	if desc != nil {
+		item.Type = string(desc.FullName())
 	}
-	remainingDecode := maxBytes
-	for len(raw) > 0 {
-		if len(payloads) >= 1023 {
-			payloads = append(payloads, artifact.GrpcPayload{Index: len(payloads), DecodeError: "gRPC message retention limit exceeded"})
-			break
+	fail := func(reason string) artifact.GrpcPayload {
+		item.DecodeError = reason
+		item.DecodeState = "unavailable"
+		return item
+	}
+	invalid := func(reason string) artifact.GrpcPayload {
+		item.DecodeError = reason
+		item.DecodeState = "invalid"
+		return item
+	}
+	if *remaining <= 0 {
+		return fail("decoded message budget exhausted")
+	}
+	if compressed {
+		if encoding != "gzip" {
+			return fail("unsupported gRPC message compression: " + encoding)
 		}
-		item := artifact.GrpcPayload{Index: len(payloads)}
-		if desc != nil {
-			item.Type = string(desc.FullName())
-		}
-		if len(raw) < 5 {
-			item.DecodeError = "incomplete gRPC frame header"
-			payloads = append(payloads, item)
-			break
-		}
-		flag := raw[0]
-		size := uint64(binary.BigEndian.Uint32(raw[1:5]))
-		raw = raw[5:]
-		if flag > 1 {
-			item.DecodeError = fmt.Sprintf("unsupported gRPC compression flag %d", flag)
-			payloads = append(payloads, item)
-			break
-		}
-		item.Compressed = flag == 1
-		if size > uint64(len(raw)) {
-			item.DecodeError = "incomplete gRPC message"
-			if truncated {
-				item.DecodeError = "capture truncated within gRPC message"
-			}
-			payloads = append(payloads, item)
-			break
-		}
-		message := raw[:int(size)]
-		raw = raw[int(size):]
-		if size > uint64(maxBytes) {
-			item.DecodeError = "gRPC message exceeds capture limit"
-			payloads = append(payloads, item)
-			continue
-		}
-		item.Wire = &artifact.Body{Encoding: "base64", Bytes: base64.StdEncoding.EncodeToString(message), OriginalBytes: int64(size)}
-		if item.Compressed {
-			if !strings.EqualFold(encoding, "gzip") {
-				item.DecodeError = "unsupported gRPC message compression: " + encoding
-				payloads = append(payloads, item)
-				continue
-			}
-			reader, err := gzip.NewReader(bytes.NewReader(message))
-			if err != nil {
-				item.DecodeError = "invalid gzip message"
-				payloads = append(payloads, item)
-				continue
-			}
-			decoded, err := io.ReadAll(io.LimitReader(reader, remainingDecode+1))
-			_ = reader.Close()
-			if err != nil || int64(len(decoded)) > remainingDecode {
-				item.DecodeError = "gzip message exceeds capture limit or is invalid"
-				payloads = append(payloads, item)
-				break
-			}
-			message = decoded
-		}
-		if desc == nil {
-			item.DecodeError = "procedure not found in selected protobuf contract"
-			payloads = append(payloads, item)
-			continue
-		}
-		instance := dynamicpb.NewMessage(desc)
-		unmarshal := proto.UnmarshalOptions{RecursionLimit: 100}
-		if len(resolvers) > 0 && resolvers[0] != nil {
-			unmarshal.Resolver = resolvers[0]
-		}
-		if err := unmarshal.Unmarshal(message, instance); err != nil {
-			item.DecodeError = "protobuf decode failed: " + err.Error()
-			payloads = append(payloads, item)
-			continue
-		}
-		options := protojson.MarshalOptions{UseProtoNames: true}
-		if len(resolvers) > 0 && resolvers[0] != nil {
-			options.Resolver = resolvers[0]
-		}
-		jsonBytes, err := options.Marshal(instance)
+		reader, err := gzip.NewReader(bytes.NewReader(message))
 		if err != nil {
-			item.DecodeError = "protobuf JSON conversion failed: " + err.Error()
-			payloads = append(payloads, item)
-			continue
+			return invalid("invalid gzip message")
 		}
-		if int64(len(jsonBytes)) > remainingDecode {
-			item.DecodeError = "decoded JSON exceeds capture limit"
-			payloads = append(payloads, item)
-			break
+		decoded, err := io.ReadAll(io.LimitReader(reader, *remaining+1))
+		_ = reader.Close()
+		if int64(len(decoded)) > *remaining {
+			*remaining = 0
+			return fail("gzip message exceeds capture limit")
 		}
-		remainingDecode -= int64(len(jsonBytes))
-		item.Body = &artifact.Body{Encoding: "json", Text: string(jsonBytes), OriginalBytes: int64(len(message))}
-		payloads = append(payloads, item)
+		if err != nil {
+			// A checksum or truncated-stream error can arrive after expansion.
+			// Failed decoding still consumes the direction's work budget.
+			*remaining -= int64(len(decoded))
+			return invalid("invalid gzip message")
+		}
+		message = decoded
 	}
-	return payloads
+	// Bound work as well as retained JSON: unknown Protobuf fields can expand
+	// substantially under gzip while their JSON projection remains just {}.
+	if int64(len(message)) > *remaining {
+		*remaining = 0
+		return fail("protobuf decode bytes exceed capture limit")
+	}
+	*remaining -= int64(len(message))
+	if desc == nil {
+		return fail("procedure not found in selected protobuf contract")
+	}
+	instance := dynamicpb.NewMessage(desc)
+	unmarshal := proto.UnmarshalOptions{RecursionLimit: 100}
+	if resolver != nil {
+		unmarshal.Resolver = resolver
+	}
+	if err := unmarshal.Unmarshal(message, instance); err != nil {
+		// protobuf-go exposes no sentinel for this resource limit. Its pinned
+		// decoder reports this text; depth exhaustion is not malformed traffic.
+		if strings.Contains(err.Error(), "exceeded maximum recursion depth") {
+			return fail("protobuf recursion limit exceeded")
+		}
+		return invalid("protobuf decode failed: " + err.Error())
+	}
+	options := protojson.MarshalOptions{UseProtoNames: true}
+	if resolver != nil {
+		options.Resolver = resolver
+	}
+	jsonBytes, err := options.Marshal(instance)
+	if err != nil {
+		return fail("protobuf JSON conversion failed: " + err.Error())
+	}
+	if int64(len(jsonBytes)) > *remaining {
+		*remaining = 0
+		return fail("decoded JSON exceeds capture limit")
+	}
+	*remaining -= int64(len(jsonBytes))
+	item.Body = &artifact.Body{Encoding: "json", Text: string(jsonBytes), OriginalBytes: int64(len(message))}
+	item.DecodeState = "decoded"
+	return item
+}
+
+func observedGRPCMessages(observed *capture.GRPCObservation, encoding string, desc protoreflect.MessageDescriptor, limit int64, resolver *dynamicpb.Types) (*artifact.GrpcObservation, []artifact.GrpcPayload) {
+	if limit <= 0 || limit > 16<<20 {
+		limit = 16 << 20
+	}
+	summary := &artifact.GrpcObservation{CompleteFrames: observed.CompleteFrames, RetainedFrames: observed.RetainedFrames, OmittedFrames: observed.OmittedFrames, ObservedBytes: observed.ObservedBytes, CountsComplete: observed.CountsComplete, EOF: observed.EOF, End: observed.End, Error: observed.Error}
+	if o := observed.Omission; o != nil {
+		summary.Omitted = &artifact.GrpcOmission{FirstIndex: o.FirstIndex, Count: o.Count}
+	}
+	if p := observed.Partial; p != nil {
+		summary.Partial = &artifact.GrpcPartialFrame{Index: p.Index, HeaderBytes: len(p.Header), WireBytes: uint64(p.WireBytes), ObservedPayloadBytes: p.PayloadBytes, StartedOffsetNS: p.StartedOffsetNS, StartSequence: p.StartSequence}
+	}
+	messages := make([]artifact.GrpcPayload, 0, len(observed.Frames))
+	for _, frame := range observed.Frames {
+		payload := decodeGRPCPayload(frame.Payload, frame.CompressionFlag == 1, encoding, desc, &limit, resolver)
+		payload.Index = int(frame.Index)
+		payload.Observation = &artifact.GrpcPayloadObservation{WireBytes: uint64(frame.WireBytes), StartedOffsetNS: frame.StartedOffsetNS, CompletedOffsetNS: frame.CompletedOffsetNS, StartSequence: frame.StartSequence, CompleteSequence: frame.CompleteSequence}
+		messages = append(messages, payload)
+	}
+	return summary, messages
 }

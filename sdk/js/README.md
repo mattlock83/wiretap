@@ -128,6 +128,15 @@ create or retarget a gRPC boundary per test. gRPC contracts cannot be disabled a
 does not instrument `@grpc/grpc-js` automatically; use standard OTel gRPC
 instrumentation for parallel test ownership. See the [gRPC guide](../../docs/grpc-user-guide.md).
 
+The [native Node gRPC example](../../examples/grpc-boundaries/node/README.md)
+tests this with ordinary `@grpc/grpc-js` clients and mocks, local proto sources,
+parallel calls, an HTTP provider calling a gRPC mock, and TLS. Its
+[`tracing.cjs`](../../examples/grpc-boundaries/node/tracing.cjs) initializes
+application-owned standard gRPC/HTTP instrumentation before client modules are
+loaded; `startCapture({ instrumentation: false })` reuses that existing setup.
+The gRPC packages stay in the example, outside the SDK's dependencies. No
+Wiretap-specific RPC client, collector or reflection service is required.
+
 API-provided file paths resolve on the runtime host. HTTP schemas are required by
 default. Set `schemaRequired: false` only on an API whose spec is intentionally
 absent; supplied specs still validate strictly. Dependencies retain this same

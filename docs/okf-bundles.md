@@ -53,7 +53,8 @@ A covered condition can also have observations from failed attempts; it does
 not mean every attempt passed. The catalogue preserves those observations and
 conditions exercised together in each message. See the versioned
 [contract coverage rules](contract-coverage-rules.md) for precise semantics and
-supported OpenAPI constraints and unary Protobuf field conditions.
+supported OpenAPI constraints and Protobuf field conditions from complete unary
+or streaming RPCs.
 
 **Invalid-input coverage** is separate. Exploration counts the supported
 rejection targets generated from its selected scenario, not every possible
@@ -109,7 +110,8 @@ The format also supports ordered event recordings for bidirectional gRPC,
 publish/consume messaging and subscriptions. Transport, protocol and payload
 encoding are recorded separately, allowing Kafka with Avro, AsyncAPI contract
 packages and GraphQL operations/subscriptions. This is storage support: new live
-capture adapters, stream coverage and non-HTTP exploration are separate work.
+capture adapters for messaging and GraphQL, plus non-HTTP exploration, are
+separate work. Native gRPC streams use typed RPC evidence and structural coverage.
 Unsupported events remain visible and must not earn coverage or silently replay
 as HTTP. See [event recordings](bundle-evidence.md#streams-messaging-and-additional-protocols).
 

@@ -63,9 +63,19 @@ func applyRule(flow *artifact.Flow, rule artifact.Redaction) {
 		return
 	}
 	if grpc != nil {
+		var messageIndex *int
+		if target == "status_details" || strings.HasPrefix(target, "status_details[") {
+			redactStatusDetails(grpc, target, path, rule)
+			return
+		}
 		if strings.HasPrefix(target, "messages[") {
-			// The public message selector uses the same field paths as the
-			// convenient request.body/response.body aliases.
+			// Indices identify positions on the original wire stream. Retention
+			// omissions can leave gaps in the stored message slice.
+			selectors := parsePath(strings.TrimPrefix(target, "messages"))
+			if len(selectors) != 1 || !selectors[0].all && (selectors[0].index == nil || *selectors[0].index < 0) {
+				return
+			}
+			messageIndex = selectors[0].index
 			path = strings.TrimPrefix(path, "body.")
 			target = "body"
 		}
@@ -76,16 +86,13 @@ func applyRule(flow *artifact.Flow, rule artifact.Redaction) {
 		case "trailers":
 			applyHeaderRule(grpc.Trailers, path, rule)
 			redactGRPCStatus(grpc, path, rule)
-		case "status_details":
-			// Rich details remain an opaque binary value until their message
-			// types are decoded. Never retain it under a field-level rule.
-			remove := artifact.Redaction{Rule: "remove"}
-			applyHeaderRule(grpc.Metadata, "grpc-status-details-bin", remove)
-			applyHeaderRule(grpc.Trailers, "grpc-status-details-bin", remove)
 		case "body", "messages":
 			path = strings.TrimPrefix(path, "[*].body.")
 			for i := range grpc.Messages {
 				payload := &grpc.Messages[i]
+				if messageIndex != nil && payload.Index != *messageIndex {
+					continue
+				}
 				payload.Wire = nil
 				payload.Redacted = true
 				if payload.Body == nil {
@@ -127,10 +134,24 @@ func redactGRPCStatus(msg *artifact.GrpcMessage, key string, rule artifact.Redac
 	if !strings.EqualFold(key, "grpc-message") && !strings.EqualFold(key, "grpc-status-details-bin") {
 		return
 	}
+	if strings.EqualFold(key, "grpc-status-details-bin") {
+		redactWholeStatusDetails(msg)
+		return
+	}
+	removeStatusEnvelope(msg)
 	// Status may have arrived in headers or trailers. Redact every persisted
 	// copy, including the convenience status-message field used by viewers.
 	applyHeaderRule(msg.Metadata, key, rule)
 	applyHeaderRule(msg.Trailers, key, rule)
+	if msg.StatusDetails != nil {
+		if strings.EqualFold(rule.Rule, "remove") {
+			msg.StatusDetails.Message = ""
+		} else if rule.Replacement != "" {
+			msg.StatusDetails.Message = rule.Replacement
+		} else {
+			msg.StatusDetails.Message = defaultMask
+		}
+	}
 	if strings.EqualFold(key, "grpc-message") && msg.StatusMessage != "" {
 		if strings.EqualFold(rule.Rule, "remove") {
 			msg.StatusMessage = ""

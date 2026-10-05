@@ -166,9 +166,20 @@
         },
         {
           "required": ["channel", "request", "response"],
-          "properties": { "interaction": { "type": "null" } },
-          "if": { "properties": { "protocol": { "const": "grpc" } } },
-          "then": { "properties": { "request": { "$ref": "#/$defs/grpcMessage" }, "response": { "$ref": "#/$defs/grpcMessage" } } }
+          "properties": {
+            "interaction": { "type": "null" }
+          },
+          "if": {
+            "properties": {
+              "protocol": { "const": "grpc" }
+            }
+          },
+          "then": {
+            "properties": {
+              "request": { "$ref": "#/$defs/grpcMessage" },
+              "response": { "$ref": "#/$defs/grpcMessage" }
+            }
+          }
         }
       ],
       "properties": {
@@ -184,9 +195,16 @@
             "consumed_fields": { "const": "unknown" },
             "provider_check": {
               "type": "object",
-              "properties": { "status": { "const": "not_checked" } }
+              "properties": {
+                "status": { "const": "not_checked" }
+              }
             }
           }
+        },
+        "grpc_events": {
+          "type": "array",
+          "maxItems": 16,
+          "items": { "$ref": "#/$defs/grpcEvent" }
         }
       }
     },
@@ -318,10 +336,15 @@
               "redacted": { "type": "boolean" },
               "body": { "type": "object" },
               "wire": { "type": "object" },
-              "decode_error": { "type": "string" }
+              "decode_error": { "type": "string" },
+              "observation": { "$ref": "#/$defs/grpcPayloadObservation" },
+              "decode_state": { "enum": ["decoded", "invalid", "unavailable"] }
             }
-          }
-        }
+          },
+          "maxItems": 1024
+        },
+        "observation": { "$ref": "#/$defs/grpcObservation" },
+        "status_details": { "$ref": "#/$defs/grpcStatusDetails" }
       }
     },
     "rejectionTarget": {
@@ -383,16 +406,68 @@
             "event_id": { "type": "string", "minLength": 1 },
             "payload_name": { "type": "string", "minLength": 1 },
             "representation": { "enum": ["text", "bytes"] },
-            "kind": { "enum": ["wire"] },
+            "kind": { "enum": ["wire", "status-envelope", "status-descriptors", "status-detail-wire", "status-detail-json"] },
             "message_index": { "type": "integer", "minimum": 0 },
-            "retained_bytes": { "type": "integer", "minimum": 0 }
+            "retained_bytes": { "type": "integer", "minimum": 0 },
+            "status_detail_index": { "type": "integer", "minimum": 0 }
           },
-          "if": { "properties": { "phase": { "const": "event" } } },
+          "if": {
+            "properties": {
+              "phase": { "const": "event" }
+            }
+          },
           "then": {
             "required": ["event_id", "payload_name"],
-            "not": { "anyOf": [{ "required": ["message_index"] }, { "required": ["kind"] }] }
+            "not": {
+              "anyOf": [
+                { "required": ["message_index"] },
+                { "required": ["kind"] },
+                { "required": ["status_detail_index"] }
+              ]
+            }
           },
-          "else": { "not": { "anyOf": [{ "required": ["event_id"] }, { "required": ["payload_name"] }] } }
+          "else": {
+            "not": {
+              "anyOf": [
+                { "required": ["event_id"] },
+                { "required": ["payload_name"] }
+              ]
+            }
+          },
+          "allOf": [
+            {
+              "if": {
+                "required": ["kind"],
+                "properties": {
+                  "kind": { "enum": ["status-envelope", "status-descriptors", "status-detail-wire", "status-detail-json"] }
+                }
+              },
+              "then": {
+                "properties": {
+                  "phase": { "const": "response" }
+                },
+                "not": {
+                  "anyOf": [
+                    { "required": ["message_index"] },
+                    { "required": ["event_id"] },
+                    { "required": ["payload_name"] }
+                  ]
+                }
+              }
+            },
+            {
+              "if": {
+                "required": ["kind"],
+                "properties": {
+                  "kind": { "enum": ["status-detail-wire", "status-detail-json"] }
+                }
+              },
+              "then": { "required": ["status_detail_index"] },
+              "else": {
+                "not": { "required": ["status_detail_index"] }
+              }
+            }
+          ]
         }
       ]
     },
@@ -406,6 +481,96 @@
         "attempt_id": { "$ref": "#/$defs/id" },
         "capture": { "$ref": "#/$defs/capture" },
         "bodies": { "type": "array", "items": { "$ref": "#/$defs/bodyRef" } }
+      }
+    },
+    "grpcPayloadObservation": {
+      "type": "object",
+      "required": ["wire_bytes", "started_offset_ns", "completed_offset_ns", "start_sequence", "complete_sequence"],
+      "properties": {
+        "wire_bytes": { "type": "integer", "minimum": 0 },
+        "started_offset_ns": { "type": "integer", "minimum": 0 },
+        "completed_offset_ns": { "type": "integer", "minimum": 0 },
+        "start_sequence": { "type": "integer", "minimum": 0 },
+        "complete_sequence": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "grpcPartialFrame": {
+      "type": "object",
+      "required": ["index", "header_bytes", "wire_bytes", "observed_payload_bytes", "started_offset_ns", "start_sequence"],
+      "properties": {
+        "index": { "type": "integer", "minimum": 0 },
+        "header_bytes": { "type": "integer", "minimum": 1, "maximum": 5 },
+        "wire_bytes": { "type": "integer", "minimum": 0 },
+        "observed_payload_bytes": { "type": "integer", "minimum": 0 },
+        "started_offset_ns": { "type": "integer", "minimum": 0 },
+        "start_sequence": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "grpcObservation": {
+      "type": "object",
+      "required": ["complete_frames", "retained_frames", "omitted_frames", "observed_bytes", "counts_complete", "eof", "end"],
+      "properties": {
+        "complete_frames": { "type": "integer", "minimum": 0 },
+        "retained_frames": { "type": "integer", "minimum": 0, "maximum": 1024 },
+        "omitted_frames": { "type": "integer", "minimum": 0 },
+        "observed_bytes": { "type": "integer", "minimum": 0 },
+        "counts_complete": { "type": "boolean" },
+        "eof": { "type": "boolean" },
+        "end": { "enum": ["open", "eof", "error", "closed"] },
+        "error": { "type": "string" },
+        "omitted": {
+          "type": "object",
+          "required": ["first_index", "count"],
+          "properties": {
+            "first_index": { "type": "integer", "minimum": 0 },
+            "count": { "type": "integer", "minimum": 1 }
+          }
+        },
+        "partial": { "$ref": "#/$defs/grpcPartialFrame" }
+      }
+    },
+    "grpcEvent": {
+      "type": "object",
+      "required": ["sequence", "offset_ns", "direction", "kind"],
+      "properties": {
+        "sequence": { "type": "integer", "minimum": 0 },
+        "offset_ns": { "type": "integer", "minimum": 0 },
+        "direction": { "enum": ["request", "response", "rpc"] },
+        "kind": { "enum": ["headers", "half_close", "end", "trailers", "cancel", "error"] }
+      }
+    },
+    "grpcStatusDetail": {
+      "type": "object",
+      "required": ["index", "type_url", "state"],
+      "properties": {
+        "index": { "type": "integer", "minimum": 0 },
+        "type_url": { "type": "string" },
+        "state": { "enum": ["decoded", "opaque", "malformed", "truncated", "redacted"] },
+        "type": { "type": "string" },
+        "descriptor_source": { "enum": ["boundary", "auxiliary"] },
+        "descriptor_sha256": { "$ref": "#/$defs/hash" },
+        "wire": { "type": "object" },
+        "body": { "type": "object" },
+        "diagnostic": { "type": "string" }
+      }
+    },
+    "grpcStatusDetails": {
+      "type": "object",
+      "required": ["source", "state", "details"],
+      "properties": {
+        "source": { "enum": ["headers", "trailers"] },
+        "state": { "enum": ["decoded", "malformed", "inconsistent", "truncated", "redacted"] },
+        "details": {
+          "type": "array",
+          "maxItems": 256,
+          "items": { "$ref": "#/$defs/grpcStatusDetail" }
+        },
+        "code": { "type": "integer" },
+        "message": { "type": "string" },
+        "diagnostic": { "type": "string" },
+        "wire": { "type": "object" },
+        "auxiliary_descriptor": { "type": "object" },
+        "auxiliary_sha256": { "$ref": "#/$defs/hash" }
       }
     }
   }

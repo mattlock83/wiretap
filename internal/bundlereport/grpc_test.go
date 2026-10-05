@@ -45,7 +45,7 @@ func TestGRPCKnowledgePreservesOKAndFailedObservations(t *testing.T) {
 
 func TestGRPCViewerNamesStatusAndLinksEmptyWire(t *testing.T) {
 	view := viewerGRPC(&artifact.GrpcMessage{StatusCode: 0, Messages: []artifact.GrpcPayload{{Index: 0, Body: &artifact.Body{Text: "{}"}, Wire: &artifact.Body{Encoding: "base64"}}}}, false)
-	if view.Status != "OK (0)" || len(view.Attachments) != 2 {
+	if view.Status != "OK (0)" || len(view.Messages) != 1 || len(view.Messages[0].Attachments) != 2 {
 		t.Fatalf("incorrect RPC view: %+v", view)
 	}
 }

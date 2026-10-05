@@ -15,7 +15,7 @@ import (
 const ContractRulesVersion = "wiretap-contract-1"
 
 // ProtobufRulesVersion keeps RPC measurement independent of HTTP identities.
-const ProtobufRulesVersion = "wiretap-protobuf-1"
+const ProtobufRulesVersion = "wiretap-protobuf-2"
 
 // ContractCoverage is a disposable measurement of one verified bundle snapshot.
 // It deliberately makes no all-API, assertion, or provider-compatibility claim.

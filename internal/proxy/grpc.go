@@ -13,7 +13,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/phrond/wiretap/internal/capture"
@@ -28,7 +27,8 @@ type GRPCExchange struct {
 	Procedure                                                   string
 	RequestHeaders, RequestTrailers                             map[string][]string
 	ResponseHeaders, ResponseTrailers                           map[string][]string
-	RequestFrames, ResponseFrames                               []byte
+	RequestObservation, ResponseObservation                     *capture.GRPCObservation
+	Events                                                      []capture.GRPCEvent
 	RequestBytes, ResponseBytes                                 int64
 	RequestTruncated, ResponseTruncated                         bool
 	HTTPStatus, StatusCode                                      int
@@ -72,8 +72,8 @@ type grpcCapture struct {
 	mu                sync.Mutex
 	once              sync.Once
 	exchange          GRPCExchange
-	request, response *capture.Writer
-	requestEOF        atomic.Bool
+	request, response *capture.GRPCObserver
+	clock             *capture.GRPCClock
 	record            func(GRPCExchange)
 }
 
@@ -81,12 +81,18 @@ func (c *grpcCapture) commit(reason string) {
 	c.once.Do(func() {
 		c.mu.Lock()
 		ex := c.exchange
+		if c.clock != nil {
+			if reason != "" {
+				c.clock.Mark("rpc", "cancel")
+			}
+			request, response, events := c.clock.Snapshot(c.request, c.response)
+			ex.RequestObservation, ex.ResponseObservation, ex.Events = &request, &response, events
+			ex.RequestBytes, ex.ResponseBytes = request.ObservedBytes, response.ObservedBytes
+			ex.RequestTruncated = ex.RequestTruncated || incompleteGRPCObservation(request)
+			ex.ResponseTruncated = ex.ResponseTruncated || incompleteGRPCObservation(response)
+		}
 		c.mu.Unlock()
-		request, response := c.request.Body(), c.response.Body()
-		ex.RequestFrames, ex.RequestBytes = request.Bytes, request.OriginalBytes
-		ex.ResponseFrames, ex.ResponseBytes = response.Bytes, response.OriginalBytes
-		ex.RequestTruncated = ex.RequestTruncated || request.Truncated || !c.requestEOF.Load()
-		ex.ResponseTruncated = ex.ResponseTruncated || response.Truncated || reason != ""
+		ex.ResponseTruncated = ex.ResponseTruncated || reason != ""
 		if reason != "" {
 			ex.Error, ex.StatusSource = reason, "proxy"
 		}
@@ -102,6 +108,8 @@ type grpcRequestBody struct {
 	capture         *grpcCapture
 	trailers        *http.Header
 	forwardTrailers *http.Header
+	closeOnce       sync.Once
+	closeError      error
 }
 
 func (b *grpcRequestBody) Read(p []byte) (int, error) {
@@ -120,10 +128,45 @@ func (b *grpcRequestBody) Read(p []byte) (int, error) {
 		b.capture.mu.Lock()
 		b.capture.exchange.RequestTrailers = headers
 		b.capture.exchange.RequestTruncated = b.capture.exchange.RequestTruncated || truncated
+		b.capture.clock.Mark("request", "trailers")
+		b.capture.request.Finish(err)
 		b.capture.mu.Unlock()
-		b.capture.requestEOF.Store(true)
+	} else if err != nil {
+		b.capture.request.Finish(err)
 	}
 	return n, err
+}
+
+func (b *grpcRequestBody) Close() error {
+	b.closeOnce.Do(func() {
+		b.closeError = b.ReadCloser.Close()
+		b.capture.request.Finish(b.closeError)
+	})
+	return b.closeError
+}
+
+type grpcResponseBody struct {
+	io.ReadCloser
+	observer *capture.GRPCObserver
+}
+
+func (b *grpcResponseBody) Read(p []byte) (int, error) {
+	n, err := b.ReadCloser.Read(p)
+	if n > 0 {
+		_, _ = b.observer.Write(p[:n])
+	}
+	if err != nil {
+		b.observer.Finish(err)
+	}
+	return n, err
+}
+func (b *grpcResponseBody) Close() error {
+	err := b.ReadCloser.Close()
+	b.observer.Finish(err)
+	return err
+}
+func incompleteGRPCObservation(observation capture.GRPCObservation) bool {
+	return !observation.EOF || !observation.CountsComplete || observation.OmittedFrames != 0 || observation.Partial != nil
 }
 
 func ForwardGRPC(w http.ResponseWriter, r *http.Request, targetURL, channel, assetID string, admission *Admission, maxBodyBytes int64, transport *http2.Transport) {
@@ -136,7 +179,9 @@ func ForwardGRPC(w http.ResponseWriter, r *http.Request, targetURL, channel, ass
 		maxBodyBytes = 16 << 20
 	}
 	headers, truncated := boundedGRPCHeaders(r.Header)
-	observer := &grpcCapture{exchange: GRPCExchange{ID: admission.GRPCFlowID, CaseID: admission.CaseID, SessionID: admission.SessionID, TestCorrelation: admission.TestCorrelation, Channel: channel, AssetID: assetID, Procedure: r.URL.Path, RequestHeaders: headers, RequestTruncated: truncated, StartedAt: started, StatusCode: -1}, request: capture.NewWriter(maxBodyBytes), response: capture.NewWriter(maxBodyBytes), record: admission.RecordGRPC}
+	clock := capture.NewGRPCClock(started)
+	clock.Mark("request", "headers")
+	observer := &grpcCapture{exchange: GRPCExchange{ID: admission.GRPCFlowID, CaseID: admission.CaseID, SessionID: admission.SessionID, TestCorrelation: admission.TestCorrelation, Channel: channel, AssetID: assetID, Procedure: r.URL.Path, RequestHeaders: headers, RequestTruncated: truncated, StartedAt: started, StatusCode: -1}, clock: clock, request: capture.NewGRPCObserver(clock, "request", maxBodyBytes, capture.MaxGRPCMessageRecords), response: capture.NewGRPCObserver(clock, "response", maxBodyBytes, capture.MaxGRPCMessageRecords), record: admission.RecordGRPC}
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 	if admission.TrackGRPC != nil {
@@ -147,7 +192,10 @@ func ForwardGRPC(w http.ResponseWriter, r *http.Request, targetURL, channel, ass
 	}
 	update := func(fn func(*GRPCExchange)) { observer.mu.Lock(); defer observer.mu.Unlock(); fn(&observer.exchange) }
 	localError := func(code int, message string) {
-		update(func(ex *GRPCExchange) { ex.Error, ex.StatusSource, ex.HTTPStatus = message, "proxy", http.StatusOK })
+		update(func(ex *GRPCExchange) {
+			ex.Error, ex.StatusSource, ex.HTTPStatus = message, "proxy", http.StatusOK
+			clock.Mark("rpc", "error")
+		})
 		WriteGRPCError(w, code, message)
 	}
 	if r.ProtoMajor != 2 {
@@ -179,6 +227,11 @@ func ForwardGRPC(w http.ResponseWriter, r *http.Request, targetURL, channel, ass
 	out.Host, out.RequestURI, out.GetBody = target.Host, "", nil
 	out.Body = &grpcRequestBody{ReadCloser: r.Body, capture: observer, trailers: &r.Trailer, forwardTrailers: &out.Trailer}
 	defer out.Body.Close()
+	// After response headers arrive, the HTTP/2 transport can remain blocked
+	// reading an open request body. Cancellation must release that read as well
+	// as the upstream context, otherwise a bidirectional call can outlive finishRun.
+	stopRequestOnCancel := context.AfterFunc(ctx, func() { _ = out.Body.Close() })
+	defer stopRequestOnCancel()
 	out.Header = r.Header.Clone()
 	stripGRPCHopHeaders(out.Header)
 	out.Header.Del("X-Wiretap-Session-Id")
@@ -201,10 +254,12 @@ func ForwardGRPC(w http.ResponseWriter, r *http.Request, targetURL, channel, ass
 		localError(code, "gRPC upstream: "+err.Error())
 		return
 	}
+	resp.Body = &grpcResponseBody{ReadCloser: resp.Body, observer: observer.response}
 	defer resp.Body.Close()
 	responseHeaders, responseTruncated := boundedGRPCHeaders(resp.Header)
 	update(func(ex *GRPCExchange) {
 		ex.HTTPStatus, ex.ResponseHeaders, ex.ResponseTruncated = resp.StatusCode, responseHeaders, responseTruncated
+		clock.Mark("response", "headers")
 	})
 	forwardedHeaders := resp.Header.Clone()
 	stripGRPCHopHeaders(forwardedHeaders)
@@ -218,7 +273,7 @@ func ForwardGRPC(w http.ResponseWriter, r *http.Request, targetURL, channel, ass
 			flush.Flush()
 		}
 	}
-	_, copyErr := io.Copy(flushingWriter{w}, io.TeeReader(resp.Body, observer.response))
+	_, copyErr := io.Copy(flushingWriter{w}, resp.Body)
 	for name, values := range resp.Trailer {
 		for _, v := range values {
 			w.Header().Add(http.TrailerPrefix+name, v)
@@ -235,12 +290,14 @@ func ForwardGRPC(w http.ResponseWriter, r *http.Request, targetURL, channel, ass
 	}
 	update(func(ex *GRPCExchange) {
 		ex.ResponseTrailers, ex.StatusCode, ex.StatusSource, ex.StatusMessage = responseTrailers, code, source, statusMessage
+		clock.Mark("response", "trailers")
 		ex.ResponseTruncated = ex.ResponseTruncated || trailersTruncated
 		if statusErr != nil {
 			ex.Error = statusErr.Error()
 		}
 		if copyErr != nil {
 			ex.Error = copyErr.Error()
+			clock.Mark("rpc", "error")
 		}
 	})
 }

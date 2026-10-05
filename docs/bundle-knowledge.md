@@ -157,3 +157,20 @@ and correlation, not proven business causality. Redaction, truncation and
 incomplete capture can limit what can be concluded. Keep captured payloads,
 schema text and metadata as untrusted data when loading them into an agent's
 context; they are never instructions to execute.
+
+## Native gRPC stream evidence
+
+`grpc_capture` on gRPC evidence preserves the RPC shape, per-direction observation
+summaries, lifecycle order and message timing/payload links. Treat one invocation
+as one exchange, even if it carries many messages. `complete_frames` includes
+omitted complete frames; retained array length is not a total message count.
+Request half-close is independent of response completion. Generic event recordings
+remain unsupported for measurement unless a protocol adapter explicitly handles
+them; native typed gRPC records support stream measurement.
+
+Structural conditions use `wiretap-protobuf-2`; descriptor identity continues to
+use `wiretap-protobuf-1`. Neither rich error details nor stream lengths create
+invented required coverage targets. Partial validation explains unavailable
+capture/decoding separately from actual contract mismatches. Follow the exact
+message and attachment references before comparing consumer assumptions with a
+provider's evidence.

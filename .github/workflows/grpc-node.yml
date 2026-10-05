@@ -1,0 +1,32 @@
+name: Native Node gRPC
+
+on:
+  pull_request:
+    paths: ['.github/workflows/grpc-node.yml', 'go.mod', 'go.sum', 'cmd/**', 'internal/**', 'sdk/js/**', 'examples/grpc-boundaries/**']
+  push:
+    branches: [main]
+    paths: ['.github/workflows/grpc-node.yml', 'go.mod', 'go.sum', 'cmd/**', 'internal/**', 'sdk/js/**', 'examples/grpc-boundaries/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  grpc-node:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            sdk/js/package-lock.json
+            examples/grpc-boundaries/node/package-lock.json
+      - run: npm ci --prefix sdk/js
+      - run: npm ci --prefix examples/grpc-boundaries/node
+      - run: ./examples/grpc-boundaries/run-node.sh

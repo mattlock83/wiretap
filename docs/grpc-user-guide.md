@@ -309,25 +309,90 @@ descriptor set for the dependency. Keep the dependency marked `kind: mock`:
 conformance to a contract still is not evidence that the provider actually
 implements those behaviours.
 
-The first milestone covers unary native gRPC with Protobuf. Streaming traffic
-is forwarded, but its capture/coverage is marked unsupported; complete
-streaming support is the second milestone. Connect's wire protocol, gRPC-Web,
-and gRPC exploration are separate follow-ups. `wiretap explore` remains HTTP-only.
+Rich RPC errors such as `google.rpc.BadRequest` appear beneath the outcome in
+the viewer and test pages. Custom `Any` types use the boundary's frozen protos;
+standard error types absent from those protos use a separately frozen helper
+descriptor set. Unknown types remain opaque with a reason. Wiretap does not
+fetch type URLs, change the service contract or change errors delivered to your
+client. Error details describe observed behaviour; they are not new coverage
+targets or proof that a mocked error matches a real provider.
 
-Initial validation checks declared methods, message framing and Protobuf decoding.
-It does not evaluate arbitrary business rules, CEL or Protovalidate annotations.
-Contract coverage measures unary methods, explicit field presence, oneof
-choices, enum values, booleans, collection emptiness and supported nested
-fields using `wiretap-protobuf-1`. Recursive/dynamic Any expansion and custom
-validation semantics remain visible limits. See the
-[coverage rules](contract-coverage-rules.md). RPC status
-comes from gRPC completion, not HTTP 200. A passing test that expects
-`INVALID_ARGUMENT` can describe an error outcome without pretending it exercised
-a successful response payload.
+Redact sensitive detail fields through your normal test setup:
 
-Truncated, redacted, undecodable and incomplete evidence is labelled and cannot
-earn successful payload coverage. Capturing an observed mock response never
-proves that the consumer used every field or that the provider agrees with it.
+```json
+{
+  "name": "reject invalid customer details",
+  "redactions": [
+    {
+      "field": "response.status_details[*].body.field_violations[*].description",
+      "rule": "remove"
+    }
+  ]
+}
+```
+
+Use `status_details[0]` to select one zero-based detail index. Paths use proto
+field names and support nested, repeated and map values. Wiretap removes the
+selected raw detail, containing envelope and binary metadata copies before
+writing the bundle. It keeps a redacted readable projection where possible;
+unknown selected details are omitted safely. Redacting the `grpc-message`
+header/trailer also removes its envelope copy. A whole-value
+`response.trailers.grpc-status-details-bin` rule removes every representation
+of those details. Redaction affects captured evidence, never the live response.
+
+Status-detail retention shares the response's 64 KiB metadata budget, with at
+most 256 details and a recursion depth of 100. Details outside those limits are
+labelled truncated or unavailable. The terminal gRPC status remains the outcome,
+including when an envelope is malformed or contradicts it.
+
+Native gRPC capture supports unary, server-streaming, client-streaming and
+bidirectional RPCs. Requests and responses are forwarded unchanged while Wiretap
+observes frames incrementally. Each invocation stays one exchange and belongs to
+one test, including when send and receive overlap on a shared channel.
+
+Messages carry their original wire index and monotonic start/completion offsets.
+The viewer shows cross-direction observation order, metadata, half-close and
+terminal status; observation order does not prove business causality. Direction
+summaries show frames observed, retained and omitted, observed bytes, EOF,
+partial frames and whether counts are known. Byte and 1,024-message retention
+limits bound each direction; later frames are counted without being retained.
+An early response does not fabricate request EOF. Teardown can commit an
+immutable incomplete snapshot, and run shutdown cancels remaining streams.
+
+Validation checks selected methods, framing, Protobuf decoding and the cardinality
+declared by each method. A non-streaming request side requires one message; a
+non-streaming response permits at most one and requires one on OK. A streaming
+side permits zero or more. A zero-byte Protobuf message is one message; an empty
+stream contains none. Expected non-OK outcomes remain valid test observations.
+
+Unavailable capture or decoding produces **partial** validation with explicit
+reasons. It does not turn an otherwise passing test into a schema failure.
+Malformed wire data and contract violations still fail validation. Redacted, truncated or otherwise incomplete evidence never gains assurance
+by being merely readable.
+
+Contract coverage uses `wiretap-protobuf-2`: methods, explicit field presence,
+oneof choices, declared enum values, booleans, collection emptiness and supported
+nested fields. Complete passing streams can contribute conditions from each
+message, with exact message references. An empty stream can exercise a method
+without covering payload conditions. There is no invented denominator for stream
+lengths, cross-message combinations, allowed error codes or business invariants.
+Descriptor normalization remains `wiretap-protobuf-1`; measurement and descriptor
+identity are separate profiles.
+
+Protobuf does not normally specify HTTP-style ranges, regexes or response-code
+alternatives. Wiretap does not invent those rules. Arbitrary CEL/Protovalidate
+annotations and recursive/dynamic `Any` condition expansion remain explicitly
+unmeasured; known `Any` values can still be decoded for inspection. See the
+[coverage rules](contract-coverage-rules.md).
+
+Try the [streaming example](../examples/grpc-streaming/README.md) or the
+[native Node example](../examples/grpc-boundaries/node/README.md). Connect's own
+wire protocol, gRPC-Web, mTLS and gRPC exploration are separate features;
+`wiretap explore` remains HTTP-only. Existing clients, mocks and test framework
+hooks remain the integration model.
+
+Capturing a mock response does not prove the consumer used every field or that
+the provider agrees with it.
 
 ## If setup fails
 

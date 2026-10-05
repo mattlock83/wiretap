@@ -41,7 +41,10 @@ func applySchemaValidation(art *artifact.Artifact) {
 		return
 	}
 	issues := validateSchemas(art)
-	result := &artifact.SchemaValidation{Status: "pass"}
+	result := &artifact.SchemaValidation{Status: "pass", Unavailable: grpcUnavailableValidation(art)}
+	if len(result.Unavailable) > 0 {
+		result.Status = "partial"
+	}
 	for _, schema := range art.Schemas {
 		if schema.Source.Type == "omitted" {
 			result.Skipped = append(result.Skipped, schema.ID)
@@ -62,8 +65,9 @@ func applySchemaValidation(art *artifact.Artifact) {
 		art.Meta = map[string]any{}
 	}
 	art.Meta["schema_validation"] = map[string]any{
-		"status": result.Status,
-		"errors": result.Errors,
+		"status":      result.Status,
+		"errors":      result.Errors,
+		"unavailable": result.Unavailable,
 	}
 	art.SchemaValidation = result
 
@@ -247,8 +251,11 @@ func validateGRPCFlow(flow artifact.Flow, byRole map[string][]artifact.SchemaRef
 		name string
 		msg  *artifact.GrpcMessage
 	}{{"request", flow.Request.GRPC}, {"response", flow.Response.GRPC}} {
+		if o := side.msg.Observation; o != nil && !o.CountsComplete && o.Error != "" {
+			issues = append(issues, issue(side.name, schema.ID, o.Error))
+		}
 		for _, payload := range side.msg.Messages {
-			if payload.DecodeError != "" {
+			if payload.DecodeError != "" && payload.DecodeState != "unavailable" {
 				issues = append(issues, issue(side.name, schema.ID, fmt.Sprintf("message %d: %s", payload.Index, payload.DecodeError)))
 			}
 		}
@@ -260,11 +267,13 @@ func validateGRPCFlow(flow artifact.Flow, byRole map[string][]artifact.SchemaRef
 		issues = append(issues, issue("response", schema.ID, "gRPC status is missing"))
 	}
 	if method != nil {
-		if !method.IsStreamingClient() && len(flow.Request.GRPC.Messages) != 1 {
+		requestCount, requestKnown := grpcObservedCount(flow.Request.GRPC)
+		responseCount, responseKnown := grpcObservedCount(flow.Response.GRPC)
+		if !method.IsStreamingClient() && requestKnown && requestCount != 1 {
 			issues = append(issues, issue("request", schema.ID, "unary request must contain exactly one message"))
 		}
-		if !method.IsStreamingServer() && flow.Response.GRPC.StatusCode == 0 && len(flow.Response.GRPC.Messages) != 1 {
-			issues = append(issues, issue("response", schema.ID, "successful unary response must contain exactly one message"))
+		if !method.IsStreamingServer() && responseKnown && (responseCount > 1 || flow.Response.GRPC.StatusCode == 0 && responseCount != 1) {
+			issues = append(issues, issue("response", schema.ID, "unary response permits at most one message and requires one on OK"))
 		}
 	}
 	return issues
@@ -475,4 +484,40 @@ func toHTTPHeader(headers artifact.Headers) http.Header {
 		}
 	}
 	return out
+}
+
+func grpcObservedCount(msg *artifact.GrpcMessage) (uint64, bool) {
+	if msg.Observation != nil {
+		return msg.Observation.CompleteFrames, msg.Observation.CountsComplete && msg.Observation.EOF && msg.Observation.Partial == nil
+	}
+	return uint64(len(msg.Messages)), !msg.CaptureTruncated
+}
+
+func grpcUnavailableValidation(art *artifact.Artifact) []artifact.SchemaValidationError {
+	var result []artifact.SchemaValidationError
+	for _, flow := range art.Traffic {
+		if flow.Protocol != "grpc" || flow.Interaction != nil {
+			continue
+		}
+		for _, side := range []struct {
+			name string
+			msg  *artifact.GrpcMessage
+		}{{"request", flow.Request.GRPC}, {"response", flow.Response.GRPC}} {
+			if side.msg == nil {
+				continue
+			}
+			add := func(reason string) {
+				result = append(result, artifact.SchemaValidationError{FlowID: flow.ID, Channel: flow.Channel, Protocol: "grpc", Phase: side.name, SchemaID: side.msg.SchemaRef, Message: reason})
+			}
+			if !artifact.GRPCDirectionComplete(side.msg, false) {
+				add("Full message validation is unavailable: direction incomplete, framing unknown, metadata limited or messages omitted")
+			}
+			for _, p := range side.msg.Messages {
+				if p.DecodeState == "unavailable" {
+					add(fmt.Sprintf("message %d: %s", p.Index, p.DecodeError))
+				}
+			}
+		}
+	}
+	return result
 }

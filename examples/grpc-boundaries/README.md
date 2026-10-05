@@ -1,5 +1,9 @@
 # Native gRPC capture example
 
+For native Node clients and mocks, traced parallel tests, mixed HTTP/gRPC paths
+and TLS, use the [Node companion example](node/README.md). The Go example below
+remains independent of Node.
+
 Requires Go 1.24+, Bash, Python 3 and curl.
 
 Run `./examples/grpc-boundaries/run.sh` from the repository root. It builds
