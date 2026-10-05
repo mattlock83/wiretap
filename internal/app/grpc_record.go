@@ -23,11 +23,20 @@ func (s *TestCaseStore) RecordGRPC(ex proxy.GRPCExchange) {
 	if s.active == nil || (ex.CaseID != "" && ex.CaseID != s.active.id) {
 		return
 	}
+	if ex.ID == "" {
+		ex.ID = s.nextFlowID()
+	}
+	s.active.flows = append(s.active.flows, grpcFlow(ex, s.grpcContracts, s.active.schemas, s.maxBodyBytes))
+}
+
+// Exploration and pass-through capture share the same bounded wire decoder,
+// observations and rich-status handling. There is only one gRPC evidence shape.
+func grpcFlow(ex proxy.GRPCExchange, contracts map[string]*grpccontract.Contract, schemas []artifact.SchemaRef, maxBodyBytes int64) artifact.Flow {
 	key := "sut"
 	if ex.Channel == "sut_to_dependency" {
 		key = "dep:" + ex.AssetID
 	}
-	contract := s.grpcContracts[key]
+	contract := contracts[key]
 	var method protoreflect.MethodDescriptor
 	if contract != nil {
 		method = contract.Methods[ex.Procedure]
@@ -38,7 +47,7 @@ func (s *TestCaseStore) RecordGRPC(ex proxy.GRPCExchange) {
 		service, methodName = parts[0], parts[1]
 	}
 	schemaID := ""
-	for _, schema := range s.active.schemas {
+	for _, schema := range schemas {
 		if schema.Type == "protobuf" && ((ex.Channel == "test_to_sut" && schema.Role == "sut") || (ex.Channel == "sut_to_dependency" && schema.Role == "dependency" && schema.AssetID == ex.AssetID)) {
 			schemaID = schema.ID
 			break
@@ -64,17 +73,14 @@ func (s *TestCaseStore) RecordGRPC(ex proxy.GRPCExchange) {
 		}
 		request.StreamKind, response.StreamKind = kind, kind
 	}
-	request.Observation, request.Messages = observedGRPCMessages(ex.RequestObservation, encoding, in, s.maxBodyBytes, resolver)
-	response.Observation, response.Messages = observedGRPCMessages(ex.ResponseObservation, firstHeaderValue(response.Metadata, "Grpc-Encoding"), out, s.maxBodyBytes, resolver)
+	request.Observation, request.Messages = observedGRPCMessages(ex.RequestObservation, encoding, in, maxBodyBytes, resolver)
+	response.Observation, response.Messages = observedGRPCMessages(ex.ResponseObservation, firstHeaderValue(response.Metadata, "Grpc-Encoding"), out, maxBodyBytes, resolver)
 	grpccontract.CaptureStatusDetails(response, contract)
-	if ex.ID == "" {
-		ex.ID = s.nextFlowID()
-	}
 	flow := artifact.Flow{ID: ex.ID, Protocol: "grpc", Channel: ex.Channel, AssetID: ex.AssetID, TraceID: ex.TraceID, RequestSpanID: ex.RequestSpanID, TraceContextSource: ex.TraceContextSource, TestCorrelation: ex.TestCorrelation, StartedAt: ex.StartedAt, DurationMS: ex.Duration.Milliseconds(), TransportError: ex.Error, Request: artifact.Message{GRPC: request}, Response: artifact.Message{GRPC: response}}
 	for _, event := range ex.Events {
 		flow.GRPCEvents = append(flow.GRPCEvents, artifact.GrpcEvent{Sequence: event.Sequence, OffsetNS: event.OffsetNS, Direction: event.Direction, Kind: event.Kind})
 	}
-	s.active.flows = append(s.active.flows, flow)
+	return flow
 }
 
 func decodeGRPCPayload(message []byte, compressed bool, encoding string, desc protoreflect.MessageDescriptor, remaining *int64, resolver *dynamicpb.Types) artifact.GrpcPayload {

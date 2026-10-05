@@ -25,8 +25,9 @@ npm ci --prefix sdk/js
 ./examples/run-basic-rest-e2e.sh
 ```
 
-The example captures an existing test, then uses `wiretap explore` to generate
-invalid-input checks from its happy path. It prints two bundle locations. Open
+The example captures an existing test, then calls `wiretap.explore()` inside that
+test to generate invalid-input checks from its happy path. It prints one bundle
+containing both authored and generated checks. Open
 `docs/viewer.html` for the offline dashboard or `index.md` for the linked
 Markdown pages. No report server is needed.
 
@@ -50,7 +51,9 @@ OpenAPI specs are required by default for HTTP; individual HTTP APIs can explici
 opt out. gRPC requires a Protobuf contract: reflection is the default source,
 with local `.proto` files or a descriptor set as alternatives. See the
 [gRPC guide](docs/grpc-user-guide.md). Unary and all three streaming shapes support capture and structural coverage.
-gRPC exploration is not yet available.
+Native gRPC exploration generates invalid-input checks from supported standard
+Protovalidate annotations, including recorded streaming requests. See the
+[gRPC exploration example](examples/grpc-exploration/README.md).
 Parallel tests sharing one application need working W3C trace propagation from
 its server to its outbound clients. Otherwise run sequentially or isolate
 workers. The application does not need to propagate a Wiretap-specific ID.
@@ -92,19 +95,26 @@ for reading, sharing and exporting results.
 
 ## Explore invalid inputs
 
-The optional `wiretap explore` runner takes a captured happy-path provider test,
-checks a fresh baseline, then generates bounded invalid requests. Project-owned
-hooks provide authentication, fixtures, cleanup and additional assertions.
+Call exploration from the test that has just exercised a happy path:
 
-```bash
-wiretap explore --bundle ./artifacts/<source-run> \
-  --test "creates an order" --config .wiretap.yaml
+```javascript
+await wiretap.explore({
+  operations: ["POST /orders"],
+  hooks: {
+    beforeCase: async () => resetFixtures(),
+    checkCase: async event => checkDatabaseEffects(event),
+    afterCase: async () => cleanUpFixtures()
+  }
+});
 ```
 
-It writes a new bundle with rejection results and coverage. Authentication
-failures and server errors do not count as successful validation checks. Hooks
-stay in your project; the source bundle remains unchanged. See
-[provider exploration](docs/exploration.md) for setup and supported mutations.
+The SDK calls Wiretap's HTTP API and invokes these callbacks in your test process.
+Wiretap checks a fresh baseline, then generates supported invalid requests from
+the captured traffic and OpenAPI contract. The call fails your ordinary test if
+any generated check fails. Authentication failures and server errors never count
+as successful validation checks. All cases contribute evidence to the same run
+bundle; fixtures, credentials and callback code stay in your project. See
+[exploration and hooks](docs/exploration.md) for setup and supported mutations.
 
 ## Documentation
 

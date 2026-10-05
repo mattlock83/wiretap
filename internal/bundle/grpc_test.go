@@ -161,3 +161,37 @@ func TestGRPCContractResolutionIntegrity(t *testing.T) {
 		})
 	}
 }
+
+func TestGRPCRegisterReusesFrozenDescriptorWithoutChangingIdentity(t *testing.T) {
+	root, _, _ := grpcBundleFixture(t)
+	_, captures, err := Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parent := captures[0].Schemas[0]
+	writer, err := New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	child, err := writer.Register(artifact.TestCase{ID: "generated-child"}, []artifact.SchemaRef{parent})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if child[0].AssetSHA != parent.AssetSHA || child[0].Source.SHA256 != parent.Source.SHA256 || child[0].Source.Path == parent.Source.Path {
+		t.Fatalf("descriptor identity changed or source was not copied: %+v", child[0])
+	}
+	for name, change := range map[string]func(*artifact.SchemaRef){
+		"missing hash":    func(ref *artifact.SchemaRef) { ref.Source.SHA256 = "" },
+		"different hash":  func(ref *artifact.SchemaRef) { ref.Source.SHA256 = strings.Repeat("0", 64) },
+		"different asset": func(ref *artifact.SchemaRef) { ref.AssetSHA = strings.Repeat("0", 64) },
+		"wrong format":    func(ref *artifact.SchemaRef) { ref.Source.Format = "proto" },
+	} {
+		t.Run(name, func(t *testing.T) {
+			ref := parent
+			change(&ref)
+			if _, err := writer.Register(artifact.TestCase{ID: "bad-descriptor"}, []artifact.SchemaRef{ref}); err == nil {
+				t.Fatal("accepted unverified frozen descriptor")
+			}
+		})
+	}
+}

@@ -30,6 +30,7 @@ const eventCapability = "event-interactions.v1"
 const packageCapability = "contract-packages.v1"
 const grpcObservationCapability = "grpc-observation.v1"
 const statusCapability = "grpc-status-details.v1"
+const grpcExplorationCapability = "grpc-exploration.v1"
 
 func requiredCapabilities(schemas []artifact.SchemaRef, captures []*artifact.Artifact) []string {
 	result := []string{}
@@ -39,6 +40,16 @@ func requiredCapabilities(schemas []artifact.SchemaRef, captures []*artifact.Art
 		}
 	}
 	for _, capture := range captures {
+		if x := capture.Exploration; x != nil {
+			if x.Target != nil && x.Target.Protocol == "grpc" {
+				result = uniqueString(result, grpcExplorationCapability)
+			}
+			for _, target := range x.Catalogue {
+				if target.Protocol == "grpc" {
+					result = uniqueString(result, grpcExplorationCapability)
+				}
+			}
+		}
 		for _, schema := range capture.Schemas {
 			if opaqueContractType(schema.Type) {
 				result = uniqueString(result, packageCapability)
@@ -75,7 +86,7 @@ func checkCapabilities(required []string) error {
 	}
 	seen := map[string]bool{}
 	for _, capability := range required {
-		if capability != eventCapability && capability != packageCapability && capability != grpcObservationCapability && capability != statusCapability {
+		if capability != eventCapability && capability != packageCapability && capability != grpcObservationCapability && capability != statusCapability && capability != grpcExplorationCapability {
 			return fmt.Errorf("unsupported required capability %q", capability)
 		}
 		if seen[capability] {

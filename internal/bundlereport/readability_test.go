@@ -67,9 +67,9 @@ func TestMissingTimestampsDoNotInventSequence(t *testing.T) {
 
 func TestRunMarkdownStatesProvenanceAndExplorationScope(t *testing.T) {
 	run := &bundle.Run{RunID: "new-run", APIID: "payments", SUTTargetKind: "service", TestSource: map[string]any{"revision": "abc123"}}
-	captures := []*artifact.Artifact{{Exploration: &artifact.Exploration{SourceRunID: "source-run", SourceAttemptID: "source-attempt", SourceSHA256: "hash", Version: "wiretap-explore/1"}}}
+	captures := []*artifact.Artifact{{Exploration: &artifact.Exploration{SourceRunID: "new-run", SourceAttemptID: "source-attempt", SourceKind: "active_test", InvocationID: "explore-1", SourceFlowIDs: []string{"request-1"}, Version: "wiretap-negative-1"}}}
 	page := runMarkdown(run, captures)
-	for _, expected := range []string{"API identity: payments", "abc123", "Not recorded at run level", "source-run", "source-attempt", "Source identifiers and hashes identify provenance", "Provider replay captures inbound exchanges only"} {
+	for _, expected := range []string{"API identity: payments", "abc123", "Not recorded at run level", "source-attempt", "explore-1", "request-1", "not yet committed", "downstream traffic actually observed"} {
 		if !strings.Contains(page, expected) {
 			t.Errorf("missing %q", expected)
 		}
@@ -85,7 +85,7 @@ func TestAttemptPageRefreshesOlderPresentation(t *testing.T) {
 	if currentAttemptPage(path, "run", "attempt", "evidence/attempt.json") {
 		t.Fatal("older attempt presentation would never pick up new navigation and sequence")
 	}
-	current := strings.Replace(legacy, "  kind: attempt", "  kind: attempt\n  view_version: \"2\"", 1)
+	current := strings.Replace(legacy, "  kind: attempt", "  kind: attempt\n  view_version: \"3\"", 1)
 	if err := os.WriteFile(path, []byte(current), 0o644); err != nil {
 		t.Fatal(err)
 	}

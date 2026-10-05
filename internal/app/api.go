@@ -372,6 +372,25 @@ func (a *App) handleTeardownTest(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "session not found"})
 		return
 	}
+	a.sessionsMu.Lock()
+	exploring, explorationFailed, generated := session.exploring, session.explorationFailed, session.explorationParent != ""
+	a.sessionsMu.Unlock()
+	if exploring != "" || generated {
+		a.controlMu.Unlock()
+		a.explorationMu.Lock()
+		job := a.explorations[exploring]
+		a.explorationMu.Unlock()
+		if job != nil {
+			job.mu.Lock()
+			job.cancelLocked()
+			job.mu.Unlock()
+		}
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "cancel and await exploration cleanup before tearing down its parent test"})
+		return
+	}
+	if explorationFailed {
+		payload.Status = "fail"
+	}
 	if closing && !session.Store.HasPendingCommit() {
 		a.controlMu.Unlock()
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "capture session is already closing"})
@@ -405,6 +424,13 @@ func (a *App) handleTeardownTest(w http.ResponseWriter, r *http.Request) {
 	a.sessionsMu.Lock()
 	delete(a.sessions, sessionID)
 	a.sessionsMu.Unlock()
+	a.explorationMu.Lock()
+	for id, job := range a.explorations {
+		if job.parentID == sessionID {
+			delete(a.explorations, id)
+		}
+	}
+	a.explorationMu.Unlock()
 	logFinishedCase(a, artifactDoc, path)
 	a.writeCaptureResponse(w, artifactDoc, path, sessionID)
 }

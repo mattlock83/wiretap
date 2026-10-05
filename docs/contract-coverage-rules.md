@@ -62,16 +62,29 @@ field-number path; readable field names and exact message indices accompany
 observations. One message can cover many conditions and has a combination
 fingerprint, without a Cartesian-product denominator.
 
-Custom validation options are preserved but not evaluated. Affected targets
+Custom validation options are preserved but not evaluated by passive structural
+coverage. Affected targets
 remain unknown and unsupported scope stays visible. Unknown wire fields,
 truncated, redacted or undecodable messages cannot earn payload assurance.
 A complete passing RPC with structurally valid messages and a terminal
 gRPC status can cover a method, including a legitimate non-OK outcome. An error
 without a result does not cover the success response fields. RPC codes are
 observations; Protobuf does not declare a mandatory set of error codes.
-No invalid-value targets are generated for mocks, and gRPC exploration remains
-out of scope. Provider and dependency keys match when API identity, normalized
+No invalid-value targets are generated for mocks. Provider and dependency keys
+match when API identity, normalized
 contract and measurement profile match.
+
+Provider exploration has a separate generated rule catalogue for supported
+standard Protovalidate annotations across all four RPC shapes. Every credited
+case must isolate the declared violation, retain complete decoded Protobuf
+observations, and receive the configured upstream validation code (3 by default,
+or explicitly 11). Authentication, proxy errors and transport failures earn no
+rejection coverage. A trailers-only rejection needs no fabricated response
+message. The target key excludes stream index, while each witness links its
+actual message index and location. Intentionally invalid requests do not earn
+positive request conditions. This does not invent ranges absent from plain
+Protobuf, expand passive structural coverage to arbitrary annotations, or
+synthesize arbitrary CEL and stream business rules. See [exploration](exploration.md#native-grpc-cases).
 
 Native streams require verified direction observations: complete framing, EOF,
 no omitted messages, valid terminal status and complete structurally valid
@@ -129,7 +142,7 @@ Explicit limitations:
 - Combination fingerprints describe condition keys and exact instance locations,
   not arbitrary payload equality. No value-normalisation or payload hashing is
   performed. Unsupported combinations are not invented.
-- The optional exploration runner records expected-rejection assertion evidence
+- The optional exploration call records expected-rejection assertion evidence
   in a separate provider rejection catalogue. Full API inventory declarations,
   expected-negative annotations for ordinary captured tests, and cross-revision
   target mapping remain future work. No inferred mock draft enters a denominator.
@@ -343,7 +356,7 @@ Intentionally invalid requests need a separate **rejection coverage** result:
   resilience. Such resilience intent needs its own explicit test evidence.
 
 Ordinary capture retains strict validation and its existing framework-owned
-assertions. The optional [exploration framework](exploration.md) generates
+assertions. The optional [exploration API](exploration.md) generates
 isolated invalid provider inputs, verifies the final violation before sending,
 and records explicit expected-status and response-schema assertions. Its baseline
 catalogue supplies the bounded rejection denominator, with covered, failed and

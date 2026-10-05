@@ -1,13 +1,14 @@
 # Examples
 
 Run these commands from the repository root. Examples write capture bundles;
-the HTTP examples also write separate exploration bundles. They print their paths. Open
+the HTTP examples can also explore inside their tests and record generated cases
+in that same bundle. They print the path. Open
 `docs/viewer.html` for the dashboard or `index.md` for the OKF pages.
 
 | Example | Demonstrates | Requirements |
 | --- | --- | --- |
 | [Basic REST](basic-rest/README.md) | Existing Node tests and an HTTP dependency mock; optional parallel Jest capture; generated invalid-input checks. | Go 1.24+, Node.js 20.12+, Bash and curl. |
-| [Provider exploration](../docs/exploration.md#try-the-complete-example) | SQLite fixtures, fresh authentication, cleanup and side-effect assertions through Python hooks. | Go 1.24+ and Python 3.9+. |
+| [Provider exploration](../docs/exploration.md#try-the-complete-examples) | SQLite fixtures, fresh authentication, cleanup and side-effect assertions through local Python callbacks. | Go 1.24+ and Python 3.9+. |
 | [Microsvc Transactions](microsvc-transactions/README.md) | A real service image, an Accounts mock, disposable database state and authenticated exploration. | Go 1.24+, Python 3.9+, Docker and the documented local images. |
 | [Native gRPC](grpc-boundaries/README.md) | Existing grpc-go test, gRPC SUT and gRPC mock, reflection/local contracts and OKF coverage. | Go 1.24+, Bash, Python 3 and curl. |
 | [Streaming gRPC](grpc-streaming/README.md) | All four RPC shapes, traced provider and dependency calls, per-message evidence and structural coverage. | Go 1.24+, Bash, Python 3 and curl. |
@@ -26,7 +27,7 @@ For parallel Jest capture against the instrumented demo application:
 WIRETAP_TEST_RUNNER=jest ./examples/run-basic-rest-e2e.sh
 ```
 
-## Provider exploration with database hooks
+## Provider exploration with local database callbacks
 
 ```bash
 python3 examples/provider-exploration/demo.py

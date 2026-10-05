@@ -12,17 +12,3 @@ dependencies:
     url: http://accounts:8080
     kind: mock
     schema: schemas/accounts.yaml
-explore:
-  expected_statuses: [400]
-  request_timeout: 20s
-  hooks:
-    before_run:
-      command: [python3, hooks.py]
-    before_case:
-      command: [python3, hooks.py]
-    before_request:
-      command: [python3, hooks.py]
-    check_case:
-      command: [python3, hooks.py]
-    after_case:
-      command: [python3, hooks.py]

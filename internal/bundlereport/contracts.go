@@ -17,7 +17,7 @@ func contractCoverageMarkdown(report *coverage.ContractCoverage) string {
 		out.WriteString("**This snapshot cannot support a final run assurance claim.**\n\n")
 	}
 	if len(report.Unmeasured) > 0 {
-		out.WriteString("## Unmeasured interactions\n\nThese recordings are preserved but do not earn contract coverage. Supported HTTP and unary gRPC observations elsewhere in the bundle remain measurable.\n\n")
+		out.WriteString("## Unmeasured interactions\n\nThese recordings are preserved but do not earn contract coverage. Supported HTTP and native gRPC observations elsewhere in the bundle remain measurable.\n\n")
 		for _, item := range report.Unmeasured {
 			fmt.Fprintf(&out, "- Attempt `%s`, interaction `%s` (%s %s): %s\n", escape(item.AttemptID), escape(item.FlowID), escape(item.Protocol), escape(item.Kind), escape(item.Reason))
 		}
@@ -26,9 +26,9 @@ func contractCoverageMarkdown(report *coverage.ContractCoverage) string {
 	if r := report.Rejections; r != nil {
 		fmt.Fprintf(&out, "## Provider rejection coverage\n\n%d covered, %d failed, %d not covered. %s. Invalid requests never earn valid-request condition credit.\n\n", r.Covered, r.Failed, r.NotCovered, escape(r.Scope))
 		for _, t := range r.Targets {
-			fmt.Fprintf(&out, "- **%s** — %s, %s, %s; expected status %v; key `%s`\n", t.State, escape(t.Operation), escape(t.Location), escape(t.Constraint), t.ExpectedStatuses, t.Key)
+			fmt.Fprintf(&out, "- **%s** — %s, %s, %s; catalogue expects %s; key `%s`\n", t.State, escape(t.Operation), escape(t.Location), escape(t.Constraint), rejectionStatusLabel(t.RejectionTarget), t.Key)
 			for _, e := range t.Evidence {
-				fmt.Fprintf(&out, "  - [%s](%s), flow %s: %s. %s\n", escape(e.TestName), "../"+e.Path, escape(e.FlowID), e.Result, escape(e.Reason))
+				fmt.Fprintf(&out, "  - [%s](%s), flow %s, %s: %s. %s\n", escape(e.TestName), "../"+e.Path, escape(e.FlowID), escape(e.InstanceLocation), e.Result, escape(e.Reason))
 			}
 		}
 		out.WriteString("\n")

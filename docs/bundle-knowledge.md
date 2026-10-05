@@ -94,11 +94,11 @@ the knowledge base with their own evidence and provenance, rather than editing
 a generated queue and expecting the edit to survive regeneration.
 
 An autonomous test system can use the queue to select work, but must resolve
-its prerequisites and choose an appropriate runner. Current `wiretap explore`
+its prerequisites and choose an appropriate runner. The current SDK/HTTP exploration API
 supports [provider invalid-input exploration](exploration.md) from a suitable
 authored seed. It does not implement every task kind, generate arbitrary mock
 variants or fill all response-condition gaps. Execution uses project-owned
-configuration and hooks; the bundle contains no executable hook code.
+test code and local callbacks; the bundle contains no executable hook code.
 
 ## Loading and comparing bundles
 
@@ -124,9 +124,13 @@ into an observation that never occurred.
    another provider observation or run a suitable test to resolve the question.
 
 The API map covers registered APIs and retained traffic, not a complete system
-inventory. Exploration captures provider exchanges only; downstream dependency
-assumptions remain in the source capture bundle. An empty dependency list does
-not establish that the system has no dependencies.
+inventory. Exploration adds fresh provider and observed dependency exchanges to
+the same run. Fixture and inspection traffic from lifecycle callbacks is
+excluded from evidence and coverage. Generated attempts carry `source_kind: active_test`, the parent
+`source_attempt_id`, `source_flow_ids` and `exploration_id`. The index adds
+`source_attempt_path` once that parent has been committed; a still-open parent
+is not an invented evidence link or a fabricated file hash. An empty dependency
+list does not establish that the system has no dependencies.
 
 Event recordings use `capture.traffic[].interaction` and preserve ordered
 messages, stream lifecycle events and publish/consume observations. Retain the

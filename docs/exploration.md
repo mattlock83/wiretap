@@ -1,267 +1,289 @@
-# Explore invalid provider inputs
+# Explore invalid inputs inside your tests
 
-`wiretap explore` turns a passing provider test capture into generated rejection
-tests. Wiretap owns this optional test runner. Existing SDK capture integrations
-remain libraries called by your own test framework.
+Call `wiretap.explore()` after your ordinary happy-path request and assertions,
+while its capture session remains open. Wiretap uses that completed traffic and
+the frozen OpenAPI or Protobuf contract to generate rejection checks. Awaiting exploration
+makes those checks part of the enclosing test in Jest, `node:test`, Go `testing`,
+or any other framework using the HTTP API.
 
-The source bundle is a read-only build artifact. Hook code and executable
-commands stay in the project. Exploration writes a new bundle containing a fresh
-baseline, generated attempts, assertions and updated coverage. Reports can be
-rebuilt later without the project, hooks or running application.
+Each baseline and generated case is recorded as its own attempt in the **same
+run bundle**. There is no previous bundle to prepare or second test runner to
+launch. Your framework owns test reporting, including JUnit if configured there.
+The bundle retains the detailed generated cases, assertions and coverage.
 
-## Try the complete example
+## Try the complete examples
 
-With Go and Python 3.9 or newer installed, from the repository root:
+From the repository root:
+
+```bash
+npm ci --prefix sdk/js
+./examples/run-basic-rest-e2e.sh
+```
+
+This runs an ordinary Node test, captures its happy path and existing inventory
+mock, then calls scoped exploration inside the same test. For a provider with
+SQLite state and authentication, run:
 
 ```bash
 python3 examples/provider-exploration/demo.py
 ```
 
-The example captures a happy-path test of an HTTP provider backed by SQLite.
-External Python hooks insert a fresh database user and obtain credentials for
-each case, assert that rejected requests created no order, and remove the
-fixtures. It prints the original and generated bundle paths. Open the generated
-bundle's `docs/viewer.html`, then **Contract coverage → Invalid-input coverage**.
+The Python example uses the HTTP API directly. Local callbacks create a fresh
+user for every case, supply credentials and IDs, assert database effects, and
+remove fixtures. It requires Go and Python 3.9+, with no Python dependencies.
+Open the printed bundle's `docs/viewer.html`, then **Contract coverage →
+Invalid-input coverage**. [Microsvc Transactions](../examples/microsvc-transactions/README.md)
+shows the same lifecycle in `unittest` against a real service image.
+For native gRPC, run `./examples/grpc-exploration/run.sh`; its Go test uses
+Protovalidate annotations, fresh fixtures and authentication metadata. It also
+supports a local descriptor set with reflection disabled.
 
-## Run against your provider
+## Call from an existing test
 
-Add an `explore` section to your project `.wiretap.yaml`:
+```javascript
+await wiretap.runTest('creates an order and rejects invalid inputs', async () => {
+  const fixture = await createUser();
+  try {
+    const response = await fetch(`${wiretap.sutUrl}/orders`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', Authorization: fixture.token },
+      body: JSON.stringify({ user_id: fixture.id, quantity: 2 })
+    });
+    assert.equal(response.status, 201);
+    await assertOrderCreated(fixture.id);
 
-```yaml
-version: 1
-output_dir: artifacts
-sut:
-  id: orders
-  url: http://127.0.0.1:8080
-  schema: schemas/orders.openapi.yaml
-explore:
-  expected_statuses: [400, 422]
-  max_cases: 100
-  request_timeout: 15s
-  hooks:
-    before_case:
-      command: [python3, tests/wiretap_hooks.py]
-      timeout: 30s
-    check_case:
-      command: [python3, tests/wiretap_hooks.py]
-    after_case:
-      command: [python3, tests/wiretap_hooks.py]
-  bindings:
-    - name: user_id
-      in: body
-      path: /user_id
+    await wiretap.explore({
+      operations: ['POST /orders'],
+      expectedStatuses: [400],
+      bindings: [{ name: 'user_id', in: 'body', path: '/user_id' }],
+      hooks: {
+        beforeCase: async () => {
+          const user = await createUser();
+          return { bindings: { user_id: user.id }, state: { token: user.token } };
+        },
+        beforeRequest: {
+          operations: ['POST /orders'],
+          handler: async event => ({ headers: { Authorization: event.state.token } })
+        },
+        checkCase: async event => ({ checks: [{
+          name: 'expected database effect',
+          passed: await orderCount(event.bindings.user_id) ===
+            (event.mode === 'baseline' ? 1 : 0)
+        }] }),
+        afterCase: async event => deleteUserAndOrders(event.bindings.user_id)
+      }
+    });
+  } finally {
+    await deleteUserAndOrders(fixture.id);
+  }
+});
 ```
 
-```bash
-wiretap explore --bundle artifacts/<source-run> --test "creates an order" --config .wiretap.yaml
-```
+Fixture helpers in this example are your ordinary application test helpers.
+Callbacks can use live database connections and other variables from the test
+process. Only returned JSON bindings, state, headers and checks cross the HTTP
+boundary. SDKs contain callback dispatch and lifecycle wrappers; generation,
+execution, cancellation and recording live in the Wiretap binary.
 
-Use `--attempt <id>` when a test name has several attempts. With a single authored
-attempt, the selector can be omitted. `--target http://host:port`, `--output <parent>`
-and `--max-cases <n>` override the project defaults. The target is an HTTP(S)
-origin; captured paths and query strings are retained, including any server base
-path. The frozen source schema governs validation; changing the project schema
-does not change that captured contract.
+An exploration failure rejects the JavaScript promise or returns a Go error.
+Await/check it as you would any other test assertion. All checks must finish
+before the parent capture is torn down. Await pending happy-path requests before
+starting exploration; unfinished traffic cannot be a stable seed.
 
-The SUT and its existing mocks must be available. Hooks can prepare that
-environment, but the runner does not infer mock definitions from captured traffic.
-Exploration sends provider requests directly and captures their responses;
-it does not replay or capture downstream dependency calls. Rejection coverage
-is provider-only.
+## Select operations and hook scope
 
-The command prints the new bundle path. Exit status is zero when the fresh
-baseline and all executed cases pass, one for test/execution failures, and two
-for CLI usage errors. A case budget can leave targets unexecuted even with a zero
-exit status; these remain **not covered**. Original coverage is not copied into
-the new run: every credited exchange was executed against the current target.
+`operations` contains exact OpenAPI **method and spec path** selectors, such as
+`POST /orders` or `GET /orders/{id}`, or fully qualified native gRPC procedures
+such as `/orders.v1.Orders/CreateOrder`. The SDK's optional `flowId` selects one
+captured request when an operation was called several times. Omitting operation
+selection includes eligible captured provider operations. Unknown selectors or
+operations without a usable captured seed fail explicitly.
 
-## Lifecycle and external command protocol
+A hook can be a callback, a scoped `{operations, handler}` object, or an array of
+scoped definitions. For example, use one request signer for `POST /orders` and
+another for `GET /orders/{id}`. Request hooks match the current request's spec
+operation; case hooks match the case's target operation. A baseline is associated
+with its selected operation, so it participates in the same setup and cleanup.
 
-| Event | Scope | Purpose |
+Scope chooses where to generate mutations. Earlier happy-path requests can still
+be needed as prerequisites and execute before the selected request. Configure
+request hooks for those prerequisites too. Exploration does not invent mock
+responses or start dependencies: existing mocks and services remain under your
+test harness's control.
+
+## Lifecycle callbacks
+
+| SDK hook | HTTP event | When it runs |
 | --- | --- | --- |
-| `before_run` | Once | Prepare shared resources and run context. |
-| `before_case` | Baseline and every variation | Reset state, seed users/resources, provide fresh authentication. |
-| `before_request` | Each request after binding and mutation | Optionally sign the final request or supply request-specific headers. |
-| `check_case` | After execution, before cleanup | Return named business-property checks. |
-| `after_case` | Every attempted case, including failed setup | Clean up case fixtures. |
-| `after_run` | Run completion, failure or cancellation | Release shared resources. |
+| `beforeExplore` | `before_explore` | Once, before the first baseline. Prepare shared context. |
+| `beforeCase` | `before_case` | Before each baseline and rejection case, to reset state and create fixtures. |
+| `beforeRequest` | `before_request` | After binding and mutation, to authenticate or sign the final request. |
+| `checkCase` | `check_case` | After traffic, before cleanup. Check database effects and other business properties. |
+| `afterCase` | `after_case` | Clean up each attempted case, including partial setup or execution failures. |
+| `afterExplore` | `after_explore` | Release shared resources after completion, failure or cancellation. |
 
-All hooks are optional. Each invocation starts a fresh command in the directory
-containing `.wiretap.yaml`, inherits the environment, and receives one JSON object
-on standard input. Arguments are passed directly to the executable. To use a
-shell, name it explicitly: `[bash, tests/setup.sh]` or
-`[pwsh, -NoProfile, -File, tests/setup.ps1]`.
+All callbacks are optional. Cases run serially within an invocation. Shared
+fixtures still need isolation if the test framework runs several parent tests
+concurrently. Callbacks receive `trace_context` for routing requests through the
+correct session: invocation hooks use the parent trace, and case hooks use that
+generated case's trace. SDKs activate this context around local callbacks;
+raw HTTP integrations should propagate it when making requests through Wiretap.
 
-Standard output is either empty or one JSON object. Standard error is for logs.
-A nonzero exit, timeout or malformed output is an execution failure. Default
-timeout is 30 seconds per invocation; output is limited to 1 MiB. The runner
-executes cases serially. No Wiretap language SDK is required.
+Traffic used by a callback to prepare fixtures, authenticate or inspect effects
+is excluded from captured evidence and coverage while that callback is active.
+Only the generated provider requests and dependency exchanges they produce
+contribute case evidence. Await all callback work before returning so background
+fixture traffic cannot escape that lifecycle boundary.
 
-Example input:
+Callbacks receive `event`, `run_id`, `case_id`, `scenario`, `operation`, `mode`
+(`baseline` or `rejection`), `bindings`, `state` and `headers`. Rejection cases
+include `mutation`, identifying the flow, constraint and target location.
+Request callbacks also receive `flow_id` and `request` with method, URL,
+multivalue headers, decoded JSON body and `body_base64` for exact signing bytes.
+For gRPC, `grpc_request` contains `procedure`, multivalue `metadata`, ProtoJSON
+`messages`, exact Protobuf `messages_base64` and `response_gates` describing the
+observed receive-before-send order. Returned `headers` become request metadata.
+Check and cleanup callbacks receive available `exchanges`, `outcome` and errors.
 
-```json
-{
-  "version": 1,
-  "event": "before_case",
-  "run_id": "run-...",
-  "case_id": "negative-...",
-  "scenario": "creates an order",
-  "mode": "rejection",
-  "mutation": {
-    "key": "...",
-    "schema_id": "orders",
-    "operation": "POST /orders",
-    "flow_id": "flow-1",
-    "instance_location": "/body/quantity",
-    "constraint": "required",
-    "expected_statuses": [400, 422]
-  },
-  "bindings": {},
-  "state": {},
-  "headers": {}
-}
-```
-
-The baseline has `mode: baseline` and no mutation. Request hooks also receive
-`flow_id` and `request` (method, URL, multivalue headers, JSON body and
-`body_base64` with the exact final body bytes for request signing). Check and
-cleanup hooks receive `exchanges`, `outcome` and any execution `error`. Each
-exchange uses the bundle flow representation, including `request.HTTP` and
-`response.HTTP`.
-
-Example setup output:
+Callbacks can return JSON `bindings`, `state` and `headers`. Only `checkCase`
+may also return `checks`; other lifecycle events must omit that field. A
+`checkCase` result can therefore look like:
 
 ```json
 {
   "bindings": {"user_id": "fresh-user"},
+  "state": {"cleanup_user_id": "fresh-user"},
   "headers": {"Authorization": "Bearer fresh-token"},
-  "state": {"cleanup_user_id": "fresh-user"}
+  "checks": [{"name": "no order inserted", "passed": true}]
 }
 ```
 
-`before_run` supplies defaults copied into each case. `before_case` updates that
-case's bindings, state and default request headers. `before_request` can return
-headers for just that request, plus bindings/state for later steps. It cannot
-replace the mutated payload. Wiretap revalidates the final request to ensure the
-hook did not undo or add violations. `check_case` may update case context for
-cleanup. Cleanup hook output is ignored.
+`beforeExplore` supplies defaults copied into cases; `beforeCase` updates that
+case's context. `beforeRequest` supplies request-specific headers and can update
+context for later requests. It cannot silently replace the intended mutation.
+Wiretap revalidates the final request so a signing hook cannot undo the target
+violation or introduce unrelated violations. A configured `checkCase` must
+return at least one explicit check, or throw to fail. An empty result is not an
+assertion. Cleanup callback results do not alter successful checks.
 
-Bindings and state are JSON values carried by Wiretap between separate processes.
-Live database connections cannot cross that boundary. This context is not stored
-in the bundle; request/response values remain subject to capture redaction.
-Use hooks or response cookies to supply current authentication: captured
-Authorization and Cookie headers are cleared before replay. Those headers and
-Set-Cookie are removed from persisted evidence. Source redaction rules are
-inherited, and `explore.redactions` can add ordinary Wiretap redaction rules for
-other sensitive headers and payload fields. Hook logs and property messages are
-project-authored output; avoid putting credentials in them.
+Setup, signing, callback, transport and incomplete-capture failures stop
+exploration. Ordinary rejection-status and property failures remain recorded
+and allow subsequent independent cases to run. Cleanup failure also stops
+subsequent cases because fixture isolation is uncertain, and fails the awaited
+exploration call and its enclosing test.
+Cleanup callbacks should be idempotent and tolerate partially completed setup.
+They have a bounded cleanup opportunity after cancellation; an abruptly killed
+test process cannot run local cleanup. JavaScript callbacks receive an abort
+`signal` and should honor it for long operations.
 
-`check_case` must return at least one explicit check when configured:
+## Fresh values and authentication
 
-```json
-{"checks": [{"name": "no order inserted", "passed": true}]}
+HTTP bindings target `body` (JSON pointer), `query`, `header`, `cookie` or `path`
+(OpenAPI parameter name). Use `flowId` to restrict a binding to one captured flow.
+For sequences, `extract` can obtain a value from an earlier response's body or
+header and bind it into a later request. The HTTP form uses `flow_id`.
+
+```javascript
+await wiretap.explore({
+  operations: ['GET /orders/{id}'],
+  extract: [{ name: 'order_id', flowId: createFlowId, in: 'body', path: '/id' }],
+  bindings: [{ name: 'order_id', flowId: getFlowId, in: 'path', path: 'id' }]
+});
 ```
 
-An empty successful process exit is not an assertion. A failed property fails
-the attempt and prevents coverage credit. The hook should choose applicable
-checks using `mode`; a successful baseline may create an order, while a rejected
-request should not. `check_case` runs after HTTP failures too, with the exchanges
-that are available. An earlier hook or binding failure skips checking and goes
-to cleanup.
+For gRPC, body bindings use ProtoJSON pointers and optional `messageIndex`
+(`message_index` over HTTP). Omitting the index applies a binding to every
+request message; response body extraction defaults to message zero. Bind or
+extract `metadata`, and extract response `trailers`, by key. Protocol fields
+remain native: gRPC does not acquire HTTP query, path or cookie semantics.
 
-Cleanup runs with its own timeout after failures/cancellation and should be
-idempotent, including when setup only partly completed. Cleanup failure stops
-exploration to avoid contaminating later cases. Abrupt host termination cannot
-guarantee cleanup. Setup/check/signing failures also stop the run; ordinary HTTP
-or property failures are recorded and exploration continues within its budget.
-Name or tag fixtures with `run_id` and `case_id` when cleanup must recover them
-after setup fails before returning its bindings.
-
-## Apply hooks to selected requests
-
-Hook configuration is per lifecycle event, with no YAML path matcher. A
-`before_request` command can inspect `request.method` and the path in
-`request.url`, then return headers only for matching requests. Return `{}` for
-requests needing no changes; the command is still invoked for each request.
-
-Case hooks can branch on `scenario`, `mode` and `mutation.operation`. A baseline
-has no mutation, so handle it separately. A configured `check_case` must still
-return an applicable assertion; an empty result is not a skipped check.
-Bindings and response extraction can be restricted to a captured `flow_id` as
-shown below.
-
-## Sequences and fresh values
-
-Wiretap first runs the full happy-path sequence from a fresh fixture. Every
-request must be valid and every response must be a schema-valid 2xx. If that
-baseline fails, no mutations execute. Every generated case gets fresh setup,
-replays earlier steps, then sends the mutated request. Later happy-path steps
-are omitted because rejection changes the flow.
-
-Bindings support `body` (JSON pointer), `query`, `header`, `cookie` and `path`
-(OpenAPI parameter name). Add `flow_id` to limit a binding to one captured flow.
-Use explicit response extraction when a later request needs a newly created ID:
-
-```yaml
-explore:
-  extract:
-    - name: order_id
-      flow_id: create-order-flow
-      in: body
-      path: /id
-  bindings:
-    - name: order_id
-      flow_id: get-order-flow
-      in: path
-      path: id
-```
-
-Extraction also supports one response header (`in: header`, `path: Location`).
-Cookie sessions are isolated per case and updated from actual responses. Missing
-bindings/extractions fail explicitly. Hooks own non-HTTP setup, cleanup and any
-data relationships that are not expressed by these rules.
+Cookie sessions are isolated per HTTP case. Missing bindings and extractions fail
+explicitly. Captured Authorization and Cookie headers are cleared before
+execution; supply fresh authentication through callbacks or actual responses.
+Authorization, Cookie and Set-Cookie values are removed from persisted evidence.
+Parent redaction rules apply, and each call can add `redactions`. Runtime context
+and hook code are not bundle contents. Avoid credentials in check messages.
 
 ## Generated cases and coverage
 
 Version `wiretap-negative-1` supports OpenAPI 3.0 JSON bodies and scalar parameters:
-missing required body/fields/parameters, wrong types, forbidden nulls, values
+missing required bodies/fields/parameters, wrong types, forbidden nulls, values
 outside enums, numeric boundaries, string length/pattern mismatches and array
-length limits. It mutates one location at a time and only admits candidates whose
-request validation errors identify the intended constraint at that location.
+length limits. It mutates one location at a time, admitting only candidates
+whose validation errors identify the intended constraint at that location.
 Nested objects and existing array items are included. Authentication headers and
 cookie parameters are not mutation targets.
 
-The generator is deterministic. It uses bounded representative values, not every
-possible permutation. Composed/recursive schemas, complex parameters, unsupported
-serialization and cases without an isolated witness are skipped or rejected;
-diagnostics accompany the baseline. Generation is capped at 10,000 targets,
-schema depth 20, 32 existing array items per array, and generated length witnesses
-below roughly 10,000 elements/characters. OpenAPI 3.1, non-JSON request bodies,
-compressed requests, truncated or redacted seed request bodies, concurrent provider
-sequences, general property generation and failure shrinking are not supported.
+There is **no default case budget**: all supported cases in scope execute. Set
+`maxCases` explicitly if useful; unexecuted targets remain not covered. This is a
+finite catalogue of representative violations, not every payload permutation.
+Safety bounds still apply: at most 10,000 generated targets, schema depth 20,
+32 existing items per array, and length witnesses below roughly 10,000
+characters/elements. Generation diagnostics expose unsupported or bounded work.
+Request timeout defaults to 15 seconds; hook timeout defaults to 30 seconds.
 
-Exploration replays HTTP provider requests only. A selected test containing any
-gRPC provider call, including a mixed HTTP/gRPC provider sequence, is rejected
-before hooks or network traffic. HTTP provider tests may have captured gRPC
-dependency calls; these remain source evidence and are not replayed or claimed
-as new dependency observations.
+Composed/recursive schemas, complex parameters, unsupported serialization and
+cases without an isolated witness are skipped or rejected. OpenAPI 3.1,
+non-JSON or compressed request bodies, incomplete/redacted seed bodies,
+concurrent provider sequences, general property generation and shrinking remain
+unsupported. Other wire protocols fail explicitly. HTTP providers can have gRPC
+dependencies, and gRPC providers can have HTTP or gRPC dependencies.
 
-By default an invalid request must produce **400 or 422**, and its response must
-match the frozen contract. Configure other validation 4xx statuses explicitly.
-401, 403, 429, redirects, server errors and unexpected success never satisfy the
-rejection check. Redirects are not followed. Response capture is bounded to 4 MiB;
-incomplete exchanges earn no coverage. Receiving an allowed status proves the
-configured rejection check; domain-specific reasons and side effects need
-`check_case` assertions.
+For HTTP, each selected operation has a fresh baseline that replays its happy-path prefix.
+That baseline must be schema-valid and succeed before its rejection cases execute. By default rejection requires **400 or 422**, with a response
+matching the frozen contract. Configure other validation 4xx statuses explicitly.
+401, 403, 429, redirects, server errors and unexpected success never establish
+input validation. Redirects are not followed. Incomplete response capture earns
+no coverage. Domain-specific reasons and side effects need `checkCase` checks.
 
-The new bundle contains each attempt's source run/attempt/hash, targeted
-constraint, final request-verification result, response checks and properties.
-`docs/contract-coverage.json` includes a separate `rejection_coverage` catalogue,
-displayed in the HTML Contract coverage tab and Markdown. It counts generated targets
-as covered, failed or not covered. Targets never attempted due to budget or setup
-failure remain not covered. Expected invalid requests cannot earn positive
-request-condition coverage; a passing, valid error response can earn ordinary
-response-condition coverage. Expected violations are labelled where retained
-evidence permits revalidation. Redaction still makes ordinary condition
-measurement conservative; the separately recorded runtime rejection checks
-remain explicit evidence.
+## Native gRPC cases
+
+Native unary, server-streaming, client-streaming and bidirectional RPCs use the
+same SDK call and local lifecycle. Select a procedure and, if needed, its captured
+`flowId`. Set `expectedGrpcStatuses: [3]` (Go: `ExpectedGRPCStatuses`, HTTP:
+`expected_grpc_statuses`) for `INVALID_ARGUMENT`, the default. Explicit
+`OUT_OF_RANGE` (11) is also supported. Authentication, deadline, transport,
+internal errors and arbitrary non-OK codes never prove input validation.
+
+A plain Protobuf contract usually has no application length/range rules. Add
+standard `(buf.validate.field)` annotations when those constraints are part of
+the API contract; freeze their imported definitions with the rest of the
+contract. Reflection and local descriptors behave identically. Wiretap currently
+generates isolated witnesses for annotated required fields, string length
+bounds, numeric bounds, enum membership/defined values, boolean constants,
+repeated collection length/uniqueness and minimum map size. Unsupported rules
+and cases with no isolated witness remain visible in generation notes.
+It does not invent missing constraints or corrupt the Protobuf wire format.
+
+Protovalidate verifies each baseline and the exact intended rule violation.
+Other rules, including custom CEL, are evaluated to prevent an unrelated
+violation from passing as the intended case. Wiretap does not synthesize
+arbitrary CEL, regex, application semantics or new stream conversations.
+
+A baseline replays earlier provider RPCs and the full selected RPC. A generated
+stream case retains the recorded input prefix through the mutated message,
+then half-closes. Observed receive-before-send dependencies are retained, so
+bidirectional exchanges that need an earlier server response can progress.
+A repeated rule has one contract target; evidence identifies the exact message
+index for each generated witness. Empty, incomplete, redacted or undecodable
+seeds cannot manufacture cases or assurance. Concurrent provider RPC sequences
+are unsupported, and all executions have bounded deadlines.
+
+Successful rejection evidence requires complete native observations, verified
+Protobuf decoding and an expected application status actually supplied by the
+upstream. A trailers-only rejection is valid: no response message is invented.
+Use `checkCase` for expected database effects and other business properties.
+Passive structural condition coverage remains separate from this generated
+rule catalogue; this feature does not claim a full Protovalidate coverage model.
+
+The one bundle records every case's lineage, target, request-verification result,
+response checks and properties. `docs/contract-coverage.json` contains the
+separate `rejection_coverage` catalogue, also shown in Markdown and HTML.
+Generated checks contribute only their qualifying fresh evidence. Expected
+invalid inputs cannot earn positive request-condition coverage; valid passing
+error responses can earn ordinary response-condition coverage. Failed or
+unexecuted targets remain visible. Reports rebuild offline without hook code.
+
+See the [HTTP callback protocol](runtime-api.md#exploration-inside-a-test) to
+integrate other languages, and the [implementation plan](code-exploration-plan.md)
+for the execution model and its boundaries.

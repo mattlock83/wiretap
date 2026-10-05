@@ -21,18 +21,15 @@ and HTML dashboard also link to an inferred OpenAPI draft for `inventory-service
 It is generated from observed mock traffic alongside the supplied spec, which
 continues to control validation.
 
-After capture succeeds, the script runs `wiretap explore` using the happy flow
-as its seed. It checks that missing, null and incorrectly typed inputs receive
-a documented HTTP 400 response, then verifies the generated rejection coverage.
-Exploration writes a separate bundle and leaves the capture unchanged. Both
-bundle paths are printed; open the exploration dashboard's **Contract coverage →
-Invalid-input coverage** to see the results.
+The Node test awaits `wiretap.explore({ operations: ["POST /process"], ... })`
+after its happy-path assertions. Generated cases check that missing, null and
+incorrectly typed inputs receive a documented HTTP 400 response. The authored
+and generated attempts share one bundle; the shell harness verifies its
+rejection coverage. The SUT and mock remain running throughout the test.
 
-Finalizing capture stops its proxy, so the harness restarts this stateless demo
-SUT with a direct connection to the same inventory mock before exploration.
-Exploration does not replay or capture downstream mock traffic. For providers
-that need authentication or database fixtures, see the
-[external hooks example](../provider-exploration/demo.py) and
+The example's local `checkCase` callback is scoped to that operation. For fresh
+authentication, database fixtures and cleanup callbacks, see the
+[SQLite example](../provider-exploration/demo.py) and
 [exploration guide](../../docs/exploration.md).
 
 ## Ordinary clients and parallel test traces
@@ -52,7 +49,8 @@ The shell harness starts Wiretap with [.wiretap.yaml](.wiretap.yaml) alongside t
 demo services. Native Node suite hooks or Jest global teardown finalize capture
 over HTTP; Jest workers only own their test attempts. The bundle and views are
 written automatically, without a report command.
-The harness then explores the passing `processes 123` test from that capture.
+This variant focuses on parallel capture; the default Node variant demonstrates
+exploration inside a test.
 
 For an uninstrumented SUT with serial capture:
 

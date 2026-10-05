@@ -142,12 +142,11 @@ and [HTTPS trust](https-trust.md).
 
 ## Exploration settings
 
-The optional `explore` section configures the generated provider test runner:
-`hooks`, `expected_statuses` (default `[400, 422]`), `max_cases` (default `100`),
-`request_timeout` (default `15s`), runtime `bindings`, response `extract` rules,
-and additional `redactions`. Hook commands run relative to this file and inherit
-the environment. They are invoked only by `wiretap explore`; capture and report
-commands never execute them. See [exploration and hooks](exploration.md).
+Exploration is configured in test code through `wiretap.explore(...)` or the
+HTTP API. Select operations, expected validation statuses, timeouts, value
+bindings and local lifecycle callbacks for each call. `.wiretap.yaml` declares
+runtime boundaries and schemas; it has no exploration or executable hook section.
+See [exploration and hooks](exploration.md).
 
 ## CLI commands
 
@@ -157,7 +156,6 @@ through the [HTTP API](runtime-api.md), usually via an SDK.
 | Command | Purpose |
 | --- | --- |
 | `wiretap [--config path]` | Start the HTTP control service; wait for capture lifecycle calls. |
-| `wiretap explore --bundle <path> [--config path]` | Execute provider rejection checks and write a new bundle. See [selection, targets and hooks](exploration.md#run-against-your-provider). |
 | `wiretap report --bundle <path>` | Rebuild a bundle's Markdown, HTML, knowledge and coverage views offline. |
 | `wiretap export --bundle <path> --format json` | Export a diagnostic coverage report to stdout; `--format yaml` and `--output <file>` are also supported. |
 | `wiretap ca [--config path]` | Print the public proxy CA certificate, creating the local CA if needed. |

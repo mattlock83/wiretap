@@ -70,6 +70,7 @@ type viewerAttempt struct {
 	Exploration                                                                   *artifact.Exploration
 	Assertions                                                                    []artifact.Assertion
 	ID, Name, Status, TraceID, EvidenceURL, MarkdownURL, ValidationStatus, Search string
+	ParentAnchor                                                                  string
 	Incomplete                                                                    bool
 	Chronological                                                                 bool
 	Diagnostics                                                                   []string
@@ -243,7 +244,10 @@ func writeViewer(root string, run *bundle.Run, captures []*artifact.Artifact, re
 		attempt.GroupKey = "authored"
 		attempt.GroupName = "Authored tests"
 		if x := capture.Exploration; x != nil {
-			attempt.GroupKey = "generated|" + x.SourceRunID + "|" + x.SourceAttemptID + "|" + x.SourceSHA256
+			attempt.GroupKey = "generated|" + explorationGroupKey(x)
+			if explorationParentCommitted(run, x) {
+				attempt.ParentAnchor = "attempt-" + shortHash(x.SourceAttemptID)
+			}
 			attempt.GroupName = capture.TestCase.Name
 			if i := strings.LastIndex(attempt.GroupName, " ["); i >= 0 {
 				attempt.GroupName = attempt.GroupName[:i]

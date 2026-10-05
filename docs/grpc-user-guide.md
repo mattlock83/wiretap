@@ -381,15 +381,36 @@ identity are separate profiles.
 
 Protobuf does not normally specify HTTP-style ranges, regexes or response-code
 alternatives. Wiretap does not invent those rules. Arbitrary CEL/Protovalidate
-annotations and recursive/dynamic `Any` condition expansion remain explicitly
-unmeasured; known `Any` values can still be decoded for inspection. See the
+annotations are not part of passive condition measurement; recursive/dynamic
+`Any` condition expansion also remains explicitly unmeasured; known `Any` values can still be decoded for inspection. See the
 [coverage rules](contract-coverage-rules.md).
 
 Try the [streaming example](../examples/grpc-streaming/README.md) or the
 [native Node example](../examples/grpc-boundaries/node/README.md). Connect's own
-wire protocol, gRPC-Web, mTLS and gRPC exploration are separate features;
-`wiretap explore` remains HTTP-only. Existing clients, mocks and test framework
-hooks remain the integration model.
+wire protocol, gRPC-Web and mTLS remain separate features. Existing clients,
+mocks and test framework hooks remain the integration model.
+
+## Explore declared validation rules
+
+After a successful call inside an active captured test, invoke `session.Explore`
+(Go) or `wiretap.explore` (JavaScript), scoped to its fully qualified procedure.
+The same lifecycle API supports all four RPC shapes. Local callbacks reset
+fixtures, supply fresh metadata and message bindings, check business effects
+and clean up; generated attempts join the authored test in one OKF bundle.
+
+Wiretap generates a finite set of isolated invalid inputs for supported standard
+Protovalidate annotations. Plain Protobuf does not imply application-specific
+lengths or ranges. The default expected rejection is `INVALID_ARGUMENT` (3);
+`OUT_OF_RANGE` (11) can be explicitly allowed. Errors from authentication,
+transport or an incomplete capture never count as validation assurance.
+Custom CEL is validated to detect interference, but arbitrary CEL predicates and
+new stream conversations are not synthesized. Stream cases replay the captured
+input prefix through one mutated message and then half-close.
+
+Run `./examples/grpc-exploration/run.sh`, or choose its `descriptor_set` mode to
+use reflection-disabled servers. See the [example](../examples/grpc-exploration/README.md)
+and [exploration guide](exploration.md#native-grpc-cases) for the supported rule
+subset, hooks and evidence requirements.
 
 Capturing a mock response does not prove the consumer used every field or that
 the provider agrees with it.

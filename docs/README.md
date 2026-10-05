@@ -4,11 +4,11 @@ Wiretap has two workflows:
 
 - **Capture existing tests.** Your test framework owns execution. SDK or HTTP
   lifecycle calls tell the Wiretap proxy which test is running and its outcome.
-- **Explore a captured scenario.** The optional `wiretap explore` runner executes
-  generated invalid-input checks, using project-owned hooks for fixtures and
-  authentication. It writes a new bundle.
+- **Explore inside an existing test.** An awaited SDK or HTTP call runs generated
+  invalid-input checks. Local callbacks manage fixtures, authentication and
+  assertions. Their cases join the authored test in the same run bundle.
 
-Both produce the same portable bundle of API evidence, dependency assumptions
+Both contribute to the same portable bundle of API evidence, dependency assumptions
 and coverage. Start with capture, then add exploration when you have a suitable
 happy-path scenario.
 
@@ -40,7 +40,7 @@ happy-path scenario.
 
 | Reference | Scope |
 | --- | --- |
-| [Bundle format](bundle-evidence.md) | Parse API dependencies, recorded tests, contracts and payloads; understand external execution hooks. |
+| [Bundle format](bundle-evidence.md) | Parse API dependencies, recorded tests, contracts and payloads; understand execution lineage and local test hooks. |
 | [OKF profile](okf-profile.md) | Generated Markdown, frontmatter and ownership of bundle paths. |
 | [Architecture](architecture.md) | Runtime, SDK, proxy, exploration, storage and reporting responsibilities. |
 
@@ -48,7 +48,7 @@ happy-path scenario.
 
 | Plan | Scope |
 | --- | --- |
-| [gRPC implementation plan](grpc-support-plan.md) | Design, unary scope and remaining streaming/interoperability work. |
+| [gRPC implementation plan](grpc-support-plan.md) | Native gRPC support, verified scope and remaining work. |
 | [gRPC user guide](grpc-user-guide.md) | Reflection by default, local contracts, existing clients and test lifecycle. |
 
 ## Product direction

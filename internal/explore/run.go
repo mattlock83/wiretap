@@ -5,11 +5,9 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
-	"os"
 	"sort"
 	"strings"
 	"time"
@@ -17,228 +15,87 @@ import (
 
 	"github.com/phrond/wiretap/internal/artifact"
 	"github.com/phrond/wiretap/internal/bundle"
-	"github.com/phrond/wiretap/internal/bundlereport"
 	"github.com/phrond/wiretap/internal/capture"
-	"github.com/phrond/wiretap/internal/coverage"
 	"github.com/phrond/wiretap/internal/hooks"
 	"github.com/phrond/wiretap/internal/redact"
+	"github.com/phrond/wiretap/internal/tracecontext"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 )
 
-type Options struct {
-	Bundle, Attempt, Test, Target, Output string
-	Config                                Config
-	Logs                                  io.Writer
-}
-type Result struct {
-	Bundle                              string
-	Generated, Executed, Passed, Failed int
-}
 type step struct {
-	ID      string
-	Request request
+	GRPC      *grpcSeed
+	ID        string
+	Operation string
+	Request   request
 }
 
-type hookInput struct {
-	Version   int                       `json:"version"`
-	Event     string                    `json:"event"`
-	RunID     string                    `json:"run_id"`
-	CaseID    string                    `json:"case_id,omitempty"`
-	Scenario  string                    `json:"scenario"`
-	Mode      string                    `json:"mode,omitempty"`
-	Mutation  *artifact.RejectionTarget `json:"mutation,omitempty"`
-	FlowID    string                    `json:"flow_id,omitempty"`
-	Request   *request                  `json:"request,omitempty"`
-	Bindings  map[string]any            `json:"bindings"`
-	State     map[string]any            `json:"state"`
-	Headers   map[string]string         `json:"headers"`
-	Exchanges []artifact.Flow           `json:"exchanges,omitempty"`
-	Outcome   string                    `json:"outcome,omitempty"`
-	Error     string                    `json:"error,omitempty"`
+type HookInput struct {
+	GRPCRequest     *GRPCHookRequest          `json:"grpc_request,omitempty"`
+	HookID          string                    `json:"hook_id,omitempty"`
+	TraceContext    map[string]string         `json:"trace_context,omitempty"`
+	Operation       string                    `json:"operation,omitempty"`
+	Operations      []string                  `json:"operations,omitempty"`
+	InvocationID    string                    `json:"invocation_id"`
+	ParentAttemptID string                    `json:"parent_attempt_id"`
+	Version         int                       `json:"version"`
+	Event           string                    `json:"event"`
+	RunID           string                    `json:"run_id"`
+	CaseID          string                    `json:"case_id,omitempty"`
+	Scenario        string                    `json:"scenario"`
+	Mode            string                    `json:"mode,omitempty"`
+	Mutation        *artifact.RejectionTarget `json:"mutation,omitempty"`
+	FlowID          string                    `json:"flow_id,omitempty"`
+	Request         *request                  `json:"request,omitempty"`
+	Bindings        map[string]any            `json:"bindings"`
+	State           map[string]any            `json:"state"`
+	Headers         map[string]string         `json:"headers"`
+	Exchanges       []artifact.Flow           `json:"exchanges,omitempty"`
+	Outcome         string                    `json:"outcome,omitempty"`
+	Error           string                    `json:"error,omitempty"`
 }
 
-// Run never executes bundle content or updates the source bundle. Only the
-// explicitly supplied project configuration selects executable hook commands.
-func Run(ctx context.Context, opts Options) (result Result, err error) {
-	cfg := opts.Config
-	cfg.Defaults()
-	if err = cfg.Validate(); err != nil {
-		return result, err
-	}
-	if opts.Output == "" {
-		opts.Output = "artifacts"
-	}
-	if opts.Logs == nil {
-		opts.Logs = os.Stderr
-	}
-	target, e := url.Parse(opts.Target)
-	if e != nil || (target.Scheme != "http" && target.Scheme != "https") || target.Host == "" || target.User != nil || target.RawQuery != "" || target.Fragment != "" || (target.Path != "" && target.Path != "/") {
-		return result, fmt.Errorf("target must be an http(s) origin, without credentials, a base path, query or fragment")
-	}
-	source, captures, e := bundle.Load(opts.Bundle)
-	if e != nil {
-		return result, e
-	}
-	if source.RunState != "complete" || len(source.Pending) > 0 {
-		return result, fmt.Errorf("source bundle must be complete")
-	}
-	seed, e := selectSeed(captures, opts.Attempt, opts.Test)
-	if e != nil {
-		return result, e
-	}
-	for _, flow := range seed.Traffic {
-		if flow.Interaction != nil {
-			return result, fmt.Errorf("exploration does not support event interaction %q (%s %s); replay would omit its recorded events, including any dependency interactions", flow.ID, flow.Protocol, flow.Interaction.Kind)
-		}
-		if flow.Channel == "test_to_sut" && flow.Protocol == "grpc" {
-			return result, fmt.Errorf("gRPC provider exploration is not supported; select a test with only HTTP provider requests")
-		}
-	}
-	cfg.Redactions = append(append([]artifact.Redaction(nil), seed.Redactions...), cfg.Redactions...)
-	var ref artifact.SchemaRef
-	for _, r := range seed.Schemas {
-		if r.Role == "sut" {
-			if ref.ID != "" {
-				return result, fmt.Errorf("exploration requires one provider schema per seed attempt")
-			}
-			ref = r
-		}
-	}
-	if ref.Type != "openapi" || ref.Source.Type != "file" {
-		return result, fmt.Errorf("seed requires a supplied provider OpenAPI schema")
-	}
-	revision, e := coverage.ReplayContractRevision(ref)
-	if e != nil {
-		return result, e
-	}
-	s, e := loadSpec(ref)
-	if e != nil {
-		return result, e
-	}
-	steps, e := seedSteps(seed)
-	if e != nil {
-		return result, e
-	}
-	mutations, notes, e := generate(s, steps, source.APIID, revision, cfg.ExpectedStatuses)
-	if e != nil {
-		return result, e
-	}
-	if len(mutations) == 0 {
-		return result, fmt.Errorf("no supported isolated invalid-input cases can be generated from this seed")
-	}
-	for _, b := range cfg.Bindings {
-		if b.FlowID != "" && !hasStep(steps, b.FlowID) {
-			return result, fmt.Errorf("binding refers to unknown provider flow %q", b.FlowID)
-		}
-	}
-	for _, x := range cfg.Extract {
-		if !hasStep(steps, x.FlowID) {
-			return result, fmt.Errorf("extraction refers to unknown provider flow %q", x.FlowID)
-		}
-	}
-	w, e := bundle.New(opts.Output)
-	if e != nil {
-		return result, e
-	}
-	result.Bundle = w.Path()
-	result.Generated = len(mutations)
-	provenance := artifact.Exploration{Version: Version, SourceRunID: source.RunID, SourceAttemptID: seed.TestCase.ID}
-	for _, r := range source.Attempts {
-		if r.AttemptID == seed.TestCase.ID {
-			provenance.SourceSHA256 = r.SHA256
-		}
-	}
-	if e = w.Configure(bundle.Identity{APIID: source.APIID, SUTTargetKind: "service", TestSource: map[string]any{"generator": Version, "source_run_id": source.RunID, "source_attempt_id": seed.TestCase.ID, "source_sha256": provenance.SourceSHA256}}); e != nil {
-		return result, e
-	}
-	// Always finish a readable output, including failed setup and interrupted runs.
-	defer func() {
-		state := "complete"
-		if err != nil {
-			state = "interrupted"
-		}
-		err = errors.Join(err, w.Finalize(state))
-		_, viewErr := bundlereport.Rebuild(w.Path())
-		err = errors.Join(err, viewErr)
-	}()
-	base := hookInput{Version: hooks.Version, RunID: w.Snapshot().RunID, Scenario: seed.TestCase.Name, Bindings: map[string]any{}, State: map[string]any{}, Headers: map[string]string{}}
-	call := func(callCtx context.Context, event string, in *hookInput) (hooks.Output, error) {
-		in.Event = event
-		return hooks.Call(callCtx, cfg.Hooks.Commands()[event], cfg.Dir, *in, opts.Logs)
-	}
-	defer func() {
-		clean := context.WithoutCancel(ctx)
-		base.Outcome = "pass"
-		if err != nil || result.Failed > 0 {
-			base.Outcome = "fail"
-		}
-		if err != nil {
-			base.Error = err.Error()
-		}
-		_, cleanupErr := call(clean, "after_run", &base)
-		if cleanupErr != nil {
-			err = errors.Join(err, fmt.Errorf("after_run: %w", cleanupErr))
-		}
-	}()
-	initial, e := call(ctx, "before_run", &base)
-	if e != nil {
-		return result, fmt.Errorf("before_run: %w", e)
-	}
-	merge(&base, initial)
-	catalogue := make([]artifact.RejectionTarget, 0, len(mutations))
-	for _, m := range mutations {
-		catalogue = append(catalogue, m.Target)
-	}
-	if len(mutations) > cfg.MaxCases {
-		notes = append(notes, fmt.Sprintf("Case budget %d leaves %d generated targets unexecuted", cfg.MaxCases, len(mutations)-cfg.MaxCases))
-	}
-	baseline, runErr := runCase(ctx, w, s, steps, nil, base, cfg, target, provenance, catalogue, notes, call)
-	if runErr != nil {
-		return result, runErr
-	}
-	if baseline.TestCase.Status != "pass" {
-		return result, fmt.Errorf("fresh baseline failed; no mutations were executed (see output bundle)")
-	}
-	for i := range mutations {
-		if i >= cfg.MaxCases {
-			break
-		}
-		if ctx.Err() != nil {
-			return result, ctx.Err()
-		}
-		art, caseErr := runCase(ctx, w, s, steps, &mutations[i], base, cfg, target, provenance, nil, nil, call)
-		if art != nil {
-			result.Executed++
-			if art.TestCase.Status == "pass" {
-				result.Passed++
-			} else {
-				result.Failed++
-			}
-		}
-		if caseErr != nil {
-			return result, caseErr
-		}
-	}
-	return result, nil
-}
+type hookInput = HookInput
 
 type hookCaller func(context.Context, string, *hookInput) (hooks.Output, error)
 
-func runCase(ctx context.Context, w *bundle.Writer, s *spec, steps []step, m *mutation, base hookInput, cfg Config, target *url.URL, provenance artifact.Exploration, catalogue []artifact.RejectionTarget, notes []string, call hookCaller) (art *artifact.Artifact, err error) {
+func runCase(ctx context.Context, w *bundle.Writer, s *spec, steps []step, m *mutation, base hookInput, cfg Config, target *url.URL, provenance artifact.Exploration, catalogue []artifact.RejectionTarget, notes []string, call hookCaller, runtimes ...*caseRuntime) (art *artifact.Artifact, err error) {
+	var runtime *caseRuntime
+	if len(runtimes) > 0 {
+		runtime = runtimes[0]
+	}
 	id := "baseline"
 	mode := "baseline"
 	name := base.Scenario + " [baseline]"
 	if m != nil {
 		id = "negative-" + m.Target.Key[:20]
+		if m.GRPC != nil {
+			id += fmt.Sprintf("-message-%d", m.GRPC.index)
+		}
 		mode = "rejection"
 		name = base.Scenario + " [" + m.Target.Constraint + " " + m.Target.Location + "]"
 		t := m.Target
 		provenance.Target = &t
 	}
+	if runtime != nil {
+		if m == nil {
+			id = runtime.baselineID
+		} else {
+			id = runtime.execution.InvocationID + "-" + id
+		}
+	}
 	provenance.Mode = mode
 	provenance.Catalogue = catalogue
 	provenance.Notes = notes
 	art = &artifact.Artifact{Version: 1, TestCase: artifact.TestCase{ID: id, Name: name, StartedAt: time.Now().UTC(), Status: "pass"}, Exploration: &provenance, SchemaValidation: &artifact.SchemaValidation{Status: "pass"}}
-	frozen, e := w.Register(art.TestCase, []artifact.SchemaRef{s.ref})
+	var refs []artifact.SchemaRef
+	if s != nil {
+		refs = []artifact.SchemaRef{s.ref}
+	}
+	if runtime != nil {
+		refs = runtime.schemas
+	}
+	frozen, e := w.Register(art.TestCase, refs)
 	if e != nil {
 		return nil, e
 	}
@@ -247,6 +104,7 @@ func runCase(ctx context.Context, w *bundle.Writer, s *spec, steps []step, m *mu
 	input.CaseID = id
 	input.Mode = mode
 	input.Mutation = provenance.Target
+	begun := false
 	fail := func(message string, incomplete bool) {
 		art.TestCase.Status = "fail"
 		art.CaptureDiagnostics = append(art.CaptureDiagnostics, message)
@@ -254,6 +112,9 @@ func runCase(ctx context.Context, w *bundle.Writer, s *spec, steps []step, m *mu
 		input.Error = message
 	}
 	defer func() {
+		input.Request = nil
+		input.GRPCRequest = nil
+		input.Operation = base.Operation
 		input.Exchanges = art.Traffic
 		input.Outcome = art.TestCase.Status
 		_, cleanupErr := call(context.WithoutCancel(ctx), "after_case", &input)
@@ -261,27 +122,40 @@ func runCase(ctx context.Context, w *bundle.Writer, s *spec, steps []step, m *mu
 			fail("after_case failed: "+cleanupErr.Error(), true)
 			err = errors.Join(err, fmt.Errorf("after_case: %w", cleanupErr))
 		}
+		if runtime != nil && begun && runtime.execution.EndCase != nil {
+			if endErr := runtime.execution.EndCase(context.WithoutCancel(ctx), art); endErr != nil {
+				fail("capture cleanup failed: "+endErr.Error(), true)
+				err = errors.Join(err, endErr)
+			}
+		}
 		art.TestCase.FinishedAt = time.Now().UTC()
 		// Runtime context never becomes evidence. Header credentials are always
 		// removed; user-selected payload redactions apply before persistence.
 		rules := append([]artifact.Redaction(nil), cfg.Redactions...)
 		for _, name := range []string{"Authorization", "Proxy-Authorization", "Cookie"} {
 			if hasHeader(art, "request", name) {
-				rules = append(rules, artifact.Redaction{Field: "request.headers." + name, Rule: "remove"})
+				rules = append(rules, artifact.Redaction{Field: "request.headers." + name, Rule: "remove"}, artifact.Redaction{Field: "request.trailers." + name, Rule: "remove"})
 			}
 		}
 		if hasHeader(art, "response", "Set-Cookie") {
-			rules = append(rules, artifact.Redaction{Field: "response.headers.Set-Cookie", Rule: "remove"})
+			rules = append(rules, artifact.Redaction{Field: "response.headers.Set-Cookie", Rule: "remove"}, artifact.Redaction{Field: "response.trailers.Set-Cookie", Rule: "remove"})
 		}
 		art.Redactions = rules
 		_ = redact.Apply(art, rules)
 		_, commitErr := w.Commit(art)
 		err = errors.Join(err, commitErr)
-		if commitErr == nil {
-			_, refreshErr := bundlereport.Refresh(w.Path())
-			err = errors.Join(err, refreshErr)
-		}
 	}()
+	if runtime != nil && runtime.execution.BeginCase != nil {
+		ctx, e = runtime.execution.BeginCase(ctx, art.TestCase)
+		if e != nil {
+			fail("capture setup failed: "+e.Error(), true)
+			return art, e
+		}
+		begun = true
+		carrier := propagation.MapCarrier{}
+		propagation.TraceContext{}.Inject(ctx, carrier)
+		input.TraceContext = map[string]string(carrier)
+	}
 	prepared, e := call(ctx, "before_case", &input)
 	if e != nil {
 		fail("before_case failed: "+e.Error(), true)
@@ -296,6 +170,40 @@ func runCase(ctx context.Context, w *bundle.Writer, s *spec, steps []step, m *mu
 	for index, st := range steps {
 		if m != nil && index > m.Step {
 			break
+		}
+		if st.GRPC != nil {
+			if runtime == nil || runtime.execution.InvokeGRPC == nil {
+				fail("native gRPC transport is unavailable", true)
+				return art, fmt.Errorf("native gRPC transport is unavailable")
+			}
+			var selectedMutation *mutation
+			if m != nil && index == m.Step {
+				selectedMutation = m
+			}
+			input.Exchanges = art.Traffic
+			grpcResult, grpcErr := runGRPCStep(ctx, st, selectedMutation, &input, cfg, runtime, call)
+			if grpcResult.flow.ID != "" {
+				art.Traffic = append(art.Traffic, grpcResult.flow)
+			}
+			art.Assertions = append(art.Assertions, grpcResult.assertions...)
+			if grpcResult.verified {
+				art.Exploration.RequestVerified = true
+				art.SchemaValidation.Status = "expected_rejection"
+			}
+			if grpcResult.schemaFailed {
+				art.SchemaValidation.Status = "fail"
+			}
+			if grpcResult.failed {
+				fail(grpcResult.diagnostic, grpcResult.incomplete)
+			}
+			if grpcErr != nil {
+				fail("gRPC request failed: "+grpcErr.Error(), true)
+				return art, grpcErr
+			}
+			if grpcResult.failed {
+				break
+			}
+			continue
 		}
 		r := st.Request.clone()
 		r.Headers.Del("Authorization")
@@ -345,6 +253,12 @@ func runCase(ctx context.Context, w *bundle.Writer, s *spec, steps []step, m *mu
 			}
 		}
 		input.FlowID = st.ID
+		input.Operation = st.Operation
+		sc := trace.SpanContextFromContext(ctx)
+		if sc.IsValid() {
+			tracecontext.Inject(r.Headers, sc)
+			r.Headers.Del("X-Wiretap-Session-Id")
+		}
 		// JSON decoding cannot preserve the original body whitespace/ordering.
 		// Signing hooks receive the exact bytes separately from the parsed body.
 		r.BodyBase64 = base64.StdEncoding.EncodeToString(r.Body)
@@ -360,6 +274,13 @@ func runCase(ctx context.Context, w *bundle.Writer, s *spec, steps []step, m *mu
 		}
 		mergeValues(input.Bindings, prepared.Bindings)
 		mergeValues(input.State, prepared.State)
+		// Trace ownership is assigned by the runtime, never by fixture headers.
+		// Inject again after callbacks so their headers cannot route dependency
+		// evidence into an authored test or another generated case.
+		if sc.IsValid() {
+			tracecontext.Inject(r.Headers, sc)
+			r.Headers.Del("X-Wiretap-Session-Id")
+		}
 		validation := s.validate(r)
 		if isMutation {
 			if !exactViolation(validation, m.Target.Location, m.Target.Constraint) {
@@ -373,6 +294,12 @@ func runCase(ctx context.Context, w *bundle.Writer, s *spec, steps []step, m *mu
 			return art, fmt.Errorf("flow %s: request hook produced invalid input", st.ID)
 		}
 		flow := artifact.Flow{ID: st.ID, Protocol: "http", Channel: "test_to_sut", StartedAt: time.Now().UTC(), Request: artifact.Message{HTTP: r.message()}}
+		if sc.IsValid() {
+			flow.TraceID = sc.TraceID().String()
+			flow.RequestSpanID = sc.SpanID().String()
+			flow.TraceContextSource = "injected"
+			flow.TestCorrelation = "trace"
+		}
 		req, e := r.http(ctx)
 		if e != nil {
 			fail("request construction failed", true)
@@ -435,6 +362,14 @@ func runCase(ctx context.Context, w *bundle.Writer, s *spec, steps []step, m *mu
 		}
 	}
 	input.Request = nil
+	input.GRPCRequest = nil
+	input.Operation = base.Operation
+	if runtime != nil && begun && runtime.execution.SnapshotCase != nil {
+		if e = runtime.execution.SnapshotCase(ctx, art); e != nil {
+			fail("capture snapshot failed: "+e.Error(), true)
+			return art, e
+		}
+	}
 	input.Exchanges = art.Traffic
 	input.Outcome = art.TestCase.Status
 	checked, e := call(ctx, "check_case", &input)
@@ -443,10 +378,7 @@ func runCase(ctx context.Context, w *bundle.Writer, s *spec, steps []step, m *mu
 		return art, e
 	}
 	merge(&input, checked)
-	if cfg.Hooks.CheckCase != nil && len(checked.Checks) == 0 {
-		fail("check_case returned no explicit checks", true)
-		return art, fmt.Errorf("check_case must return at least one named check")
-	}
+
 	for i, c := range checked.Checks {
 		a := artifact.Assertion{ID: fmt.Sprintf("property-%d", i+1), Operator: "property", Field: c.Name, Message: c.Message, Result: "pass"}
 		if !c.Passed {
@@ -456,29 +388,6 @@ func runCase(ctx context.Context, w *bundle.Writer, s *spec, steps []step, m *mu
 		art.Assertions = append(art.Assertions, a)
 	}
 	return art, nil
-}
-
-func selectSeed(captures []*artifact.Artifact, attempt, test string) (*artifact.Artifact, error) {
-	var selected *artifact.Artifact
-	for _, a := range captures {
-		if attempt != "" && a.TestCase.ID != attempt || test != "" && a.TestCase.Name != test {
-			continue
-		}
-		if a.Exploration != nil {
-			continue
-		}
-		if selected != nil {
-			return nil, fmt.Errorf("seed selection is ambiguous; specify --attempt")
-		}
-		selected = a
-	}
-	if selected == nil {
-		return nil, fmt.Errorf("no matching authored test attempt")
-	}
-	if selected.TestCase.Status != "pass" || selected.CaptureIncomplete {
-		return nil, fmt.Errorf("seed must be a passing, complete test attempt")
-	}
-	return selected, nil
 }
 
 func seedSteps(seed *artifact.Artifact) ([]step, error) {
@@ -583,14 +492,21 @@ func extractValues(rules []Extraction, flowID string, msg *artifact.HttpMessage,
 	return nil
 }
 func hasHeader(a *artifact.Artifact, phase, name string) bool {
-	for _, f := range a.Traffic {
-		m := f.Request.HTTP
+	for _, flow := range a.Traffic {
+		message := flow.Request
 		if phase == "response" {
-			m = f.Response.HTTP
+			message = flow.Response
 		}
-		if m != nil {
-			for k := range m.Headers {
-				if strings.EqualFold(k, name) {
+		var groups []artifact.Headers
+		if message.HTTP != nil {
+			groups = append(groups, message.HTTP.Headers, message.HTTP.Trailers)
+		}
+		if message.GRPC != nil {
+			groups = append(groups, message.GRPC.Metadata, message.GRPC.Trailers)
+		}
+		for _, headers := range groups {
+			for key := range headers {
+				if strings.EqualFold(key, name) {
 					return true
 				}
 			}

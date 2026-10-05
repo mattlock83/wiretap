@@ -52,8 +52,11 @@ HTTP/gRPC paths, metadata, trailers-only failures, deadlines and TLS.
 Keep capture integrated with the user's test lifecycle. No mandatory Wiretap
 RPC client, application-specific trace IDs, automatic client instrumentation,
 reflection requirement, or new test framework. Keep payload attachments as
-hashed `.bin` files. gRPC exploration, Connect's wire protocol, gRPC-Web, mTLS
-and semantic validation engines remain separate follow-ups.
+hashed `.bin` files. Native gRPC exploration now supports finite standard
+Protovalidate rule witnesses across all four RPC shapes, with local test hooks
+and one shared bundle. See [code exploration](code-exploration-plan.md) and the
+[guide](exploration.md#native-grpc-cases). Connect's wire protocol, gRPC-Web, mTLS
+and broader semantic coverage remain follow-ups.
 
 ### A. Native Node interoperability and adoption example
 
@@ -362,13 +365,14 @@ the fallback when the application does not propagate context.
 | Streaming | Implemented for all four RPC shapes, with explicit evidence quality, message timing, bounded retention and structural coverage. |
 | Validation | Observe and report contract violations at test finalization, as today. Never reject or rewrite an application message because passive validation failed. |
 | Reports | Extend existing bundle evidence, coverage, OKF, knowledge and static viewer; no separate RPC reporting pipeline. |
-| Exploration | Remains HTTP-only initially. Preserve explicit rejection of unsupported provider sequences. |
+| Exploration | Native unary and streaming invalid-input generation from supported standard Protovalidate rules, using SDK/HTTP local callbacks and recorded input prefixes. Unsupported provider sequences fail explicitly. |
 | Other protocols | The Connect wire protocol and gRPC-Web are separate follow-ups, even though ConnectRPC supports them. |
 
 Initial exclusions: HTTP CONNECT interception of gRPC, mTLS identity forwarding,
 automatic BSR downloads, automatic protocol translation,
 custom protobuf codecs, inferred `.proto` generation,
-cross-repository comparison, and gRPC invalid-input generation.
+and cross-repository comparison. The original exclusion of gRPC invalid-input
+generation has since been superseded by the scoped SDK implementation.
 
 In-process mocks or transports such as Go `bufconn` cannot be observed by an
 external binary unless the harness exposes a network endpoint. Document this
@@ -911,11 +915,11 @@ scattering `if grpc` conditions through HTML templates.
   inferred `.proto`. Pending/failed contract acquisition stays visible as an
   unresolved boundary with an unknown denominator. A missing descriptor claimed
   as resolved is an integrity error when reading a bundle.
-- Keep `explore`'s HTTP-only selection and sequence guard. Mixed bundles are
-  reportable; an attempted replay containing unsupported provider RPC steps must
-  fail before sending traffic or running fixture hooks. An HTTP provider with
-  observed gRPC dependencies still follows the existing provider-only replay
-  policy; do not claim those dependencies were replayed or reverified.
+- Preserve explicit rejection of unsupported provider sequences before network
+  traffic or fixture hooks. The original HTTP-only restriction is superseded
+  by native unary and streaming exploration. Generated provider calls can
+  capture their fresh HTTP/gRPC downstream traffic through existing mocks; the
+  engine does not synthesize or replay dependency responses.
 - Emit specific verification tasks for untested methods, unobserved valid field
   cases and unsupported validation semantics. Missing contracts indicate an
   explicit HTTP opt-out or failed/pending gRPC acquisition; distinguish them.
@@ -1086,15 +1090,16 @@ the release gates. No need to add tests for documentation wording itself.
 
 ## Follow-ups after capture is established
 
-1. **Protovalidate.** Evaluate declared standard/CEL rules using the frozen
-   descriptors; build finite coverage targets only for explicitly supported
-   rules. Unknown custom validation systems remain clearly unsupported.
-2. **Unary gRPC exploration.** Reuse project-owned hook processes and emit a new
-   evidence bundle. Connect's dynamic client can call native gRPC using frozen
-   descriptors without user-generated clients. Mutate only declared constraints,
-   verify the invalid request, and require an explicit allowed rejection code
-   (typically `INVALID_ARGUMENT`); authentication, transport failure and arbitrary
-   non-OK results do not prove validation. Streaming replay is separate work.
+1. **Broader semantic coverage.** Native exploration evaluates Protovalidate
+   and generates a finite supported subset of standard rule witnesses. Passive
+   condition coverage still measures structural Protobuf classes. Extend either
+   only with explicit, defensible rule semantics; arbitrary CEL generation and
+   unknown custom validation systems remain unsupported.
+2. **Broader gRPC exploration.** The SDK/HTTP lifecycle now generates native
+   unary and streaming invalid-input cases from captured message prefixes.
+   Continue with richer supported rules and application-specific stream
+   properties, without inventing conversations or treating arbitrary non-OK
+   status as validation. See the current [exploration guide](exploration.md).
 3. **Connect and gRPC-Web wire formats.** Add distinct adapters and conformance
    tests while sharing protobuf contracts, identities and reports. Do not enable
    them merely because a dependency library advertises support.

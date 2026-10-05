@@ -5,9 +5,10 @@ Start the control process with `wiretap [--config path]`; suite hooks own captur
 startup/finalization, and test hooks own attempts. Your harness owns the Wiretap,
 SUT, mock, and test processes. Any language can use this API directly.
 
-Generated provider testing uses the separate `wiretap explore` command and
-project-owned executable hooks. The HTTP API does not accept or execute hook
-commands. See [exploration](exploration.md).
+Generated provider checks are invoked within an active test using the exploration
+endpoints. Local callbacks remain in the test process; Wiretap requests callback
+work and accepts its JSON result. The HTTP API never accepts shell commands or
+executes callback source code. See [exploration](exploration.md).
 
 Schema validation checks message conformance; the provider validates credentials.
 Declaring OpenAPI security does not require an authentication backend inside
@@ -19,6 +20,10 @@ Wiretap and does not itself establish that authentication was tested.
 | POST | `/v1/startRun` | Start capture and create/reuse the run bundle. |
 | POST | `/v1/setupTest` | Register a test attempt, trace, schemas, and redactions. |
 | POST | `/v1/teardownTest` | Drain, validate, and commit an attempt. |
+| POST | `/v1/explore` | Snapshot the active test's completed happy path and start generated checks. |
+| POST | `/v1/explore/next` | Wait for a callback action or exploration result. |
+| POST | `/v1/explore/respond` | Complete a requested local callback. |
+| POST | `/v1/explore/cancel` | Cancel execution and continue to cleanup. |
 | POST | `/v1/finishRun` | Finalize the bundle and stop capture. |
 | POST | `/v1/report` | Rebuild bundle views, including inferred mock OpenAPI drafts. |
 | GET | `/v1/proxy/ca` | Read the public proxy CA certificate. |
@@ -211,6 +216,110 @@ admission and waits for accepted exchanges, up to `drain_timeout_ms` (default
 5000, range 0–60000). Timeout/cancellation writes `capture_incomplete: true`,
 `capture_diagnostics`, and failed status. Completion after finalization cannot
 mutate the attempt or enter another session. Await background work first.
+
+## Exploration inside a test
+
+Call exploration after happy-path traffic and assertions, before `teardownTest`.
+The parent session must be active with no unfinished requests. Wiretap snapshots
+completed traffic and the frozen contract, then commits each generated case to
+the same run bundle. Separate invocation and attempt IDs preserve lineage when
+several scoped calls occur within a test.
+
+`POST /v1/explore` starts work and returns `exploration_id` and state:
+
+```json
+{
+  "session_id": "session-...",
+  "operations": ["POST /orders"],
+  "expected_statuses": [400],
+  "request_timeout": "15s",
+  "hook_timeout": "30s",
+  "hooks": [
+    {"id": "fixtures", "event": "before_case"},
+    {"id": "sign-order", "event": "before_request", "operations": ["POST /orders"]},
+    {"id": "database-check", "event": "check_case"},
+    {"id": "cleanup", "event": "after_case"}
+  ],
+  "bindings": [{"name": "user_id", "in": "body", "path": "/user_id"}]
+}
+```
+
+Selectors use exact OpenAPI operations (`POST /orders`) or fully qualified gRPC
+procedures (`/orders.v1.Orders/CreateOrder`). For gRPC, optional
+`expected_grpc_statuses` defaults to `[3]` (`INVALID_ARGUMENT`); only 3 and 11
+(`OUT_OF_RANGE`) are accepted. This is separate from HTTP `expected_statuses`.
+Optional `flow_id` selects one captured
+request. Omitted `max_cases` or zero executes all supported generated cases;
+positive limits leave remaining targets not covered. Optional `extract` and
+`redactions` have the same semantics described in the exploration guide.
+Unsupported protocols and invalid selectors fail before execution. Each hook
+registration has a unique caller-owned ID and one event. Multiple registrations
+can scope the same event to different operations. gRPC callbacks use
+`grpc_request` with procedure, metadata, ProtoJSON messages, base64 Protobuf
+messages and receive-before-send response gates. Body bindings accept an
+optional `message_index` (otherwise apply to every request message); extractions
+default to response message zero. Metadata bindings and metadata/trailers
+extractions use keys. See the [native gRPC rules](exploration.md#native-grpc-cases).
+
+`POST /v1/explore/next` long-polls for up to ten seconds:
+
+```json
+{"session_id": "session-...", "exploration_id": "exploration-..."}
+```
+
+A response can contain a callback action:
+
+```json
+{
+  "exploration_id": "exploration-...",
+  "state": "running",
+  "action": {
+    "id": "action-...",
+    "hook_id": "fixtures",
+    "event": "before_case",
+    "input": {"event": "before_case", "mode": "rejection", "operation": "POST /orders"}
+  }
+}
+```
+
+Invoke the corresponding local function with `input`, then call
+`POST /v1/explore/respond` with the same identity and action ID:
+
+```json
+{
+  "session_id": "session-...",
+  "exploration_id": "exploration-...",
+  "action_id": "action-...",
+  "output": {"bindings": {"user_id": "fresh-user"}, "state": {"cleanup_id": "fresh-user"}}
+}
+```
+
+Send `error` instead of `output` when the local callback throws. Outputs can
+contain `bindings`, `state` and `headers`. Only `check_case` may return named
+`checks`; other hook events reject that field. See the
+[callback lifecycle](exploration.md#lifecycle-callbacks). Match replies to the
+requested action, and do not repeat local side effects if a delivery is retried.
+The runtime enforces action ownership and rejects conflicting responses.
+
+Callback inputs include `trace_context`: the parent test's context for
+`before_explore`/`after_explore`, or the generated case's context for case and
+request callbacks. Use it to route callback HTTP requests through the correct
+session. The runtime excludes traffic admitted while that owner's callback is
+active from retained evidence and coverage. Await fixture/authentication/check
+requests before responding; those requests must not become generated test
+coverage. SDK callback wrappers activate the supplied context automatically.
+
+Poll until state is `complete`, `failed` or `cancelled`. Terminal responses
+include `result` with generated/executed/passed/failed case counts, baseline
+count, generation notes and `bundle_path`. A failure must fail the enclosing
+test even though the control request itself was handled successfully.
+
+Cancellation uses `POST /v1/explore/cancel` with `session_id` and
+`exploration_id`. Continue polling and dispatching cleanup callbacks until a
+terminal state. A disconnected client cannot run local cleanup: hook timeouts
+bound the server's wait and the bundle records failure. SDKs implement this
+handoff, cancellation and aggregate failure propagation. Parent teardown and
+run finalization must wait for exploration to finish.
 
 ## Mock OpenAPI drafts
 

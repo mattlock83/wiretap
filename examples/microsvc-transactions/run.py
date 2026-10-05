@@ -43,38 +43,33 @@ sys.exit('Service did not become ready: ' + sys.argv[1])
 """, url)
 
 
-def inspect_bundle(path, exploration=False):
+def inspect_bundle(path):
     run = json.loads((path / "bundle.json").read_text())
     if run["run_state"] != "complete" or not (path / "docs/viewer.html").exists():
         raise RuntimeError(f"Incomplete bundle: {path}")
-    coverage = json.loads((path / "contract-coverage.json").read_text())
-    if exploration:
-        rejection = coverage.get("rejection_coverage", {})
-        print(f"Rejection coverage: {rejection.get('covered', 0)} covered, "
-              f"{rejection.get('failed', 0)} failed, {rejection.get('not_covered', 0)} not covered")
-        if not rejection.get("targets"):
-            raise RuntimeError("Exploration did not generate rejection targets")
-        return rejection["failed"] == 0 and rejection["not_covered"] == 0
-    else:
-        if not any(s["api_id"] == "accounts" and s["target_kind"] == "mock" for s in coverage["specs"]):
-            raise RuntimeError("Capture is missing the Accounts mock contract")
-        # Evidence must include actual downstream exchanges, not just registration.
-        downstream = 0
-        for attempt in run["tests"]:
-            capture = json.loads((path / attempt["path"]).read_text())["capture"]
-            if capture.get("schema_validation", {}).get("status") != "pass":
-                raise RuntimeError("Authored traffic did not match the supplied contracts; inspect the capture bundle")
-            downstream += sum(f["channel"] == "sut_to_dependency" for f in capture["traffic"])
-        if downstream < 5:
-            raise RuntimeError(f"Expected at least five captured Accounts calls, found {downstream}")
-        print(f"Verified {downstream} captured Accounts exchanges.")
-    return True
+    coverage = json.loads((path / "docs/contract-coverage.json").read_text())
+    rejection = coverage.get("rejection_coverage", {})
+    print(f"Rejection coverage: {rejection.get('covered', 0)} covered, "
+          f"{rejection.get('failed', 0)} failed, {rejection.get('not_covered', 0)} not covered")
+    if not rejection.get("targets"):
+        raise RuntimeError("Exploration did not generate rejection targets")
+    if not any(s["api_id"] == "accounts" and s["target_kind"] == "mock" for s in coverage["specs"]):
+        raise RuntimeError("Bundle is missing the Accounts mock contract")
+    downstream = 0
+    for attempt in run["tests"]:
+        capture = json.loads((path / attempt["path"]).read_text())["capture"]
+        if capture.get("exploration"):
+            continue
+        if capture.get("schema_validation", {}).get("status") != "pass":
+            raise RuntimeError("Authored traffic did not match the supplied contracts; inspect the bundle")
+        downstream += sum(f["channel"] == "sut_to_dependency" for f in capture["traffic"])
+    if downstream < 5:
+        raise RuntimeError(f"Expected at least five captured Accounts calls, found {downstream}")
+    print(f"Verified {downstream} captured Accounts exchanges.")
+    return rejection["failed"] == 0 and rejection["not_covered"] == 0
 
 
 def run(args):
-    source_bundle = args.bundle.resolve() if args.bundle else None
-    if source_bundle and not (source_bundle / "bundle.json").is_file():
-        raise RuntimeError(f"Expected a capture bundle directory containing bundle.json: {source_bundle}")
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
     transactions_image = os.environ.get("TRANSACTIONS_IMAGE", "microsvc_transactions-service:latest")
@@ -145,6 +140,7 @@ def run(args):
             environment = {**os.environ, "GOOS": "linux", "GOARCH": arch, "CGO_ENABLED": "0"}
             command(["go", "build", "-o", str(work / "wiretap"), "./cmd/wiretap"], cwd=ROOT, env=environment)
             shutil.copytree(HERE, work / "example", ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+            shutil.copyfile(HERE.parent / "explore_http.py", work / "example/explore_http.py")
             shutil.copyfile(HERE / "Dockerfile", work / "Dockerfile")
             docker("build", "-q", "-t", utility_image, str(work))
             image_created = True
@@ -172,43 +168,19 @@ def run(args):
             runtime = start("wiretap", utility_image, {"DEMO_JWT_SECRET": jwt_secret},
                             cmd=("wiretap", "--config", "/example/.wiretap.yaml"))
             wait_for(accounts, "http://wiretap:18000/healthz")
-            sut = start_transactions("http://accounts:8080" if source_bundle
-                                     else "http://wiretap:18080/__wiretap/dep/accounts")
+            sut = start_transactions("http://wiretap:18080/__wiretap/dep/accounts")
             wait_for(accounts, "http://transactions:8080/actuator/health")
+            print("Running authored tests and scoped exploration inside unittest...", flush=True)
+            tests = subprocess.run(["docker", "exec", "-e", "WIRETAP_BASE_URL=http://wiretap:18000",
+                                    "-e", "WIRETAP_SUT_URL=http://wiretap:18080", "-e", "TRANSACTIONS_IMAGE=" + transactions_image,
+                                    "-e", "TRANSACTIONS_IMAGE_ID=" + image_ids[transactions_image],
+                                    "-e", "CAPTURE_PATH_FILE=/capture.txt", runtime, "python3", "test_transactions.py"])
+            source_result = subprocess.run(["docker", "exec", runtime, "cat", "/capture.txt"], text=True, capture_output=True)
+            if source_result.returncode == 0:
+                bundles.append(("Combined", source_result.stdout.strip()))
+            if tests.returncode:
+                raise RuntimeError("Tests or exploration failed; inspect the bundle and SUT logs")
 
-            if source_bundle:
-                # Copy data only; hook commands always come from this example.
-                source = "/input-bundle"
-                docker("cp", str(source_bundle), runtime + ":" + source)
-                print(f"Replaying saved capture: {source_bundle}", flush=True)
-            else:
-                print("Capturing successful withdrawal and insufficient-funds tests...", flush=True)
-                tests = subprocess.run(["docker", "exec", "-e", "WIRETAP_BASE_URL=http://wiretap:18000",
-                                        "-e", "WIRETAP_SUT_URL=http://wiretap:18080", "-e", "TRANSACTIONS_IMAGE=" + transactions_image,
-                                        "-e", "TRANSACTIONS_IMAGE_ID=" + image_ids[transactions_image],
-                                        "-e", "CAPTURE_PATH_FILE=/capture.txt", runtime, "python3", "test_transactions.py"])
-                source_result = subprocess.run(["docker", "exec", runtime, "cat", "/capture.txt"], text=True, capture_output=True)
-                if source_result.returncode == 0:
-                    source = source_result.stdout.strip()
-                    bundles.append(("Capture", source))
-                if tests.returncode:
-                    raise RuntimeError("Authored tests failed; see the capture bundle and SUT logs")
-
-                # finishRun closes the capture proxy. Recreate only our disposable SUT
-                # with a direct Accounts URL; exploration captures provider traffic itself.
-                logs(sut, "transactions-capture.log")
-                docker("rm", "-f", sut)
-                containers.remove(sut)
-                start_transactions("http://accounts:8080")
-                wait_for(accounts, "http://transactions:8080/actuator/health")
-            print("Exploring invalid inputs with fresh authentication and account fixtures...", flush=True)
-            explored = subprocess.run(["docker", "exec", runtime, "wiretap", "explore", "--bundle", source,
-                                       "--test", "withdrawal updates the account balance", "--config", "/example/.wiretap.yaml"],
-                                      text=True, stdout=subprocess.PIPE)
-            if explored.stdout.strip():
-                bundles.append(("Exploration", explored.stdout.strip()))
-            if explored.returncode:
-                raise RuntimeError("Exploration found failures; inspect the generated bundle")
         except (RuntimeError, subprocess.CalledProcessError, KeyboardInterrupt) as error:
             failure = error
         finally:
@@ -231,7 +203,7 @@ def run(args):
     if bundles and not copied:
         raise RuntimeError("Could not copy Docker bundle output; see the example logs")
     for label, path in bundles:
-        if not inspect_bundle(output / Path(path).name, exploration=label == "Exploration") and failure is None:
+        if not inspect_bundle(output / Path(path).name) and failure is None:
             failure = RuntimeError("Some generated rejection targets did not pass")
     if failure is not None:
         raise failure
@@ -239,8 +211,6 @@ def run(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--bundle", type=Path,
-                        help="Replay the successful withdrawal from an existing authored capture; skip new capture")
     parser.add_argument("--output", type=Path, default=ROOT / "artifacts/microsvc-transactions")
     try:
         run(parser.parse_args())

@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/phrond/wiretap/internal/core"
 )
@@ -25,11 +26,15 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("/v1/teardownTest", a.handleTeardownTest)
 	mux.HandleFunc("/v1/report", a.handleRuntimeReport)
 	mux.HandleFunc("/v1/finishRun", a.handleFinishRun)
+	mux.HandleFunc("/v1/explore", a.handleExplore)
+	mux.HandleFunc("/v1/explore/next", a.handleExploreNext)
+	mux.HandleFunc("/v1/explore/respond", a.handleExploreRespond)
+	mux.HandleFunc("/v1/explore/cancel", a.handleExploreCancel)
 	mux.HandleFunc("/v1/proxy/ca", a.handleProxyCA)
 	return loggingMiddleware(a.logger, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Teardown owns its short critical section and drains outside the
 		// control lock so parallel tests and health checks remain responsive.
-		if r.URL.Path != "/v1/teardownTest" && r.URL.Path != "/healthz" {
+		if r.URL.Path != "/v1/teardownTest" && r.URL.Path != "/healthz" && !strings.HasPrefix(r.URL.Path, "/v1/explore/") {
 			a.controlMu.Lock()
 			defer a.controlMu.Unlock()
 		}

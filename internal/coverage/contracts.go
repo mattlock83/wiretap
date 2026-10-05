@@ -73,6 +73,7 @@ type ContractTarget struct {
 }
 
 type ContractEvidence struct {
+	ExpectedStatuses  []int  `json:"expected_statuses,omitempty" yaml:"expected_statuses,omitempty"`
 	MessageIndex      *int   `json:"message_index,omitempty" yaml:"message_index,omitempty"`
 	CaptureIncomplete bool   `json:"capture_incomplete" yaml:"capture_incomplete"`
 	TransportError    string `json:"transport_error,omitempty" yaml:"transport_error,omitempty"`

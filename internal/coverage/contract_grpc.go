@@ -163,7 +163,7 @@ func (b *grpcConditionBuilder) node(desc protoreflect.MessageDescriptor, loc, na
 	}
 	if unsafe {
 		t := b.add(loc, name, "unsupported", "custom option semantics")
-		t.State, t.Feasibility, t.Reason = "unsupported", "unknown", "Custom validation options are preserved but their semantics are not evaluated"
+		t.State, t.Feasibility, t.Reason = "unsupported", "unknown", "Custom validation options are preserved but are not measured by structural coverage"
 		for _, target := range b.spec.Targets[start:] {
 			if target.State != "unsupported" {
 				uncertain(target, "Custom options may constrain representable field values")
@@ -456,6 +456,16 @@ func measureGRPCContract(spec *ContractSpec, ref artifact.SchemaRef, run *bundle
 				}{{"request", request, in, inErr}, {"response", response, out, outErr}} {
 					ce := e
 					ce.Phase = side.phase
+					if x := a.Exploration; side.phase == "request" && x != nil && x.Mode == "rejection" && x.Target != nil && x.Target.Protocol == "grpc" && x.Target.FlowID == f.ID {
+						ce.Result, ce.Validation, ce.Reason = "observed", "invalid", "Generated request deliberately violates a declared Protobuf validation rule"
+						if !x.RequestVerified {
+							ce.Validation, ce.Reason = "unknown", "Generated request violation was not verified"
+						}
+						violation := ce
+						violation.InstanceLocation, violation.MessageIndex = x.Target.Location, x.Target.MessageIndex
+						spec.Violations = append(spec.Violations, ContractViolation{Operation: procedure, Constraint: x.Target.Constraint, Reason: ce.Reason, Expected: x.RequestVerified, Evidence: violation})
+					}
+
 					if len(side.messages) == 0 {
 						// A legitimate non-OK response without a result does not exercise output fields.
 						if side.err == nil && validStatus {

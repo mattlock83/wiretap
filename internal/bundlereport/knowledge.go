@@ -99,9 +99,13 @@ type knowledgeAttempt struct {
 }
 
 type knowledgeLineage struct {
-	SourceRunID     string `json:"source_run_id"`
-	SourceAttemptID string `json:"source_attempt_id"`
-	SourceSHA256    string `json:"source_sha256"`
+	SourceRunID       string   `json:"source_run_id"`
+	SourceAttemptID   string   `json:"source_attempt_id"`
+	SourceSHA256      string   `json:"source_sha256,omitempty"`
+	SourceKind        string   `json:"source_kind,omitempty"`
+	InvocationID      string   `json:"exploration_id,omitempty"`
+	SourceFlowIDs     []string `json:"source_flow_ids,omitempty"`
+	SourceAttemptPath string   `json:"source_attempt_path,omitempty"`
 }
 
 type verificationTask struct {
@@ -147,12 +151,16 @@ func buildKnowledge(root string, run *bundle.Run, captures []*artifact.Artifact,
 		if a.Exploration != nil {
 			kind = "generated_" + a.Exploration.Mode
 			explored = true
-			lineage = &knowledgeLineage{a.Exploration.SourceRunID, a.Exploration.SourceAttemptID, a.Exploration.SourceSHA256}
+			x := a.Exploration
+			lineage = &knowledgeLineage{SourceRunID: x.SourceRunID, SourceAttemptID: x.SourceAttemptID, SourceSHA256: x.SourceSHA256, SourceKind: x.SourceKind, InvocationID: x.InvocationID, SourceFlowIDs: append([]string(nil), x.SourceFlowIDs...)}
+			if explorationParentCommitted(run, x) {
+				lineage.SourceAttemptPath = paths[x.SourceAttemptID]
+			}
 		}
 		k.Attempts = append(k.Attempts, knowledgeAttempt{a.TestCase.ID, a.TestCase.Name, a.TestCase.Status, kind, "tests/" + a.TestCase.ID + ".md", paths[a.TestCase.ID], lineage})
 	}
 	if explored {
-		k.Scope = append(k.Scope, "Exploration attempts replay provider requests only. Downstream dependency traffic is not captured during replay; consult the source capture bundle for dependency assumptions. Hooks and runtime credentials remain external.")
+		k.Scope = append(k.Scope, explorationScope)
 	}
 	if run.RunState != "complete" || len(run.Pending) > 0 {
 		k.Scope = append(k.Scope, "This run is not a finalized complete snapshot; pending or interrupted work must not be treated as absent coverage.")
@@ -531,7 +539,7 @@ func buildKnowledge(root string, run *bundle.Run, captures []*artifact.Artifact,
 				for _, e := range t.Evidence {
 					evidence = append(evidence, ref(coverage.FlowSample{TestCaseID: e.AttemptID, FlowID: e.FlowID, TestCase: e.TestName, TestStatus: e.Outcome, CaptureIncomplete: e.CaptureIncomplete, TransportError: e.TransportError}))
 				}
-				k.addTask(knowledgeAPI{ID: run.APIID, Role: "provided", SchemaID: t.SchemaID}, "rejection_"+t.State, "high", t.Operation, "Generated invalid-input target is "+t.State+": "+t.Location+" "+t.Constraint+".", "Inspect rejection and property assertions. Repair authentication/fixtures or the application as appropriate, then rerun exploration from the authored seed using project-owned hooks. Do not count authentication failures as input validation.", "contract-coverage.md", evidence, []string{t.Key})
+				k.addTask(knowledgeAPI{ID: run.APIID, Role: "provided", SchemaID: t.SchemaID, Protocol: t.Protocol}, "rejection_"+t.State, "high", t.Operation, "Generated invalid-input target is "+t.State+": "+t.Location+" "+t.Constraint+".", "Inspect rejection and property assertions. Repair authentication/fixtures or the application as appropriate, then rerun exploration from the authored seed using project-owned hooks. Do not count authentication failures as input validation.", "contract-coverage.md", evidence, []string{t.Key})
 			}
 		}
 	}

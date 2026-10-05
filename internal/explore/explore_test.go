@@ -157,7 +157,7 @@ func TestExploreRejectionsAndBundleReports(t *testing.T) {
 		}
 	}))
 	defer server.Close()
-	result, err := Run(context.Background(), Options{Bundle: source, Target: server.URL, Output: t.TempDir(), Config: Config{MaxCases: 5}})
+	result, err := Run(context.Background(), Options{Bundle: source, Target: server.URL, Output: t.TempDir(), Config: legacyConfig{MaxCases: 5}})
 	if err != nil || result.Passed != 5 || result.Failed != 0 {
 		t.Fatalf("%+v %v", result, err)
 	}
@@ -212,7 +212,7 @@ func TestUnexpectedResponsesDoNotEarnRejectionCoverage(t *testing.T) {
 				}
 			}))
 			defer server.Close()
-			result, err := Run(context.Background(), Options{Bundle: source, Target: server.URL, Output: t.TempDir(), Config: Config{MaxCases: 1}})
+			result, err := Run(context.Background(), Options{Bundle: source, Target: server.URL, Output: t.TempDir(), Config: legacyConfig{MaxCases: 1}})
 			if err != nil || result.Failed != 1 {
 				t.Fatalf("%+v %v", result, err)
 			}
@@ -328,8 +328,8 @@ func TestRequestHookSignsExactBytesAndDoesNotReuseURLCredentials(t *testing.T) {
 	t.Setenv("GORACE", "atexit_sleep_ms=0")
 	t.Setenv("WIRETAP_SIGNING", "1")
 	t.Setenv("WIRETAP_EVENT_LOG", filepath.Join(t.TempDir(), "events"))
-	command := &hooks.Command{Command: []string{os.Args[0], "-test.run=TestLifecycleHelper"}}
-	result, err := Run(context.Background(), Options{Bundle: source, Target: server.URL, Output: t.TempDir(), Config: Config{MaxCases: 3, Hooks: hooks.Lifecycle{BeforeRequest: command}}})
+	command := &legacyHookCommand{Command: []string{os.Args[0], "-test.run=TestLifecycleHelper"}}
+	result, err := Run(context.Background(), Options{Bundle: source, Target: server.URL, Output: t.TempDir(), Config: legacyConfig{MaxCases: 3, Hooks: legacyHookLifecycle{BeforeRequest: command}}})
 	if err != nil || result.Passed != 3 {
 		t.Fatalf("signing failed: %+v %v", result, err)
 	}
@@ -383,8 +383,8 @@ func TestExternalHooksFreshAuthFixturesAndCleanup(t *testing.T) {
 	t.Setenv("WIRETAP_TEST_ADMIN_URL", server.URL)
 	log := filepath.Join(t.TempDir(), "events")
 	t.Setenv("WIRETAP_EVENT_LOG", log)
-	command := &hooks.Command{Command: []string{os.Args[0], "-test.run=TestLifecycleHelper"}}
-	cfg := Config{MaxCases: 3, Hooks: hooks.Lifecycle{BeforeRun: command, BeforeCase: command, BeforeRequest: command, CheckCase: command, AfterCase: command, AfterRun: command}, Bindings: []Binding{{Name: "user_id", In: "body", Path: "/user_id"}}}
+	command := &legacyHookCommand{Command: []string{os.Args[0], "-test.run=TestLifecycleHelper"}}
+	cfg := legacyConfig{MaxCases: 3, Hooks: legacyHookLifecycle{BeforeRun: command, BeforeCase: command, BeforeRequest: command, CheckCase: command, AfterCase: command, AfterRun: command}, Bindings: []Binding{{Name: "user_id", In: "body", Path: "/user_id"}}}
 	result, err := Run(context.Background(), Options{Bundle: source, Target: server.URL, Output: t.TempDir(), Config: cfg})
 	if err != nil || result.Passed != 3 {
 		t.Fatalf("%+v %v", result, err)

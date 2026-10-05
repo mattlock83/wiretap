@@ -80,7 +80,7 @@ paths:
 		}
 	}))
 	defer server.Close()
-	cfg := Config{MaxCases: 3, Bindings: []Binding{{Name: "user", FlowID: "step-2", In: "path", Path: "id"}}, Extract: []Extraction{{Name: "user", FlowID: "step-1", In: "body", Path: "/id"}}}
+	cfg := legacyConfig{MaxCases: 3, Bindings: []Binding{{Name: "user", FlowID: "step-2", In: "path", Path: "id"}}, Extract: []Extraction{{Name: "user", FlowID: "step-1", In: "body", Path: "/id"}}}
 	r, err := Run(context.Background(), Options{Bundle: source, Target: server.URL, Output: t.TempDir(), Config: cfg})
 	if err != nil || r.Passed != 3 {
 		t.Fatalf("%+v %v", r, err)
@@ -120,7 +120,7 @@ func TestExpectedStatusStillRequiresValidResponseBody(t *testing.T) {
 		}
 	}))
 	defer server.Close()
-	r, err := Run(context.Background(), Options{Bundle: source, Target: server.URL, Output: t.TempDir(), Config: Config{MaxCases: 1}})
+	r, err := Run(context.Background(), Options{Bundle: source, Target: server.URL, Output: t.TempDir(), Config: legacyConfig{MaxCases: 1}})
 	if err != nil || r.Failed != 1 {
 		t.Fatalf("%+v %v", r, err)
 	}
@@ -128,7 +128,7 @@ func TestExpectedStatusStillRequiresValidResponseBody(t *testing.T) {
 
 func TestUnsupportedSeedsAndUnknownBindingsFailBeforeExecution(t *testing.T) {
 	source, _, _ := makeSeed(t, testSpec, nil)
-	for _, cfg := range []Config{{Bindings: []Binding{{Name: "n", FlowID: "unknown", In: "header", Path: "X-Test"}}}, {ExpectedStatuses: []int{500}}, {ExpectedStatuses: []int{401}}} {
+	for _, cfg := range []legacyConfig{{Bindings: []Binding{{Name: "n", FlowID: "unknown", In: "header", Path: "X-Test"}}}, {ExpectedStatuses: []int{500}}, {ExpectedStatuses: []int{401}}} {
 		if _, err := Run(context.Background(), Options{Bundle: source, Target: "http://127.0.0.1:1", Output: t.TempDir(), Config: cfg}); err == nil {
 			t.Fatal("accepted invalid configuration")
 		}

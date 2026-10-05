@@ -3,8 +3,6 @@ package app
 import (
 	"context"
 	"fmt"
-	"github.com/phrond/wiretap/internal/tracecontext"
-	"go.opentelemetry.io/otel/trace"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -14,6 +12,8 @@ import (
 
 	"github.com/phrond/wiretap/internal/artifact"
 	"github.com/phrond/wiretap/internal/proxy"
+	"github.com/phrond/wiretap/internal/tracecontext"
+	"go.opentelemetry.io/otel/trace"
 )
 
 var validDependencyAssetID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
@@ -32,19 +32,23 @@ type dependencyRegistration struct {
 // runtimeSession owns the capture state for one consumer test. Wiretap does
 // not own the SUT lifecycle; it only records traffic routed through its proxy.
 type runtimeSession struct {
-	finishMu     sync.Mutex
-	CaseID       string
-	Root         trace.SpanContext
-	pending      int
-	closing      bool
-	drained      chan struct{}
-	ID           string
-	Name         string
-	Store        *TestCaseStore
-	SUTBaseURL   string
-	Dependencies map[string]dependencyRegistration
-	Explicit     bool
-	CreatedAt    time.Time
+	finishMu            sync.Mutex
+	CaseID              string
+	Root                trace.SpanContext
+	pending             int
+	closing             bool
+	drained             chan struct{}
+	ID                  string
+	Name                string
+	Store               *TestCaseStore
+	SUTBaseURL          string
+	Dependencies        map[string]dependencyRegistration
+	Explicit            bool
+	CreatedAt           time.Time
+	exploring           string
+	explorationFailed   bool
+	explorationParent   string
+	explorationFixtures bool
 }
 
 func normalizeDependencies(dependencies []dependencyRegistration) (map[string]dependencyRegistration, []artifact.SchemaRef, error) {
@@ -221,7 +225,14 @@ func (a *App) admitRequest(request *http.Request, headerSession string) (*proxy.
 	if explicit && correlation == "" {
 		correlation = "explicit_session"
 	}
-	if selected == "" && len(a.sessions) == 1 && a.defaultSessionID != "" && !a.hasRetiredWorkLocked() {
+	// A paused parent does not compete with its serial exploration child.
+	activeOwners := 0
+	for _, candidate := range a.sessions {
+		if candidate.exploring == "" || candidate.explorationFixtures {
+			activeOwners++
+		}
+	}
+	if selected == "" && activeOwners == 1 && a.defaultSessionID != "" && !a.hasRetiredWorkLocked() {
 		selected, correlation = a.defaultSessionID, "active_session"
 	}
 	nativeGRPC := strings.HasPrefix(strings.ToLower(request.Header.Get("Content-Type")), "application/grpc") && !strings.HasPrefix(request.URL.Path, "/__wiretap/")
@@ -240,6 +251,9 @@ func (a *App) admitRequest(request *http.Request, headerSession string) (*proxy.
 	if session.closing {
 		return nil, fmt.Errorf("capture session is closing")
 	}
+	if session.exploring != "" && !session.explorationFixtures {
+		return nil, fmt.Errorf("test is paused for exploration; await it before sending more authored traffic")
+	}
 	if sc.IsValid() && session.Root.IsValid() && sc.TraceID() != session.Root.TraceID() {
 		session.Store.AddCaptureDiagnostic("received trace does not match the registered test trace; ownership used " + correlation)
 	}
@@ -252,10 +266,29 @@ func (a *App) admitRequest(request *http.Request, headerSession string) (*proxy.
 		grpcID = session.Store.reserveFlowID()
 		trackGRPC = a.trackGRPCCall(session.ID)
 	}
+	recordHTTP := session.Store.RecordHTTP
+	recordGRPC := session.Store.RecordGRPC
+	if session.explorationParent != "" || session.exploring != "" {
+		// The executor records provider exchanges. Fixture calls are not extra
+		// test evidence, including dependencies reached by setup or cleanup.
+		// Freeze this decision at admission so late hook traffic cannot leak into
+		// the next generated request when the hook returns.
+		captureDependency := !session.explorationFixtures
+		recordHTTP = func(ex proxy.HTTPExchange) {
+			if captureDependency && ex.Channel == "sut_to_dependency" {
+				session.Store.RecordHTTP(ex)
+			}
+		}
+		recordGRPC = func(ex proxy.GRPCExchange) {
+			if captureDependency && ex.Channel == "sut_to_dependency" {
+				session.Store.RecordGRPC(ex)
+			}
+		}
+	}
 	return &proxy.Admission{
 		SessionID: session.ID, CaseID: session.CaseID, Root: session.Root, TestCorrelation: correlation,
-		Record:     session.Store.RecordHTTP,
-		RecordGRPC: session.Store.RecordGRPC,
+		Record:     recordHTTP,
+		RecordGRPC: recordGRPC,
 		GRPCFlowID: grpcID,
 		TrackGRPC:  trackGRPC,
 		Release: func() {

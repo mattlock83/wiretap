@@ -145,7 +145,7 @@ func TestKnowledgeExpectedNegativesAndLineageAreNotProviderContradictions(t *tes
 			t.Fatal("expected rejection became a defect")
 		}
 	}
-	if !strings.Contains(strings.Join(k.Scope, " "), "Downstream dependency traffic is not captured") {
+	if !strings.Contains(strings.Join(k.Scope, " "), "downstream traffic actually observed") {
 		t.Fatal("exploration dependency scope missing")
 	}
 	if k.Attempts[0].Kind != "generated_rejection" || k.Attempts[0].Exploration.SourceRunID != "seed" || len(k.SUTSource) != 0 {

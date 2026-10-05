@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/phrond/wiretap/internal/artifact"
-	"github.com/phrond/wiretap/internal/explore"
 	"gopkg.in/yaml.v3"
 )
 
@@ -124,7 +123,6 @@ func (a API) Schemas(id, role string) []artifact.SchemaRef {
 }
 
 type Config struct {
-	Explore      explore.Config `yaml:"explore"`
 	Version      int            `yaml:"version"`
 	HTTPListen   string         `yaml:"http_listen"`
 	ProxyListen  string         `yaml:"proxy_listen"`
@@ -188,11 +186,6 @@ func Decode(raw []byte, path string) (*Config, error) {
 	}
 	cfg.Path = path
 	base := filepath.Dir(path)
-	cfg.Explore.Dir = base
-	cfg.Explore.Defaults()
-	if err := cfg.Explore.Validate(); err != nil {
-		return nil, fmt.Errorf("%s: %w", path, err)
-	}
 	expand := func(value string) (string, error) {
 		var missing string
 		result := os.Expand(value, func(key string) string {

@@ -62,9 +62,9 @@ type viewerRejectionOperation struct {
 
 type viewerRejectionRow struct {
 	*coverage.RejectionCoverageTarget
-	Field, Label string
-	Attention    bool
-	Evidence     []viewerConditionEvidence
+	Field, Label, StatusLabel string
+	Attention                 bool
+	Evidence                  []viewerConditionEvidence
 }
 
 func buildViewerCoverage(report *coverage.ContractCoverage) []viewerContractSpec {
@@ -174,13 +174,13 @@ func buildViewerRejections(report *coverage.RejectionCoverage) []viewerRejection
 		if target == nil {
 			continue
 		}
-		key := target.SchemaID + "\x00" + target.Operation
+		key := target.Protocol + "\x00" + target.SchemaID + "\x00" + target.Operation
 		op := operations[key]
 		if op == nil {
 			op = &viewerRejectionOperation{ID: "rejection-" + shortHash(key), Name: target.Operation, SchemaID: target.SchemaID, Search: target.SchemaID + " " + target.Operation}
 			operations[key] = op
 		}
-		row := viewerRejectionRow{RejectionCoverageTarget: target, Field: viewerInstanceField(target.Location), Label: viewerRejectionLabel(target.Constraint), Attention: target.State != "covered", Evidence: viewerCoverageEvidence(target.Evidence)}
+		row := viewerRejectionRow{RejectionCoverageTarget: target, Field: viewerInstanceField(target.Location), Label: viewerRejectionLabel(target.Constraint), StatusLabel: rejectionStatusLabel(target.RejectionTarget), Attention: target.State != "covered", Evidence: viewerCoverageEvidence(target.Evidence)}
 		op.Rows = append(op.Rows, row)
 		switch target.State {
 		case "covered":
@@ -347,6 +347,15 @@ func viewerInstanceField(location string) string {
 	if len(parts) == 0 || parts[0] == "" {
 		return "Request"
 	}
+	if len(parts) >= 3 && parts[0] == "messages" && parts[2] == "body" {
+		if index, err := strconv.Atoi(parts[1]); err == nil && index >= 0 {
+			label := "Message " + strconv.Itoa(index+1)
+			if len(parts) > 3 {
+				label += " · " + strings.Join(parts[3:], ".")
+			}
+			return label
+		}
+	}
 	base := viewerParameterLabel(parts[0])
 	if len(parts) > 1 {
 		base += " · " + strings.Join(parts[1:], ".")
@@ -409,7 +418,7 @@ func viewerRejectionLabel(constraint string) string {
 		return "wrong value type"
 	case "nullable":
 		return "null where disallowed"
-	case "enum":
+	case "enum", "enum.in", "enum.not_in", "enum.defined_only", "enum.const":
 		return "value outside allowed choices"
 	case "minimum":
 		return "below minimum"
@@ -419,16 +428,24 @@ func viewerRejectionLabel(constraint string) string {
 		return "above maximum"
 	case "exclusiveMaximum":
 		return "at or above exclusive maximum"
-	case "minLength":
+	case "minLength", "string.min_len":
 		return "string too short"
-	case "maxLength":
+	case "maxLength", "string.max_len":
 		return "string too long"
+	case "string.len":
+		return "wrong string length"
+	case "bool.const":
+		return "wrong boolean value"
 	case "pattern":
 		return "pattern mismatch"
-	case "minItems":
+	case "minItems", "repeated.min_items":
 		return "too few array items"
-	case "maxItems":
+	case "maxItems", "repeated.max_items":
 		return "too many array items"
+	case "repeated.unique":
+		return "duplicate items"
+	case "map.min_pairs":
+		return "too few map entries"
 	default:
 		return "violates " + constraint
 	}

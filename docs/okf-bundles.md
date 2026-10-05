@@ -110,8 +110,9 @@ The format also supports ordered event recordings for bidirectional gRPC,
 publish/consume messaging and subscriptions. Transport, protocol and payload
 encoding are recorded separately, allowing Kafka with Avro, AsyncAPI contract
 packages and GraphQL operations/subscriptions. This is storage support: new live
-capture adapters for messaging and GraphQL, plus non-HTTP exploration, are
-separate work. Native gRPC streams use typed RPC evidence and structural coverage.
+capture and execution adapters for messaging and GraphQL remain separate work.
+Native gRPC streams use typed RPC evidence, structural coverage and finite
+invalid-input exploration from supported declared validation rules.
 Unsupported events remain visible and must not earn coverage or silently replay
 as HTTP. See [event recordings](bundle-evidence.md#streams-messaging-and-additional-protocols).
 
@@ -148,10 +149,11 @@ Capture retains up to 4 MiB per body by default. A truncated attachment remains
 incomplete even after rebuilding. See [troubleshooting](troubleshooting.md) for
 capture limits and integrity errors.
 
-An [exploration run](exploration.md) writes a new bundle and leaves its source
-unchanged. It contains freshly executed provider exchanges, assertions and
-rejection coverage. Downstream traffic remains in the source capture; an empty
-exploration dependency list does not establish that the system has no dependencies.
+An [exploration call](exploration.md) adds fresh baseline and rejection attempts
+to the same open bundle as the parent authored test. Each generated attempt
+contains its assertions and lineage; coverage combines qualifying evidence from
+all authored and generated attempts. Existing mocks remain owned by the test
+harness. Dependency evidence is credited only for traffic actually observed.
 
 ## Inferred mock assumptions
 

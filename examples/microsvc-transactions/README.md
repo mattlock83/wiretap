@@ -2,9 +2,9 @@
 
 Run the real [Speedscale Microsvc Transactions service](https://github.com/speedscale/microsvc)
 from a local Docker image, capture its HTTP boundary with an ordinary Accounts
-mock, then explore invalid withdrawal requests. No Microsvc source changes are
-needed. Python `unittest` owns the authored tests; its lifecycle calls Wiretap's
-HTTP API directly.
+mock, and explore invalid withdrawal requests inside the same test. No Microsvc
+source changes are needed. Python `unittest` owns execution and reporting; its
+lifecycle and local exploration callbacks call Wiretap's HTTP API directly.
 
 ```bash
 ./examples/run-microsvc-transactions.sh
@@ -65,37 +65,21 @@ test support from the image.
 
 ## Exploration and hooks
 
-To explore an existing **authored capture bundle** without capturing the tests
-again, run:
+The successful withdrawal test awaits scoped exploration before closing its
+capture session. The SUT, mock and capture proxy remain available throughout.
+There is no separate saved-bundle execution command or SUT restart.
 
-```bash
-./examples/run-microsvc-transactions.sh --bundle ./artifacts/microsvc-transactions/<capture-run>
-```
+`test_transactions.py` passes ordinary local callbacks to the small HTTP example
+helper in `examples/explore_http.py`. Fixture helpers remain in `hooks.py`:
 
-Use the capture containing `withdrawal updates the account balance`, not its
-generated exploration output. The command starts fresh disposable services,
-copies the input bundle into the harness, and writes a new exploration bundle.
-It does not modify the input bundle or reuse its recorded credentials.
-
-After capture, the harness reconnects its Transactions container directly to the
-Accounts mock because finalizing capture stops Wiretap's proxy. It then runs:
-
-```bash
-wiretap explore --bundle /artifacts/<capture-run> \
-  --test "withdrawal updates the account balance" --config /example/.wiretap.yaml
-```
-
-The external hooks in `hooks.py` implement:
-
-- `before_run`: check that a request without credentials returns 401 and a request
-  with a freshly signed JWT succeeds. Misconfigured authentication stops the run
-  before generating a series of misleading failures.
-- `before_case`: reset Accounts to 100 and issue a fresh JWT for a fresh test user.
-- `before_request`: sign a fresh JWT for that case's user and inject the
-  `Authorization` header into each replayed request, including sequence prefixes.
-- `check_case`: verify the current user's transaction history, account balance,
-  and Accounts call sequence. Invalid requests must produce no transaction or
-  account calls; the happy baseline must withdraw exactly 25.
+- `before_explore`: check that missing credentials return 401 and a fresh JWT
+  succeeds. Misconfigured authentication stops before generated checks.
+- `before_case`: reset Accounts to 100 and issue a JWT for a fresh test user.
+- `before_request`: sign a fresh JWT for the case's user. Its scope includes
+  `POST /api/transactions/withdraw` and the prerequisite history requests.
+- `check_case`: verify the user's transaction history, balance and Accounts
+  call sequence. Rejected requests must create no transaction or account calls;
+  the happy baseline must withdraw exactly 25.
 - `after_case`: clear the Accounts fixture and call journal.
 
 Transactions accepts signed user claims without looking up a User service row,
@@ -114,7 +98,7 @@ exit unsuccessfully and leaves evidence for inspection.
 ## Bundles and contract scope
 
 Output defaults to `artifacts/microsvc-transactions/`. The command prints the
-capture and exploration bundle paths. Open either `docs/viewer.html` or
+one combined bundle path. Open `docs/viewer.html` or
 `index.md`; rejection results appear under **Contract coverage → Invalid-input
 coverage**. Logs are kept in a sibling `logs-<run>` directory.
 
@@ -129,8 +113,9 @@ coverage**. Logs are kept in a sibling `logs-<run>` directory.
 - HTTP 400 bodies vary between field-error maps, Spring error objects and empty
   responses. The contract checks the rejection status, while hooks check effects;
   it does not claim a common error-body schema.
-- The source capture includes downstream Accounts traffic. Exploration currently
-  records provider traffic and hook assertions, without capturing downstream calls.
+- Authored attempts include downstream Accounts traffic. Each generated case
+  records its provider traffic and explicit hook assertions; dependency evidence
+  is credited only where actual traffic was captured.
 
 Fraud gRPC and PostgreSQL traffic are outside Wiretap's HTTP coverage. The harness
 does not run Kafka: its best-effort publication failure is bounded and is not a
@@ -162,8 +147,8 @@ configuration workaround for this demo image, not a Wiretap response rewrite or
 a change to your existing Docker stack. For an independently managed SUT, its
 owner must fix error-dispatch security separately from supplying valid tokens.
 
-With fresh authentication and this setting, all 11 generated rejection cases and
-their side-effect checks pass against the tested image. The signing hook is
+The expected result for this contract is 11 generated rejection cases with
+passing side-effect checks. The signing hook is
 specific to this demo; for another application, replace `token()` with its test
 login/token flow and keep the same hook lifecycle. Never store signing keys or
 access tokens in the bundle.

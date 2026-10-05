@@ -51,7 +51,7 @@ an expensive shared environment.
    them as soon as provider evidence or an implementation becomes available.
 2. **Start with how teams already work.** Keep their languages, test frameworks,
    clients, assertions, mocks and CI. Capture remains a library integration;
-   derived verification and exploration use an optional Wiretap runner.
+   derived verification and exploration are called from tests through the SDK/HTTP API.
 3. **Require no Wiretap-specific application instrumentation.** Reuse standard
    tracing where available. Without propagation, use sequential execution or
    isolated workers; never guess which parallel test owns a request.
@@ -59,7 +59,7 @@ an expensive shared environment.
    hosted backend, proprietary artifact store or model provider. Publish formats,
    APIs and extension contracts so other tools can read, produce and use evidence.
 5. **Remain code driven.** Configuration covers ordinary cases; project-owned
-   executable hooks and explicit properties handle complex ones. Do not make a
+   local test callbacks and explicit properties handle complex ones. Do not make a
    proprietary test DSL the only route to advanced behaviour.
 6. **Prefer contracts and honest measurements.** Specifications define the intended
    boundary. Inference helps draft missing contracts but cannot prove its own
@@ -125,14 +125,17 @@ Wiretap already provides:
   payloads, with derived Markdown, an offline HTML viewer and a knowledge index.
 - Distinct provider observations and dependency assumptions, source provenance,
   evidence limitations and a suggested verification backlog.
-- HTTP provider invalid-input exploration from a passing captured scenario,
-  with external hooks for fixtures, authentication, cleanup and assertions.
+- HTTP and native gRPC provider invalid-input exploration within a captured test,
+  with local callbacks for fixtures, authentication, cleanup and assertions,
+  and generated attempts in the same bundle.
 
 Cross-bundle comparison, provider verification of consumer scenarios, recorded
 dependency simulation, general stateful exploration, automatic work selection,
 registry services and the connected web runner are still to be built. Current
-exploration does not capture or replay downstream dependencies. gRPC exploration
-and streaming coverage are not available.
+exploration does not synthesize downstream dependency responses. Native gRPC
+exploration uses supported standard Protovalidate rules and recorded message
+prefixes across all four RPC shapes. Arbitrary CEL and application-level stream
+semantics remain outside finite generation.
 
 The [architecture](architecture.md), [coverage rules](contract-coverage-rules.md),
 [bundle knowledge](bundle-knowledge.md) and [gRPC plan](grpc-support-plan.md)
@@ -344,7 +347,7 @@ verify a provider and exercise a consumer dependency variant. Authentication
 refresh, ID binding, cleanup and isolated workers work reliably. Missing fixtures,
 redacted inputs and ambiguous matching are explicit blockers, not passes. A
 failure reproduces from a clean start with its execution prerequisites recorded.
-This adds targeted unary execution; schema-driven gRPC exploration remains later
+This adds general targeted execution beyond the existing schema-driven gRPC exploration; broader exploration remains later
 work.
 
 ### Phase 3: generate useful tests and smaller failures
@@ -428,7 +431,7 @@ resulting examples and checks; duplicate events do not produce duplicate PRs.
 
 Native gRPC interoperability, rich errors and streaming capture/coverage are
 implemented with explicit message and lifecycle semantics. Build gRPC execution
-on that evidence. Extend exploration to Protobuf constraints that can actually be
+on that evidence. Extend the finite Protovalidate exploration subset to further constraints that can actually be
 evaluated; do not invent error-code or validation requirements from structural
 types alone.
 

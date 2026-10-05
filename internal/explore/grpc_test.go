@@ -6,15 +6,11 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
-	"strings"
 	"sync/atomic"
 	"testing"
 
 	"github.com/phrond/wiretap/internal/artifact"
 	"github.com/phrond/wiretap/internal/bundle"
-	"github.com/phrond/wiretap/internal/hooks"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protodesc"
@@ -62,42 +58,6 @@ func grpcExploreSeed(t *testing.T, includeHTTP bool, channel string) (string, *s
 	return w.Path(), schema
 }
 
-func TestGRPCProviderExploreRejectsBeforeHooksOrTraffic(t *testing.T) {
-	for _, mixed := range []bool{false, true} {
-		t.Run(fmt.Sprintf("mixed=%t", mixed), func(t *testing.T) {
-			source, _ := grpcExploreSeed(t, mixed, "test_to_sut")
-			var requests atomic.Int64
-			server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { requests.Add(1) }))
-			defer server.Close()
-			marker := filepath.Join(t.TempDir(), "hook-called")
-			t.Setenv("WIRETAP_BLOCKED_HOOK_MARKER", marker)
-			command := &hooks.Command{Command: []string{os.Args[0], "-test.run=^TestGRPCExploreHookHelper$"}}
-			result, err := Run(t.Context(), Options{Bundle: source, Target: server.URL, Output: t.TempDir(), Config: Config{Hooks: hooks.Lifecycle{BeforeRun: command, AfterRun: command}}})
-			if err == nil || !strings.Contains(err.Error(), "gRPC provider exploration is not supported") {
-				t.Fatalf("unexpected exploration result: %+v (%v)", result, err)
-			}
-			if requests.Load() != 0 || result.Bundle != "" {
-				t.Fatalf("unsupported exploration had side effects: requests=%d result=%+v", requests.Load(), result)
-			}
-			if _, err := os.Stat(marker); !os.IsNotExist(err) {
-				t.Fatal("unsupported exploration invoked a hook")
-			}
-		})
-	}
-}
-
-func TestGRPCExploreHookHelper(t *testing.T) {
-	marker := os.Getenv("WIRETAP_BLOCKED_HOOK_MARKER")
-	if marker == "" {
-		t.Skip("hook child process only")
-	}
-	if err := os.WriteFile(marker, nil, 0600); err != nil {
-		t.Fatal(err)
-	}
-	fmt.Print("{}")
-	os.Exit(0)
-}
-
 func TestHTTPProviderWithGRPCDependencyExploreReplaysOnlyHTTP(t *testing.T) {
 	source, schema := grpcExploreSeed(t, true, "sut_to_dependency")
 	var requests atomic.Int64
@@ -117,7 +77,7 @@ func TestHTTPProviderWithGRPCDependencyExploreReplaysOnlyHTTP(t *testing.T) {
 		}
 	}))
 	defer server.Close()
-	result, err := Run(t.Context(), Options{Bundle: source, Target: server.URL, Output: t.TempDir(), Config: Config{MaxCases: 1}})
+	result, err := Run(t.Context(), Options{Bundle: source, Target: server.URL, Output: t.TempDir(), Config: legacyConfig{MaxCases: 1}})
 	if err != nil || result.Passed != 1 || requests.Load() != 2 {
 		t.Fatalf("HTTP provider replay: %+v, requests=%d (%v)", result, requests.Load(), err)
 	}

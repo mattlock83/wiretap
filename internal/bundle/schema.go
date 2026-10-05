@@ -240,10 +240,21 @@ func (w *Writer) freezeSchema(ref artifact.SchemaRef) (artifact.SchemaRef, error
 }
 
 func (w *Writer) freezeProtobuf(ref artifact.SchemaRef) (artifact.SchemaRef, error) {
-	if ref.Source.Type != "protobuf_inline" {
+	var raw []byte
+	var err error
+	switch ref.Source.Type {
+	case "protobuf_inline":
+		raw, err = base64.StdEncoding.DecodeString(ref.Source.Content)
+	case "file":
+		// Generated attempts reuse their parent's frozen contract. Require its
+		// content identity so rereading a changed file cannot alter that contract.
+		if ref.Source.Format != "file_descriptor_set" || ref.Source.SHA256 == "" {
+			return ref, errors.New("frozen protobuf schema requires descriptor format and hash")
+		}
+		raw, err = os.ReadFile(ref.Source.Path)
+	default:
 		return ref, fmt.Errorf("protobuf schema requires a resolved descriptor set")
 	}
-	raw, err := base64.StdEncoding.DecodeString(ref.Source.Content)
 	if err != nil {
 		return ref, err
 	}
@@ -253,6 +264,9 @@ func (w *Writer) freezeProtobuf(ref artifact.SchemaRef) (artifact.SchemaRef, err
 	}
 	if ref.Source.SHA256 != "" && ref.Source.SHA256 != contract.SHA256 {
 		return ref, errors.New("descriptor set hash mismatch")
+	}
+	if ref.AssetSHA != "" && ref.AssetSHA != contract.SHA256 {
+		return ref, errors.New("descriptor asset hash mismatch")
 	}
 	base := "contracts/" + contract.SHA256
 	rel := base + "/descriptor-set.protoset"

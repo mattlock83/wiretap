@@ -16,8 +16,8 @@ import (
 	"github.com/phrond/wiretap/internal/coverage"
 )
 
-// This fixture has identically named seeds whose content hashes differ. They
-// must remain separate exploration groups even when their source IDs match.
+// Two exploration calls within the same parent have identical names and seed
+// IDs. Invocation identity must keep their baselines and cases in separate groups.
 func viewerNavigationFixture(t *testing.T) string {
 	t.Helper()
 	w, err := bundle.New(t.TempDir())
@@ -46,12 +46,12 @@ paths:
         '400': {description: invalid input}
 `}}}
 	target := artifact.RejectionTarget{Key: strings.Repeat("c", 64), SchemaID: "orders", Operation: "POST /orders", FlowID: "request", Location: "/body/amount", Constraint: "nullable", ExpectedStatuses: []int{400}}
-	for _, item := range []struct{ id, mode, hash string }{
+	for _, item := range []struct{ id, mode, invocation string }{
 		{"authored", "", ""},
-		{"baseline-a", "baseline", strings.Repeat("a", 64)},
-		{"case-a", "rejection", strings.Repeat("a", 64)},
-		{"baseline-b", "baseline", strings.Repeat("b", 64)},
-		{"case-b", "rejection", strings.Repeat("b", 64)},
+		{"baseline-a", "baseline", "explore-a"},
+		{"case-a", "rejection", "explore-a"},
+		{"baseline-b", "baseline", "explore-b"},
+		{"case-b", "rejection", "explore-b"},
 	} {
 		tc := artifact.TestCase{ID: item.id, Name: "create order", Status: "pass", StartedAt: time.Date(2026, 9, 30, 8, 0, 0, 0, time.UTC)}
 		if item.mode != "" {
@@ -67,7 +67,7 @@ paths:
 			Response: artifact.Message{HTTP: &artifact.HttpMessage{Status: 201}},
 		}}}
 		if item.mode != "" {
-			a.Exploration = &artifact.Exploration{Version: "wiretap-negative-1", Mode: item.mode, SourceRunID: "source-run", SourceAttemptID: "source-attempt", SourceSHA256: item.hash}
+			a.Exploration = &artifact.Exploration{Version: "wiretap-negative-1", Mode: item.mode, SourceRunID: w.Snapshot().RunID, SourceAttemptID: "authored", SourceKind: "active_test", InvocationID: item.invocation, SourceFlowIDs: []string{"request"}}
 			if item.mode == "baseline" {
 				a.Exploration.Catalogue = []artifact.RejectionTarget{target}
 			} else {

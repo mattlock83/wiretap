@@ -168,3 +168,22 @@ func TestViewerCoverageEmptyReports(t *testing.T) {
 		t.Fatalf("unknown denominator was presented as measured coverage: %+v", view)
 	}
 }
+
+func TestNativeRejectionViewsUseApplicationStatusAndExactWitnesses(t *testing.T) {
+	index := 0
+	target := artifact.RejectionTarget{Key: "native-target", Protocol: "grpc", SchemaID: "orders", Operation: "/orders.v1.Orders/CreateOrder", Location: "/messages/0/body/sku", MessageIndex: &index, Constraint: "string.min_len", ExpectedStatuses: []int{3, 11}}
+	evidence := coverage.ContractEvidence{AttemptID: "case-two", InstanceLocation: "/messages/1/body/sku", Reason: "Intended request violation verified (gRPC status 3)"}
+	report := &coverage.RejectionCoverage{Covered: 1, Targets: []*coverage.RejectionCoverageTarget{{RejectionTarget: target, State: "covered", Evidence: []coverage.ContractEvidence{evidence}}}}
+	view := buildViewerRejections(report)
+	row := view[0].Rows[0]
+	if row.StatusLabel != "gRPC INVALID_ARGUMENT (3) or OUT_OF_RANGE (11)" || row.Field != "Message 1 · sku" || row.Label != "string too short" {
+		t.Fatalf("native target lost its meaning: %+v", row)
+	}
+	if row.Evidence[0].InstanceLocation != evidence.InstanceLocation {
+		t.Fatal("later stream witness replaced with catalogue representative")
+	}
+	markdown := contractCoverageMarkdown(&coverage.ContractCoverage{Rejections: report})
+	if !strings.Contains(markdown, row.StatusLabel) || !strings.Contains(markdown, "/messages/1/body/sku") || strings.Contains(markdown, "HTTP [3") {
+		t.Fatalf("native markdown status or witness is incorrect: %s", markdown)
+	}
+}

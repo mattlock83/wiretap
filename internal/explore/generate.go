@@ -16,6 +16,7 @@ import (
 )
 
 type mutation struct {
+	GRPC     *grpcMutation
 	Target   artifact.RejectionTarget
 	Step     int
 	In, Path string
@@ -81,8 +82,9 @@ func generate(s *spec, steps []step, apiID, revision string, statuses []int) ([]
 	var out []mutation
 	var notes []string
 	seen := map[string]bool{}
+	limitExceeded := false
 	add := func(m mutation, r request) {
-		if len(out) >= 10000 {
+		if limitExceeded {
 			return
 		}
 		candidate := r.clone()
@@ -95,6 +97,10 @@ func generate(s *spec, steps []step, apiID, revision string, statuses []int) ([]
 		m.Target.SchemaID = s.ref.ID
 		m.Target.ExpectedStatuses = append([]int(nil), statuses...)
 		if !seen[m.Target.Key] {
+			if len(out) >= 10000 {
+				limitExceeded = true
+				return
+			}
 			seen[m.Target.Key] = true
 			out = append(out, m)
 		}
@@ -213,8 +219,8 @@ func generate(s *spec, steps []step, apiID, revision string, statuses []int) ([]
 			}
 		}
 	}
-	if len(out) >= 10000 {
-		notes = append(notes, "Generation capped at 10000 targets")
+	if limitExceeded {
+		return nil, nil, fmt.Errorf("generation exceeds the 10000-target resource limit; narrow operations or flow selection")
 	}
 	sort.Strings(notes)
 	notes = unique(notes)

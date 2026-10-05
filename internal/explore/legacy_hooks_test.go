@@ -1,4 +1,4 @@
-package hooks
+package explore
 
 import (
 	"context"
@@ -46,8 +46,8 @@ func TestCommandProtocol(t *testing.T) {
 		{`{"checks":[{"name":"","passed":true}]}`, true},
 	} {
 		t.Run(tc.mode, func(t *testing.T) {
-			cmd := &Command{Command: []string{os.Args[0], "-test.run=TestHookHelper", "--", tc.mode}}
-			out, err := Call(context.Background(), cmd, t.TempDir(), map[string]any{"bindings": map[string]any{"hello": "world"}}, io.Discard)
+			cmd := &legacyHookCommand{Command: []string{os.Args[0], "-test.run=TestHookHelper", "--", tc.mode}}
+			out, err := callLegacyHook(context.Background(), cmd, t.TempDir(), map[string]any{"bindings": map[string]any{"hello": "world"}}, io.Discard)
 			if (err != nil) != tc.wantErr {
 				t.Fatalf("output %+v error %v", out, err)
 			}
@@ -61,15 +61,15 @@ func TestCommandProtocol(t *testing.T) {
 func TestHookTimeoutAndCancellation(t *testing.T) {
 	t.Setenv("WIRETAP_HOOK_HELPER", "1")
 	t.Setenv("GORACE", "atexit_sleep_ms=0")
-	cmd := &Command{Command: []string{os.Args[0], "-test.run=TestHookHelper", "--", "sleep"}, Timeout: "50ms"}
+	cmd := &legacyHookCommand{Command: []string{os.Args[0], "-test.run=TestHookHelper", "--", "sleep"}, Timeout: "50ms"}
 	start := time.Now()
-	_, err := Call(context.Background(), cmd, "", nil, io.Discard)
+	_, err := callLegacyHook(context.Background(), cmd, "", nil, io.Discard)
 	if err == nil || time.Since(start) > 2*time.Second {
 		t.Fatalf("timeout failed: %v", err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, err = Call(ctx, cmd, "", nil, io.Discard); err == nil {
+	if _, err = callLegacyHook(ctx, cmd, "", nil, io.Discard); err == nil {
 		t.Fatal("cancelled context executed hook")
 	}
 }

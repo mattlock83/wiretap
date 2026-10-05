@@ -6,7 +6,6 @@ import hmac
 import json
 import os
 import secrets
-import sys
 import time
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
@@ -93,22 +92,3 @@ def cleanup():
 
 
 HAPPY_CALLS = ["GET /api/accounts/1001", "GET /api/accounts/1001/balance", "PUT /api/accounts/1001/balance"]
-
-
-def hook(event):
-    if event["event"] == "before_run":
-        verify_authentication()
-    if event["event"] == "before_case":
-        return prepare()
-    if event["event"] == "before_request":
-        return {"headers": auth_headers(event["state"]["user_id"])}
-    if event["event"] == "check_case":
-        baseline = event["mode"] == "baseline"
-        return {"checks": checks(event["state"]["user_id"], baseline, HAPPY_CALLS if baseline else [])}
-    if event["event"] == "after_case":
-        cleanup()
-    return {}
-
-
-if __name__ == "__main__":
-    json.dump(hook(json.load(sys.stdin)), sys.stdout)

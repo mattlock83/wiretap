@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -57,15 +58,21 @@ type TestOptions struct {
 }
 
 type Session struct {
-	provider     trace.TracerProvider
-	ID           string            `json:"session_id"`
-	SUTURL       string            `json:"sut_url"`
-	Dependencies map[string]string `json:"dependencies"`
-	RunID        string            `json:"run_id"`
-	BundlePath   string            `json:"bundle_path"`
-	IndexPath    string            `json:"index_path"`
-	ViewerPath   string            `json:"viewer_path"`
-	Context      context.Context   `json:"-"`
+	runtime               *Runtime
+	exploreMu             sync.Mutex
+	exploreCancel         context.CancelFunc
+	exploreDone           chan struct{}
+	exploreCleanupTimeout time.Duration
+	closed                bool
+	provider              trace.TracerProvider
+	ID                    string            `json:"session_id"`
+	SUTURL                string            `json:"sut_url"`
+	Dependencies          map[string]string `json:"dependencies"`
+	RunID                 string            `json:"run_id"`
+	BundlePath            string            `json:"bundle_path"`
+	IndexPath             string            `json:"index_path"`
+	ViewerPath            string            `json:"viewer_path"`
+	Context               context.Context   `json:"-"`
 }
 
 var fallbackProvider = sdktrace.NewTracerProvider()
@@ -104,7 +111,7 @@ func (r *Runtime) StartTest(t testing.TB, options TestOptions) *Session {
 		Name         string            `json:"name"`
 		TraceContext map[string]string `json:"trace_context"`
 	}{options, t.Name(), map[string]string{"traceparent": carrier["traceparent"], "tracestate": carrier["tracestate"]}}
-	session := &Session{Context: ctx, provider: provider}
+	session := &Session{Context: ctx, provider: provider, runtime: r}
 	setupTimeout := options.SetupTimeout
 	if setupTimeout == 0 {
 		setupTimeout = 30 * time.Second
@@ -128,6 +135,10 @@ func (r *Runtime) StartTest(t testing.TB, options TestOptions) *Session {
 		timeout := options.DrainTimeout
 		if timeout == 0 {
 			timeout = 5 * time.Second
+		}
+		if err := session.stopExploration(); err != nil {
+			t.Error(err)
+			status = "fail"
 		}
 		cleanupCtx, cancel := context.WithTimeout(context.Background(), timeout+10*time.Second)
 		defer cancel()
@@ -180,9 +191,23 @@ type boundTransport struct {
 	transport http.RoundTripper
 }
 
+type responseError struct {
+	path   string
+	status int
+	body   []byte
+}
+
+func (e *responseError) Error() string {
+	return fmt.Sprintf("Wiretap %s: HTTP %d: %s", e.path, e.status, e.body)
+}
+
 func (t boundTransport) RoundTrip(request *http.Request) (*http.Response, error) {
-	// Retain cancellation and values on the request while binding its parent.
-	ctx := trace.ContextWithSpanContext(request.Context(), trace.SpanContextFromContext(t.ctx))
+	// An explicitly supplied context, including an exploration case context,
+	// owns the request. Otherwise fall back to the enclosing authored test.
+	ctx := request.Context()
+	if !trace.SpanContextFromContext(ctx).IsValid() {
+		ctx = trace.ContextWithSpanContext(ctx, trace.SpanContextFromContext(t.ctx))
+	}
 	return t.transport.RoundTrip(request.Clone(ctx))
 }
 func (r *Runtime) call(ctx context.Context, path string, payload, output any) error {
@@ -213,10 +238,12 @@ func (r *Runtime) call(ctx context.Context, path string, payload, output any) er
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(res.Body, 8192))
-		return fmt.Errorf("Wiretap %s: HTTP %d: %s", path, res.StatusCode, body)
+		return &responseError{path: path, status: res.StatusCode, body: body}
 	}
 	if output != nil {
-		return json.NewDecoder(res.Body).Decode(output)
+		decoder := json.NewDecoder(res.Body)
+		decoder.UseNumber()
+		return decoder.Decode(output)
 	}
 	return nil
 }

@@ -357,23 +357,38 @@
         "flow_id": { "type": "string" },
         "instance_location": { "type": "string" },
         "constraint": { "type": "string" },
-        "expected_statuses": { "type": "array", "minItems": 1, "items": { "type": "integer", "minimum": 400, "maximum": 499 } }
-      }
+        "protocol": { "enum": ["http", "grpc"] },
+        "message_index": { "type": "integer", "minimum": 0 },
+        "expected_statuses": { "type": "array", "minItems": 1, "items": { "type": "integer" } }
+      },
+      "allOf": [{
+        "if": { "required": ["protocol"], "properties": { "protocol": { "const": "grpc" } } },
+        "then": { "required": ["message_index"], "properties": { "expected_statuses": { "items": { "enum": [3, 11] } }, "instance_location": { "pattern": "^/messages/[0-9]+/body(?:/|$)" } } },
+        "else": { "not": { "required": ["message_index"] }, "properties": { "expected_statuses": { "items": { "minimum": 400, "maximum": 499, "not": { "enum": [401, 403, 429] } } } } }
+      }]
     },
     "exploration": {
       "type": "object",
-      "required": ["version", "source_run_id", "source_attempt_id", "source_sha256", "mode"],
+      "required": ["version", "source_run_id", "source_attempt_id", "mode"],
       "properties": {
         "version": { "const": "wiretap-negative-1" },
         "source_run_id": { "$ref": "#/$defs/id" },
         "source_attempt_id": { "$ref": "#/$defs/id" },
         "source_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "source_kind": { "const": "active_test" },
+        "source_flow_ids": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/id" } },
+        "exploration_id": { "$ref": "#/$defs/id" },
         "mode": { "enum": ["baseline", "rejection"] },
         "target": { "$ref": "#/$defs/rejectionTarget" },
         "catalogue": { "type": "array", "items": { "$ref": "#/$defs/rejectionTarget" } },
         "notes": { "type": "array", "items": { "type": "string" } },
         "request_verified": { "type": "boolean" }
-      }
+      },
+      "allOf": [{
+        "if": { "required": ["source_kind"], "properties": { "source_kind": { "const": "active_test" } } },
+        "then": { "required": ["exploration_id", "source_flow_ids"], "not": { "required": ["source_sha256"] } },
+        "else": { "required": ["source_sha256"] }
+      }]
     },
     "capture": {
       "type": "object",
