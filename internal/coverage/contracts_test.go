@@ -48,7 +48,7 @@ paths:
 func contractFixture(schema, body string) (*bundle.Run, *artifact.Artifact) {
 	ref := artifact.SchemaRef{ID: "orders-schema", Role: "sut", Type: "openapi", Source: artifact.SchemaSource{Type: "inline", Content: schema}}
 	a := &artifact.Artifact{Version: 1, TestCase: artifact.TestCase{ID: "attempt", Name: "creates order", Status: "pass"}, Schemas: []artifact.SchemaRef{ref}, Traffic: []artifact.Flow{{ID: "flow", Protocol: "http", Channel: "test_to_sut", Request: artifact.Message{HTTP: &artifact.HttpMessage{Method: "POST", URL: "http://provider/orders", Headers: artifact.Headers{"Content-Type": {"application/json"}}, Body: &artifact.Body{Text: `{"name":"example"}`}}}, Response: artifact.Message{HTTP: &artifact.HttpMessage{Status: 200, Headers: artifact.Headers{"Content-Type": {"application/json"}}, Body: &artifact.Body{Text: body}}}}}}
-	run := &bundle.Run{RunID: "run", APIID: "orders", RunState: "complete", Schemas: []artifact.SchemaRef{ref}, Attempts: []bundle.AttemptRef{{AttemptID: "attempt", FileRef: bundle.FileRef{Path: "evidence/attempts/attempt.json"}}}}
+	run := &bundle.Run{RunID: "run", APIID: "orders", RunState: "complete", Schemas: []artifact.SchemaRef{ref}, Attempts: []bundle.AttemptRef{{AttemptID: "attempt", FileRef: bundle.FileRef{Path: "tests/attempt.json"}}}}
 	return run, a
 }
 func contractTarget(t *testing.T, s *ContractSpec, phase, location, family, condition string) *ContractTarget {

@@ -27,7 +27,7 @@ npm ci --prefix sdk/js
 
 The example captures an existing test, then uses `wiretap explore` to generate
 invalid-input checks from its happy path. It prints two bundle locations. Open
-`viewer/index.html` for the offline dashboard or `index.md` for the linked
+`docs/viewer.html` for the offline dashboard or `index.md` for the linked
 Markdown pages. No report server is needed.
 
 [More examples](examples/README.md) cover parallel Jest tests, database fixtures,
@@ -60,15 +60,30 @@ See [configuration](docs/configuration.md) and [tracing](docs/otel-adoption.md).
 
 | Bundle view | What it tells you |
 | --- | --- |
+| `bundle.json` | The provided APIs and dependencies, their contracts and the recorded tests that exercised them. |
 | APIs and dependencies | Which boundaries and operations were observed, with requests, responses and inferred OpenAPI drafts for mocks. |
 | Contract coverage | Which specified cases were exercised, such as enum values, optional fields and boundaries; gaps and uncertain results remain visible. |
 | Test runs | What executed and what happened, with authored tests separate from generated checks and links to the conditions they exercised. |
 | System overview and verification work | How the recorded APIs fit together and which assumptions, mismatches or gaps need further checks. |
-| `knowledge.json` | The API map, verification tasks and evidence references for a knowledge base or agent. |
+| `docs/knowledge.json` | The API map, verification tasks and evidence references for a knowledge base or agent. |
 
 One test can cover many contract conditions. A mock response records a test
 assumption; it does not prove the real provider behaves that way. Cross-repository
 comparison is not yet implemented.
+
+The [bundle format](docs/bundle-evidence.md) keeps `bundle.json`, `contracts/`,
+`tests/` and `payloads/` as the source data, with an OKF `index.md` and rebuildable
+views under `docs/`. Recorded tests are also the input to exploration; hooks and
+environment setup remain in your project.
+
+The bundle format supports consumer-only systems such as UIs, provider-only
+systems without mocks, and mixed systems. Application identity is independent of
+the provided/dependency inventories. Its event representation can retain
+bidirectional gRPC streams, publish/consume messaging, Kafka/Avro and GraphQL
+subscriptions, alongside frozen AsyncAPI or other contract packages. These are
+format capabilities; live capture, validation and coverage adapters currently
+support HTTP and unary gRPC. The existing runtime configuration remains centred
+on a SUT. See the [format's support boundaries](docs/bundle-evidence.md).
 
 The bundle contains authoritative JSON evidence, frozen schemas and retained
 payloads. Its Markdown, HTML and knowledge views are generated automatically

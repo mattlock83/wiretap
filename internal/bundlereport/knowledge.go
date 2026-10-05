@@ -16,21 +16,23 @@ import (
 // knowledgeIndex is a disposable navigation and verification projection. It
 // never turns a mock observation, missing test, or matching key into agreement.
 type knowledgeIndex struct {
-	Version          string             `json:"knowledge_version"`
-	RunID            string             `json:"run_id"`
-	SnapshotRevision uint64             `json:"snapshot_revision"`
-	RulesVersion     string             `json:"condition_rules_version"`
-	RunState         string             `json:"run_state"`
-	APIID            string             `json:"api_id"`
-	TestSource       map[string]any     `json:"test_source,omitempty"`
-	SUTSource        map[string]any     `json:"sut_source,omitempty"`
-	Scope            []string           `json:"scope"`
-	APIs             []knowledgeAPI     `json:"apis"`
-	Attempts         []knowledgeAttempt `json:"attempts"`
-	Verification     []verificationTask `json:"verification"`
+	Application      *bundle.Application `json:"application,omitempty"`
+	Version          string              `json:"knowledge_version"`
+	RunID            string              `json:"run_id"`
+	SnapshotRevision uint64              `json:"snapshot_revision"`
+	RulesVersion     string              `json:"condition_rules_version"`
+	RunState         string              `json:"run_state"`
+	APIID            string              `json:"api_id"`
+	TestSource       map[string]any      `json:"test_source,omitempty"`
+	SUTSource        map[string]any      `json:"sut_source,omitempty"`
+	Scope            []string            `json:"scope"`
+	APIs             []knowledgeAPI      `json:"apis"`
+	Attempts         []knowledgeAttempt  `json:"attempts"`
+	Verification     []verificationTask  `json:"verification"`
 }
 
 type knowledgeAPI struct {
+	Measurement        string               `json:"measurement,omitempty"`
 	Protocol           string               `json:"protocol,omitempty"`
 	RulesVersion       string               `json:"condition_rules_version,omitempty"`
 	ContractResolution string               `json:"contract_resolution,omitempty"`
@@ -62,6 +64,8 @@ type knowledgeOperation struct {
 }
 
 type knowledgeEvidence struct {
+	InteractionKind      string `json:"interaction_kind,omitempty"`
+	Measurement          string `json:"measurement,omitempty"`
 	Protocol             string `json:"protocol,omitempty"`
 	GRPCStatus           *int   `json:"grpc_status,omitempty"`
 	AttemptID            string `json:"attempt_id"`
@@ -116,7 +120,8 @@ type verificationTask struct {
 
 func buildKnowledge(root string, run *bundle.Run, captures []*artifact.Artifact, report *coverage.Report) *knowledgeIndex {
 	k := &knowledgeIndex{Version: "1.0", RunID: run.RunID, SnapshotRevision: run.Revision, RulesVersion: coverage.ContractRulesVersion, RunState: run.RunState,
-		APIID: run.APIID, TestSource: run.TestSource, SUTSource: run.SUTSource,
+		Application: run.Application,
+		APIID:       run.APIID, TestSource: run.TestSource, SUTSource: run.SUTSource,
 		APIs: []knowledgeAPI{}, Attempts: []knowledgeAttempt{}, Verification: []verificationTask{},
 		Scope: []string{
 			"Only registered APIs and retained traffic in this run are described; this is not a complete system dependency inventory.",
@@ -165,6 +170,17 @@ func buildKnowledge(root string, run *bundle.Run, captures []*artifact.Artifact,
 				if f.ID != s.FlowID {
 					continue
 				}
+				e.Protocol = f.Protocol
+				if f.Interaction != nil {
+					e.InteractionKind = f.Interaction.Kind
+					e.Measurement = "unsupported"
+					e.CaptureIncomplete = e.CaptureIncomplete || f.Interaction.CaptureState != "complete"
+					for _, event := range f.Interaction.Events {
+						for _, payload := range event.Payloads {
+							e.BodyTruncated = e.BodyTruncated || payload.Availability == "truncated" || (payload.Body != nil && payload.Body.Truncated)
+						}
+					}
+				}
 				e.TestCorrelation, e.ParentFlowID, e.ParentCorrelation = f.TestCorrelation, f.ParentFlowID, f.ParentCorrelation
 				if f.Response.HTTP != nil {
 					e.ResponseStatus = f.Response.HTTP.Status
@@ -198,20 +214,23 @@ func buildKnowledge(root string, run *bundle.Run, captures []*artifact.Artifact,
 	}{{"provided", "apis", report.Provided.Specs}, {"dependency", "dependencies", report.Dependent.Specs}} {
 		for _, spec := range group.specs {
 			id, kind := spec.AssetID, run.SUTTargetKind
-			if group.role == "provided" {
+			if group.role == "provided" && spec.Role != "provided" && run.APIID != "" {
 				id = run.APIID
-			} else {
+			} else if group.role == "dependency" {
 				kind = run.DependencyKinds[id]
 			}
 			if kind == "" {
 				kind = "unknown"
 			}
 			apiDir := group.dir + "/" + shortHash(group.dir+"|"+spec.AssetID+"|"+spec.SchemaID+"|"+spec.SchemaSet)
-			protocol := "http"
-			if spec.Type == "protobuf" {
-				protocol = "grpc"
+			protocol := schemaProtocol(spec.Type)
+			if spec.Protocol != "" {
+				protocol = spec.Protocol
 			}
 			api := knowledgeAPI{Protocol: protocol, ID: id, Role: group.role, TargetKind: kind, SchemaID: spec.SchemaID, SchemaSet: spec.SchemaSet, Page: apiDir + "/api.md", DenominatorKnown: spec.DenominatorKnown, Operations: []knowledgeOperation{}}
+			if spec.Type != "" && spec.Type != "openapi" && spec.Type != "protobuf" {
+				api.Measurement = "unsupported"
+			}
 			if report.Contracts != nil {
 				for _, contract := range report.Contracts.Specs {
 					if contract.SchemaID == spec.SchemaID && contract.APIID == id && contract.Origin == group.role {
@@ -220,7 +239,7 @@ func buildKnowledge(root string, run *bundle.Run, captures []*artifact.Artifact,
 					}
 				}
 			}
-			if strings.HasPrefix(spec.Source, "schemas/") {
+			if strings.HasPrefix(spec.Source, "contracts/") {
 				api.Schema = spec.Source
 				if spec.Type == "protobuf" {
 					api.ContractRevision = spec.SchemaSet
@@ -265,12 +284,19 @@ func buildKnowledge(root string, run *bundle.Run, captures []*artifact.Artifact,
 	// generalized into speculative route templates.
 	for _, a := range captures {
 		for _, f := range a.Traffic {
-			if seen[a.TestCase.ID+"/"+f.ID] || (f.Request.HTTP == nil && f.Request.GRPC == nil) {
+			if seen[a.TestCase.ID+"/"+f.ID] || (f.Request.HTTP == nil && f.Request.GRPC == nil && f.Interaction == nil) {
 				continue
 			}
 			role, id, kind, page := "provided", run.APIID, run.SUTTargetKind, "apis/index.md"
-			if f.Channel == "sut_to_dependency" {
+			if f.Interaction != nil {
+				role, id = f.Interaction.Boundary.Role, f.Interaction.Boundary.ID
+				if role == "dependency" {
+					kind, page = run.DependencyKinds[id], "dependencies/index.md"
+				}
+			} else if f.Channel == "sut_to_dependency" {
 				role, id, kind, page = "dependency", f.AssetID, run.DependencyKinds[f.AssetID], "dependencies/index.md"
+			} else if f.Channel == "test_to_sut" && f.AssetID != "" {
+				id = f.AssetID
 			} else if f.Channel != "test_to_sut" {
 				role, id, kind, page = "unknown", f.AssetID, "unknown", "tests/index.md"
 			}
@@ -279,11 +305,15 @@ func buildKnowledge(root string, run *bundle.Run, captures []*artifact.Artifact,
 			}
 			i := -1
 			for j := range k.APIs {
+				if f.Interaction != nil && k.APIs[j].Role == role && k.APIs[j].ID == id && (k.APIs[j].Protocol == "" || k.APIs[j].Protocol == f.Protocol) {
+					i = j
+					break
+				}
 				if f.Request.GRPC != nil && k.APIs[j].Role == role && k.APIs[j].ID == id && k.APIs[j].SchemaID == f.Request.GRPC.SchemaRef {
 					i = j
 					break
 				}
-				if k.APIs[j].Role == role && k.APIs[j].ID == id && k.APIs[j].SchemaID == "" {
+				if k.APIs[j].Role == role && k.APIs[j].ID == id && k.APIs[j].SchemaID == "" && (f.Protocol == "" || k.APIs[j].Protocol == "" || k.APIs[j].Protocol == f.Protocol) {
 					i = j
 					break
 				}
@@ -294,7 +324,10 @@ func buildKnowledge(root string, run *bundle.Run, captures []*artifact.Artifact,
 			}
 			api := &k.APIs[i]
 			operation := ""
-			if f.Request.GRPC != nil {
+			if f.Interaction != nil {
+				operation = flowOperation(f)
+				api.Protocol = f.Protocol
+			} else if f.Request.GRPC != nil {
 				operation = f.Request.GRPC.Procedure
 				api.Protocol = "grpc"
 			} else {
@@ -317,7 +350,10 @@ func buildKnowledge(root string, run *bundle.Run, captures []*artifact.Artifact,
 			}
 			s := coverage.FlowSample{TestCaseID: a.TestCase.ID, TestCase: a.TestCase.Name, TestStatus: a.TestCase.Status, FlowID: f.ID, CaptureIncomplete: a.CaptureIncomplete, TransportError: f.TransportError, TestCorrelation: f.TestCorrelation, ParentFlowID: f.ParentFlowID, ParentCorrelation: f.ParentCorrelation}
 			api.Operations[j].Evidence = append(api.Operations[j].Evidence, ref(s))
-			if api.Operations[j].Declared {
+			if f.Interaction != nil {
+				api.Operations[j].ContractMatch = "unsupported"
+			}
+			if api.Operations[j].Declared && f.Interaction == nil {
 				api.Operations[j].ContractMatch = "matched"
 			}
 			api.Operations[j].EvidenceBasis = knowledgeBasis(role, kind)
@@ -368,7 +404,7 @@ func buildKnowledge(root string, run *bundle.Run, captures []*artifact.Artifact,
 	if run.APIID != "" {
 		found := false
 		for _, api := range k.APIs {
-			if api.Role == "provided" {
+			if api.Role == "provided" && api.ID == run.APIID {
 				found = true
 			}
 		}
@@ -389,11 +425,14 @@ func buildKnowledge(root string, run *bundle.Run, captures []*artifact.Artifact,
 				hasRegisteredSchema = hasRegisteredSchema || candidate.SchemaID != ""
 			}
 		}
-		if !api.DenominatorKnown && !hasSuppliedContract && (api.SchemaID != "" || !hasRegisteredSchema) && api.ContractResolution == "" {
+		if api.Measurement != "unsupported" && !api.DenominatorKnown && !hasSuppliedContract && (api.SchemaID != "" || !hasRegisteredSchema) && api.ContractResolution == "" {
 			k.addTask(api, "supply_contract", "normal", "", "Declared operation coverage is unknown for these observations.", "Supply or repair the intended provider contract and validate retained exchanges. An inferred mock draft is not a provider contract.", api.Page, nil, nil)
 		}
 		for _, op := range api.Operations {
-			if !op.Declared && hasSuppliedContract && (api.SchemaID == "" || op.ContractMatch == "unmatched") {
+			if op.ContractMatch == "unsupported" {
+				k.addTask(api, "unsupported_measurement", "normal", op.Operation, "This event interaction is retained but the installed coverage and execution engines do not support it.", "Inspect the recorded event sequence and contract using a compatible protocol adapter before claiming coverage or generating executable checks.", op.Page, op.Evidence, nil)
+			}
+			if op.ContractMatch != "unsupported" && !op.Declared && hasSuppliedContract && (api.SchemaID == "" || op.ContractMatch == "unmatched") {
 				k.addTask(api, "reconcile_unmatched_operation", "high", op.Operation, "Captured exchanges did not match any supplied operation for this API.", "Compare the captured method and path with the intended frozen contract and API version. Investigate undocumented routes, wrong routing or a stale contract before deriving coverage or generating permutations.", op.Page, op.Evidence, nil)
 			}
 			if api.Role == "dependency" && (len(op.Statuses) > 0 || len(op.RPCStatuses) > 0) {
@@ -429,7 +468,14 @@ func buildKnowledge(root string, run *bundle.Run, captures []*artifact.Artifact,
 		if a.CaptureIncomplete {
 			kind, reason, action = "repair_capture", "One or more attempts have incomplete capture evidence.", "Resolve capture diagnostics and recapture the scenario before concluding what was exercised or which dependency assumptions hold."
 		}
-		k.addTask(knowledgeAPI{ID: run.APIID, Role: "provided"}, kind, "high", "", reason, action, "tests/index.md", evidence, nil)
+		id, role := run.APIID, "provided"
+		if id == "" {
+			role = "application"
+			if run.Application != nil {
+				id = run.Application.ID
+			}
+		}
+		k.addTask(knowledgeAPI{ID: id, Role: role}, kind, "high", "", reason, action, "tests/index.md", evidence, nil)
 	}
 	if report.Contracts != nil {
 		for _, spec := range report.Contracts.Specs {
@@ -477,7 +523,7 @@ func buildKnowledge(root string, run *bundle.Run, captures []*artifact.Artifact,
 			}
 		}
 	}
-	if run.APIID == "" || len(run.TestSource) == 0 || len(run.SUTSource) == 0 {
+	if (run.APIID == "" && (run.Application == nil || run.Application.ID == "")) || len(run.TestSource) == 0 || len(run.SUTSource) == 0 {
 		k.addTask(knowledgeAPI{ID: run.APIID}, "establish_provenance", "normal", "", "API identity or test/SUT source metadata is missing; freshness and intended deployment alignment cannot be established from this bundle alone.", "Supply the shared API identity and the separate test and actual SUT source/build revisions before cross-repository comparison. A test checkout revision is not automatically the SUT revision.", "run.md", nil, nil)
 	}
 	sort.Slice(k.APIs, func(i, j int) bool {
@@ -494,6 +540,9 @@ func buildKnowledge(root string, run *bundle.Run, captures []*artifact.Artifact,
 				}
 			}
 			for j := range api.Operations {
+				if api.Operations[j].ContractMatch == "unsupported" {
+					continue
+				}
 				api.Operations[j].ContractMatch = matched
 				if len(api.Operations[j].Evidence) > 0 && len(api.Operations[j].Statuses) == 0 && len(api.Operations[j].RPCStatuses) == 0 {
 					api.Operations[j].EvidenceBasis = "incomplete_exchange"
@@ -506,6 +555,18 @@ func buildKnowledge(root string, run *bundle.Run, captures []*artifact.Artifact,
 		a, b := k.Verification[i], k.Verification[j]
 		return a.Priority+"|"+a.APIID+"|"+a.Operation+"|"+a.ID < b.Priority+"|"+b.APIID+"|"+b.Operation+"|"+b.ID
 	})
+	for i := range k.APIs {
+		k.APIs[i].Page = "docs/" + k.APIs[i].Page
+		for j := range k.APIs[i].Operations {
+			k.APIs[i].Operations[j].Page = "docs/" + k.APIs[i].Operations[j].Page
+		}
+	}
+	for i := range k.Attempts {
+		k.Attempts[i].Page = "docs/" + k.Attempts[i].Page
+	}
+	for i := range k.Verification {
+		k.Verification[i].Page = "docs/" + k.Verification[i].Page
+	}
 	return k
 }
 
@@ -577,11 +638,15 @@ func writeKnowledge(root string, k *knowledgeIndex, write func(string, string, s
 	if err != nil {
 		return err
 	}
-	if err = writePage(filepath.Join(root, "knowledge.json"), append(data, '\n')); err != nil {
+	if err = writePage(filepath.Join(root, "docs", "knowledge.json"), append(data, '\n')); err != nil {
 		return err
 	}
 	var system strings.Builder
-	fmt.Fprintf(&system, "# System API evidence: %s\n\nRun `%s`; state **%s**; snapshot %d. This map describes tested boundaries, supplied contracts and dependency observations.\n\n", escape(orUnknown(k.APIID)), escape(k.RunID), escape(k.RunState), k.SnapshotRevision)
+	systemName := applicationName(&bundle.Run{Application: k.Application, APIID: k.APIID})
+	fmt.Fprintf(&system, "# System API evidence: %s\n\nRun `%s`; state **%s**; snapshot %d. This map describes tested boundaries, supplied contracts and dependency observations.\n\n", escape(systemName), escape(k.RunID), escape(k.RunState), k.SnapshotRevision)
+	if k.Application != nil && k.Application.Description != "" {
+		system.WriteString(escape(k.Application.Description) + "\n\n")
+	}
 	system.WriteString("[Verification queue](verification.md) · [Machine-readable knowledge index](knowledge.json) · [Run provenance](run.md)\n\n## How to interpret this bundle\n\n")
 	for _, note := range k.Scope {
 		fmt.Fprintf(&system, "- %s\n", escape(note))
@@ -598,7 +663,7 @@ func writeKnowledge(root string, k *knowledgeIndex, write func(string, string, s
 				continue
 			}
 			found = true
-			fmt.Fprintf(&system, "### %s\n\nTarget: **%s**. [API details](%s).\n\n", escape(orUnknown(api.ID)), escape(knowledgeTargetLabel(api.TargetKind)), api.Page)
+			fmt.Fprintf(&system, "### %s\n\nTarget: **%s**. [API details](%s).\n\n", escape(orUnknown(api.ID)), escape(knowledgeTargetLabel(api.TargetKind)), "../"+api.Page)
 			if api.ContractResolution != "" && api.ContractResolution != "resolved" {
 				fmt.Fprintf(&system, "gRPC contract acquisition: **%s**. %s\n\n", escape(api.ContractResolution), escape(api.ContractDiagnostic))
 			}
@@ -608,7 +673,7 @@ func writeKnowledge(root string, k *knowledgeIndex, write func(string, string, s
 				system.WriteString("The full set of declared operations is unknown, so an operation coverage percentage cannot be established.\n\n")
 			}
 			if api.Schema != "" {
-				fmt.Fprintf(&system, "[Frozen contract](%s); contract revision `%s`.\n\n", api.Schema, escape(orUnknown(api.ContractRevision)))
+				fmt.Fprintf(&system, "[Frozen contract](%s); contract revision `%s`.\n\n", "../"+api.Schema, escape(orUnknown(api.ContractRevision)))
 			}
 			if len(api.Operations) == 0 {
 				system.WriteString("No exchanges or declared operations are available in this snapshot. This does not establish that the dependency is unused.\n\n")
@@ -651,23 +716,23 @@ func writeKnowledge(root string, k *knowledgeIndex, write func(string, string, s
 						}
 					}
 				}
-				fmt.Fprintf(&system, "| [%s](%s) | %s | %s |\n", tableCell(op.Operation), op.Page, tableCell(evidence), tableCell(statuses))
+				fmt.Fprintf(&system, "| [%s](%s) | %s | %s |\n", tableCell(op.Operation), "../"+op.Page, tableCell(evidence), tableCell(statuses))
 			}
 			system.WriteString("\n")
 		}
 		if !found {
-			system.WriteString("No APIs recorded in this scope. Absence here is not proof that the system has no such boundaries.\n")
+			system.WriteString("No APIs recorded in this scope; coverage for this role is not applicable to this bundle. Absence here is not proof that the system has no undeclared boundaries.\n")
 		}
 	}
 	system.WriteString("\n## Scenarios and sequences\n\nEach scenario links to its ordered interactions and retained request/response payloads. Generated negative cases describe deliberate invalid requests, not valid consumer expectations.\n\n")
 	for _, a := range k.Attempts {
-		fmt.Fprintf(&system, "- [%s](%s): %s; result **%s**.\n", escape(a.Name), a.Page, escape(knowledgeScenarioLabel(a.Kind)), escape(a.Status))
+		fmt.Fprintf(&system, "- [%s](%s): %s; result **%s**.\n", escape(a.Name), "../"+a.Page, escape(knowledgeScenarioLabel(a.Kind)), escape(a.Status))
 	}
 	if len(k.Attempts) == 0 {
 		system.WriteString("No committed test attempts in this snapshot.\n")
 	}
-	system.WriteString("\n## Knowledge-base ingestion\n\nStart with `knowledge.json` for identities, observations and open verification tasks. Preserve the run ID and snapshot revision on each imported record. Resolve every evidence pointer against `evidence/run.json`; follow attempt body references for retained payloads. Index the Markdown concepts for readable context and the contract catalogue for exact condition keys.\n\nCompare dependency API IDs with provider API IDs, then select intended source/build revisions and compare contract revisions and condition-rule versions. Matching operation/condition keys identify comparable evidence, not proven compatibility. Different contracts need explicit comparison; lack of a provider sample is unknown, not incorrect.\n\nDo not merge pass/fail attempts, authored/generated scenarios, mock/service targets, or different contract revisions into an unqualified claim. The verification queue is a derived backlog, not executable bundle code or proof of permission to run tests.\n")
-	if err = write("system.md", "system", "System API evidence: "+k.APIID, "Tested API boundaries, dependency assumptions and evidence limits", system.String(), map[string]any{"evidence": "evidence/run.json"}); err != nil {
+	system.WriteString("\n## Knowledge-base ingestion\n\nStart with `docs/knowledge.json` for identities, observations and open verification tasks. Preserve the run ID and snapshot revision on each imported record. Resolve every evidence pointer against `bundle.json`; follow attempt body references for retained payloads. Index the Markdown concepts for readable context and the contract catalogue for exact condition keys.\n\nCompare dependency API IDs with provider API IDs, then select intended source/build revisions and compare contract revisions and condition-rule versions. Matching operation/condition keys identify comparable evidence, not proven compatibility. Different contracts need explicit comparison; lack of a provider sample is unknown, not incorrect.\n\nDo not merge pass/fail attempts, authored/generated scenarios, mock/service targets, or different contract revisions into an unqualified claim. The verification queue is a derived backlog, not executable bundle code or proof of permission to run tests.\n")
+	if err = write("system.md", "system", "System API evidence: "+systemName, "Tested API boundaries, dependency assumptions and evidence limits", system.String(), map[string]any{"evidence": "bundle.json"}); err != nil {
 		return err
 	}
 	var verification strings.Builder
@@ -676,7 +741,7 @@ func writeKnowledge(root string, k *knowledgeIndex, write func(string, string, s
 	if len(k.Verification) == 0 {
 		verification.WriteString("No tasks were derived from the available evidence. This is not a claim of complete coverage or provider compatibility.\n")
 	}
-	return write("verification.md", "verification", "API verification queue", "Evidence-backed follow-up work for provider and dependency assumptions", verification.String(), map[string]any{"evidence": "evidence/run.json"})
+	return write("verification.md", "verification", "API verification queue", "Evidence-backed follow-up work for provider and dependency assumptions", verification.String(), map[string]any{"evidence": "bundle.json"})
 }
 
 func writeVerificationTasks(out *strings.Builder, tasks []verificationTask) {
@@ -732,7 +797,7 @@ func writeVerificationTasks(out *strings.Builder, tasks []verificationTask) {
 				}
 				out.WriteString("\n")
 			}
-			fmt.Fprintf(out, "[Supporting details](%s)", task.Page)
+			fmt.Fprintf(out, "[Supporting details](%s)", "../"+task.Page)
 			if len(task.ConditionKeys) > 0 {
 				fmt.Fprintf(out, "; %d exact condition/rejection keys in this task's `condition_keys` in [knowledge.json](knowledge.json)", len(task.ConditionKeys))
 			}
@@ -741,7 +806,7 @@ func writeVerificationTasks(out *strings.Builder, tasks []verificationTask) {
 				out.WriteString("**Captured evidence:**\n\n")
 			}
 			for _, e := range task.Evidence {
-				fmt.Fprintf(out, "- [%s](tests/%s.md#%s), flow `%s`; test **%s**; [JSON](%s).\n", escape(e.TestName), e.AttemptID, flowAnchor(e.FlowID), escape(e.FlowID), escape(e.TestStatus), e.Path)
+				fmt.Fprintf(out, "- [%s](tests/%s.md#%s), flow `%s`; test **%s**; [JSON](%s).\n", escape(e.TestName), e.AttemptID, flowAnchor(e.FlowID), escape(e.FlowID), escape(e.TestStatus), "../"+e.Path)
 			}
 			out.WriteString("\n")
 		}

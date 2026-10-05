@@ -55,7 +55,7 @@ type mockShape struct {
 }
 
 func mockDraftPath(assetID string) string {
-	return "dependencies/mocks/" + shortHash(assetID) + ".openapi.yaml"
+	return "docs/dependencies/mocks/" + shortHash(assetID) + ".openapi.yaml"
 }
 
 func mockIDs(run *bundle.Run) []string {
@@ -99,7 +99,7 @@ func observedMockAPI(assetID string, run *bundle.Run, captures []*artifact.Artif
 	draft := mockDraft{AssetID: assetID, Path: mockDraftPath(assetID)}
 	attemptPaths := map[string]string{}
 	for _, ref := range run.Attempts {
-		attemptPaths[ref.AttemptID] = "../../" + ref.Path
+		attemptPaths[ref.AttemptID] = "../../../" + ref.Path
 	}
 	operations := map[string]*mockOperation{}
 	evidence := []mockEvidence{}
@@ -174,7 +174,7 @@ func observedMockAPI(assetID string, run *bundle.Run, captures []*artifact.Artif
 		"openapi":   "3.1.0",
 		"info":      map[string]any{"title": assetID + " — inferred mock assumptions", "version": "0.1.0", "description": description},
 		"paths":     paths,
-		"x-wiretap": map[string]any{"kind": "inferred_mock_assumptions", "api_id": assetID, "run_id": run.RunID, "snapshot_revision": run.Revision, "inventory": "../../evidence/run.json", "used_for_validation": false, "observed_exchanges": draft.Exchanges, "excluded_exchanges": len(evidence) - draft.Exchanges, "evidence": evidence},
+		"x-wiretap": map[string]any{"kind": "inferred_mock_assumptions", "api_id": assetID, "run_id": run.RunID, "snapshot_revision": run.Revision, "inventory": "../../../bundle.json", "used_for_validation": false, "observed_exchanges": draft.Exchanges, "excluded_exchanges": len(evidence) - draft.Exchanges, "evidence": evidence},
 	}, draft
 }
 

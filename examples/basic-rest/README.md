@@ -14,8 +14,8 @@ npm ci --prefix sdk/js
 ```
 
 The capture writes a bundle under `artifacts/<run-id>/`. Open
-`viewer/index.html` for the offline dashboard or `index.md` for the OKF pages.
-Inspect `evidence/` for the exact captured attempts, including the inventory
+`docs/viewer.html` for the offline dashboard or `index.md` for the OKF pages.
+Inspect `tests/` for the exact captured attempts, including the inventory
 response. The harness starts and configures the SUT and dependency. The Dependencies page
 and HTML dashboard also link to an inferred OpenAPI draft for `inventory-service`.
 It is generated from observed mock traffic alongside the supplied spec, which

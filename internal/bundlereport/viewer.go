@@ -23,20 +23,22 @@ import (
 // The HTML dashboard is a disposable view. It uses the same verified snapshot
 // and coverage calculation as the OKF pages, and never becomes input to either.
 type viewerData struct {
-	Contracts                 *coverage.ContractCoverage
-	ContractSpecs             []viewerContractSpec
-	RejectionOperations       []viewerRejectionOperation
-	TestGroups                []viewerTestGroup
-	RunID, State, GeneratedAt string
-	APIID, TargetKind         string
-	Revision                  uint64
-	Attempts, Passed, Failed  int
-	Flows, ObservedOperations int
-	Pending                   []bundle.PendingAttempt
-	Provided, Dependent       []viewerSpec
-	MockDrafts                []viewerMockDraft
-	Tests                     []viewerAttempt
-	Notes                     []string
+	SystemName, Description      string
+	HasProvided, HasDependencies bool
+	Contracts                    *coverage.ContractCoverage
+	ContractSpecs                []viewerContractSpec
+	RejectionOperations          []viewerRejectionOperation
+	TestGroups                   []viewerTestGroup
+	RunID, State, GeneratedAt    string
+	APIID, TargetKind            string
+	Revision                     uint64
+	Attempts, Passed, Failed     int
+	Flows, ObservedOperations    int
+	Pending                      []bundle.PendingAttempt
+	Provided, Dependent          []viewerSpec
+	MockDrafts                   []viewerMockDraft
+	Tests                        []viewerAttempt
+	Notes                        []string
 }
 
 type viewerMockDraft struct {
@@ -78,6 +80,8 @@ type viewerAttempt struct {
 }
 
 type viewerFlow struct {
+	Events                                                                                        []viewerEvent
+	EventNote                                                                                     string
 	ID, Channel, AssetID, TraceID, ParentID, Correlation, ParentCorrelation, ContextSource, Error string
 	Sequence                                                                                      int
 	Direction, EvidenceLabel                                                                      string
@@ -96,12 +100,16 @@ type viewerAttachment struct{ Label, URL string }
 
 func writeViewer(root string, run *bundle.Run, captures []*artifact.Artifact, report *coverage.Report, drafts []mockDraft) error {
 	data := viewerData{
+		SystemName: applicationName(run), HasProvided: len(run.ProvidedAPIs) > 0, HasDependencies: len(run.Dependencies) > 0,
 		Contracts: report.Contracts,
 		RunID:     run.RunID, State: run.RunState, Revision: run.Revision,
 		APIID: run.APIID, TargetKind: run.SUTTargetKind,
 		GeneratedAt: run.UpdatedAt.Format("2006-01-02 15:04:05 UTC"),
 		Pending:     run.Pending,
 		Notes:       report.Notes,
+	}
+	if run.Application != nil {
+		data.Description = run.Application.Description
 	}
 	data.ContractSpecs = buildViewerCoverage(report.Contracts)
 	if report.Contracts != nil {
@@ -148,7 +156,7 @@ func writeViewer(root string, run *bundle.Run, captures []*artifact.Artifact, re
 			if item.Total > 0 {
 				item.Percent = 100 * item.Observed / item.Total
 			}
-			if strings.HasPrefix(spec.Source, "schemas/") {
+			if strings.HasPrefix(spec.Source, "contracts/") {
 				item.SourceURL = "../" + spec.Source
 			}
 			eligible := map[string]bool{}
@@ -221,7 +229,7 @@ func writeViewer(root string, run *bundle.Run, captures []*artifact.Artifact, re
 			Exploration: capture.Exploration, Assertions: capture.Assertions,
 			ID: ref.AttemptID, Name: capture.TestCase.Name, Status: capture.TestCase.Status,
 			TraceID: capture.TestCase.TraceID, Incomplete: capture.CaptureIncomplete,
-			EvidenceURL: "../" + ref.Path, MarkdownURL: "../tests/" + ref.AttemptID + ".md",
+			EvidenceURL: "../" + ref.Path, MarkdownURL: "tests/" + ref.AttemptID + ".md",
 		}
 		attempt.Anchor = "attempt-" + shortHash(ref.AttemptID)
 		attempt.Coverage = coverageLinks[ref.AttemptID]
@@ -285,22 +293,31 @@ func writeViewer(root string, run *bundle.Run, captures []*artifact.Artifact, re
 			direction, evidenceLabel := flow.Channel, "Unclassified observation"
 			switch flow.Channel {
 			case "test_to_sut":
-				direction = "Tests → " + data.APIID
+				direction = "Tests → " + data.SystemName
 				evidenceLabel, _ = viewerEvidence("provided", data.TargetKind)
 			case "sut_to_dependency":
-				direction = data.APIID + " → " + flow.AssetID
+				direction = data.SystemName + " → " + flow.AssetID
 				evidenceLabel, _ = viewerEvidence("dependency", run.DependencyKinds[flow.AssetID])
 			}
 			requestView, responseView := viewerHTTP(flow.Request.HTTP), viewerHTTP(flow.Response.HTTP)
-			protocolLabel := "HTTP"
+			label := protocolLabel(flow.Protocol)
 			if flow.Protocol == "grpc" {
 				requestView, responseView = viewerGRPC(flow.Request.GRPC, true), viewerGRPC(flow.Response.GRPC, false)
-				protocolLabel = "gRPC"
+			}
+			var events []viewerEvent
+			eventNote := ""
+			if flow.Interaction != nil {
+				direction = flowBoundary(run, flow)
+				evidenceLabel, _ = viewerEvidence(flow.Interaction.Boundary.Role, run.DependencyKinds[flow.Interaction.Boundary.ID])
+				events = viewerEvents(flow.Interaction)
+				eventNote = interactionNote(flow.Interaction)
+				attempt.Attention = true
 			}
 			attempt.Flows = append(attempt.Flows, viewerFlow{
+				Events: events, EventNote: eventNote,
 				Sequence: index + 1, Direction: direction, EvidenceLabel: evidenceLabel,
 				Operation: flowOperation(flow),
-				Protocol:  protocolLabel,
+				Protocol:  label,
 				ID:        flow.ID, Channel: flow.Channel, AssetID: flow.AssetID, TraceID: flow.TraceID,
 				ParentID: flow.ParentFlowID, Correlation: correlationLabel(flow.TestCorrelation), ParentCorrelation: correlationLabel(flow.ParentCorrelation),
 				ContextSource: flow.TraceContextSource, Error: flow.TransportError,
@@ -323,7 +340,7 @@ func writeViewer(root string, run *bundle.Run, captures []*artifact.Artifact, re
 	if err := tpl.Execute(&rendered, data); err != nil {
 		return err
 	}
-	return writePage(filepath.Join(root, "viewer", "index.html"), []byte(rendered.String()))
+	return writePage(filepath.Join(root, "docs", "viewer.html"), []byte(rendered.String()))
 }
 
 func viewerEvidence(kind, targetKind string) (string, string) {
@@ -465,7 +482,7 @@ var viewerAnchor = regexp.MustCompile(`\sid="([^"]+)"`)
 // checkViewer verifies the generated entry point and its local links. It is
 // separate from bundle.Load so damaged views never block evidence reads.
 func checkViewer(root string, run *bundle.Run) error {
-	path := filepath.Join(root, "viewer", "index.html")
+	path := filepath.Join(root, "docs", "viewer.html")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return fmt.Errorf("viewer: %w", err)

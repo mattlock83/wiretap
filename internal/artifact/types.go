@@ -73,6 +73,7 @@ type SchemaRef struct {
 	ID             string             `json:"id"`
 	Role           string             `json:"role"`
 	Type           string             `json:"type"`
+	Protocol       string             `json:"protocol,omitempty"`
 	Source         SchemaSource       `json:"source"`
 	OpenAPIVersion string             `json:"openapi_version,omitempty"`
 	AssetName      string             `json:"asset_name,omitempty"`
@@ -96,24 +97,35 @@ type SchemaAcquisition struct {
 
 // SchemaSource identifies where the schema came from.
 type SchemaSource struct {
-	Type        string   `json:"type"`
-	Path        string   `json:"path,omitempty"`
-	URL         string   `json:"url,omitempty"`
-	Content     string   `json:"content,omitempty"`
-	SHA256      string   `json:"sha256,omitempty"`
-	Format      string   `json:"format,omitempty"`
-	ImportPaths []string `json:"import_paths,omitempty"`
+	Type        string         `json:"type"`
+	Path        string         `json:"path,omitempty"`
+	URL         string         `json:"url,omitempty"`
+	Content     string         `json:"content,omitempty"`
+	SHA256      string         `json:"sha256,omitempty"`
+	Format      string         `json:"format,omitempty"`
+	ImportPaths []string       `json:"import_paths,omitempty"`
+	Files       []ContractFile `json:"files,omitempty"`
+}
+
+// ContractFile is one caller-supplied member of a portable contract package.
+// Paths use slash-separated names relative to the package root. Wiretap stores
+// these bytes without interpreting imports or asserting semantic validity.
+type ContractFile struct {
+	Path     string `json:"path"`
+	Content  string `json:"content"`
+	Encoding string `json:"encoding,omitempty"`
 }
 
 // Flow captures one request/response exchange.
 type Flow struct {
-	ID         string    `json:"id"`
-	Protocol   string    `json:"protocol"`
-	Channel    string    `json:"channel"`
-	StartedAt  time.Time `json:"started_at,omitempty"`
-	DurationMS int64     `json:"duration_ms,omitempty"`
-	Request    Message   `json:"request"`
-	Response   Message   `json:"response"`
+	Interaction *Interaction `json:"interaction,omitempty"`
+	ID          string       `json:"id"`
+	Protocol    string       `json:"protocol"`
+	Channel     string       `json:"channel"`
+	StartedAt   time.Time    `json:"started_at,omitempty"`
+	DurationMS  int64        `json:"duration_ms,omitempty"`
+	Request     Message      `json:"request"`
+	Response    Message      `json:"response"`
 	// AssetID identifies the externally owned dependency receiving this flow.
 	AssetID string `json:"asset_id,omitempty"`
 	// TraceID correlates the captured exchange with application traces and logs.

@@ -20,14 +20,15 @@ const ProtobufRulesVersion = "wiretap-protobuf-1"
 // ContractCoverage is a disposable measurement of one verified bundle snapshot.
 // It deliberately makes no all-API, assertion, or provider-compatibility claim.
 type ContractCoverage struct {
-	Rejections       *RejectionCoverage `json:"rejection_coverage,omitempty" yaml:"rejection_coverage,omitempty"`
-	RulesVersion     string             `json:"rules_version" yaml:"rules_version"`
-	RunID            string             `json:"run_id" yaml:"run_id"`
-	RunState         string             `json:"run_state" yaml:"run_state"`
-	SnapshotRevision uint64             `json:"snapshot_revision" yaml:"snapshot_revision"`
-	Complete         bool               `json:"complete" yaml:"complete"`
-	Scope            string             `json:"scope" yaml:"scope"`
-	Specs            []*ContractSpec    `json:"specs" yaml:"specs"`
+	Unmeasured       []UnmeasuredInteraction `json:"unmeasured_interactions,omitempty" yaml:"unmeasured_interactions,omitempty"`
+	Rejections       *RejectionCoverage      `json:"rejection_coverage,omitempty" yaml:"rejection_coverage,omitempty"`
+	RulesVersion     string                  `json:"rules_version" yaml:"rules_version"`
+	RunID            string                  `json:"run_id" yaml:"run_id"`
+	RunState         string                  `json:"run_state" yaml:"run_state"`
+	SnapshotRevision uint64                  `json:"snapshot_revision" yaml:"snapshot_revision"`
+	Complete         bool                    `json:"complete" yaml:"complete"`
+	Scope            string                  `json:"scope" yaml:"scope"`
+	Specs            []*ContractSpec         `json:"specs" yaml:"specs"`
 }
 
 type ContractSpec struct {
@@ -162,6 +163,10 @@ func (t *ContractTarget) observe(e ContractEvidence) {
 func buildContractCoverage(run *bundle.Run, captures []*artifact.Artifact) *ContractCoverage {
 	out := &ContractCoverage{RulesVersion: ContractRulesVersion, RunID: run.RunID, RunState: run.RunState, SnapshotRevision: run.Revision, Complete: run.RunState == "complete" && len(run.Pending) == 0, Scope: "registered supplied contracts only; condition combinations are observations, not compatibility or assertion proof", Specs: []*ContractSpec{}}
 	out.Rejections = buildRejectionCoverage(run, captures)
+	out.Unmeasured = unmeasuredInteractions(captures)
+	if len(out.Unmeasured) > 0 {
+		out.Complete = false
+	}
 	refs := append([]artifact.SchemaRef{}, run.Schemas...)
 	for _, boundary := range run.Contracts {
 		if boundary.State == "resolved" {
@@ -198,10 +203,13 @@ func buildContractCoverage(run *bundle.Run, captures []*artifact.Artifact) *Cont
 	}
 	seen := map[string]bool{}
 	for _, ref := range refs {
-		if ref.Role != "sut" && ref.Role != "dependency" {
+		if ref.Role != "sut" && ref.Role != "provided" && ref.Role != "dependency" {
 			continue
 		}
 		id, origin, kind := run.APIID, "provided", run.SUTTargetKind
+		if ref.Role == "provided" || id == "" {
+			id = ref.AssetID
+		}
 		if ref.Role == "dependency" {
 			id, origin, kind = ref.AssetID, "dependency", run.DependencyKinds[ref.AssetID]
 		}
@@ -229,7 +237,12 @@ func buildContractCoverage(run *bundle.Run, captures []*artifact.Artifact) *Cont
 			continue
 		}
 		if ref.Source.Type == "omitted" || ref.Type != "openapi" {
-			spec.Notes = append(spec.Notes, "No supplied OpenAPI contract; denominator unknown. Inferred drafts are not coverage inputs.")
+			if ref.Source.Type == "omitted" {
+				spec.Notes = append(spec.Notes, "No supplied contract; denominator unknown. Inferred drafts are not coverage inputs.")
+			} else {
+				spec.Notes = append(spec.Notes, fmt.Sprintf("Contract type %q has no coverage adapter; denominator unknown. The frozen contract is retained for inspection.", ref.Type))
+				out.Complete = false
+			}
 			continue
 		}
 		loaded, err := loadOpenAPISpec(ref)
@@ -274,6 +287,9 @@ func buildContractCoverage(run *bundle.Run, captures []*artifact.Artifact) *Cont
 				continue
 			}
 			for _, f := range a.Traffic {
+				if !flowMatchesSchemaBoundary(f, ref) {
+					continue
+				}
 				if (origin == "provided" && f.Channel != "test_to_sut") || (origin == "dependency" && (f.Channel != "sut_to_dependency" || f.AssetID != id)) {
 					continue
 				}

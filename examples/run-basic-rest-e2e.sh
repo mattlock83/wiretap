@@ -137,15 +137,15 @@ else
 fi
 
 BUNDLE_DIR="$(find "${ARTIFACT_DIR}" -mindepth 1 -maxdepth 1 -type d -name 'run-*' -print | sort | tail -n 1)"
-if [[ -z "${BUNDLE_DIR}" || ! -f "${BUNDLE_DIR}/evidence/run.json" || ! -f "${BUNDLE_DIR}/viewer/index.html" ]]; then
+if [[ -z "${BUNDLE_DIR}" || ! -f "${BUNDLE_DIR}/bundle.json" || ! -f "${BUNDLE_DIR}/docs/viewer.html" ]]; then
   echo "Wiretap did not produce a bundle under ${ARTIFACT_DIR}" >&2
   exit 1
 fi
 # Views must already exist from HTTP finalization; no report command is needed.
-node -e 'const fs = require("node:fs"); const run = JSON.parse(fs.readFileSync(process.argv[1])); if (run.run_state !== "complete") throw new Error("test hooks did not finalize capture")' "${BUNDLE_DIR}/evidence/run.json"
+node -e 'const fs = require("node:fs"); const run = JSON.parse(fs.readFileSync(process.argv[1])); if (run.run_state !== "complete") throw new Error("test hooks did not finalize capture")' "${BUNDLE_DIR}/bundle.json"
 
 echo "Capture OKF bundle: ${BUNDLE_DIR}/index.md"
-echo "Capture HTML dashboard: ${BUNDLE_DIR}/viewer/index.html"
+echo "Capture HTML dashboard: ${BUNDLE_DIR}/docs/viewer.html"
 
 if [[ "${TEST_STATUS}" -ne 0 ]]; then
   echo "Skipping exploration because the authored tests failed." >&2
@@ -174,7 +174,7 @@ EXPLORE_BUNDLE_DIR="$("${BUILD_DIR}/wiretap-runtime" explore \
   --output "${ARTIFACT_DIR}")" || EXPLORE_STATUS=$?
 if [[ -n "${EXPLORE_BUNDLE_DIR}" ]]; then
   echo "Exploration OKF bundle: ${EXPLORE_BUNDLE_DIR}/index.md"
-  echo "Exploration HTML dashboard: ${EXPLORE_BUNDLE_DIR}/viewer/index.html"
+  echo "Exploration HTML dashboard: ${EXPLORE_BUNDLE_DIR}/docs/viewer.html"
 fi
 if [[ "${EXPLORE_STATUS}" -ne 0 ]]; then
   exit "${EXPLORE_STATUS}"
@@ -187,10 +187,10 @@ const fs = require('node:fs');
 const path = require('node:path');
 const bundle = process.argv[2];
 const read = name => JSON.parse(fs.readFileSync(path.join(bundle, name)));
-assert.equal(read('evidence/run.json').run_state, 'complete');
+assert.equal(read('bundle.json').run_state, 'complete');
 assert.ok(fs.existsSync(path.join(bundle, 'index.md')));
-assert.ok(fs.existsSync(path.join(bundle, 'viewer/index.html')));
-const coverage = read('contract-coverage.json').rejection_coverage;
+assert.ok(fs.existsSync(path.join(bundle, 'docs/viewer.html')));
+const coverage = read('docs/contract-coverage.json').rejection_coverage;
 assert.ok(coverage?.covered > 0, 'expected passing generated rejection cases');
 assert.equal(coverage.failed, 0);
 assert.equal(coverage.not_covered, 0);

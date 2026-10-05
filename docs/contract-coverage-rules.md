@@ -15,10 +15,10 @@ Wiretap cannot discover APIs you never register.
 
 Every bundle contains:
 
-- `contract-coverage.json`: per-spec catalogue, keys, counts, violations,
+- `docs/contract-coverage.json`: per-spec catalogue, keys, counts, violations,
   request/response combinations, and exact attempt/flow evidence references.
-- `contract-coverage.md`: the readable catalogue and evidence links.
-- `viewer/index.html`: a searchable **Contract coverage** tab over the same results.
+- `docs/contract-coverage.md`: the readable catalogue and evidence links.
+- `docs/viewer.html`: a searchable **Contract coverage** tab over the same results.
 
 `wiretap report --bundle <path>` rebuilds these files from verified evidence.
 Optional JSON/YAML exports contain the same data under `contract_coverage`.
@@ -35,7 +35,7 @@ origin do not enter shared condition keys.
 
 The JSON separates `origin` (`provided` or `dependency`) and `target_kind`
 (`mock`, `service`, or `unknown`). Select the intended source/run revisions from
-`evidence/run.json` before comparing. Covered consumer/mock keys missing from
+`bundle.json` before comparing. Covered consumer/mock keys missing from
 provider coverage identify evidence gaps, not automatic incompatibilities.
 The cross-bundle comparator itself is not implemented.
 

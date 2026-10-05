@@ -37,12 +37,12 @@ func TestViewerIsOfflineRebuildableAndUsesBoundedEvidencePreviews(t *testing.T) 
 	if _, err := Refresh(writer.Path()); err != nil {
 		t.Fatal(err)
 	}
-	viewerPath := filepath.Join(writer.Path(), "viewer", "index.html")
+	viewerPath := filepath.Join(writer.Path(), "docs", "viewer.html")
 	html, err := os.ReadFile(viewerPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, expected := range []string{"../evidence/run.json", "../evidence/attempts/attempt-1.json", "../payloads/", "preview limited to 4 KiB", "&lt;script&gt;", "data-pane=\"tests\"", "trace parent was uncertain", "response omitted required field", "test-trace-123", "received"} {
+	for _, expected := range []string{"../bundle.json", "../tests/attempt-1.json", "../payloads/", "preview limited to 4 KiB", "&lt;script&gt;", "data-pane=\"tests\"", "trace parent was uncertain", "response omitted required field", "test-trace-123", "received"} {
 		if !bytes.Contains(html, []byte(expected)) {
 			t.Fatalf("viewer missing %q", expected)
 		}
@@ -53,7 +53,7 @@ func TestViewerIsOfflineRebuildableAndUsesBoundedEvidencePreviews(t *testing.T) 
 	if err := Validate(writer.Path()); err != nil {
 		t.Fatal(err)
 	}
-	broken := bytes.Replace(html, []byte(`href="../evidence/run.json"`), []byte(`href="../missing.json"`), 1)
+	broken := bytes.Replace(html, []byte(`href="../bundle.json"`), []byte(`href="../missing.json"`), 1)
 	if err := os.WriteFile(viewerPath, broken, 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -103,7 +103,7 @@ func TestViewerShowsInterruptedPendingAttempt(t *testing.T) {
 	if _, err := Rebuild(writer.Path()); err != nil {
 		t.Fatal(err)
 	}
-	page, err := os.ReadFile(filepath.Join(writer.Path(), "viewer", "index.html"))
+	page, err := os.ReadFile(filepath.Join(writer.Path(), "docs", "viewer.html"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +117,7 @@ func TestViewerDistinguishesProviderEvidenceMockAssumptionsAndSchemaChecks(t *te
 	run := &bundle.Run{
 		RunID: "run-1", APIID: "payments", SUTTargetKind: "service", RunState: "complete",
 		DependencyKinds: map[string]string{"accounts": "mock"},
-		Attempts:        []bundle.AttemptRef{{AttemptID: "attempt-1", FileRef: bundle.FileRef{Path: "evidence/attempts/attempt-1.json"}}},
+		Attempts:        []bundle.AttemptRef{{AttemptID: "attempt-1", FileRef: bundle.FileRef{Path: "tests/attempt-1.json"}}},
 	}
 	tc := artifact.TestCase{ID: "attempt-1", Name: "withdraw funds", Status: "pass"}
 	capture := &artifact.Artifact{
@@ -136,7 +136,7 @@ func TestViewerDistinguishesProviderEvidenceMockAssumptionsAndSchemaChecks(t *te
 	if err := writeViewer(root, run, []*artifact.Artifact{capture}, report, nil); err != nil {
 		t.Fatal(err)
 	}
-	page, err := os.ReadFile(filepath.Join(root, "viewer", "index.html"))
+	page, err := os.ReadFile(filepath.Join(root, "docs", "viewer.html"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -145,7 +145,7 @@ func TestViewerDistinguishesProviderEvidenceMockAssumptionsAndSchemaChecks(t *te
 		"Tests → payments", "payments → accounts", "2. GET /balance",
 		"Test outcome: pass · attempt schema validation: fail",
 		"Agreement with the real provider", "Missing evidence means unknown agreement",
-		"../system.md", "../knowledge.json", "../verification.md",
+		"system.md", "knowledge.json", "verification.md",
 	} {
 		if !bytes.Contains(page, []byte(expected)) {
 			t.Errorf("viewer missing %q", expected)
@@ -178,7 +178,7 @@ func TestViewerSequenceUsesRequestStartsAndExplainsMissingTimestamps(t *testing.
 	for _, missingTimestamp := range []bool{false, true} {
 		t.Run(fmt.Sprintf("missing_timestamp=%t", missingTimestamp), func(t *testing.T) {
 			root := t.TempDir()
-			run := &bundle.Run{RunID: "run-1", APIID: "payments", SUTTargetKind: "service", DependencyKinds: map[string]string{"accounts": "mock"}, Attempts: []bundle.AttemptRef{{AttemptID: "attempt-1", FileRef: bundle.FileRef{Path: "evidence/attempts/attempt-1.json"}}}}
+			run := &bundle.Run{RunID: "run-1", APIID: "payments", SUTTargetKind: "service", DependencyKinds: map[string]string{"accounts": "mock"}, Attempts: []bundle.AttemptRef{{AttemptID: "attempt-1", FileRef: bundle.FileRef{Path: "tests/attempt-1.json"}}}}
 			capture := &artifact.Artifact{TestCase: artifact.TestCase{ID: "attempt-1"}, Traffic: []artifact.Flow{
 				{ID: "flow-1", StartedAt: started.Add(time.Second), Channel: "sut_to_dependency", AssetID: "accounts", TestCorrelation: "active_session", ParentCorrelation: "timing", ParentFlowID: "flow-2", Request: artifact.Message{HTTP: &artifact.HttpMessage{Method: "GET", URL: "http://accounts/balance"}}},
 				{ID: "flow-2", StartedAt: started, Channel: "test_to_sut", TestCorrelation: "trace", Request: artifact.Message{HTTP: &artifact.HttpMessage{Method: "POST", URL: "http://payments/withdraw"}}},
@@ -189,7 +189,7 @@ func TestViewerSequenceUsesRequestStartsAndExplainsMissingTimestamps(t *testing.
 			if err := writeViewer(root, run, []*artifact.Artifact{capture}, &coverage.Report{Contracts: &coverage.ContractCoverage{}}, nil); err != nil {
 				t.Fatal(err)
 			}
-			page, err := os.ReadFile(filepath.Join(root, "viewer", "index.html"))
+			page, err := os.ReadFile(filepath.Join(root, "docs", "viewer.html"))
 			if err != nil {
 				t.Fatal(err)
 			}

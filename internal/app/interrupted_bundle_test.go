@@ -11,7 +11,39 @@ import (
 
 	"github.com/phrond/wiretap/internal/bundle"
 	"github.com/phrond/wiretap/internal/core"
+	"github.com/phrond/wiretap/internal/project"
 )
+
+func TestConfiguredBoundariesSurviveRunWithNoTests(t *testing.T) {
+	cfg := core.DefaultConfig()
+	cfg.Artifact.OutputDir = t.TempDir()
+	cfg.Proxy.CABaseDir = t.TempDir()
+	appInstance, err := New(Deps{Config: cfg, Project: &project.Config{
+		SUT:          project.API{ID: "orders", Kind: "service", URL: "http://localhost:8080"},
+		Dependencies: map[string]project.API{"payments": {Kind: "service", URL: "http://localhost:8081"}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	writer, err := appInstance.ensureBundle()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := appInstance.closeBundle("complete"); err != nil {
+		t.Fatal(err)
+	}
+	run, _, err := bundle.Load(writer.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(run.Attempts) != 0 || len(run.ProvidedAPIs) != 1 || len(run.Dependencies) != 1 {
+		t.Fatalf("configured inventory lost: %+v", run)
+	}
+	dep := run.Dependencies[0]
+	if dep.ID != "payments" || !dep.Configured || dep.TargetKind != "service" || len(dep.ObservedIn) != 0 {
+		t.Fatalf("unused dependency misclassified: %+v", dep)
+	}
+}
 
 func TestInterruptedRunRefreshesBundleView(t *testing.T) {
 	cfg := core.DefaultConfig()
@@ -40,7 +72,7 @@ func TestInterruptedRunRefreshesBundleView(t *testing.T) {
 	if run.RunState != "interrupted" {
 		t.Fatalf("run state = %q", run.RunState)
 	}
-	page, err := os.ReadFile(filepath.Join(writer.Path(), "run.md"))
+	page, err := os.ReadFile(filepath.Join(writer.Path(), "docs/run.md"))
 	if err != nil {
 		t.Fatal(err)
 	}

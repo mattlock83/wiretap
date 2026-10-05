@@ -25,7 +25,7 @@ func (s *failOnceCaptureSink) Commit(art *artifact.Artifact) (string, error) {
 	if s.commits == 1 {
 		return "", errors.New("temporary write failure")
 	}
-	return "evidence/attempts/" + s.id + ".json", nil
+	return "tests/" + s.id + ".json", nil
 }
 
 func TestPersistenceRetryRetainsFinalizedAttempt(t *testing.T) {

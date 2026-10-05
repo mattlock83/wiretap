@@ -91,6 +91,9 @@ func grpcSchemaFor(flow artifact.Flow, refs []artifact.SchemaRef) *artifact.Sche
 
 func validateGRPCMessages(version string, capture artifact.Artifact) error {
 	for _, flow := range capture.Traffic {
+		if flow.Interaction != nil {
+			continue
+		}
 		hasGRPC := flow.Request.GRPC != nil || flow.Response.GRPC != nil
 		if flow.Protocol != "grpc" {
 			if hasGRPC {
@@ -98,8 +101,8 @@ func validateGRPCMessages(version string, capture artifact.Artifact) error {
 			}
 			continue
 		}
-		if !strings.HasPrefix(version, "2.") {
-			return fmt.Errorf("gRPC flow %q requires evidence version 2", flow.ID)
+		if !supportedEvidenceVersion(version) {
+			return fmt.Errorf("gRPC flow %q requires bundle format version 3", flow.ID)
 		}
 		if flow.Request.GRPC == nil || flow.Response.GRPC == nil {
 			return fmt.Errorf("gRPC flow %q requires tagged request and response", flow.ID)
@@ -145,7 +148,7 @@ func validateGRPCMessages(version string, capture artifact.Artifact) error {
 func verifyGRPCPayloads(capture artifact.Artifact) error {
 	contracts := map[string]*grpccontract.Contract{}
 	for _, flow := range capture.Traffic {
-		if flow.Protocol != "grpc" {
+		if flow.Protocol != "grpc" || flow.Interaction != nil {
 			continue
 		}
 		ref := grpcSchemaFor(flow, capture.Schemas)

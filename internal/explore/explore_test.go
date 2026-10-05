@@ -143,7 +143,7 @@ func TestEnumMutationCannotHideOtherViolations(t *testing.T) {
 
 func TestExploreRejectionsAndBundleReports(t *testing.T) {
 	source, _, s := makeSeed(t, testSpec, nil)
-	original, _ := os.ReadFile(filepath.Join(source, "evidence/run.json"))
+	original, _ := os.ReadFile(filepath.Join(source, "bundle.json"))
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
 		req := request{Method: r.Method, URL: "http://provider" + r.URL.String(), Headers: r.Header, Body: body}
@@ -180,13 +180,13 @@ func TestExploreRejectionsAndBundleReports(t *testing.T) {
 			}
 		}
 	}
-	for file, heading := range map[string]string{"contract-coverage.md": "Provider rejection coverage", "viewer/index.html": "Invalid-input coverage"} {
+	for file, heading := range map[string]string{"docs/contract-coverage.md": "Provider rejection coverage", "docs/viewer.html": "Invalid-input coverage"} {
 		data, _ := os.ReadFile(filepath.Join(result.Bundle, file))
 		if !strings.Contains(string(data), heading) {
 			t.Fatalf("%s missing rejection results", file)
 		}
 	}
-	after, _ := os.ReadFile(filepath.Join(source, "evidence/run.json"))
+	after, _ := os.ReadFile(filepath.Join(source, "bundle.json"))
 	if !bytes.Equal(original, after) {
 		t.Fatal("source bundle changed")
 	}

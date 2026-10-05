@@ -52,7 +52,7 @@ Notes:
 
 - The service writes a bundle to `./artifacts/<run-id>/` by default. Override
   the output root with `WIRETAP_OUTPUT_DIR` in CI. Upload the whole bundle so
-  `index.md`, `viewer/index.html`, `evidence/`, `schemas/`, and `payloads/` remain together.
+  `bundle.json`, `index.md`, `tests/`, `contracts/`, `payloads/`, and `docs/` remain together.
 - Body capture defaults to 4 MiB per request or response. Set
   `WIRETAP_MAX_CAPTURE_BYTES` to another non-negative byte count when CI
   artifact size requires a different bound; `0` means unlimited.

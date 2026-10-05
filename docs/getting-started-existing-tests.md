@@ -123,7 +123,7 @@ Without application propagation, run tests and requests sequentially or give
 each worker its own application and Wiretap runtime. See
 [tracing and concurrency](otel-adoption.md).
 
-SDK/API responses give the exact `index.md` and `viewer/index.html` paths.
+SDK/API responses give the exact `index.md` and `docs/viewer.html` paths.
 Wiretap writes the views automatically; no report command is needed. Keep the
 whole bundle for CI or agent use.
 

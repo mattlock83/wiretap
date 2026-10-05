@@ -14,17 +14,17 @@ Wiretap-generated `.md` file is a concept with `type`, `title`, `description`,
 `assumptions`, or `attempt`. Concept titles identify their API, operation or
 test where applicable, so pages retain context when indexed separately.
 Wiretap does not set OKF `verified` merely because a test passed.
-The bundle's `viewer/index.html` is a separate disposable HTML view over the
+The bundle's `docs/viewer.html` is a separate disposable HTML view over the
 same JSON evidence; it is not an OKF concept or an evidence source.
-`contract-coverage.md` uses kind `coverage`. `contract-coverage.json` is a
+`docs/contract-coverage.md` uses kind `coverage`. `docs/contract-coverage.json` is a
 disposable measurement with separately versioned condition rules, not captured
 evidence or an OKF concept.
-`system.md` uses kind `system`; `verification.md` uses kind `verification`.
+`docs/system.md` uses kind `system`; `docs/verification.md` uses kind `verification`.
 They describe observed boundaries and suggested follow-up work. Their structured
-counterpart, `knowledge.json`, is a disposable, separately versioned
+counterpart, `docs/knowledge.json`, is a disposable, separately versioned
 [knowledge projection](bundle-knowledge.md), not captured evidence or an OKF
 concept. Its tasks do not supply executable code or establish provider agreement.
-Likewise, `dependencies/mocks/<dependency-hash>.openapi.yaml` files are disposable
+Likewise, `docs/dependencies/mocks/<dependency-hash>.openapi.yaml` files are disposable
 inferred mock assumptions, not OKF concepts or supplied contracts. They link to
 source evidence using file-relative `x-wiretap-evidence` paths.
 
@@ -36,15 +36,16 @@ The run inventory resolves attempt paths; page filenames are navigation, not
 capture identity. Grouped dependency pages never merge distinct observations.
 
 `snapshot_revision` identifies the run snapshot used for that page. An
-unchanged attempt page can have an older revision than `evidence/run.json` and
+unchanged attempt page can have an older revision than `bundle.json` and
 still be valid for its immutable attempt. A full rebuild rewrites all pages
 against one inventory snapshot. Evidence readers and exports do not parse
 frontmatter or Markdown, and missing pages do not block them.
 
-Wiretap owns the documented generated paths (`index.md`, `system.md`,
-`verification.md`, `knowledge.json`, `run.md`, `coverage.md`,
-`contract-coverage.md`, `contract-coverage.json`, `viewer/index.html`,
-`dependencies/mocks/*.openapi.yaml`, and its `apis/`, `dependencies/`, and
-`tests/` indexes/pages).
+Wiretap owns the documented generated paths (`index.md`, `docs/system.md`,
+`docs/verification.md`, `docs/knowledge.json`, `docs/run.md`, `docs/coverage.md`,
+`docs/contract-coverage.md`, `docs/contract-coverage.json`, `docs/viewer.html`,
+`docs/dependencies/mocks/*.openapi.yaml`, and its `docs/apis/`, `docs/dependencies/`,
+and `docs/tests/` indexes/pages). The root `tests/` contains authoritative JSON
+recordings; it is never an output destination for report regeneration.
 Regeneration replaces those paths only. Unrecognized team-authored concepts
 and extensions are preserved.

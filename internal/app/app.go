@@ -66,6 +66,21 @@ func (a *App) ensureBundle() (*bundle.Writer, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Preserve configured boundaries even if the run ends before any test starts.
+	if a.project != nil {
+		defaults := a.testDefaults()
+		kinds := make(map[string]string, len(defaults.Dependencies))
+		for _, dep := range defaults.Dependencies {
+			kind := dep.UpstreamKind
+			if kind == "" {
+				kind = "unknown"
+			}
+			kinds[dep.AssetID] = kind
+		}
+		if err := w.Configure(bundle.Identity{APIID: defaults.APIID, SUTTargetKind: defaults.SUTTargetKind, DependencyKinds: kinds}); err != nil {
+			return nil, err
+		}
+	}
 	if _, err := bundlereport.Refresh(w.Path()); err != nil {
 		return nil, err
 	}

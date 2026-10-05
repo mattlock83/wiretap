@@ -24,7 +24,7 @@ test("startCapture and named test session send capture-only payloads", async () 
   const server = await controlServer((path, body) => {
     calls.push({ path, body });
     if (path === "/v1/startRun") return { sut_url: "http://127.0.0.1:20010", proxy: { listen_addr: "127.0.0.1:20010" } };
-    if (path === "/v1/setupTest") return { session_id: "session-1", name: body.name, proxy_listen: "http://127.0.0.1:20010", viewer_path: "/bundle/viewer/index.html" };
+    if (path === "/v1/setupTest") return { session_id: "session-1", name: body.name, proxy_listen: "http://127.0.0.1:20010", viewer_path: "/bundle/docs/viewer.html" };
     if (path === "/v1/teardownTest") return { capture: { schema_validation: { status: "pass" } } };
     return { status: "ok" };
   });
@@ -32,7 +32,7 @@ test("startCapture and named test session send capture-only payloads", async () 
     const runtime = await startCapture({ baseUrl: server.baseUrl, sutBaseUrl: "http://sut.test", schemas: [{ id: "sut-api" }] });
     const session = await runtime.setupTest({ name: "hello world happy flow" });
     assert.equal(session.name, "hello world happy flow");
-    assert.equal(session.viewerPath, "/bundle/viewer/index.html");
+    assert.equal(session.viewerPath, "/bundle/docs/viewer.html");
     await runtime.teardownTest({ status: "pass" });
     assert.deepEqual(calls[0], {
       path: "/v1/startRun",

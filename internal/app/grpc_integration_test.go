@@ -406,7 +406,7 @@ func runGRPCTestCase(t *testing.T, controlURL string, start map[string]any, mode
 		t.Fatalf("missing gRPC coverage: %#v", group)
 	}
 	postDependencyJSON(t, controlURL, "/v1/finishRun", map[string]any{})
-	knowledge, err := os.ReadFile(filepath.Join(root, "knowledge.json"))
+	knowledge, err := os.ReadFile(filepath.Join(root, "docs/knowledge.json"))
 	if err != nil || !strings.Contains(string(knowledge), `"grpc"`) {
 		t.Fatalf("knowledge view does not describe gRPC: %v", err)
 	}

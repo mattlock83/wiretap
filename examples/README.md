@@ -2,7 +2,7 @@
 
 Run these commands from the repository root. Examples write capture bundles;
 the HTTP examples also write separate exploration bundles. They print their paths. Open
-`viewer/index.html` for the dashboard or `index.md` for the OKF pages.
+`docs/viewer.html` for the dashboard or `index.md` for the OKF pages.
 
 | Example | Demonstrates | Requirements |
 | --- | --- | --- |

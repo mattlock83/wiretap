@@ -27,21 +27,39 @@ type schemaFile struct {
 }
 
 type schemaManifest struct {
+	Profile string       `json:"profile,omitempty"`
+	Type    string       `json:"type,omitempty"`
 	SetHash string       `json:"set_hash"`
 	Root    string       `json:"root"`
 	Files   []schemaFile `json:"files"`
 }
 
+func validateSchemaBoundary(ref artifact.SchemaRef) error {
+	if ref.Role != "sut" && ref.Role != "provided" && ref.Role != "dependency" {
+		return fmt.Errorf("contract %q has unsupported boundary role %q", ref.ID, ref.Role)
+	}
+	return nil
+}
+
 // freezeSchema loads transitive file/URL references and rewrites them to
 // deterministic local names. The snapshot is used for live validation too.
 func (w *Writer) freezeSchema(ref artifact.SchemaRef) (artifact.SchemaRef, error) {
-	if ref.Type == "protobuf" {
+	if err := validateSchemaBoundary(ref); err != nil {
+		return ref, err
+	}
+	switch ref.Type {
+	case "protobuf":
 		return w.freezeProtobuf(ref)
+	case "avro", "asyncapi", "graphql":
+		return w.freezeContractPackage(ref)
+	case "openapi":
+	default:
+		return ref, fmt.Errorf("unsupported contract type %q", ref.Type)
 	}
 	var rootURL *url.URL
 	switch strings.ToLower(ref.Source.Type) {
 	case "omitted":
-		if ref.Source.Path != "" || ref.Source.URL != "" || ref.Source.Content != "" || ref.Source.SHA256 != "" {
+		if ref.Source.Path != "" || ref.Source.URL != "" || ref.Source.Content != "" || ref.Source.SHA256 != "" || len(ref.Source.Files) != 0 {
 			return ref, errors.New("omitted schema cannot contain a source")
 		}
 		return ref, nil
@@ -150,7 +168,7 @@ func (w *Writer) freezeSchema(ref artifact.SchemaRef) (artifact.SchemaRef, error
 		identity += digest([]byte(key)) + ":" + digest(data) + "/"
 	}
 	setHash := digest([]byte(identity))
-	base := "schemas/" + setHash
+	base := "contracts/" + setHash
 	filename := func(key string) string { return "doc-" + digest([]byte(key))[:20] + ".json" }
 	manifest := schemaManifest{SetHash: setHash}
 	for _, key := range keys {
@@ -236,7 +254,7 @@ func (w *Writer) freezeProtobuf(ref artifact.SchemaRef) (artifact.SchemaRef, err
 	if ref.Source.SHA256 != "" && ref.Source.SHA256 != contract.SHA256 {
 		return ref, errors.New("descriptor set hash mismatch")
 	}
-	base := "schemas/" + contract.SHA256
+	base := "contracts/" + contract.SHA256
 	rel := base + "/descriptor-set.protoset"
 	if err := writeContent(w.root, rel, raw); err != nil {
 		return ref, err

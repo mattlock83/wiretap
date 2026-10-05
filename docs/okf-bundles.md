@@ -10,7 +10,7 @@ CI: the pages link to evidence, frozen schemas and payload attachments.
 
 ## Start with the viewer
 
-Open `viewer/index.html` directly. The dashboard uses embedded styling and a
+Open `docs/viewer.html` directly. The dashboard uses embedded styling and a
 small filter script; it needs no server, network connection or external library.
 
 | Section | Question it answers |
@@ -72,31 +72,53 @@ Start at `index.md` in a Markdown browser or repository viewer. The main files a
 
 ```text
 artifacts/<run-id>/
-  index.md                OKF entry page
-  system.md               tested API boundaries and dependency assumptions
-  verification.md         suggested checks for assumptions, mismatches and gaps
-  knowledge.json          structured API map, verification tasks and evidence links
-  viewer/index.html       offline HTML dashboard
-  run.md                  lifecycle, source provenance and pending attempts
-  coverage.md             observed API operation coverage
-  contract-coverage.md    readable condition catalogue
-  contract-coverage.json  condition keys, combinations and evidence
-  apis/                   provided API and operation pages
-  dependencies/           grouped dependency observations
-  dependencies/mocks/     inferred OpenAPI drafts for mock dependencies
-  tests/                  one readable page per test attempt
-  evidence/run.json       versioned run inventory
-  evidence/attempts/      immutable JSON capture per attempt
-  schemas/                frozen OpenAPI documents or Protobuf descriptor sets
+  bundle.json             format version, API/dependency inventory and test references
+  contracts/              frozen contracts and their supplied imports
+  tests/                  immutable JSON recording per test attempt
   payloads/               retained, redacted body bytes
+  index.md                OKF entry page
+  docs/
+    viewer.html           offline HTML dashboard
+    system.md             tested API boundaries and dependency assumptions
+    verification.md       suggested checks for assumptions, mismatches and gaps
+    knowledge.json        structured API map, verification tasks and evidence links
+    run.md                lifecycle, source provenance and pending attempts
+    coverage.md           observed API operation coverage
+    contract-coverage.md  readable condition catalogue
+    contract-coverage.json  condition keys, combinations and evidence
+    apis/                 provided API and operation pages
+    dependencies/         grouped dependency observations and inferred mock drafts
+    tests/                readable pages linking to the recorded tests
 ```
 
-`system.md` maps registered APIs and captured boundaries. `verification.md`
+For a direct dependency list, parse `bundle.json` and read `dependencies`.
+Each entry includes the ID, target kind, known protocols, frozen contract
+references and `observed_in` test IDs. Configured but uncalled dependencies are
+included. The inventory covers configured and observed boundaries, not every
+possible application dependency. See the [bundle format](bundle-evidence.md)
+for the fields, integrity rules and how recordings support external execution hooks.
+
+Application identity is separate from those boundaries. Consumer-only bundles
+can identify a UI and its dependencies with `provided_apis: []`; provider-only
+bundles can have `dependencies: []` and need no mocks. A dependency interaction
+can belong directly to a test without an inbound request to the system. Empty
+sides have no applicable coverage denominator. They still describe the scope of
+this recording rather than proving a complete inventory of the application.
+
+The format also supports ordered event recordings for bidirectional gRPC,
+publish/consume messaging and subscriptions. Transport, protocol and payload
+encoding are recorded separately, allowing Kafka with Avro, AsyncAPI contract
+packages and GraphQL operations/subscriptions. This is storage support: new live
+capture adapters, stream coverage and non-HTTP exploration are separate work.
+Unsupported events remain visible and must not earn coverage or silently replay
+as HTTP. See [event recordings](bundle-evidence.md#streams-messaging-and-additional-protocols).
+
+`docs/system.md` maps registered APIs and captured boundaries. `docs/verification.md`
 identifies work such as checking dependency assumptions, investigating contract
 mismatches and filling coverage gaps. These are suggested investigations, not
 compatibility verdicts or executable tests.
 
-For knowledge-base ingestion, use `knowledge.json` alongside the detailed
+For knowledge-base ingestion, use `docs/knowledge.json` alongside the detailed
 condition catalogue and source evidence. Preserve API identity, run/snapshot
 revision and test/SUT provenance. See [bundle knowledge](bundle-knowledge.md) for
 comparison guidance. Captured payloads, schema text and metadata remain data,
@@ -104,7 +126,7 @@ not instructions for an agent.
 
 ## Rebuild or export
 
-JSON under `evidence/`, frozen schemas and retained payloads are authoritative.
+`bundle.json`, JSON under `tests/`, frozen schemas and retained payloads are authoritative.
 Markdown, HTML, knowledge indexes, coverage catalogues and inferred drafts are
 generated views. Editing a view does not change test results or coverage.
 
@@ -133,7 +155,7 @@ exploration dependency list does not establish that the system has no dependenci
 
 Every HTTP dependency marked `kind: mock` in `.wiretap.yaml` (API:
 `upstream_kind: mock`) gets an OpenAPI 3.1 YAML draft at
-`dependencies/mocks/<dependency-hash>.openapi.yaml`. The Dependencies view links
+`docs/dependencies/mocks/<dependency-hash>.openapi.yaml`. The Dependencies view links
 to it. Drafts update automatically from observed traffic, including when a spec
 was supplied. The supplied spec still governs validation.
 

@@ -114,7 +114,7 @@ exit unsuccessfully and leaves evidence for inspection.
 ## Bundles and contract scope
 
 Output defaults to `artifacts/microsvc-transactions/`. The command prints the
-capture and exploration bundle paths. Open either `viewer/index.html` or
+capture and exploration bundle paths. Open either `docs/viewer.html` or
 `index.md`; rejection results appear under **Contract coverage → Invalid-input
 coverage**. Logs are kept in a sibling `logs-<run>` directory.
 

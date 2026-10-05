@@ -45,18 +45,18 @@ func Validate(root string) error {
 	if err := validateKnowledge(root, run, flows); err != nil {
 		return err
 	}
-	for _, rel := range []string{"index.md", "system.md", "verification.md", "run.md", "coverage.md", "contract-coverage.md", "apis/index.md", "dependencies/index.md", "tests/index.md"} {
+	for _, rel := range []string{"index.md", "docs/system.md", "docs/verification.md", "docs/run.md", "docs/coverage.md", "docs/contract-coverage.md", "docs/apis/index.md", "docs/dependencies/index.md", "docs/tests/index.md"} {
 		if err := validatePage(root, rel, run.RunID, run.Revision, flows, false); err != nil {
 			return err
 		}
 	}
 	for _, attempt := range run.Attempts {
-		if err := validatePage(root, "tests/"+attempt.AttemptID+".md", run.RunID, run.Revision, flows, true); err != nil {
+		if err := validatePage(root, "docs/tests/"+attempt.AttemptID+".md", run.RunID, run.Revision, flows, true); err != nil {
 			return err
 		}
 	}
 	for _, dir := range []string{"apis", "dependencies"} {
-		err := filepath.WalkDir(filepath.Join(root, dir), func(path string, entry os.DirEntry, walkErr error) error {
+		err := filepath.WalkDir(filepath.Join(root, "docs", dir), func(path string, entry os.DirEntry, walkErr error) error {
 			if walkErr != nil {
 				return walkErr
 			}
@@ -80,7 +80,7 @@ func Validate(root string) error {
 }
 
 func validateContractCatalogue(root string, run *bundle.Run, flows map[string]map[string]bool) error {
-	const name = "contract-coverage.json"
+	const name = "docs/contract-coverage.json"
 	if err := rootReference(root, name); err != nil {
 		return fmt.Errorf("view %s: %w", name, err)
 	}
@@ -146,7 +146,7 @@ func validateContractCatalogue(root string, run *bundle.Run, flows map[string]ma
 }
 
 func validateKnowledge(root string, run *bundle.Run, flows map[string]map[string]bool) error {
-	data, err := os.ReadFile(filepath.Join(root, "knowledge.json"))
+	data, err := os.ReadFile(filepath.Join(root, "docs/knowledge.json"))
 	if err != nil {
 		return fmt.Errorf("view knowledge.json: %w", err)
 	}
@@ -201,7 +201,7 @@ func validateKnowledge(root string, run *bundle.Run, flows map[string]map[string
 		return fmt.Errorf("view knowledge.json: incomplete attempt inventory")
 	}
 	var contracts coverage.ContractCoverage
-	data, err = os.ReadFile(filepath.Join(root, "contract-coverage.json"))
+	data, err = os.ReadFile(filepath.Join(root, "docs/contract-coverage.json"))
 	if err != nil {
 		return err
 	}
@@ -254,14 +254,14 @@ func validatePage(root, rel, runID string, runRevision uint64, flows map[string]
 		if len(parts) != 3 || yaml.Unmarshal(parts[1], &front) != nil {
 			return fmt.Errorf("view %s: invalid YAML frontmatter", rel)
 		}
-	} else if requiredProfile || rel == "run.md" || rel == "coverage.md" || rel == "contract-coverage.md" || rel == "system.md" || rel == "verification.md" {
+	} else if requiredProfile || rel == "docs/run.md" || rel == "docs/coverage.md" || rel == "docs/contract-coverage.md" || rel == "docs/system.md" || rel == "docs/verification.md" {
 		return fmt.Errorf("view %s: missing Wiretap frontmatter", rel)
 	}
 	if wiretap, exists := front["wiretap"]; exists {
 		if err := validateProfile(root, path, rel, front, wiretap, runID, runRevision, flows); err != nil {
 			return err
 		}
-	} else if requiredProfile || rel == "run.md" || rel == "coverage.md" || rel == "contract-coverage.md" || rel == "system.md" || rel == "verification.md" {
+	} else if requiredProfile || rel == "docs/run.md" || rel == "docs/coverage.md" || rel == "docs/contract-coverage.md" || rel == "docs/system.md" || rel == "docs/verification.md" {
 		return fmt.Errorf("view %s: missing Wiretap profile", rel)
 	}
 	for _, match := range markdownLink.FindAllSubmatch(withoutFencedBlocks(data), -1) {
@@ -342,7 +342,7 @@ func validateProfile(root, path, rel string, front map[string]any, value any, ru
 			attemptID, _ := ref["attempt_id"].(string)
 			flowID, _ := ref["flow_id"].(string)
 			path, _ := ref["path"].(string)
-			if !flows[attemptID][flowID] || path != "evidence/attempts/"+attemptID+".json" {
+			if !flows[attemptID][flowID] || path != "tests/"+attemptID+".json" {
 				return fmt.Errorf("view %s: evidence pointer does not identify a committed flow", rel)
 			}
 		}

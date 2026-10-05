@@ -40,7 +40,7 @@ happy-path scenario.
 
 | Reference | Scope |
 | --- | --- |
-| [Bundle evidence](bundle-evidence.md) | Authoritative JSON records, identity, integrity and attachments. |
+| [Bundle format](bundle-evidence.md) | Parse API dependencies, recorded tests, contracts and payloads; understand external execution hooks. |
 | [OKF profile](okf-profile.md) | Generated Markdown, frontmatter and ownership of bundle paths. |
 | [Architecture](architecture.md) | Runtime, SDK, proxy, exploration, storage and reporting responsibilities. |
 
@@ -50,6 +50,18 @@ happy-path scenario.
 | --- | --- |
 | [gRPC implementation plan](grpc-support-plan.md) | Design, unary scope and remaining streaming/interoperability work. |
 | [gRPC user guide](grpc-user-guide.md) | Reflection by default, local contracts, existing clients and test lifecycle. |
+
+## Product direction
+
+The [product roadmap](roadmap.md) describes planned assumption verification,
+dependency simulation, intelligent exploration, a free public bundle registry
+and paid private registries. It covers the open local engine, optional shared
+services, interactive execution and release gates separately from current features.
+
+The [contract package plan](contract-package-plan.md) proposes application and API
+declarations in `.wiretap.yaml`, local/remote spec sources, versioning, consumer
+aliases and codegen variants. It includes provider-only, consumer-only and mixed
+projects. Its example syntax is not implemented yet.
 
 A **run bundle** contains **test attempts** (shown as *Test runs* in the viewer).
 Each attempt contains request/response **exchanges**. A contract **condition** is

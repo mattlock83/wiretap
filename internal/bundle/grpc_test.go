@@ -46,7 +46,7 @@ func grpcBundleFixture(t *testing.T) (string, Attempt, Run) {
 	if err := json.Unmarshal(data, &attempt); err != nil {
 		t.Fatal(err)
 	}
-	runData, err := os.ReadFile(filepath.Join(w.Path(), "evidence/run.json"))
+	runData, err := os.ReadFile(filepath.Join(w.Path(), "bundle.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +71,7 @@ func rewriteGRPCAttempt(t *testing.T, root string, attempt Attempt, run Run) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(root, "evidence/run.json"), raw, 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "bundle.json"), raw, 0600); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -105,7 +105,7 @@ func TestGRPCBundleRejectsInconsistentEvidence(t *testing.T) {
 		want   string
 	}{
 		"wrong protocol":  {func(a *Attempt) { a.Capture.Traffic[0].Protocol = "http" }, "protocol disagrees"},
-		"old evidence":    {func(a *Attempt) { a.EvidenceVersion = "1.0" }, "requires evidence version 2"},
+		"old evidence":    {func(a *Attempt) { a.EvidenceVersion = "1.0" }, "identity/version mismatch"},
 		"unordered index": {func(a *Attempt) { a.Capture.Traffic[0].Request.GRPC.Messages[0].Index = 1 }, "unordered"},
 		"wrong schema":    {func(a *Attempt) { a.Capture.Traffic[0].Request.GRPC.SchemaRef = "missing" }, "unavailable boundary schema"},
 		"redacted wire":   {func(a *Attempt) { a.Capture.Traffic[0].Request.GRPC.Messages[0].Redacted = true }, "retains redacted wire"},

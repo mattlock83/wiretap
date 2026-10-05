@@ -640,7 +640,7 @@ same complete descriptor set, selection and acquisition provenance.
   duplicate files/symbols, missing selected services, unsupported editions or
   unusable descriptors. Bound descriptor size, traversal depth and decode work.
 - Freeze the acquired descriptor set plus the selected service list in a
-  typed manifest under `schemas/<hash>/`. Record source kind, acquisition time,
+  typed manifest under `contracts/<hash>/`. Record source kind, acquisition time,
   reflection API version where relevant, advertised inventory/exclusions,
   compiler/normalizer versions and content hashes, excluding credentials and
   private filesystem paths. Preserve original descriptor-file bytes when supplied;
@@ -894,7 +894,7 @@ scattering `if grpc` conditions through HTML templates.
 - Group provided methods and dependency assumptions by API/service. Render
   statuses as `OK`, `INVALID_ARGUMENT`, etc., keeping HTTP transport information
   as detail. Never label HTTP 200 alone as RPC success.
-- Reuse existing OKF pages, `knowledge.json`, verification tasks and coverage
+- Reuse existing OKF pages, `docs/knowledge.json`, verification tasks and coverage
   catalogues. Add protocol, descriptor revision, message references and limits
   so an agent can distinguish observation from assurance.
 - Feed the same protocol-aware calculation to `report` and diagnostic `export`.

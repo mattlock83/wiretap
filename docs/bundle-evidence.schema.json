@@ -1,14 +1,15 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "bundle-evidence.schema.json",
-  "title": "Wiretap bundle evidence 1.x and 2.x",
+  "title": "Wiretap bundle format 3.x",
   "oneOf": [
     { "$ref": "#/$defs/run" },
     { "$ref": "#/$defs/attempt" }
   ],
   "$defs": {
-    "version": { "type": "string", "pattern": "^[12]\\.[0-9]+$" },
-    "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$" },
+    "version": { "type": "string", "pattern": "^3\\.[0-9]+$" },
+    "capabilities": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+    "id": { "type": "string", "pattern": "^(?!\\.{1,2}$)[A-Za-z0-9._-]+$" },
     "hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
     "relativePath": { "type": "string", "minLength": 1, "pattern": "^(?!/)(?![A-Za-z]:)(?!.*(?:^|/)\\.\\.(?:/|$)).+$" },
     "fileRef": {
@@ -24,8 +25,9 @@
       "required": ["id", "role", "type", "source"],
       "properties": {
         "id": { "type": "string", "minLength": 1 },
-        "role": { "type": "string" },
+        "role": { "enum": ["sut", "provided", "dependency"] },
         "type": { "type": "string" },
+        "protocol": { "type": "string" },
         "services": { "type": "array", "items": { "type": "string" } },
         "acquired_from": { "type": "string" },
         "acquisition": {
@@ -46,16 +48,33 @@
           "properties": {
             "type": { "enum": ["file", "omitted"] },
             "path": { "$ref": "#/$defs/relativePath" },
-            "sha256": { "$ref": "#/$defs/hash" }
+            "sha256": { "$ref": "#/$defs/hash" },
+            "format": { "type": "string" }
           }
         }
       }
     },
     "run": {
       "type": "object",
-      "required": ["evidence_version", "run_id", "revision", "run_state", "started_at", "updated_at"],
+      "required": ["format_version", "required_capabilities", "run_id", "revision", "run_state", "started_at", "updated_at", "inventory_scope", "provided_apis", "dependencies", "tests"],
       "properties": {
-        "evidence_version": { "$ref": "#/$defs/version" },
+        "format_version": { "$ref": "#/$defs/version" },
+        "required_capabilities": { "$ref": "#/$defs/capabilities" },
+        "application": {
+          "type": "object",
+          "anyOf": [
+            { "required": ["name"], "properties": { "name": { "pattern": "\\S" } } },
+            { "required": ["id"], "properties": { "id": { "pattern": "\\S" } } }
+          ],
+          "properties": {
+            "name": { "type": "string" },
+            "id": { "type": "string" },
+            "description": { "type": "string" }
+          }
+        },
+        "inventory_scope": { "const": "configured_and_observed" },
+        "provided_apis": { "type": "array", "items": { "$ref": "#/$defs/api" } },
+        "dependencies": { "type": "array", "items": { "$ref": "#/$defs/api" } },
         "run_id": { "$ref": "#/$defs/id" },
         "revision": { "type": "integer", "minimum": 1 },
         "run_state": { "enum": ["open", "complete", "interrupted"] },
@@ -67,8 +86,8 @@
         "dependency_kinds": { "type": "object", "additionalProperties": { "enum": ["mock", "service", "unknown"] } },
         "test_source": { "type": "object" },
         "sut_source": { "type": "object" },
-        "schemas": { "type": "array", "items": { "$ref": "#/$defs/schemaRef" } },
-        "contracts": {
+        "contracts": { "type": "array", "items": { "$ref": "#/$defs/schemaRef" } },
+        "contract_resolutions": {
           "type": "array",
           "items": {
             "type": "object",
@@ -84,7 +103,7 @@
             }
           }
         },
-        "pending": {
+        "pending_tests": {
           "type": "array",
           "items": {
             "type": "object",
@@ -96,7 +115,7 @@
             }
           }
         },
-        "attempts": {
+        "tests": {
           "type": "array",
           "items": {
             "allOf": [
@@ -107,14 +126,54 @@
         }
       }
     },
-    "flow": {
+    "api": {
       "type": "object",
-      "required": ["id", "protocol", "channel", "request", "response"],
-      "if": { "properties": { "protocol": { "const": "grpc" } }, "required": ["protocol"] },
-      "then": { "properties": { "request": { "$ref": "#/$defs/grpcMessage" }, "response": { "$ref": "#/$defs/grpcMessage" } } },
+      "required": ["id", "target_kind", "configured", "protocols", "contracts", "observed_in"],
       "properties": {
         "id": { "type": "string", "minLength": 1 },
-        "protocol": { "type": "string" },
+        "target_kind": { "enum": ["mock", "service", "unknown"] },
+        "configured": { "type": "boolean" },
+        "protocols": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+        "observed_in": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/id" } },
+        "contracts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "type", "source"],
+            "properties": {
+              "id": { "type": "string" },
+              "type": { "type": "string" },
+              "source": { "$ref": "#/$defs/schemaRef/properties/source" }
+            }
+          }
+        }
+      }
+    },
+    "flow": {
+      "type": "object",
+      "required": ["id", "protocol"],
+      "oneOf": [
+        {
+          "required": ["interaction"],
+          "properties": {
+            "interaction": { "$ref": "#/$defs/interaction" },
+            "id": { "$ref": "#/$defs/id" },
+            "channel": { "const": "" },
+            "asset_id": { "const": "" },
+            "request": { "type": "null" },
+            "response": { "type": "null" }
+          }
+        },
+        {
+          "required": ["channel", "request", "response"],
+          "properties": { "interaction": { "type": "null" } },
+          "if": { "properties": { "protocol": { "const": "grpc" } } },
+          "then": { "properties": { "request": { "$ref": "#/$defs/grpcMessage" }, "response": { "$ref": "#/$defs/grpcMessage" } } }
+        }
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "protocol": { "type": "string", "minLength": 1 },
         "channel": { "type": "string" },
         "request": { "type": ["object", "null"] },
         "response": { "type": ["object", "null"] },
@@ -129,6 +188,102 @@
             }
           }
         }
+      }
+    },
+    "interaction": {
+      "type": "object",
+      "required": ["kind", "boundary", "transport", "operation", "capture_state", "events"],
+      "properties": {
+        "kind": { "enum": ["request_response", "publish", "consume", "stream"] },
+        "boundary": {
+          "type": "object",
+          "required": ["role", "id"],
+          "properties": {
+            "role": { "enum": ["provided", "dependency"] },
+            "id": { "type": "string", "minLength": 1 }
+          }
+        },
+        "transport": { "type": "string", "minLength": 1 },
+        "operation": { "type": "string", "minLength": 1 },
+        "capture_state": { "enum": ["complete", "incomplete"] },
+        "stream_mode": { "enum": ["client", "server", "bidirectional", "subscription"] },
+        "events": { "type": "array", "items": { "$ref": "#/$defs/event" } }
+      },
+      "if": { "properties": { "kind": { "const": "stream" } } },
+      "then": { "required": ["stream_mode"] },
+      "else": { "not": { "required": ["stream_mode"] } }
+    },
+    "event": {
+      "type": "object",
+      "required": ["id", "sequence", "direction", "direction_sequence", "kind"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "sequence": { "type": "integer", "minimum": 0 },
+        "direction": { "enum": ["sent", "received"] },
+        "direction_sequence": { "type": "integer", "minimum": 0 },
+        "kind": { "enum": ["headers", "message", "half_close", "trailers", "complete", "cancel", "error", "ack"] },
+        "observed_at": { "type": "string", "format": "date-time" },
+        "metadata": { "type": "object" },
+        "payloads": { "type": "array", "items": { "$ref": "#/$defs/eventPayload" } },
+        "links": { "type": "array", "items": { "$ref": "#/$defs/eventLink" } }
+      }
+    },
+    "eventPayload": {
+      "type": "object",
+      "required": ["name", "encoding", "availability"],
+      "properties": {
+        "name": { "$ref": "#/$defs/id" },
+        "encoding": { "type": "string", "minLength": 1 },
+        "media_type": { "type": "string" },
+        "message_type": { "type": "string" },
+        "availability": { "enum": ["present", "empty", "null", "redacted", "truncated", "unavailable"] },
+        "derived_from": { "type": "string" },
+        "transformation": { "type": "string" },
+        "writer_schema": { "$ref": "#/$defs/contractLink" },
+        "reader_schema": { "$ref": "#/$defs/contractLink" },
+        "body": { "type": "object" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "availability": { "enum": ["present", "empty", "truncated"] } } },
+          "then": { "required": ["body"] },
+          "else": { "not": { "required": ["body"] } }
+        },
+        {
+          "if": { "properties": { "availability": { "const": "truncated" } } },
+          "then": { "properties": { "body": { "required": ["truncated"], "properties": { "truncated": { "const": true } } } } },
+          "else": { "properties": { "body": { "properties": { "truncated": { "const": false } } } } }
+        }
+      ],
+      "dependentRequired": {
+        "derived_from": ["transformation"],
+        "transformation": ["derived_from"]
+      }
+    },
+    "contractLink": {
+      "type": "object",
+      "required": ["id", "sha256"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "sha256": { "$ref": "#/$defs/hash" }
+      }
+    },
+    "eventLink": {
+      "type": "object",
+      "required": ["flow_id", "relation", "evidence"],
+      "properties": {
+        "flow_id": { "type": "string", "minLength": 1 },
+        "event_id": { "type": "string", "minLength": 1 },
+        "relation": { "enum": ["caused_by", "reply_to", "delivery_of", "acknowledges"] },
+        "evidence": { "enum": ["trace", "protocol", "hook", "timing", "unknown"] },
+        "run_id": { "$ref": "#/$defs/id" },
+        "attempt_id": { "$ref": "#/$defs/id" },
+        "attempt_sha256": { "$ref": "#/$defs/hash" }
+      },
+      "dependentRequired": {
+        "run_id": ["attempt_id", "attempt_sha256"],
+        "attempt_id": ["run_id", "attempt_sha256"],
+        "attempt_sha256": ["run_id", "attempt_id"]
       }
     },
     "grpcMessage": {
@@ -224,20 +379,29 @@
           "required": ["flow_id", "phase", "representation", "retained_bytes"],
           "properties": {
             "flow_id": { "type": "string", "minLength": 1 },
-            "phase": { "enum": ["request", "response"] },
+            "phase": { "enum": ["request", "response", "event"] },
+            "event_id": { "type": "string", "minLength": 1 },
+            "payload_name": { "type": "string", "minLength": 1 },
             "representation": { "enum": ["text", "bytes"] },
             "kind": { "enum": ["wire"] },
             "message_index": { "type": "integer", "minimum": 0 },
             "retained_bytes": { "type": "integer", "minimum": 0 }
-          }
+          },
+          "if": { "properties": { "phase": { "const": "event" } } },
+          "then": {
+            "required": ["event_id", "payload_name"],
+            "not": { "anyOf": [{ "required": ["message_index"] }, { "required": ["kind"] }] }
+          },
+          "else": { "not": { "anyOf": [{ "required": ["event_id"] }, { "required": ["payload_name"] }] } }
         }
       ]
     },
     "attempt": {
       "type": "object",
-      "required": ["evidence_version", "run_id", "attempt_id", "capture"],
+      "required": ["format_version", "required_capabilities", "run_id", "attempt_id", "capture"],
       "properties": {
-        "evidence_version": { "$ref": "#/$defs/version" },
+        "format_version": { "$ref": "#/$defs/version" },
+        "required_capabilities": { "$ref": "#/$defs/capabilities" },
         "run_id": { "$ref": "#/$defs/id" },
         "attempt_id": { "$ref": "#/$defs/id" },
         "capture": { "$ref": "#/$defs/capture" },

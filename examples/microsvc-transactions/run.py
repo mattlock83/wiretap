@@ -44,8 +44,8 @@ sys.exit('Service did not become ready: ' + sys.argv[1])
 
 
 def inspect_bundle(path, exploration=False):
-    run = json.loads((path / "evidence/run.json").read_text())
-    if run["run_state"] != "complete" or not (path / "viewer/index.html").exists():
+    run = json.loads((path / "bundle.json").read_text())
+    if run["run_state"] != "complete" or not (path / "docs/viewer.html").exists():
         raise RuntimeError(f"Incomplete bundle: {path}")
     coverage = json.loads((path / "contract-coverage.json").read_text())
     if exploration:
@@ -60,7 +60,7 @@ def inspect_bundle(path, exploration=False):
             raise RuntimeError("Capture is missing the Accounts mock contract")
         # Evidence must include actual downstream exchanges, not just registration.
         downstream = 0
-        for attempt in run["attempts"]:
+        for attempt in run["tests"]:
             capture = json.loads((path / attempt["path"]).read_text())["capture"]
             if capture.get("schema_validation", {}).get("status") != "pass":
                 raise RuntimeError("Authored traffic did not match the supplied contracts; inspect the capture bundle")
@@ -73,8 +73,8 @@ def inspect_bundle(path, exploration=False):
 
 def run(args):
     source_bundle = args.bundle.resolve() if args.bundle else None
-    if source_bundle and not (source_bundle / "evidence/run.json").is_file():
-        raise RuntimeError(f"Expected a capture bundle directory containing evidence/run.json: {source_bundle}")
+    if source_bundle and not (source_bundle / "bundle.json").is_file():
+        raise RuntimeError(f"Expected a capture bundle directory containing bundle.json: {source_bundle}")
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
     transactions_image = os.environ.get("TRANSACTIONS_IMAGE", "microsvc_transactions-service:latest")
@@ -219,7 +219,7 @@ def run(args):
             if copied:
                 for label, path in bundles:
                     print(f"{label} OKF bundle: {output / Path(path).name / 'index.md'}")
-                    print(f"{label} HTML dashboard: {output / Path(path).name / 'viewer/index.html'}")
+                    print(f"{label} HTML dashboard: {output / Path(path).name / 'docs/viewer.html'}")
             for name in reversed(containers):
                 logs(name)
                 subprocess.run(["docker", "rm", "-f", name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

@@ -409,6 +409,9 @@ func measureGRPCContract(spec *ContractSpec, ref artifact.SchemaRef, run *bundle
 				continue
 			}
 			for _, f := range a.Traffic {
+				if !flowMatchesSchemaBoundary(f, ref) {
+					continue
+				}
 				if f.Protocol != "grpc" || f.Request.GRPC == nil || f.Request.GRPC.Procedure != procedure {
 					continue
 				}

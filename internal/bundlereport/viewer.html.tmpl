@@ -25,15 +25,16 @@ a{color:var(--blue);text-underline-offset:2px}button,input{font:inherit}button{c
 <div class="shell">
 <header class="hero">
 <div class="eyebrow">Wiretap capture bundle · {{.State}}</div>
-<h1>{{.APIID}}</h1>
-<p>API evidence and dependency assumptions · {{.TargetKind}} target</p>
+<h1>{{.SystemName}}</h1>
+{{if .Description}}<p>{{.Description}}</p>{{end}}
+<p>API evidence and dependency assumptions</p>
 <p>Run {{.RunID}} · revision {{.Revision}} · updated {{.GeneratedAt}}</p>
 <div class="hero-links">
 <a href="../index.md">OKF index</a>
-<a href="../system.md">System overview</a>
-<a href="../verification.md">Verification work</a>
-<a href="../knowledge.json">Knowledge JSON</a>
-<a href="../evidence/run.json">Run evidence</a>
+<a href="system.md">System overview</a>
+<a href="verification.md">Verification work</a>
+<a href="knowledge.json">Knowledge JSON</a>
+<a href="../bundle.json">Run evidence</a>
 </div>
 </header>
 <div class="metrics">
@@ -83,19 +84,19 @@ a{color:var(--blue);text-underline-offset:2px}button,input{font:inherit}button{c
 </div><div class="card">
 <h2>For knowledge bases and follow-up tests</h2>
 <p>Start with the system overview for API boundaries and dependency assumptions. Use the verification work list to find missing evidence and suggested checks; use Knowledge JSON to retain links back to the recorded attempts and flows.</p>
-<div class="links"><a href="../system.md">System overview</a><a href="../verification.md">Verification work</a><a href="../knowledge.json">Knowledge JSON</a><a href="../coverage.md">Coverage notes</a></div>
+<div class="links"><a href="system.md">System overview</a><a href="verification.md">Verification work</a><a href="knowledge.json">Knowledge JSON</a><a href="coverage.md">Coverage notes</a></div>
 </div>{{if .Notes}}<div class="card">
 <h2>Diagnostics</h2>{{range .Notes}}<p class="note">{{.}}</p>{{end}}</div>{{end}}<div class="card">
 <h2>Navigation</h2>
 <div class="links">
-<a href="../apis/index.md">Provided APIs in OKF</a>
-<a href="../dependencies/index.md">Dependencies in OKF</a>
-<a href="../tests/index.md">Test attempts in OKF</a>
+<a href="apis/index.md">Provided APIs in OKF</a>
+<a href="dependencies/index.md">Dependencies in OKF</a>
+<a href="tests/index.md">Test attempts in OKF</a>
 </div>
 </div>
 </section>
-<section class="pane" id="apis" hidden>{{if .Provided}}{{range .Provided}}{{template "spec" .}}{{end}}{{else}}<div class="card empty">No provided API schemas were supplied. The coverage denominator is unknown. <a href="../system.md">Review the system inventory and captured evidence.</a></div>{{end}}</section>
-<section class="pane" id="dependencies" hidden><div class="card"><h2>Dependency evidence and assumptions</h2><p>Mock responses record what the consumer's tests assumed. Service responses record what a dependency returned in this environment. Neither establishes which response fields the consumer used, or agreement with another provider version.</p><div class="links"><a href="../verification.md">Checks needed to verify assumptions</a><a href="../system.md">All dependency boundaries</a></div></div>{{if .MockDrafts}}<div class="card"><h2>Inferred mock assumptions</h2><p>OpenAPI drafts from observed mock requests and responses, including failed attempts. These are not provider contracts or validation inputs. Consumer field use and provider agreement remain unknown.</p><div class="links">{{range .MockDrafts}}<a href="{{.URL}}">{{.ID}} — {{.Operations}} operations, {{.Exchanges}} exchanges</a>{{end}}</div></div>{{end}}{{if .Dependent}}{{range .Dependent}}{{template "spec" .}}{{end}}{{else}}<div class="card empty">No dependency schemas were supplied. This does not establish that the system has no dependencies; check the system inventory for observed or configured boundaries.</div>{{end}}</section>
+<section class="pane" id="apis" hidden>{{if .Provided}}{{range .Provided}}{{template "spec" .}}{{end}}{{else}}<div class="card empty">{{if .HasProvided}}No measurable provided API schemas were supplied. The coverage denominator is unknown.{{else}}No provided APIs are recorded in this bundle. Provider coverage is not applicable to this scope.{{end}} <a href="system.md">Review the system inventory and captured evidence.</a></div>{{end}}</section>
+<section class="pane" id="dependencies" hidden><div class="card"><h2>Dependency evidence and assumptions</h2><p>Mock responses record what the consumer's tests assumed. Service responses record what a dependency returned in this environment. Neither establishes which response fields the consumer used, or agreement with another provider version.</p><div class="links"><a href="verification.md">Checks needed to verify assumptions</a><a href="system.md">All dependency boundaries</a></div></div>{{if .MockDrafts}}<div class="card"><h2>Inferred mock assumptions</h2><p>OpenAPI drafts from observed mock requests and responses, including failed attempts. These are not provider contracts or validation inputs. Consumer field use and provider agreement remain unknown.</p><div class="links">{{range .MockDrafts}}<a href="{{.URL}}">{{.ID}} — {{.Operations}} operations, {{.Exchanges}} exchanges</a>{{end}}</div></div>{{end}}{{if .Dependent}}{{range .Dependent}}{{template "spec" .}}{{end}}{{else}}<div class="card empty">{{if .HasDependencies}}No measurable dependency schemas were supplied. Check the system inventory for observed or configured boundaries.{{else}}No dependencies are recorded in this bundle. Dependency coverage is not applicable to this scope; the inventory does not establish the absence of undeclared dependencies.{{end}}</div>{{end}}</section>
 {{template "contractPane" .}}
 {{template "testPane" .}}
 </main>

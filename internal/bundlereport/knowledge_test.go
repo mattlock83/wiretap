@@ -71,7 +71,7 @@ paths:
 
 func readKnowledge(t *testing.T, root string) knowledgeIndex {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join(root, "knowledge.json"))
+	data, err := os.ReadFile(filepath.Join(root, "docs/knowledge.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +98,7 @@ func TestKnowledgeSeparatesMockClaimsGapsAndUnmatchedTraffic(t *testing.T) {
 					t.Fatalf("mock claim overstated or missing context: %+v", op)
 				}
 				e := op.Evidence[0]
-				if e.TestStatus != "pass" || e.ParentCorrelation != "timing" || !e.RedactionsConfigured || e.Path != "evidence/attempts/attempt-1.json" {
+				if e.TestStatus != "pass" || e.ParentCorrelation != "timing" || !e.RedactionsConfigured || e.Path != "tests/attempt-1.json" {
 					t.Fatalf("evidence qualifiers lost: %+v", e)
 				}
 			case "GET /unobserved":
@@ -129,14 +129,14 @@ func TestKnowledgeSeparatesMockClaimsGapsAndUnmatchedTraffic(t *testing.T) {
 			t.Errorf("missing %s task", kind)
 		}
 	}
-	data, _ := os.ReadFile(filepath.Join(root, "knowledge.json"))
+	data, _ := os.ReadFile(filepath.Join(root, "docs/knowledge.json"))
 	if strings.Contains(string(data), "token=omitted") {
 		t.Fatal("index copied query values")
 	}
 }
 
 func TestKnowledgeExpectedNegativesAndLineageAreNotProviderContradictions(t *testing.T) {
-	run := &bundle.Run{RunID: "new-run", APIID: "orders", RunState: "complete", Revision: 1, Attempts: []bundle.AttemptRef{{AttemptID: "negative", FileRef: bundle.FileRef{Path: "evidence/attempts/negative.json"}}}}
+	run := &bundle.Run{RunID: "new-run", APIID: "orders", RunState: "complete", Revision: 1, Attempts: []bundle.AttemptRef{{AttemptID: "negative", FileRef: bundle.FileRef{Path: "tests/negative.json"}}}}
 	a := &artifact.Artifact{TestCase: artifact.TestCase{ID: "negative", Name: "reject invalid order", Status: "pass"}, Exploration: &artifact.Exploration{Mode: "rejection", SourceRunID: "seed", SourceAttemptID: "happy", SourceSHA256: "digest"}}
 	report := &coverage.Report{Contracts: &coverage.ContractCoverage{Specs: []*coverage.ContractSpec{{APIID: "orders", Origin: "provided", Revision: "contract", Violations: []coverage.ContractViolation{{Expected: true, Operation: "POST /orders"}}}}}}
 	k := buildKnowledge(t.TempDir(), run, []*artifact.Artifact{a}, report)
@@ -169,7 +169,12 @@ func TestKnowledgeRebuildPreservesEvidenceAndRejectsBrokenReferences(t *testing.
 	root := knowledgeFixture(t)
 	digests := func() map[string][32]byte {
 		out := map[string][32]byte{}
-		for _, dir := range []string{"evidence", "schemas", "payloads"} {
+		manifest, err := os.ReadFile(filepath.Join(root, "bundle.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		out["bundle.json"] = sha256.Sum256(manifest)
+		for _, dir := range []string{"tests", "contracts", "payloads"} {
 			filepath.WalkDir(filepath.Join(root, dir), func(path string, d os.DirEntry, err error) error {
 				if err == nil && !d.IsDir() {
 					b, e := os.ReadFile(path)
@@ -184,7 +189,7 @@ func TestKnowledgeRebuildPreservesEvidenceAndRejectsBrokenReferences(t *testing.
 		return out
 	}
 	before := digests()
-	original, _ := os.ReadFile(filepath.Join(root, "knowledge.json"))
+	original, _ := os.ReadFile(filepath.Join(root, "docs/knowledge.json"))
 	k := readKnowledge(t, root)
 	for i := range k.APIs {
 		for j := range k.APIs[i].Operations {
@@ -194,7 +199,7 @@ func TestKnowledgeRebuildPreservesEvidenceAndRejectsBrokenReferences(t *testing.
 		}
 	}
 	data, _ := json.Marshal(k)
-	if err := os.WriteFile(filepath.Join(root, "knowledge.json"), data, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "docs/knowledge.json"), data, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := Validate(root); err == nil {
@@ -203,7 +208,7 @@ func TestKnowledgeRebuildPreservesEvidenceAndRejectsBrokenReferences(t *testing.
 	if _, err := Rebuild(root); err != nil {
 		t.Fatal(err)
 	}
-	after, _ := os.ReadFile(filepath.Join(root, "knowledge.json"))
+	after, _ := os.ReadFile(filepath.Join(root, "docs/knowledge.json"))
 	if string(original) != string(after) {
 		t.Fatal("knowledge rebuild not deterministic")
 	}
@@ -215,7 +220,7 @@ func TestKnowledgeRebuildPreservesEvidenceAndRejectsBrokenReferences(t *testing.
 }
 
 func TestKnowledgeTransportFailureIsNotAMockResponseAssumption(t *testing.T) {
-	run := &bundle.Run{RunID: "run", APIID: "orders", SUTTargetKind: "service", DependencyKinds: map[string]string{"stock": "mock"}, Attempts: []bundle.AttemptRef{{AttemptID: "attempt", FileRef: bundle.FileRef{Path: "evidence/attempts/attempt.json"}}}}
+	run := &bundle.Run{RunID: "run", APIID: "orders", SUTTargetKind: "service", DependencyKinds: map[string]string{"stock": "mock"}, Attempts: []bundle.AttemptRef{{AttemptID: "attempt", FileRef: bundle.FileRef{Path: "tests/attempt.json"}}}}
 	a := &artifact.Artifact{TestCase: artifact.TestCase{ID: "attempt", Status: "pass"}, Traffic: []artifact.Flow{{ID: "failed", Channel: "sut_to_dependency", AssetID: "stock", TransportError: "connection refused", Request: artifact.Message{HTTP: &artifact.HttpMessage{Method: "GET", URL: "http://stock/items"}}, Response: artifact.Message{HTTP: &artifact.HttpMessage{Status: 502}}}}}
 	k := buildKnowledge(t.TempDir(), run, []*artifact.Artifact{a}, &coverage.Report{})
 	for _, api := range k.APIs {
@@ -240,9 +245,9 @@ func TestKnowledgeTransportFailureIsNotAMockResponseAssumption(t *testing.T) {
 }
 
 func TestKnowledgeUnusableContractDoesNotInventRouteMismatch(t *testing.T) {
-	run := &bundle.Run{RunID: "run", APIID: "orders", SUTTargetKind: "service", Attempts: []bundle.AttemptRef{{AttemptID: "attempt", FileRef: bundle.FileRef{Path: "evidence/attempts/attempt.json"}}}}
+	run := &bundle.Run{RunID: "run", APIID: "orders", SUTTargetKind: "service", Attempts: []bundle.AttemptRef{{AttemptID: "attempt", FileRef: bundle.FileRef{Path: "tests/attempt.json"}}}}
 	a := &artifact.Artifact{TestCase: artifact.TestCase{ID: "attempt", Status: "pass"}, Traffic: []artifact.Flow{{ID: "f1", Channel: "test_to_sut", Request: artifact.Message{HTTP: &artifact.HttpMessage{Method: "GET", URL: "http://orders/items"}}, Response: artifact.Message{HTTP: &artifact.HttpMessage{Status: 200}}}}}
-	report := &coverage.Report{Provided: coverage.SpecCoverageGroup{Specs: []coverage.SpecCoverage{{AssetID: "orders", SchemaID: "broken", Source: "schemas/broken.json", DenominatorKnown: false}}}}
+	report := &coverage.Report{Provided: coverage.SpecCoverageGroup{Specs: []coverage.SpecCoverage{{AssetID: "orders", SchemaID: "broken", Source: "contracts/broken.json", DenominatorKnown: false}}}}
 	k := buildKnowledge(t.TempDir(), run, []*artifact.Artifact{a}, report)
 	repairs := 0
 	for _, task := range k.Verification {

@@ -136,7 +136,7 @@ Rebuild the generated views:
 wiretap report --bundle ./artifacts/<run-id>
 ```
 
-JSON under `evidence/` and referenced schema/payload files are the source of
+`bundle.json`, JSON under `tests/` and referenced schema/payload files are the source of
 truth. If rebuilding reports an integrity error, restore the missing or corrupt
 evidence from the original bundle. Regeneration cannot recover uncaptured or
 lost evidence. Keep the whole bundle when copying it.

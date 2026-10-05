@@ -25,18 +25,41 @@ import (
 )
 
 type Report struct {
-	Contracts     *ContractCoverage  `json:"contract_coverage,omitempty" yaml:"contract_coverage,omitempty"`
-	GeneratedAt   time.Time          `json:"generated_at" yaml:"generated_at"`
-	SUTName       string             `json:"sut_name" yaml:"sut_name"`
-	ArtifactCount int                `json:"artifact_count" yaml:"artifact_count"`
-	Artifacts     []string           `json:"artifacts,omitempty" yaml:"artifacts,omitempty"`
-	Provided      SpecCoverageGroup  `json:"provided" yaml:"provided"`
-	Dependent     SpecCoverageGroup  `json:"dependent" yaml:"dependent"`
-	TestCases     []TestCaseCoverage `json:"testcases,omitempty" yaml:"testcases,omitempty"`
-	Notes         []string           `json:"notes,omitempty" yaml:"notes,omitempty"`
+	Unmeasured    []UnmeasuredInteraction `json:"unmeasured_interactions,omitempty" yaml:"unmeasured_interactions,omitempty"`
+	Contracts     *ContractCoverage       `json:"contract_coverage,omitempty" yaml:"contract_coverage,omitempty"`
+	GeneratedAt   time.Time               `json:"generated_at" yaml:"generated_at"`
+	SUTName       string                  `json:"sut_name" yaml:"sut_name"`
+	ArtifactCount int                     `json:"artifact_count" yaml:"artifact_count"`
+	Artifacts     []string                `json:"artifacts,omitempty" yaml:"artifacts,omitempty"`
+	Provided      SpecCoverageGroup       `json:"provided" yaml:"provided"`
+	Dependent     SpecCoverageGroup       `json:"dependent" yaml:"dependent"`
+	TestCases     []TestCaseCoverage      `json:"testcases,omitempty" yaml:"testcases,omitempty"`
+	Notes         []string                `json:"notes,omitempty" yaml:"notes,omitempty"`
 
 	artifactEntries []artifactEntry
 	explicitSUTName bool
+}
+
+// UnmeasuredInteraction preserves an explicit gap when the recording format
+// supports an exchange that the current measurement engine cannot evaluate.
+type UnmeasuredInteraction struct {
+	AttemptID string `json:"attempt_id" yaml:"attempt_id"`
+	FlowID    string `json:"flow_id" yaml:"flow_id"`
+	Protocol  string `json:"protocol" yaml:"protocol"`
+	Kind      string `json:"kind" yaml:"kind"`
+	Reason    string `json:"reason" yaml:"reason"`
+}
+
+func unmeasuredInteractions(captures []*artifact.Artifact) []UnmeasuredInteraction {
+	var out []UnmeasuredInteraction
+	for _, capture := range captures {
+		for _, flow := range capture.Traffic {
+			if flow.Interaction != nil {
+				out = append(out, UnmeasuredInteraction{AttemptID: capture.TestCase.ID, FlowID: flow.ID, Protocol: flow.Protocol, Kind: flow.Interaction.Kind, Reason: "Event interaction coverage is not supported; retained events are observations, not measured contract coverage."})
+			}
+		}
+	}
+	return out
 }
 
 type SpecCoverageGroup struct {
@@ -44,6 +67,7 @@ type SpecCoverageGroup struct {
 }
 
 type SpecCoverage struct {
+	Protocol         string             `json:"protocol,omitempty" yaml:"protocol,omitempty"`
 	DenominatorKnown bool               `json:"denominator_known" yaml:"denominator_known"`
 	SchemaSet        string             `json:"schema_set,omitempty" yaml:"schema_set,omitempty"`
 	SchemaID         string             `json:"schema_id" yaml:"schema_id"`
@@ -80,14 +104,15 @@ type SpecOperationSamples struct {
 }
 
 type FlowSample struct {
-	CaptureIncomplete  bool   `json:"capture_incomplete,omitempty" yaml:"capture_incomplete,omitempty"`
-	RequestSpanID      string `json:"request_span_id,omitempty" yaml:"request_span_id,omitempty"`
-	TraceContextSource string `json:"trace_context_source,omitempty" yaml:"trace_context_source,omitempty"`
-	TestCorrelation    string `json:"test_correlation,omitempty" yaml:"test_correlation,omitempty"`
-	ParentCorrelation  string `json:"parent_correlation,omitempty" yaml:"parent_correlation,omitempty"`
-	TestCaseID         string `json:"testcase_id,omitempty" yaml:"testcase_id,omitempty"`
-	TestTraceID        string `json:"test_trace_id,omitempty" yaml:"test_trace_id,omitempty"`
-	RootSpanID         string `json:"root_span_id,omitempty" yaml:"root_span_id,omitempty"`
+	Interaction        *artifact.Interaction `json:"interaction,omitempty" yaml:"interaction,omitempty"`
+	CaptureIncomplete  bool                  `json:"capture_incomplete,omitempty" yaml:"capture_incomplete,omitempty"`
+	RequestSpanID      string                `json:"request_span_id,omitempty" yaml:"request_span_id,omitempty"`
+	TraceContextSource string                `json:"trace_context_source,omitempty" yaml:"trace_context_source,omitempty"`
+	TestCorrelation    string                `json:"test_correlation,omitempty" yaml:"test_correlation,omitempty"`
+	ParentCorrelation  string                `json:"parent_correlation,omitempty" yaml:"parent_correlation,omitempty"`
+	TestCaseID         string                `json:"testcase_id,omitempty" yaml:"testcase_id,omitempty"`
+	TestTraceID        string                `json:"test_trace_id,omitempty" yaml:"test_trace_id,omitempty"`
+	RootSpanID         string                `json:"root_span_id,omitempty" yaml:"root_span_id,omitempty"`
 
 	TestCase       string             `json:"testcase" yaml:"testcase"`
 	TestStatus     string             `json:"test_status,omitempty" yaml:"test_status,omitempty"`
@@ -162,6 +187,9 @@ func GenerateBundleSnapshot(bundlePath string, run *bundle.Run, captures []*arti
 		return nil, errors.New("bundle inventory and captures disagree")
 	}
 	entries := make([]artifactEntry, 0, len(captures))
+	if sutName == "" && run.Application != nil {
+		sutName = run.Application.Name
+	}
 	for i, capture := range captures {
 		entries = append(entries, artifactEntry{Path: filepath.Join(bundlePath, filepath.FromSlash(run.Attempts[i].Path)), Doc: capture})
 	}
@@ -204,6 +232,10 @@ func GenerateBundleSnapshot(bundlePath string, run *bundle.Run, captures []*arti
 		report.Artifacts[i] = portable(report.Artifacts[i])
 	}
 	report.Contracts = buildContractCoverage(run, captures)
+	report.Unmeasured = unmeasuredInteractions(captures)
+	for _, item := range report.Unmeasured {
+		report.Notes = append(report.Notes, fmt.Sprintf("Attempt %s, interaction %s (%s %s): %s", item.AttemptID, item.FlowID, item.Protocol, item.Kind, item.Reason))
+	}
 	return report, nil
 }
 
@@ -353,11 +385,30 @@ func buildCoverageWithSchemas(entries []artifactEntry, extraSchemas []artifact.S
 func filterSchemas(schemas []artifact.SchemaRef, role string) []artifact.SchemaRef {
 	var filtered []artifact.SchemaRef
 	for _, schema := range schemas {
-		if strings.EqualFold(schema.Role, role) {
+		if coverageRole(schema.Role) == coverageRole(role) {
 			filtered = append(filtered, schema)
 		}
 	}
 	return filtered
+}
+
+func coverageRole(role string) string {
+	if strings.EqualFold(role, "sut") || strings.EqualFold(role, "provided") {
+		return "provided"
+	}
+	return strings.ToLower(role)
+}
+
+func flowMatchesSchemaBoundary(flow artifact.Flow, schema artifact.SchemaRef) bool {
+	if flow.Interaction != nil {
+		return false
+	}
+	if schema.Role == "provided" {
+		// Explicit provider boundaries must not inherit the legacy single-SUT
+		// association or measure another provider's request.
+		return flow.Channel == "test_to_sut" && schema.AssetID != "" && flow.AssetID == schema.AssetID
+	}
+	return schema.AssetID == "" || flow.AssetID == "" || schema.AssetID == flow.AssetID
 }
 
 func loadSchemas(schemas []artifact.SchemaRef) ([]*loadedSchema, []string) {
@@ -397,7 +448,7 @@ func loadSchemas(schemas []artifact.SchemaRef) ([]*loadedSchema, []string) {
 				notes = append(notes, fmt.Sprintf("Protobuf schema %q failed to read: %v", schema.ID, err))
 			}
 		} else {
-			notes = append(notes, fmt.Sprintf("Schema %q has unsupported type %q (only openapi is supported).", schema.ID, schema.Type))
+			notes = append(notes, fmt.Sprintf("Schema %q has unsupported measurement type %q; only OpenAPI and unary Protobuf RPC coverage are supported. Its coverage denominator is unknown.", schema.ID, schema.Type))
 		}
 		seen[key] = entry
 	}
@@ -421,7 +472,7 @@ func markCoverage(entries []flowEntry, schemas []*loadedSchema, channel string) 
 			if !entry.SchemaKeys[schemaKey(schema.Ref)] {
 				continue
 			}
-			if schema.Ref.AssetID != "" && flow.AssetID != "" && schema.Ref.AssetID != flow.AssetID {
+			if !flowMatchesSchemaBoundary(flow, schema.Ref) {
 				continue
 			}
 			if schema.Ref.Source.Type == "omitted" {
@@ -449,6 +500,7 @@ func exportSpecs(schemas []*loadedSchema, includeNotCovered bool, samples map[st
 			notCoveredOps = uniqueSorted(diffOps(schema.Operations, schema.Exercised))
 		}
 		coverage := SpecCoverage{
+			Protocol:         schema.Ref.Protocol,
 			DenominatorKnown: schema.OpenAPI != nil || schema.GRPC != nil,
 			SchemaSet:        schemaRevision(schema.Ref),
 			SchemaID:         schema.Ref.ID,
@@ -514,7 +566,7 @@ func buildOperationSamples(entries []flowEntry, schemas []*loadedSchema, channel
 			if !entry.SchemaKeys[schemaKey(schema.Ref)] {
 				continue
 			}
-			if schema.Ref.AssetID != "" && flow.AssetID != "" && schema.Ref.AssetID != flow.AssetID {
+			if !flowMatchesSchemaBoundary(flow, schema.Ref) {
 				continue
 			}
 			switch {
@@ -587,7 +639,7 @@ func buildTestCaseCoverage(entries []flowEntry, providedSchemas, dependentSchema
 			if !entry.SchemaKeys[schemaKey(schema.Ref)] {
 				continue
 			}
-			if schema.Ref.AssetID != "" && flow.AssetID != "" && schema.Ref.AssetID != flow.AssetID {
+			if !flowMatchesSchemaBoundary(flow, schema.Ref) {
 				continue
 			}
 			op := ""
@@ -680,6 +732,7 @@ func sortOperationSamples(ops []OperationSamples) {
 func flowSampleFromFlow(entry flowEntry) FlowSample {
 	flow := entry.Flow
 	sample := FlowSample{
+		Interaction:        flow.Interaction,
 		CaptureIncomplete:  entry.CaptureIncomplete,
 		TestCase:           entry.TestCase,
 		TestStatus:         entry.Status,
@@ -696,6 +749,9 @@ func flowSampleFromFlow(entry flowEntry) FlowSample {
 		ParentFlowID:   flow.ParentFlowID,
 		Fingerprint:    flow.Fingerprint,
 		TransportError: flow.TransportError,
+	}
+	if flow.Interaction != nil {
+		sample.CaptureIncomplete = sample.CaptureIncomplete || flow.Interaction.CaptureState != "complete"
 	}
 	if flow.Protocol == "http" {
 		if flow.Request.HTTP != nil {

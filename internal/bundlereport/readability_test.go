@@ -25,7 +25,7 @@ func TestAttemptSequenceUsesRequestStartAndPreservesEvidence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	page := attemptMarkdown(&bundle.Run{DependencyKinds: map[string]string{"accounts": "mock"}}, capture, "evidence/attempts/attempt-1.json")
+	page := attemptMarkdown(&bundle.Run{DependencyKinds: map[string]string{"accounts": "mock"}}, capture, "tests/attempt-1.json")
 	requestHeading := "## 1. POST /api/transactions/withdraw?label=one|two"
 	dependencyHeading := "## 2. GET /api/accounts/1001"
 	if strings.Index(page, requestHeading) < 0 || strings.Index(page, dependencyHeading) < strings.Index(page, requestHeading) {
@@ -59,7 +59,7 @@ func TestMissingTimestampsDoNotInventSequence(t *testing.T) {
 	if chronological || flows[0].ID != "first" || flows[1].ID != "second" {
 		t.Fatal("missing timestamps must preserve source order without claiming chronology")
 	}
-	page := attemptMarkdown(&bundle.Run{}, capture, "evidence/attempts/attempt-1.json")
+	page := attemptMarkdown(&bundle.Run{}, capture, "tests/attempt-1.json")
 	if !strings.Contains(page, "do not infer chronological order from flow IDs") {
 		t.Fatal("missing timestamp limitation absent")
 	}

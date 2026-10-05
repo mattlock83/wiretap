@@ -147,7 +147,7 @@ func (n *viewerNavigationElement) attribute(name string) string {
 
 func TestViewerNavigationGroupsExecutionsAndExplainsNegativeChecks(t *testing.T) {
 	root := viewerNavigationFixture(t)
-	data, err := os.ReadFile(filepath.Join(root, "viewer/index.html"))
+	data, err := os.ReadFile(filepath.Join(root, "docs/viewer.html"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -302,7 +302,7 @@ func TestViewerNavigationLinksResolveAndRebuildPreservesEvidence(t *testing.T) {
 			if err != nil || string(before) != string(after) {
 				t.Fatal("viewer regeneration changed canonical evidence")
 			}
-			data, err := os.ReadFile(filepath.Join(root, "viewer/index.html"))
+			data, err := os.ReadFile(filepath.Join(root, "docs/viewer.html"))
 			if err != nil {
 				t.Fatal(err)
 			}

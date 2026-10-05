@@ -448,7 +448,7 @@ func (a *App) handleRuntimeReport(w http.ResponseWriter, r *http.Request) {
 	response["run_id"] = run.RunID
 	response["bundle_path"] = absolute
 	response["index_path"] = filepath.Join(absolute, "index.md")
-	response["viewer_path"] = filepath.Join(absolute, "viewer", "index.html")
+	response["viewer_path"] = filepath.Join(absolute, "docs", "viewer.html")
 	response["run_state"] = run.RunState
 	response["snapshot_revision"] = run.Revision
 	writeJSON(w, http.StatusOK, response)
@@ -503,7 +503,7 @@ func (a *App) addBundleLocations(response map[string]any) {
 		response["run_id"] = snapshot.RunID
 		response["bundle_path"] = current.Path()
 		response["index_path"] = current.IndexPath()
-		response["viewer_path"] = filepath.Join(current.Path(), "viewer", "index.html")
+		response["viewer_path"] = filepath.Join(current.Path(), "docs", "viewer.html")
 		response["run_state"] = snapshot.RunState
 		response["snapshot_revision"] = snapshot.Revision
 	}

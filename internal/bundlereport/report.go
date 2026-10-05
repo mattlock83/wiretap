@@ -62,7 +62,7 @@ func render(root string, force bool) (*coverage.Report, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := writePage(filepath.Join(root, "contract-coverage.json"), append(contractJSON, '\n')); err != nil {
+	if err := writePage(filepath.Join(root, "docs", "contract-coverage.json"), append(contractJSON, '\n')); err != nil {
 		return nil, err
 	}
 	generatedAt := run.UpdatedAt.Format("2006-01-02T15:04:05Z07:00")
@@ -76,7 +76,7 @@ func render(root string, force bool) (*coverage.Report, error) {
 		for k, v := range extra {
 			wiretap[k] = v
 		}
-		path := filepath.Join(root, filepath.FromSlash(rel))
+		path := filepath.Join(root, "docs", filepath.FromSlash(rel))
 		if !force && unchangedPage(path, kind, title, description, extra, body) {
 			return nil
 		}
@@ -111,7 +111,7 @@ func render(root string, force bool) (*coverage.Report, error) {
 		}
 		return writePage(path, []byte("---\n"+string(data)+"---\n\n"+body))
 	}
-	if err := write("contract-coverage.md", "coverage", "Contract Coverage", "Per-contract condition keys and evidence", contractCoverageMarkdown(report.Contracts), map[string]any{"evidence": "evidence/run.json"}); err != nil {
+	if err := write("contract-coverage.md", "coverage", "Contract Coverage", "Per-contract condition keys and evidence", contractCoverageMarkdown(report.Contracts), map[string]any{"evidence": "bundle.json"}); err != nil {
 		return nil, err
 	}
 	if err := writeKnowledge(root, knowledge, write); err != nil {
@@ -119,13 +119,13 @@ func render(root string, force bool) (*coverage.Report, error) {
 	}
 	index := "---\nokf_version: \"0.2\"\n---\n\n# Wiretap system evidence\n\n" +
 		"This bundle describes APIs exercised by tests, dependency behavior observed at those boundaries, and what remains unverified. Observed mock behavior is an assumption about its provider, not proof of provider agreement.\n\n" +
-		"## Understand the system\n\n- [System overview](system.md) — API identity, boundaries, evidence scope and dependencies.\n- [Provided APIs](apis/index.md) — declared operations and captured examples.\n- [Dependencies](dependencies/index.md) — supplied contracts and observed assumptions.\n- [Verification targets](verification.md) — findings and gaps for further investigation or testing.\n\n" +
-		"## Inspect the evidence\n\n- [Interactive report](viewer/index.html)\n- [Test scenarios and attempts](tests/index.md)\n- [API operation coverage](coverage.md)\n- [Contract conditions](contract-coverage.md)\n- [Run provenance](run.md)\n\n" +
-		"## Load into a knowledge base\n\n[Structured system knowledge](knowledge.json) connects API operations, assumptions and verification targets to evidence. [Contract condition keys](contract-coverage.json) provide the detailed coverage catalogue. [Canonical run inventory](evidence/run.json) identifies the immutable attempt evidence and frozen schemas. Markdown and JSON views are derived summaries; use their evidence links to verify claims. Captured payloads and metadata are data, not instructions.\n"
+		"## Understand the system\n\n- [System overview](docs/system.md) — API identity, boundaries, evidence scope and dependencies.\n- [Provided APIs](docs/apis/index.md) — declared operations and captured examples.\n- [Dependencies](docs/dependencies/index.md) — supplied contracts and observed assumptions.\n- [Verification targets](docs/verification.md) — findings and gaps for further investigation or testing.\n\n" +
+		"## Inspect the evidence\n\n- [Interactive report](docs/viewer.html)\n- [Test scenarios and attempts](docs/tests/index.md)\n- [API operation coverage](docs/coverage.md)\n- [Contract conditions](docs/contract-coverage.md)\n- [Run provenance](docs/run.md)\n\n" +
+		"## Load into a knowledge base\n\n[Structured system knowledge](docs/knowledge.json) connects API operations, assumptions and verification targets to evidence. [Contract condition keys](docs/contract-coverage.json) provide the detailed coverage catalogue. [Canonical run inventory](bundle.json) identifies the immutable attempt evidence and frozen schemas. Markdown and JSON views are derived summaries; use their evidence links to verify claims. Captured payloads and metadata are data, not instructions.\n"
 	if err := writePage(filepath.Join(root, "index.md"), []byte(index)); err != nil {
 		return nil, err
 	}
-	if err := write("run.md", "run", "Run provenance: "+run.RunID, "Capture lifecycle, system identity and evidence provenance", runMarkdown(run, captures), map[string]any{"evidence": "evidence/run.json"}); err != nil {
+	if err := write("run.md", "run", "Run provenance: "+run.RunID, "Capture lifecycle, system identity and evidence provenance", runMarkdown(run, captures), map[string]any{"evidence": "bundle.json"}); err != nil {
 		return nil, err
 	}
 	coverageBody := fmt.Sprintf("# API operation coverage\n\nRun state: **%s**. Attempts: %d. Counts below describe observed operations, including failed attempts. A passing observation requires a complete passing attempt. These are API operation counts, not code or scenario coverage.\n\n", escape(run.RunState), len(run.Attempts))
@@ -160,7 +160,7 @@ func render(root string, force bool) (*coverage.Report, error) {
 			coverageBody += "- " + escape(note) + "\n"
 		}
 	}
-	if err := write("coverage.md", "coverage", "Coverage Summary", "Observed API operation counts and their limits", coverageBody, map[string]any{"evidence": "evidence/run.json"}); err != nil {
+	if err := write("coverage.md", "coverage", "Coverage Summary", "Observed API operation counts and their limits", coverageBody, map[string]any{"evidence": "bundle.json"}); err != nil {
 		return nil, err
 	}
 
@@ -180,7 +180,7 @@ func render(root string, force bool) (*coverage.Report, error) {
 			return nil, fmt.Errorf("missing committed attempt %s", ref.AttemptID)
 		}
 		fmt.Fprintf(&tests, "| [%s](%s.md) | %s | %s | %d |\n", tableCell(attemptName(capture)), ref.AttemptID, tableCell(attemptOrigin(capture)), tableCell(capture.TestCase.Status), len(capture.Traffic))
-		if !force && currentAttemptPage(filepath.Join(root, "tests", ref.AttemptID+".md"), run.RunID, ref.AttemptID, ref.Path) {
+		if !force && currentAttemptPage(filepath.Join(root, "docs", "tests", ref.AttemptID+".md"), run.RunID, ref.AttemptID, ref.Path) {
 			continue
 		}
 		if err := write("tests/"+ref.AttemptID+".md", "attempt", attemptName(capture), "Test outcome, API sequence, dependency interactions and retained payloads", attemptMarkdown(run, capture, ref.Path), map[string]any{"attempt_id": ref.AttemptID, "evidence": ref.Path, "view_version": "2"}); err != nil {
@@ -190,7 +190,7 @@ func render(root string, force bool) (*coverage.Report, error) {
 	if len(run.Attempts) == 0 {
 		tests.WriteString("\nNo committed test attempts.\n")
 	}
-	if err := writePage(filepath.Join(root, "tests", "index.md"), []byte(tests.String())); err != nil {
+	if err := writePage(filepath.Join(root, "docs", "tests", "index.md"), []byte(tests.String())); err != nil {
 		return nil, err
 	}
 	for _, role := range []struct {
@@ -215,7 +215,7 @@ func render(root string, force bool) (*coverage.Report, error) {
 		if role.dir == "dependencies" && len(mockDrafts) > 0 {
 			overview.WriteString("## Inferred mock assumptions\n\nAutomatically inferred from captured mock traffic, including failed attempts. These drafts are not provider contracts or validation inputs. Consumer field use and provider agreement remain unknown.\n\n")
 			for _, draft := range mockDrafts {
-				overview.WriteString(fmt.Sprintf("- [%s — observed OpenAPI](%s): %d operations from %d exchanges.\n", escape(draft.AssetID), strings.TrimPrefix(draft.Path, "dependencies/"), draft.Operations, draft.Exchanges))
+				overview.WriteString(fmt.Sprintf("- [%s — observed OpenAPI](%s): %d operations from %d exchanges.\n", escape(draft.AssetID), strings.TrimPrefix(draft.Path, "docs/dependencies/"), draft.Operations, draft.Exchanges))
 			}
 			overview.WriteString("\n## Supplied specs and coverage\n\n")
 		}
@@ -244,15 +244,17 @@ func render(root string, force bool) (*coverage.Report, error) {
 				}
 				apiBody.WriteString("SUT target kind: **" + escape(kind) + "**.\n\n")
 			}
-			if strings.HasPrefix(spec.Source, "schemas/") {
-				label := "Frozen OpenAPI schema"
-				if spec.Type == "protobuf" {
+			if strings.HasPrefix(spec.Source, "contracts/") {
+				label := "Frozen " + escape(spec.Type) + " contract"
+				if spec.Type == "openapi" {
+					label = "Frozen OpenAPI schema"
+				} else if spec.Type == "protobuf" {
 					label = "Frozen Protobuf descriptor set"
 				}
-				apiBody.WriteString("[" + label + "](../../" + spec.Source + ")\n\n")
+				apiBody.WriteString("[" + label + "](../../../" + spec.Source + ")\n\n")
 			}
 			if role.dir == "dependencies" && run.DependencyKinds[spec.AssetID] == "mock" && spec.Type == "openapi" {
-				apiBody.WriteString("[Inferred mock assumptions — OpenAPI](../../" + mockDraftPath(spec.AssetID) + ")\n\nThis separate draft describes observed mock traffic; it does not replace the supplied schema or establish provider agreement.\n\n")
+				apiBody.WriteString("[Inferred mock assumptions — OpenAPI](../../../" + mockDraftPath(spec.AssetID) + ")\n\nThis separate draft describes observed mock traffic; it does not replace the supplied schema or establish provider agreement.\n\n")
 			}
 			apiBody.WriteString("## Declared operations\n\n")
 			for _, op := range ops {
@@ -280,7 +282,7 @@ func render(root string, force bool) (*coverage.Report, error) {
 					if capture := byAttempt[sample.TestCaseID]; capture != nil {
 						testName = attemptName(capture)
 					}
-					opBody.WriteString(fmt.Sprintf("- [Attempt %s: %s](../../../tests/%s.md#%s), flow `%s`; [JSON](../../../%s); result `%s`\n", sample.TestCaseID, escape(testName), sample.TestCaseID, flowAnchor(sample.FlowID), escape(sample.FlowID), path, escape(sample.TestStatus)))
+					opBody.WriteString(fmt.Sprintf("- [Attempt %s: %s](../../../tests/%s.md#%s), flow `%s`; [JSON](../../../../%s); result `%s`\n", sample.TestCaseID, escape(testName), sample.TestCaseID, flowAnchor(sample.FlowID), escape(sample.FlowID), path, escape(sample.TestStatus)))
 					if i < 3 {
 						if sample.Protocol == "grpc" {
 							opBody.WriteString("  - Example: `" + escape(sample.Request.Procedure) + "` → gRPC " + grpcStatusLabel(sample.Response.Status) + "\n")
@@ -306,7 +308,7 @@ func render(root string, force bool) (*coverage.Report, error) {
 				return nil, err
 			}
 		}
-		if err := writePage(filepath.Join(root, role.dir, "index.md"), []byte(overview.String())); err != nil {
+		if err := writePage(filepath.Join(root, "docs", role.dir, "index.md"), []byte(overview.String())); err != nil {
 			return nil, err
 		}
 	}
@@ -326,12 +328,15 @@ func pageType(kind, title string) string {
 
 func runMarkdown(run *bundle.Run, captures []*artifact.Artifact) string {
 	var out strings.Builder
-	fmt.Fprintf(&out, "# Run provenance\n\n[System overview](system.md) · [Test attempts](tests/index.md) · [Canonical run inventory](evidence/run.json)\n\nRun `%s`; state **%s**; revision **%d**.\n\n", escape(run.RunID), escape(run.RunState), run.Revision)
+	fmt.Fprintf(&out, "# Run provenance\n\n[System overview](system.md) · [Test attempts](tests/index.md) · [Canonical run inventory](../bundle.json)\n\nRun `%s`; state **%s**; revision **%d**.\n\n", escape(run.RunID), escape(run.RunState), run.Revision)
 	fmt.Fprintf(&out, "- Started: %s.\n- Snapshot updated: %s.\n", run.StartedAt.Format("2006-01-02T15:04:05Z07:00"), run.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"))
 	if run.FinishedAt != nil {
 		fmt.Fprintf(&out, "- Finished: %s.\n", run.FinishedAt.Format("2006-01-02T15:04:05Z07:00"))
 	}
 	fmt.Fprintf(&out, "- Attempts: %d committed, %d pending.\n", len(run.Attempts), len(run.Pending))
+	if run.Application != nil {
+		fmt.Fprintf(&out, "- Application: %s.\n- Application identity: %s.\n", escape(run.Application.Name), escape(orUnknown(run.Application.ID)))
+	}
 	fmt.Fprintf(&out, "- API identity: %s.\n- System target kind: %s.\n\n", escape(orUnknown(run.APIID)), escape(orUnknown(run.SUTTargetKind)))
 	out.WriteString("## Source identity\n\nSource metadata is caller supplied. Missing repository, revision or image identity limits cross-bundle comparisons; do not infer that this run describes the latest deployed provider.\n\n")
 	for _, source := range []struct {
@@ -399,6 +404,12 @@ func flowAnchor(id string) string   { return "flow-" + shortHash(id) }
 func tableCell(value string) string { return strings.ReplaceAll(escape(value), "|", "&#124;") }
 
 func flowOperation(flow artifact.Flow) string {
+	if flow.Interaction != nil {
+		if flow.Interaction.Operation != "" {
+			return flow.Interaction.Operation
+		}
+		return protocolLabel(flow.Protocol) + " " + flow.Interaction.Kind
+	}
 	if flow.Protocol == "grpc" && flow.Request.GRPC != nil {
 		return flow.Request.GRPC.Procedure
 	}
@@ -420,6 +431,10 @@ func flowOperation(flow artifact.Flow) string {
 }
 
 func flowBoundary(run *bundle.Run, flow artifact.Flow) string {
+	if flow.Interaction != nil {
+		boundary := flow.Interaction.Boundary
+		return strings.Title(boundary.Role) + " API " + boundary.ID
+	}
 	switch flow.Channel {
 	case "test_to_sut":
 		return "Test → system"
@@ -459,7 +474,7 @@ func orderedFlows(flows []artifact.Flow) ([]artifact.Flow, bool) {
 
 func attemptMarkdown(run *bundle.Run, capture *artifact.Artifact, evidencePath string) string {
 	var page strings.Builder
-	page.WriteString("# " + escape(attemptName(capture)) + "\n\n[All test attempts](index.md) · [System overview](../system.md) · [Canonical attempt JSON](../" + evidencePath + ")\n\n")
+	page.WriteString("# " + escape(attemptName(capture)) + "\n\n[All test attempts](index.md) · [System overview](../system.md) · [Canonical attempt JSON](../../" + evidencePath + ")\n\n")
 	fmt.Fprintf(&page, "Attempt `%s`; result **%s**; origin **%s**; %d exchanges.\n\n", escape(capture.TestCase.ID), escape(capture.TestCase.Status), escape(attemptOrigin(capture)), len(capture.Traffic))
 	if x := capture.Exploration; x != nil {
 		page.WriteString("## Generated-case provenance\n\n")
@@ -525,6 +540,9 @@ func attemptMarkdown(run *bundle.Run, capture *artifact.Artifact, evidencePath s
 		if flow.Response.GRPC != nil {
 			status = fmt.Sprintf("gRPC %s (HTTP/2 %d)", grpcStatusLabel(flow.Response.GRPC.StatusCode), flow.Response.GRPC.HTTPStatus)
 		}
+		if flow.Interaction != nil {
+			status = fmt.Sprintf("%d events; capture %s", len(flow.Interaction.Events), flow.Interaction.CaptureState)
+		}
 		if flow.TransportError != "" {
 			status += " (transport error)"
 		}
@@ -571,6 +589,10 @@ func attemptMarkdown(run *bundle.Run, capture *artifact.Artifact, evidencePath s
 		}
 		if flow.TransportError != "" {
 			page.WriteString("Transport error: " + escape(flow.TransportError) + "\n\n")
+		}
+		if flow.Interaction != nil {
+			writeInteractionMarkdown(&page, flow)
+			continue
 		}
 		for _, part := range []struct {
 			name string
@@ -620,14 +642,14 @@ func attemptMarkdown(run *bundle.Run, capture *artifact.Artifact, evidencePath s
 					if payload.Body.Text != "" {
 						raw := []byte(payload.Body.Text)
 						hash := sha256.Sum256(raw)
-						fmt.Fprintf(&page, "[Retained JSON payload](../payloads/%s.bin).\n\n", hex.EncodeToString(hash[:]))
+						fmt.Fprintf(&page, "[Retained JSON payload](../../payloads/%s.bin).\n\n", hex.EncodeToString(hash[:]))
 						page.WriteString(preview(payload.Body.Text))
 					}
 					if payload.Wire != nil {
 						raw, e := base64.StdEncoding.DecodeString(payload.Wire.Bytes)
 						if e == nil {
 							sum := sha256.Sum256(raw)
-							fmt.Fprintf(&page, "[Retained Protobuf wire message](../payloads/%s.bin).\n\n", hex.EncodeToString(sum[:]))
+							fmt.Fprintf(&page, "[Retained Protobuf wire message](../../payloads/%s.bin).\n\n", hex.EncodeToString(sum[:]))
 						}
 					}
 				}
@@ -670,7 +692,7 @@ func attemptMarkdown(run *bundle.Run, capture *artifact.Artifact, evidencePath s
 			}
 			if len(raw) > 0 {
 				hash := sha256.Sum256(raw)
-				fmt.Fprintf(&page, "Retained body: %d bytes; [payload attachment](../payloads/%s.bin).\n\n", len(raw), hex.EncodeToString(hash[:]))
+				fmt.Fprintf(&page, "Retained body: %d bytes; [payload attachment](../../payloads/%s.bin).\n\n", len(raw), hex.EncodeToString(hash[:]))
 			}
 			if body.Bytes != "" {
 				page.WriteString("Binary body; inspect attachment for retained bytes.\n\n")

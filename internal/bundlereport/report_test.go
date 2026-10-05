@@ -43,7 +43,7 @@ paths:
 		t.Fatalf("generated view is invalid: %v", err)
 	}
 	var operationPages []string
-	filepath.WalkDir(filepath.Join(w.Path(), "dependencies"), func(path string, d os.DirEntry, err error) error {
+	filepath.WalkDir(filepath.Join(w.Path(), "docs", "dependencies"), func(path string, d os.DirEntry, err error) error {
 		if err == nil && !d.IsDir() && strings.Contains(path, "operations") {
 			operationPages = append(operationPages, path)
 		}
@@ -59,7 +59,7 @@ paths:
 	if err != nil {
 		t.Fatal(err)
 	}
-	catalogue, err := os.ReadFile(filepath.Join(w.Path(), "contract-coverage.json"))
+	catalogue, err := os.ReadFile(filepath.Join(w.Path(), "docs/contract-coverage.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +72,7 @@ paths:
 	if !bytes.Equal(actualJSON, expectedJSON) {
 		t.Fatal("published catalogue differs from the shared coverage calculation")
 	}
-	html, err := os.ReadFile(filepath.Join(w.Path(), "viewer/index.html"))
+	html, err := os.ReadFile(filepath.Join(w.Path(), "docs/viewer.html"))
 	if err != nil || !bytes.Contains(html, []byte(`id="contracts"`)) || !bytes.Contains(html, []byte(before.Contracts.Specs[0].Targets[0].Key)) {
 		t.Fatal("HTML Conditions tab is missing the published keys")
 	}
@@ -80,7 +80,7 @@ paths:
 	if err := coverage.WriteReport(&jsonBefore, before, "json"); err != nil {
 		t.Fatal(err)
 	}
-	for _, rel := range []string{"index.md", "run.md", "coverage.md", "contract-coverage.md", "contract-coverage.json", "tests/attempt-1.md", "tests/index.md", "apis/index.md", "dependencies/index.md"} {
+	for _, rel := range []string{"index.md", "docs/run.md", "docs/coverage.md", "docs/contract-coverage.md", "docs/contract-coverage.json", "docs/tests/attempt-1.md", "docs/tests/index.md", "docs/apis/index.md", "docs/dependencies/index.md"} {
 		if err := os.Remove(filepath.Join(w.Path(), rel)); err != nil {
 			t.Fatal(err)
 		}
@@ -105,7 +105,7 @@ paths:
 	if err := Validate(w.Path()); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(filepath.Join(w.Path(), "tests", "attempt-1.md")); err != nil {
+	if _, err := os.Stat(filepath.Join(w.Path(), "docs", "tests", "attempt-1.md")); err != nil {
 		t.Fatal(err)
 	}
 	copied := filepath.Join(t.TempDir(), "copied")

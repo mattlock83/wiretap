@@ -98,7 +98,7 @@ func TestGRPCFailedAcquisitionPersistsScopeAndCanRetry(t *testing.T) {
 	if run.RunState != "open" || len(captures) > 0 || len(run.Pending) > 0 || run.Contracts[0].State != "failed" {
 		t.Fatalf("invalid failed snapshot: %+v", run)
 	}
-	knowledge, err := os.ReadFile(filepath.Join(path, "knowledge.json"))
+	knowledge, err := os.ReadFile(filepath.Join(path, "docs/knowledge.json"))
 	if err != nil || !strings.Contains(string(knowledge), `"contract_resolution": "failed"`) {
 		t.Fatalf("failed discovery was not published in knowledge: %v", err)
 	}

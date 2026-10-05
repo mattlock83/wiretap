@@ -103,7 +103,7 @@ func TestBundleRejectsCorruptBodyAndDuplicateJSONKey(t *testing.T) {
 	if _, _, err := Load(w.Path()); err == nil || !strings.Contains(err.Error(), "hash mismatch") {
 		t.Fatalf("wanted integrity error, got %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(w.Path(), "evidence", "run.json"), []byte(`{"evidence_version":"1.0","evidence_version":"1.0"}`), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(w.Path(), "bundle.json"), []byte(`{"format_version":"3.0","format_version":"3.0"}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := Load(w.Path()); err == nil || !strings.Contains(err.Error(), "duplicate JSON key") {

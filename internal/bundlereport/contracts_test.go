@@ -46,7 +46,7 @@ paths:
 
 func TestContractConditionsSearchIncludesEvidenceAndScope(t *testing.T) {
 	root := contractViewFixture(t)
-	data, err := os.ReadFile(filepath.Join(root, "viewer/index.html"))
+	data, err := os.ReadFile(filepath.Join(root, "docs/viewer.html"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,7 +68,7 @@ func TestContractConditionsSearchIncludesEvidenceAndScope(t *testing.T) {
 
 func TestValidateContractCatalogueIdentityAndEvidence(t *testing.T) {
 	root := contractViewFixture(t)
-	path := filepath.Join(root, "contract-coverage.json")
+	path := filepath.Join(root, "docs/contract-coverage.json")
 	original, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)

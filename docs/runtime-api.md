@@ -77,7 +77,7 @@ configuration. Project-file boundaries cannot be overridden by HTTP. An active
 run rejects new boundary registrations; finish it before changing targets or
 contracts. Omitted gRPC `schema` selects reflection.
 
-The response and `evidence/run.json` include `contracts`, recording each gRPC
+The response and `bundle.json` include `contracts`, recording each gRPC
 boundary as `pending`, `failed` or `resolved`. Acquisition runs at most four
 boundaries concurrently, publishes the whole snapshot before admission, and is
 retryable after failure. Reflection is bounded to one minute per boundary;
@@ -233,7 +233,7 @@ coverage summary. A copied bundle can be selected with `bundle_path`:
 }
 ```
 
-The bundle's `viewer/index.html` is written automatically from the same
+The bundle's `docs/viewer.html` is written automatically from the same
 bundle evidence. Only bundles are accepted. Unknown request fields are rejected. See [capture bundles](okf-bundles.md).
 
 ## Proxy certificate

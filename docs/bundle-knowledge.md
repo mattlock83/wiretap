@@ -1,10 +1,21 @@
 # Bundle knowledge 1.0
 
-`knowledge.json` is a generated index for understanding a system's tested API
-boundaries and identifying what needs further verification. `system.md` and
-`verification.md` provide readable views of the same information. All three
+`docs/knowledge.json` is a generated index for understanding a system's tested API
+boundaries and identifying what needs further verification. `docs/system.md` and
+`docs/verification.md` provide readable views of the same information. All three
 are rebuilt by `wiretap report --bundle <path>` from verified bundle evidence;
 editing them does not change capture, coverage or test results.
+
+For the basic list of provided APIs and dependencies, read `provided_apis` and
+`dependencies` in `bundle.json`. That inventory includes configured boundaries
+with no recorded calls. Use this knowledge index for operation-level details,
+coverage navigation and suggested verification work.
+
+`bundle.json.application` identifies the system independently of its API
+boundaries. A consumer-only UI has an empty provided inventory; a provider-only
+system can have an empty dependency inventory. Do not create a synthetic API or
+mock to fill an empty side, and do not infer an inbound parent request for a
+dependency interaction that belongs directly to a test.
 
 The source of truth remains [JSON capture evidence](bundle-evidence.md), frozen
 schemas and retained payloads. Knowledge records point to that evidence rather
@@ -35,7 +46,7 @@ says the attempt had redaction rules, not that every field was changed. Follow
 the attempt to identify affected messages and fields. Combine its IDs with the
 root `run_id` for the exchange identity. Attempt-level validation is
 not a substitute for the exact message/condition results in
-`contract-coverage.json`.
+`docs/contract-coverage.json`.
 
 `contract_match` describes whether the route matches a supplied operation,
 is declared but unobserved, is unmatched, or was not evaluated. A route match
@@ -92,8 +103,8 @@ configuration and hooks; the bundle contains no executable hook code.
 ## Loading and comparing bundles
 
 1. Validate/load canonical evidence and preserve the run ID, snapshot revision,
-   lifecycle state and observation time. Index `knowledge.json` for navigation,
-   Markdown concepts for readable context, and `contract-coverage.json` for
+   lifecycle state and observation time. Index `docs/knowledge.json` for navigation,
+   Markdown concepts for readable context, and `docs/contract-coverage.json` for
    detailed conditions. Derived views are not independent corroboration.
 2. Match a dependency API ID with the intended provider API ID. Select the
    relevant runs and actual source/build revisions; do not assume the newest
@@ -107,7 +118,7 @@ configuration and hooks; the bundle contains no executable hook code.
    status/payload, test outcome, assertions and conditions exercised together.
    Keep authored/generated attempts, mock/service targets, failed/passing
    results and contract revisions distinct. Do not combine separate exchanges
-   into an observation that never occurred.
+into an observation that never occurred.
 5. Record contradictions separately from missing evidence. A provider sample
    absent from a bundle is unknown, not proof that a mock is incorrect. Seek
    another provider observation or run a suitable test to resolve the question.
@@ -116,6 +127,30 @@ The API map covers registered APIs and retained traffic, not a complete system
 inventory. Exploration captures provider exchanges only; downstream dependency
 assumptions remain in the source capture bundle. An empty dependency list does
 not establish that the system has no dependencies.
+
+Event recordings use `capture.traffic[].interaction` and preserve ordered
+messages, stream lifecycle events and publish/consume observations. Retain the
+flow's protocol, the interaction's boundary and transport, each event's ID and
+direction/sequence, and payload encoding/schema references when indexing them.
+The canonical boundary is `interaction.boundary`; it does not depend on whether
+the first message was sent or received. A dependency can push a message to the
+system, and a provided API can send a stream message to its caller.
+
+Current coverage evaluators do not measure this event envelope. Unsupported
+operations and opaque contract packages must remain visible without a fabricated
+HTTP operation or known coverage denominator. Structural integrity is distinct
+from protocol interpretation: an Avro/GraphQL/AsyncAPI contract package may be
+intact even though its semantics were not evaluated. Required capabilities are
+checked before loading; unknown protocol metadata within an understood event
+envelope remains data, not a claim of validation or executability.
+
+Kafka partition offsets are scoped to their topic and partition; recorder order
+is not a total order across partitions. A tombstone, empty value and unavailable
+payload are distinct. GraphQL HTTP success does not imply the absence of GraphQL
+errors. For bidirectional streams, preserve interleaving, half-closes, terminal
+status and incomplete capture rather than turning messages into independent
+request/response pairs. Follow event links only with their recorded evidence
+strength; an external link is not proof that the referenced event occurred.
 
 Request-start ordering and trace/timing parent links describe observed sequence
 and correlation, not proven business causality. Redaction, truncation and

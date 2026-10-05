@@ -47,7 +47,7 @@ func childMap(value map[string]any, keys ...string) map[string]any {
 }
 
 func TestMockDraftsArePerDependencyAndDoNotInventRequirements(t *testing.T) {
-	run := &bundle.Run{RunID: "run-1", Revision: 3, DependencyKinds: map[string]string{"inventory": "mock", "billing": "mock"}, Attempts: []bundle.AttemptRef{{AttemptID: "first", FileRef: bundle.FileRef{Path: "evidence/attempts/first.json"}}, {AttemptID: "second", FileRef: bundle.FileRef{Path: "evidence/attempts/second.json"}}}}
+	run := &bundle.Run{RunID: "run-1", Revision: 3, DependencyKinds: map[string]string{"inventory": "mock", "billing": "mock"}, Attempts: []bundle.AttemptRef{{AttemptID: "first", FileRef: bundle.FileRef{Path: "tests/first.json"}}, {AttemptID: "second", FileRef: bundle.FileRef{Path: "tests/second.json"}}}}
 	first := &artifact.Artifact{TestCase: artifact.TestCase{ID: "first", Status: "pass"}, Traffic: []artifact.Flow{
 		mockFlow("f1", "inventory", "/items/123?tag=secret-query&tag=two", `{"nested":{"id":1,"name":"secret-value"},"values":[1,null]}`),
 		mockFlow("other", "billing", "/items/123", `{"billing_only":true}`),
@@ -86,7 +86,7 @@ func TestMockDraftsArePerDependencyAndDoNotInventRequirements(t *testing.T) {
 		t.Fatal("only path parameters may be required")
 	}
 	refs := operation["x-wiretap-evidence"].([]any)
-	if len(refs) != 2 || refs[1].(map[string]any)["test_status"] != "fail" || refs[0].(map[string]any)["path"] != "../../evidence/attempts/first.json" {
+	if len(refs) != 2 || refs[1].(map[string]any)["test_status"] != "fail" || refs[0].(map[string]any)["path"] != "../../../tests/first.json" {
 		t.Fatal("evidence provenance lost")
 	}
 	// Input order does not affect the generated document.
@@ -106,7 +106,7 @@ func TestMockDraftBoundsIncompleteAndUnsupportedEvidence(t *testing.T) {
 	broken := mockFlow("broken", "inventory", "/not-a-response", "")
 	broken.TransportError = "connection failed"
 	broken.Response.HTTP.Status = 502
-	run := &bundle.Run{RunID: "run", Revision: 1, Attempts: []bundle.AttemptRef{{AttemptID: "a", FileRef: bundle.FileRef{Path: "evidence/attempts/a.json"}}}}
+	run := &bundle.Run{RunID: "run", Revision: 1, Attempts: []bundle.AttemptRef{{AttemptID: "a", FileRef: bundle.FileRef{Path: "tests/a.json"}}}}
 	doc, draft := observedMockAPI("inventory", run, []*artifact.Artifact{{TestCase: artifact.TestCase{ID: "a", Status: "fail"}, CaptureIncomplete: true, Traffic: []artifact.Flow{known, truncated, encoded, broken}}})
 	data, _ := yaml.Marshal(doc)
 	parsed := decodedDraft(t, data)
@@ -159,8 +159,8 @@ func TestMockDraftsAreAutomaticRebuildableAndSeparateFromContracts(t *testing.T)
 	if err := writer.Finalize("complete"); err != nil {
 		t.Fatal(err)
 	}
-	inventoryBefore, _ := os.ReadFile(filepath.Join(writer.Path(), "evidence/run.json"))
-	evidenceBefore, _ := os.ReadFile(filepath.Join(writer.Path(), "evidence/attempts/attempt-1.json"))
+	inventoryBefore, _ := os.ReadFile(filepath.Join(writer.Path(), "bundle.json"))
+	evidenceBefore, _ := os.ReadFile(filepath.Join(writer.Path(), "tests/attempt-1.json"))
 	before, err := coverage.Generate(t.Context(), writer.Path(), "", false)
 	if err != nil {
 		t.Fatal(err)
@@ -181,11 +181,11 @@ func TestMockDraftsAreAutomaticRebuildableAndSeparateFromContracts(t *testing.T)
 		}
 		originals[id] = data
 	}
-	files, _ := filepath.Glob(filepath.Join(writer.Path(), "dependencies/mocks/*.yaml"))
+	files, _ := filepath.Glob(filepath.Join(writer.Path(), "docs/dependencies/mocks/*.yaml"))
 	if len(files) != 3 {
 		t.Fatalf("want only three mock drafts, got %v", files)
 	}
-	for _, rel := range []string{"dependencies/index.md", "viewer/index.html"} {
+	for _, rel := range []string{"docs/dependencies/index.md", "docs/viewer.html"} {
 		data, err := os.ReadFile(filepath.Join(writer.Path(), rel))
 		if err != nil || !strings.Contains(string(data), "Inferred mock assumptions") {
 			t.Fatalf("missing draft navigation: %s: %v", rel, err)
@@ -197,7 +197,7 @@ func TestMockDraftsAreAutomaticRebuildableAndSeparateFromContracts(t *testing.T)
 	}
 	// Copy only canonical inputs; all mock drafts and pages must be rebuildable.
 	copied := filepath.Join(t.TempDir(), "bundle")
-	for _, dir := range []string{"evidence", "schemas", "payloads"} {
+	for _, dir := range []string{"tests", "contracts", "payloads"} {
 		source := filepath.Join(writer.Path(), dir)
 		if _, err := os.Stat(source); os.IsNotExist(err) {
 			continue
@@ -205,6 +205,13 @@ func TestMockDraftsAreAutomaticRebuildableAndSeparateFromContracts(t *testing.T)
 		if err := os.CopyFS(filepath.Join(copied, dir), os.DirFS(source)); err != nil {
 			t.Fatal(err)
 		}
+	}
+	inventory, err := os.ReadFile(filepath.Join(writer.Path(), "bundle.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(copied, "bundle.json"), inventory, 0o644); err != nil {
+		t.Fatal(err)
 	}
 	if _, err := Rebuild(copied); err != nil {
 		t.Fatal(err)
@@ -215,8 +222,8 @@ func TestMockDraftsAreAutomaticRebuildableAndSeparateFromContracts(t *testing.T)
 			t.Fatalf("copied draft changed for %s: %v", id, err)
 		}
 	}
-	inventoryAfter, _ := os.ReadFile(filepath.Join(writer.Path(), "evidence/run.json"))
-	evidenceAfter, _ := os.ReadFile(filepath.Join(writer.Path(), "evidence/attempts/attempt-1.json"))
+	inventoryAfter, _ := os.ReadFile(filepath.Join(writer.Path(), "bundle.json"))
+	evidenceAfter, _ := os.ReadFile(filepath.Join(writer.Path(), "tests/attempt-1.json"))
 	if !bytes.Equal(inventoryBefore, inventoryAfter) || !bytes.Equal(evidenceBefore, evidenceAfter) {
 		t.Fatal("rendering mutated evidence")
 	}
@@ -227,7 +234,7 @@ func TestMockDraftRecordsRequestShapesWithoutMakingBodiesRequired(t *testing.T) 
 	flow.Request.HTTP.Method = "POST"
 	flow.Request.HTTP.Headers = artifact.Headers{"Content-Type": {"application/json"}}
 	flow.Request.HTTP.Body = &artifact.Body{Text: `{"id":"private-request-value","quantity":2}`}
-	run := &bundle.Run{RunID: "run", Revision: 1, Attempts: []bundle.AttemptRef{{AttemptID: "a", FileRef: bundle.FileRef{Path: "evidence/attempts/a.json"}}}}
+	run := &bundle.Run{RunID: "run", Revision: 1, Attempts: []bundle.AttemptRef{{AttemptID: "a", FileRef: bundle.FileRef{Path: "tests/a.json"}}}}
 	doc, _ := observedMockAPI("inventory", run, []*artifact.Artifact{{TestCase: artifact.TestCase{ID: "a", Status: "pass"}, Traffic: []artifact.Flow{flow}}})
 	raw, _ := yaml.Marshal(doc)
 	parsed := decodedDraft(t, raw)

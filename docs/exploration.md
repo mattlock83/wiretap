@@ -21,7 +21,7 @@ The example captures a happy-path test of an HTTP provider backed by SQLite.
 External Python hooks insert a fresh database user and obtain credentials for
 each case, assert that rejected requests created no order, and remove the
 fixtures. It prints the original and generated bundle paths. Open the generated
-bundle's `viewer/index.html`, then **Contract coverage → Invalid-input coverage**.
+bundle's `docs/viewer.html`, then **Contract coverage → Invalid-input coverage**.
 
 ## Run against your provider
 
@@ -256,7 +256,7 @@ configured rejection check; domain-specific reasons and side effects need
 
 The new bundle contains each attempt's source run/attempt/hash, targeted
 constraint, final request-verification result, response checks and properties.
-`contract-coverage.json` includes a separate `rejection_coverage` catalogue,
+`docs/contract-coverage.json` includes a separate `rejection_coverage` catalogue,
 displayed in the HTML Contract coverage tab and Markdown. It counts generated targets
 as covered, failed or not covered. Targets never attempted due to budget or setup
 failure remain not covered. Expected invalid requests cannot earn positive

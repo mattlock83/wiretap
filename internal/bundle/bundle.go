@@ -23,7 +23,7 @@ import (
 	"github.com/phrond/wiretap/internal/grpccontract"
 )
 
-const EvidenceVersion = "2.0"
+const EvidenceVersion = "3.0"
 
 type FileRef struct {
 	Path   string `json:"path"`
@@ -42,25 +42,31 @@ type PendingAttempt struct {
 }
 
 type Run struct {
-	Contracts       []ContractResolution `json:"contracts,omitempty"`
-	EvidenceVersion string               `json:"evidence_version"`
-	RunID           string               `json:"run_id"`
-	Revision        uint64               `json:"revision"`
-	RunState        string               `json:"run_state"`
-	StartedAt       time.Time            `json:"started_at"`
-	UpdatedAt       time.Time            `json:"updated_at"`
-	FinishedAt      *time.Time           `json:"finished_at,omitempty"`
-	APIID           string               `json:"api_id,omitempty"`
-	SUTTargetKind   string               `json:"sut_target_kind,omitempty"`
-	DependencyKinds map[string]string    `json:"dependency_kinds,omitempty"`
-	TestSource      map[string]any       `json:"test_source,omitempty"`
-	SUTSource       map[string]any       `json:"sut_source,omitempty"`
-	Schemas         []artifact.SchemaRef `json:"schemas,omitempty"`
-	Pending         []PendingAttempt     `json:"pending,omitempty"`
-	Attempts        []AttemptRef         `json:"attempts,omitempty"`
+	Application          *Application         `json:"application,omitempty"`
+	RequiredCapabilities []string             `json:"required_capabilities"`
+	InventoryScope       string               `json:"inventory_scope"`
+	ProvidedAPIs         []API                `json:"provided_apis"`
+	Dependencies         []API                `json:"dependencies"`
+	Contracts            []ContractResolution `json:"contract_resolutions,omitempty"`
+	EvidenceVersion      string               `json:"format_version"`
+	RunID                string               `json:"run_id"`
+	Revision             uint64               `json:"revision"`
+	RunState             string               `json:"run_state"`
+	StartedAt            time.Time            `json:"started_at"`
+	UpdatedAt            time.Time            `json:"updated_at"`
+	FinishedAt           *time.Time           `json:"finished_at,omitempty"`
+	APIID                string               `json:"api_id,omitempty"`
+	SUTTargetKind        string               `json:"sut_target_kind,omitempty"`
+	DependencyKinds      map[string]string    `json:"dependency_kinds,omitempty"`
+	TestSource           map[string]any       `json:"test_source,omitempty"`
+	SUTSource            map[string]any       `json:"sut_source,omitempty"`
+	Schemas              []artifact.SchemaRef `json:"contracts,omitempty"`
+	Pending              []PendingAttempt     `json:"pending_tests,omitempty"`
+	Attempts             []AttemptRef         `json:"tests"`
 }
 
 type Identity struct {
+	Application     *Application
 	APIID           string
 	SUTTargetKind   string
 	DependencyKinds map[string]string
@@ -77,6 +83,16 @@ func (w *Writer) Configure(identity Identity) (err error) {
 			w.run = previous
 		}
 	}()
+	if identity.Application != nil {
+		if err := validateApplication(identity.Application); err != nil {
+			return err
+		}
+		if w.run.Application != nil && !sameJSON(w.run.Application, identity.Application) {
+			return errors.New("application identity conflicts with this run")
+		}
+		copy := *identity.Application
+		w.run.Application = &copy
+	}
 	if identity.APIID != "" {
 		if !safeID(identity.APIID) {
 			return fmt.Errorf("invalid api_id %q", identity.APIID)
@@ -142,6 +158,8 @@ func sameJSON(a, b any) bool {
 }
 
 type BodyRef struct {
+	EventID        string `json:"event_id,omitempty"`
+	PayloadName    string `json:"payload_name,omitempty"`
 	FlowID         string `json:"flow_id"`
 	Phase          string `json:"phase"`
 	Kind           string `json:"kind,omitempty"`
@@ -152,11 +170,12 @@ type BodyRef struct {
 }
 
 type Attempt struct {
-	EvidenceVersion string            `json:"evidence_version"`
-	RunID           string            `json:"run_id"`
-	AttemptID       string            `json:"attempt_id"`
-	Capture         artifact.Artifact `json:"capture"`
-	Bodies          []BodyRef         `json:"bodies,omitempty"`
+	RequiredCapabilities []string          `json:"required_capabilities"`
+	EvidenceVersion      string            `json:"format_version"`
+	RunID                string            `json:"run_id"`
+	AttemptID            string            `json:"attempt_id"`
+	Capture              artifact.Artifact `json:"capture"`
+	Bodies               []BodyRef         `json:"bodies,omitempty"`
 }
 
 // Writer serializes run inventory commits. Every attempt file is immutable.
@@ -200,7 +219,7 @@ func newWriter(path string, child bool) (*Writer, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := os.MkdirAll(filepath.Join(root, "evidence", "attempts"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, "tests"), 0o755); err != nil {
 		return nil, err
 	}
 	w := &Writer{root: root, run: Run{EvidenceVersion: EvidenceVersion, RunID: id, Revision: 1, RunState: "open", StartedAt: now, UpdatedAt: now}}
@@ -326,6 +345,14 @@ func (w *Writer) Commit(art *artifact.Artifact) (string, error) {
 	if art == nil {
 		return "", errors.New("capture is nil")
 	}
+	if err := artifact.ValidateInteractions(art); err != nil {
+		return "", err
+	}
+	for _, ref := range art.Schemas {
+		if err := validateSchemaBoundary(ref); err != nil {
+			return "", err
+		}
+	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	id := art.TestCase.ID
@@ -343,6 +370,9 @@ func (w *Writer) Commit(art *artifact.Artifact) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if err := rejectDuplicateKeys(encodedCapture); err != nil {
+		return "", err
+	}
 	var copyArt artifact.Artifact
 	captureDecoder := json.NewDecoder(bytes.NewReader(encodedCapture))
 	captureDecoder.UseNumber()
@@ -358,7 +388,7 @@ func (w *Writer) Commit(art *artifact.Artifact) (string, error) {
 			copyArt.Schemas[i].Source.Path = filepath.ToSlash(rel)
 		}
 	}
-	attempt := Attempt{EvidenceVersion: EvidenceVersion, RunID: w.run.RunID, AttemptID: id, Capture: copyArt}
+	attempt := Attempt{EvidenceVersion: EvidenceVersion, RunID: w.run.RunID, AttemptID: id, Capture: copyArt, RequiredCapabilities: requiredCapabilities(copyArt.Schemas, []*artifact.Artifact{&copyArt})}
 	seenFlows := map[string]bool{}
 	for i := range copyArt.Traffic {
 		flow := &copyArt.Traffic[i]
@@ -431,12 +461,15 @@ func (w *Writer) Commit(art *artifact.Artifact) (string, error) {
 			body.Text, body.Bytes = "", ""
 		}
 	}
+	if err := w.attachEvents(&attempt); err != nil {
+		return "", err
+	}
 	data, err := json.MarshalIndent(attempt, "", "  ")
 	if err != nil {
 		return "", err
 	}
 	data = append(data, '\n')
-	rel := "evidence/attempts/" + id + ".json"
+	rel := "tests/" + id + ".json"
 	path := filepath.Join(w.root, filepath.FromSlash(rel))
 	if old, err := os.ReadFile(path); err == nil {
 		if !bytes.Equal(old, data) {
@@ -452,6 +485,8 @@ func (w *Writer) Commit(art *artifact.Artifact) (string, error) {
 	previous := w.run
 	w.run.Pending = removePending(w.run.Pending, id)
 	w.run.Attempts = append(w.run.Attempts, AttemptRef{AttemptID: id, FileRef: FileRef{Path: rel, SHA256: digest(data)}})
+	w.run.ProvidedAPIs, w.run.Dependencies = apiInventory(w.run, []*artifact.Artifact{art})
+	w.run.RequiredCapabilities = mergeCapabilities(w.run.RequiredCapabilities, attempt.RequiredCapabilities)
 	w.bump()
 	if err := w.writeRun(); err != nil {
 		w.run = previous
@@ -520,11 +555,17 @@ func (w *Writer) Finalize(state string) error {
 func (w *Writer) bump() { w.run.Revision++; w.run.UpdatedAt = time.Now().UTC() }
 
 func (w *Writer) writeRun() error {
+	w.run.RequiredCapabilities = mergeCapabilities(w.run.RequiredCapabilities, requiredCapabilities(w.run.Schemas, nil))
+	w.run.InventoryScope = "configured_and_observed"
+	w.run.ProvidedAPIs, w.run.Dependencies = apiInventory(w.run, nil)
+	if w.run.Attempts == nil {
+		w.run.Attempts = []AttemptRef{}
+	}
 	data, err := json.MarshalIndent(w.run, "", "  ")
 	if err != nil {
 		return err
 	}
-	return writeAtomic(filepath.Join(w.root, "evidence", "run.json"), append(data, '\n'))
+	return writeAtomic(filepath.Join(w.root, "bundle.json"), append(data, '\n'))
 }
 
 func removePending(items []PendingAttempt, id string) []PendingAttempt {
@@ -605,7 +646,7 @@ func Load(root string) (*Run, []*artifact.Artifact, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	runPath, err := containedPath(root, "evidence/run.json")
+	runPath, err := containedPath(root, "bundle.json")
 	if err != nil {
 		return nil, nil, fmt.Errorf("read run evidence: %w", err)
 	}
@@ -623,9 +664,18 @@ func Load(root string) (*Run, []*artifact.Artifact, error) {
 	if !supportedEvidenceVersion(run.EvidenceVersion) {
 		return nil, nil, fmt.Errorf("unsupported evidence version %q", run.EvidenceVersion)
 	}
+	if err := checkCapabilities(run.RequiredCapabilities); err != nil {
+		return nil, nil, err
+	}
+	if err := validateApplication(run.Application); err != nil {
+		return nil, nil, err
+	}
 	if !safeID(run.RunID) || run.Revision == 0 || run.StartedAt.IsZero() || (run.RunState != "open" && run.RunState != "complete" && run.RunState != "interrupted") {
 		return nil, nil, errors.New("invalid run identity or revision")
 	}
+	// Preserve portable paths for inventory validation after captures are loaded.
+	storedInventory := run
+	storedInventory.Schemas = append([]artifact.SchemaRef(nil), run.Schemas...)
 	if err := resolveSchemas(root, run.Schemas); err != nil {
 		return nil, nil, err
 	}
@@ -635,7 +685,7 @@ func Load(root string) (*Run, []*artifact.Artifact, error) {
 	seen := map[string]bool{}
 	var captures []*artifact.Artifact
 	for _, ref := range run.Attempts {
-		if !safeID(ref.AttemptID) || seen[ref.AttemptID] {
+		if !safeID(ref.AttemptID) || seen[ref.AttemptID] || ref.Path != "tests/"+ref.AttemptID+".json" {
 			return nil, nil, fmt.Errorf("duplicate or invalid attempt ID %q", ref.AttemptID)
 		}
 		seen[ref.AttemptID] = true
@@ -654,6 +704,12 @@ func Load(root string) (*Run, []*artifact.Artifact, error) {
 		}
 		if !supportedEvidenceVersion(attempt.EvidenceVersion) || attempt.RunID != run.RunID || attempt.AttemptID != ref.AttemptID || attempt.Capture.TestCase.ID != ref.AttemptID || attempt.Capture.Version < 1 {
 			return nil, nil, fmt.Errorf("attempt %q identity/version mismatch", ref.AttemptID)
+		}
+		if err := checkCapabilities(attempt.RequiredCapabilities); err != nil {
+			return nil, nil, err
+		}
+		if !sameJSON(attempt.RequiredCapabilities, requiredCapabilities(attempt.Capture.Schemas, []*artifact.Artifact{&attempt.Capture})) {
+			return nil, nil, fmt.Errorf("attempt %q capability declaration disagrees with content", ref.AttemptID)
 		}
 		if err := resolveSchemas(root, attempt.Capture.Schemas); err != nil {
 			return nil, nil, err
@@ -674,6 +730,15 @@ func Load(root string) (*Run, []*artifact.Artifact, error) {
 		}
 		seenBodies := map[string]bool{}
 		for _, bodyRef := range attempt.Bodies {
+			if bodyRef.Phase == "event" {
+				if err := restoreEventBody(root, flowMap, seenBodies, bodyRef); err != nil {
+					return nil, nil, err
+				}
+				continue
+			}
+			if bodyRef.EventID != "" || bodyRef.PayloadName != "" {
+				return nil, nil, errors.New("event selectors on a pair body reference")
+			}
 			key := bodyRef.FlowID + "/" + bodyRef.Phase
 			if bodyRef.MessageIndex != nil {
 				key += fmt.Sprintf("/%d", *bodyRef.MessageIndex)
@@ -774,6 +839,12 @@ func Load(root string) (*Run, []*artifact.Artifact, error) {
 		if err := verifyGRPCPayloads(attempt.Capture); err != nil {
 			return nil, nil, err
 		}
+		if err := validateEventAttachments(attempt.Capture, seenBodies); err != nil {
+			return nil, nil, err
+		}
+		if err := artifact.ValidateInteractions(&attempt.Capture); err != nil {
+			return nil, nil, err
+		}
 		captures = append(captures, &attempt.Capture)
 	}
 	for _, item := range run.Pending {
@@ -782,12 +853,18 @@ func Load(root string) (*Run, []*artifact.Artifact, error) {
 		}
 		seen[item.AttemptID] = true
 	}
+	if err := validateInventory(storedInventory, captures); err != nil {
+		return nil, nil, err
+	}
+	if !sameJSON(run.RequiredCapabilities, requiredCapabilities(run.Schemas, captures)) {
+		return nil, nil, errors.New("bundle capability declaration disagrees with content")
+	}
 	return &run, captures, nil
 }
 
 func supportedEvidenceVersion(value string) bool {
 	parts := strings.Split(value, ".")
-	if len(parts) != 2 || (parts[0] != "1" && parts[0] != "2") {
+	if len(parts) != 2 || parts[0] != "3" {
 		return false
 	}
 	minor, err := strconv.Atoi(parts[1])
@@ -797,8 +874,14 @@ func supportedEvidenceVersion(value string) bool {
 func resolveSchemas(root string, schemas []artifact.SchemaRef) error {
 	for i := range schemas {
 		ref := &schemas[i]
+		if err := validateSchemaBoundary(*ref); err != nil {
+			return err
+		}
+		if ref.Type != "openapi" && ref.Type != "protobuf" && !opaqueContractType(ref.Type) {
+			return fmt.Errorf("unsupported contract type %q", ref.Type)
+		}
 		if ref.Source.Type == "omitted" {
-			if ref.Source.Path != "" || ref.Source.URL != "" || ref.Source.Content != "" || ref.Source.SHA256 != "" {
+			if ref.Source.Path != "" || ref.Source.URL != "" || ref.Source.Content != "" || ref.Source.SHA256 != "" || len(ref.Source.Files) != 0 {
 				return fmt.Errorf("omitted schema %q contains a source", ref.ID)
 			}
 			continue
@@ -806,10 +889,15 @@ func resolveSchemas(root string, schemas []artifact.SchemaRef) error {
 		if ref.Source.Type != "file" || ref.Source.Path == "" {
 			return fmt.Errorf("schema %q is not a frozen file or explicit omission", ref.ID)
 		}
-		if !validRelative(ref.Source.Path) {
+		if !validRelative(ref.Source.Path) || !strings.HasPrefix(ref.Source.Path, "contracts/") {
 			return fmt.Errorf("invalid schema path %q", ref.Source.Path)
 		}
 		rootRel := ref.Source.Path
+		parts := strings.Split(rootRel, "/")
+		if len(parts) < 3 || parts[1] == "" || filepath.ToSlash(filepath.Clean(rootRel)) != rootRel {
+			return fmt.Errorf("invalid schema path %q", rootRel)
+		}
+		setBase := strings.Join(parts[:2], "/")
 		path, err := containedPath(root, rootRel)
 		if err != nil {
 			return err
@@ -829,7 +917,7 @@ func resolveSchemas(root string, schemas []artifact.SchemaRef) error {
 				return fmt.Errorf("protobuf schema %q: %w", ref.ID, err)
 			}
 		}
-		manifestRel := filepath.ToSlash(filepath.Join(filepath.Dir(rootRel), "manifest.json"))
+		manifestRel := setBase + "/manifest.json"
 		manifestPath, err := containedPath(root, manifestRel)
 		if err != nil {
 			return err
@@ -845,8 +933,15 @@ func resolveSchemas(root string, schemas []artifact.SchemaRef) error {
 		if err := json.Unmarshal(manifestData, &manifest); err != nil {
 			return err
 		}
-		if manifest.SetHash != filepath.Base(filepath.Dir(rootRel)) || manifest.Root != rootRel {
+		if manifest.SetHash != parts[1] || manifest.Root != rootRel {
 			return fmt.Errorf("schema %q manifest identity mismatch", ref.ID)
+		}
+		if opaqueContractType(ref.Type) {
+			if err := validateContractPackageManifest(*ref, manifest, setBase); err != nil {
+				return err
+			}
+		} else if manifest.Profile != "" || manifest.Type != "" {
+			return fmt.Errorf("schema %q has an unsupported package profile", ref.ID)
 		}
 		foundRoot := false
 		seen := map[string]bool{}
@@ -861,7 +956,7 @@ func resolveSchemas(root string, schemas []artifact.SchemaRef) error {
 				}
 				foundRoot = true
 			}
-			if filepath.Dir(file.Path) != filepath.Dir(rootRel) {
+			if !strings.HasPrefix(file.Path, setBase+"/") || filepath.ToSlash(filepath.Clean(file.Path)) != file.Path {
 				return fmt.Errorf("schema %q manifest file outside schema set", ref.ID)
 			}
 			if _, err := readRef(root, FileRef{Path: file.Path, SHA256: file.SHA256}); err != nil {

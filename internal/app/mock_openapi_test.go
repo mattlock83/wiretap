@@ -60,7 +60,7 @@ paths:
 				t.Fatalf("draft changed enforcement: %s / %s", capture.TestCase.Status, capture.SchemaValidation.Status)
 			}
 			root := result["bundle_path"].(string)
-			paths, err := filepath.Glob(filepath.Join(root, "dependencies/mocks/*.openapi.yaml"))
+			paths, err := filepath.Glob(filepath.Join(root, "docs/dependencies/mocks/*.openapi.yaml"))
 			if err != nil || len(paths) != 1 {
 				t.Fatalf("missing automatic mock draft: %v %v", paths, err)
 			}

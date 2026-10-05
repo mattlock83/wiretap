@@ -86,6 +86,9 @@ func Run(ctx context.Context, opts Options) (result Result, err error) {
 		return result, e
 	}
 	for _, flow := range seed.Traffic {
+		if flow.Interaction != nil {
+			return result, fmt.Errorf("exploration does not support event interaction %q (%s %s); replay would omit its recorded events, including any dependency interactions", flow.ID, flow.Protocol, flow.Interaction.Kind)
+		}
 		if flow.Channel == "test_to_sut" && flow.Protocol == "grpc" {
 			return result, fmt.Errorf("gRPC provider exploration is not supported; select a test with only HTTP provider requests")
 		}
