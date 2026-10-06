@@ -1,4 +1,4 @@
-"""Project-owned fixtures and assertions, shared by unittest and exploration."""
+"""Project-owned fixtures and assertions for the ordinary unittest suite."""
 
 import base64
 import hashlib
@@ -48,7 +48,7 @@ def auth_headers(user_id):
 
 
 def verify_authentication():
-    # Fail once, before generating cases, if credentials or SUT configuration
+    # Fail before starting the suite, if credentials or SUT configuration
     # are wrong. Probe without credentials too: the demo must still enforce auth.
     url = TRANSACTIONS + "/api/transactions"
     status, _ = request("GET", url)

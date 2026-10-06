@@ -7,7 +7,6 @@ import (
 
 // Artifact is the capture model for one test attempt, persisted as bundle evidence.
 type Artifact struct {
-	Exploration        *Exploration      `json:"exploration,omitempty"`
 	CaptureIncomplete  bool              `json:"capture_incomplete,omitempty"`
 	CaptureDiagnostics []string          `json:"capture_diagnostics,omitempty"`
 	Version            int               `json:"version"`

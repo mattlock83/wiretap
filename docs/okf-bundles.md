@@ -26,11 +26,16 @@ array at its minimum length, or a particular enum value. A **test run** is one
 execution of a named test. One execution can cover many conditions, and many
 executions can contribute evidence for the same condition.
 
+The supported spec rules define concrete cases, such as each enum value, an
+optional field being absent, or a value at a declared boundary. Expand
+**Observed case combinations** to see which cases occurred together in an actual
+request or response. Gaps identify cases for future tests; Wiretap neither
+executes them nor claims coverage of every possible permutation.
+
 Contract coverage starts with API and operation summaries. Expand an operation
 to inspect request/response conditions, then follow evidence to its test run.
-Test runs separate authored tests from generated checks; generated runs group
-by source scenario, with the happy-path baseline separate from invalid-input
-cases. Links work in both directions.
+Test runs group executions by test name, preserving each attempt and its captured
+sequence. Links work in both directions.
 
 Filters narrow the visible rows without changing totals. Raw keys, schema
 locations, assertion lists, traces, headers and payloads are available on
@@ -56,10 +61,10 @@ conditions exercised together in each message. See the versioned
 supported OpenAPI constraints and Protobuf field conditions from complete unary
 or streaming RPCs.
 
-**Invalid-input coverage** is separate. Exploration counts the supported
-rejection targets generated from its selected scenario, not every possible
-invalid input. A deliberately invalid request cannot earn valid-request
-coverage; a passing, valid error response can earn response-condition coverage.
+A documented, valid error response can earn response-condition coverage. An
+invalid request cannot earn valid-request coverage, and an observed error status
+alone does not establish that its rejection was asserted. Wiretap reports captured
+evidence; it does not generate or execute additional cases.
 
 Dependency responses are observations from the declared target (`mock`,
 `service` or `unknown`). A mock response records an assumption made by the test.
@@ -111,8 +116,7 @@ publish/consume messaging and subscriptions. Transport, protocol and payload
 encoding are recorded separately, allowing Kafka with Avro, AsyncAPI contract
 packages and GraphQL operations/subscriptions. This is storage support: new live
 capture and execution adapters for messaging and GraphQL remain separate work.
-Native gRPC streams use typed RPC evidence, structural coverage and finite
-invalid-input exploration from supported declared validation rules.
+Native gRPC streams use typed RPC evidence and structural coverage.
 Unsupported events remain visible and must not earn coverage or silently replay
 as HTTP. See [event recordings](bundle-evidence.md#streams-messaging-and-additional-protocols).
 
@@ -148,12 +152,6 @@ Body previews are limited to 4 KiB; attachments contain the retained bytes.
 Capture retains up to 4 MiB per body by default. A truncated attachment remains
 incomplete even after rebuilding. See [troubleshooting](troubleshooting.md) for
 capture limits and integrity errors.
-
-An [exploration call](exploration.md) adds fresh baseline and rejection attempts
-to the same open bundle as the parent authored test. Each generated attempt
-contains its assertions and lineage; coverage combines qualifying evidence from
-all authored and generated attempts. Existing mocks remain owned by the test
-harness. Dependency evidence is credited only for traffic actually observed.
 
 ## Inferred mock assumptions
 

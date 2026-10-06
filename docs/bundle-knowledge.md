@@ -32,12 +32,12 @@ The root records `knowledge_version: "1.0"`, `run_id`, `snapshot_revision`,
 | --- | --- |
 | `apis` | API identity, provided/dependency role, mock/service/unknown target kind, supplied contract references and operations. |
 | `apis[].operations` | Declared or observed HTTP operation or gRPC method, supplied-operation match, observed HTTP or gRPC statuses, evidence basis, provider-check status and exact observation references. |
-| `attempts` | Named executions, result, authored/generated origin, readable page and canonical attempt path; generated attempts retain exploration lineage. |
+| `attempts` | Named executions, result, readable page and canonical attempt path. |
 | `verification` | Open follow-up tasks with a kind, priority, reason, suggested action, prerequisites, supporting page, condition keys and evidence references. |
 
 All file paths are relative to the bundle root. An observation identifies its
 attempt and flow, test name/result, attempt-level schema-validation status,
-authored/generated attempt kind, response status, capture completeness,
+attempt kind, response status, capture completeness,
 transport errors and correlation evidence. Operation status summaries omit
 proxy-generated transport failures; those exchanges remain in evidence and
 receive transport-investigation work instead of becoming provider assumptions.
@@ -61,8 +61,7 @@ rules used by the [contract catalogue](contract-coverage-rules.md). Filenames, h
 names and trace IDs are not cross-repository API identities.
 
 Verification IDs are deterministic for their API/contract, operation and kind.
-A condition group's ID remains stable as its uncovered key set changes;
-individual rejection tasks also include their rejection key. Treat these as
+A condition group's ID remains stable as its uncovered key set changes. Treat these as
 derived task identities, not execution IDs or a global completion record.
 Preserve the run/snapshot alongside each task; regeneration can change the
 backlog as the available evidence changes.
@@ -70,21 +69,19 @@ backlog as the available evidence changes.
 ## Suggested verification work
 
 Tasks have state `open`. `high` priority highlights unexpected contract
-violations, unmatched captured operations, failed attempts, incomplete capture
-and failed or unexecuted rejection targets; `normal` identifies comparison work,
-missing coverage and evidence limits. This is a triage hint, not a severity
+violations, unmatched captured operations, failed attempts and incomplete capture;
+`normal` identifies comparison work, missing coverage and evidence limits. This is a triage hint, not a severity
 assessment of a confirmed defect.
 
 | Work category | What needs attention |
 | --- | --- |
 | Dependency assumptions | Compare an observed dependency exchange with evidence from the intended provider. A mock response is an assumption; the consumer's required fields remain unknown. |
-| Contract mismatches | Investigate an unexpected violation of the supplied frozen contract. The application, mock or spec may be wrong. Expected invalid exploration inputs are excluded. |
+| Contract mismatches | Investigate an unexpected violation of the supplied frozen contract. The application, mock or spec may be wrong. |
 | Unmatched captured operations | Reconcile the captured method/path with the intended frozen contract and API version before deriving coverage or generating permutations. |
 | Failed attempts or incomplete capture | Inspect outcomes, assertions and transport/capture diagnostics. Repair fixtures, test execution or evidence capture before attributing a failure to a contract. |
 | Unobserved operations | Add an appropriate test for a declared operation, or establish whether a dependency operation is relevant to the consumer. |
 | Missing condition coverage | Select feasible additional scenarios for the listed condition keys. Keys are individual conditions, not every combination of values. |
 | Unknown or unsupported conditions | Resolve redaction, capture, feasibility or measurement limits before treating these as testable gaps. |
-| Failed or unexecuted rejection targets | Inspect generated rejection and property assertions, fix the cause and rerun with suitable fixtures and authentication. A 401 is not proof of input validation. |
 | Missing contracts | Supply or repair a declared provider contract; an inferred mock draft is not a substitute. |
 | Missing provenance | Establish shared API identity and separate test/SUT source or build provenance before comparing repositories. |
 
@@ -94,11 +91,9 @@ the knowledge base with their own evidence and provenance, rather than editing
 a generated queue and expecting the edit to survive regeneration.
 
 An autonomous test system can use the queue to select work, but must resolve
-its prerequisites and choose an appropriate runner. The current SDK/HTTP exploration API
-supports [provider invalid-input exploration](exploration.md) from a suitable
-authored seed. It does not implement every task kind, generate arbitrary mock
-variants or fill all response-condition gaps. Execution uses project-owned
-test code and local callbacks; the bundle contains no executable hook code.
+prerequisites and choose its own runner. Wiretap does not execute this backlog.
+Future generated checks and execution belong to the Hub, with project-owned
+fixture and authentication code outside published bundles.
 
 ## Loading and comparing bundles
 
@@ -109,14 +104,13 @@ test code and local callbacks; the bundle contains no executable hook code.
 2. Match a dependency API ID with the intended provider API ID. Select the
    relevant runs and actual source/build revisions; do not assume the newest
    timestamp describes the deployed provider. Missing provenance remains
-   unknown. Exploration seed lineage is never inherited as current SUT
-   provenance.
+   unknown.
 3. Check contract revisions and condition-rule versions. Matching operation or
    condition keys identifies comparable evidence; it does not prove compatible
    values or behaviour. Different contracts need explicit comparison.
 4. Follow evidence to each complete exchange: request acceptance, response
    status/payload, test outcome, assertions and conditions exercised together.
-   Keep authored/generated attempts, mock/service targets, failed/passing
+   Keep test attempts, mock/service targets, failed/passing
    results and contract revisions distinct. Do not combine separate exchanges
 into an observation that never occurred.
 5. Record contradictions separately from missing evidence. A provider sample
@@ -124,13 +118,8 @@ into an observation that never occurred.
    another provider observation or run a suitable test to resolve the question.
 
 The API map covers registered APIs and retained traffic, not a complete system
-inventory. Exploration adds fresh provider and observed dependency exchanges to
-the same run. Fixture and inspection traffic from lifecycle callbacks is
-excluded from evidence and coverage. Generated attempts carry `source_kind: active_test`, the parent
-`source_attempt_id`, `source_flow_ids` and `exploration_id`. The index adds
-`source_attempt_path` once that parent has been committed; a still-open parent
-is not an invented evidence link or a fabricated file hash. An empty dependency
-list does not establish that the system has no dependencies.
+inventory. An empty dependency list does not establish that the system has no
+dependencies.
 
 Event recordings use `capture.traffic[].interaction` and preserve ordered
 messages, stream lifecycle events and publish/consume observations. Retain the

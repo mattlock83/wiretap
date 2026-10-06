@@ -125,7 +125,7 @@ func render(root string, force bool) (*coverage.Report, error) {
 	if err := writePage(filepath.Join(root, "index.md"), []byte(index)); err != nil {
 		return nil, err
 	}
-	if err := write("run.md", "run", "Run provenance: "+run.RunID, "Capture lifecycle, system identity and evidence provenance", runMarkdown(run, captures), map[string]any{"evidence": "bundle.json"}); err != nil {
+	if err := write("run.md", "run", "Run provenance: "+run.RunID, "Capture lifecycle, system identity and evidence provenance", runMarkdown(run), map[string]any{"evidence": "bundle.json"}); err != nil {
 		return nil, err
 	}
 	coverageBody := fmt.Sprintf("# API operation coverage\n\nRun state: **%s**. Attempts: %d. Counts below describe observed operations, including failed attempts. A passing observation requires a complete passing attempt. These are API operation counts, not code or scenario coverage.\n\n", escape(run.RunState), len(run.Attempts))
@@ -173,13 +173,13 @@ func render(root string, force bool) (*coverage.Report, error) {
 		byAttempt[capture.TestCase.ID] = capture
 	}
 	var tests strings.Builder
-	tests.WriteString("# Test scenarios and attempts\n\n[System overview](../system.md) · [Verification targets](../verification.md) · [Run provenance](../run.md)\n\nEach attempt records one execution of a named test. Authored tests and generated exploration cases are separate evidence; a passing attempt alone does not establish full API coverage or provider agreement.\n\n| Test scenario | Origin | Result | Exchanges |\n| --- | --- | --- | --- |\n")
+	tests.WriteString("# Test scenarios and attempts\n\n[System overview](../system.md) · [Verification targets](../verification.md) · [Run provenance](../run.md)\n\nEach attempt records one execution of a named test. A passing attempt alone does not establish full API coverage or provider agreement.\n\n| Test scenario | Result | Exchanges |\n| --- | --- | --- |\n")
 	for _, ref := range run.Attempts {
 		capture := byAttempt[ref.AttemptID]
 		if capture == nil {
 			return nil, fmt.Errorf("missing committed attempt %s", ref.AttemptID)
 		}
-		fmt.Fprintf(&tests, "| [%s](%s.md) | %s | %s | %d |\n", tableCell(attemptName(capture)), ref.AttemptID, tableCell(attemptOrigin(capture)), tableCell(capture.TestCase.Status), len(capture.Traffic))
+		fmt.Fprintf(&tests, "| [%s](%s.md) | %s | %d |\n", tableCell(attemptName(capture)), ref.AttemptID, tableCell(capture.TestCase.Status), len(capture.Traffic))
 		if !force && currentAttemptPage(filepath.Join(root, "docs", "tests", ref.AttemptID+".md"), run.RunID, ref.AttemptID, ref.Path) {
 			continue
 		}
@@ -202,12 +202,6 @@ func render(root string, force bool) (*coverage.Report, error) {
 			overview.WriteString("# Provided APIs\n\n[System overview](../system.md) · [Verification targets](../verification.md)\n\nDeclared operations exposed by the system under test, with links to observed exchanges and test outcomes. An unobserved operation is a coverage gap, not evidence of an implementation defect.\n\n")
 		} else {
 			overview.WriteString("# Dependencies and assumptions\n\n[System overview](../system.md) · [Verification targets](../verification.md)\n\nA mock response records behavior the consumer was tested against. It does not establish that the provider produces the same response or that every returned field is required by the consumer.\n\n")
-			for _, capture := range captures {
-				if capture.Exploration != nil {
-					overview.WriteString("**Exploration scope:** " + explorationScope + "\n\n")
-					break
-				}
-			}
 		}
 		if len(role.specs) == 0 {
 			overview.WriteString("No schemas are registered for this role. See the [system overview](../system.md) for any observed boundaries without supplied contracts.\n\n")
@@ -326,7 +320,7 @@ func pageType(kind, title string) string {
 	return title
 }
 
-func runMarkdown(run *bundle.Run, captures []*artifact.Artifact) string {
+func runMarkdown(run *bundle.Run) string {
 	var out strings.Builder
 	fmt.Fprintf(&out, "# Run provenance\n\n[System overview](system.md) · [Test attempts](tests/index.md) · [Canonical run inventory](../bundle.json)\n\nRun `%s`; state **%s**; revision **%d**.\n\n", escape(run.RunID), escape(run.RunState), run.Revision)
 	fmt.Fprintf(&out, "- Started: %s.\n- Snapshot updated: %s.\n", run.StartedAt.Format("2006-01-02T15:04:05Z07:00"), run.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"))
@@ -351,37 +345,6 @@ func runMarkdown(run *bundle.Run, captures []*artifact.Artifact) string {
 			out.WriteString(preview(string(data)))
 		}
 	}
-	seeds := map[string]*artifact.Exploration{}
-	for _, capture := range captures {
-		if x := capture.Exploration; x != nil {
-			seeds[explorationGroupKey(x)] = x
-		}
-	}
-	if len(seeds) > 0 {
-		out.WriteString("## Exploration origins\n\nEach invocation identifies the authored traffic used to generate its cases. An active parent belongs to this run; its final result is recorded separately from the generated checks.\n\n")
-		keys := make([]string, 0, len(seeds))
-		for key := range seeds {
-			keys = append(keys, key)
-		}
-		sort.Strings(keys)
-		for _, key := range keys {
-			x := seeds[key]
-			if x.SourceKind == "active_test" {
-				parent := "`" + escape(x.SourceAttemptID) + "` (not yet committed)"
-				if explorationParentCommitted(run, x) {
-					parent = "[" + escape(x.SourceAttemptID) + "](tests/" + x.SourceAttemptID + ".md)"
-				}
-				fmt.Fprintf(&out, "- Exploration `%s`; parent attempt %s; seed flows `%s`; generator `%s`.\n", escape(x.InvocationID), parent, escape(strings.Join(x.SourceFlowIDs, ", ")), escape(x.Version))
-			} else {
-				fmt.Fprintf(&out, "- Source run `%s`, attempt `%s`", escape(x.SourceRunID), escape(x.SourceAttemptID))
-				if x.SourceSHA256 != "" {
-					fmt.Fprintf(&out, "; SHA-256 `%s`", escape(x.SourceSHA256))
-				}
-				fmt.Fprintf(&out, "; generator `%s`.\n", escape(x.Version))
-			}
-		}
-		out.WriteString("\n" + explorationScope + "\n\n")
-	}
 	if len(run.Pending) > 0 {
 		out.WriteString("## Pending attempts\n\nPending attempts are not committed evidence and do not contribute passing coverage.\n\n")
 		for _, pending := range run.Pending {
@@ -396,13 +359,6 @@ func attemptName(capture *artifact.Artifact) string {
 		return "Test attempt " + capture.TestCase.ID
 	}
 	return capture.TestCase.Name
-}
-
-func attemptOrigin(capture *artifact.Artifact) string {
-	if capture.Exploration != nil {
-		return "Generated " + capture.Exploration.Mode
-	}
-	return "Authored test"
 }
 
 func orUnknown(value string) string {
@@ -487,27 +443,7 @@ func orderedFlows(flows []artifact.Flow) ([]artifact.Flow, bool) {
 func attemptMarkdown(run *bundle.Run, capture *artifact.Artifact, evidencePath string) string {
 	var page strings.Builder
 	page.WriteString("# " + escape(attemptName(capture)) + "\n\n[All test attempts](index.md) · [System overview](../system.md) · [Canonical attempt JSON](../../" + evidencePath + ")\n\n")
-	fmt.Fprintf(&page, "Attempt `%s`; result **%s**; origin **%s**; %d exchanges.\n\n", escape(capture.TestCase.ID), escape(capture.TestCase.Status), escape(attemptOrigin(capture)), len(capture.Traffic))
-	if x := capture.Exploration; x != nil {
-		page.WriteString("## Generated-case provenance\n\n")
-		if x.SourceKind == "active_test" {
-			fmt.Fprintf(&page, "Generated by `%s` in exploration `%s`, from parent attempt `%s` in this run. Seed flow IDs: `%s`. The parent test's result is recorded separately.\n\n", escape(x.Version), escape(x.InvocationID), escape(x.SourceAttemptID), escape(strings.Join(x.SourceFlowIDs, ", ")))
-		} else {
-			fmt.Fprintf(&page, "Generated by `%s` from run `%s`, attempt `%s`", escape(x.Version), escape(x.SourceRunID), escape(x.SourceAttemptID))
-			if x.SourceSHA256 != "" {
-				fmt.Fprintf(&page, " (SHA-256 `%s`)", escape(x.SourceSHA256))
-			}
-			page.WriteString(".\n\n")
-		}
-		page.WriteString("Hook code and runtime context stay in the test project.\n\n")
-		if x.Target != nil {
-			fmt.Fprintf(&page, "Target operation: **%s**. Location: `%s`; constraint: `%s`. Request violation verified: **%t**.\n\nTarget key: `%s`. Expected rejection: **%s**.\n\n", escape(x.Target.Operation), escape(x.Target.Location), escape(x.Target.Constraint), x.RequestVerified, escape(x.Target.Key), rejectionStatusLabel(*x.Target))
-		}
-		for _, note := range x.Notes {
-			page.WriteString("- " + escape(note) + "\n")
-		}
-		page.WriteString("\n")
-	}
+	fmt.Fprintf(&page, "Attempt `%s`; result **%s**; %d exchanges.\n\n", escape(capture.TestCase.ID), escape(capture.TestCase.Status), len(capture.Traffic))
 	page.WriteString("## Outcome and checks\n\n")
 	if capture.CaptureIncomplete {
 		page.WriteString("**Capture incomplete.** This attempt cannot establish passing coverage.\n\n")

@@ -140,14 +140,6 @@ Test teardown drains accepted requests for five seconds by default. The SDK/API
 can override that per attempt. See [tracing and completion](otel-adoption.md#evidence-and-completion)
 and [HTTPS trust](https-trust.md).
 
-## Exploration settings
-
-Exploration is configured in test code through `wiretap.explore(...)` or the
-HTTP API. Select operations, expected validation statuses, timeouts, value
-bindings and local lifecycle callbacks for each call. `.wiretap.yaml` declares
-runtime boundaries and schemas; it has no exploration or executable hook section.
-See [exploration and hooks](exploration.md).
-
 ## CLI commands
 
 The `wiretap` binary provides these commands. Capture lifecycle is controlled

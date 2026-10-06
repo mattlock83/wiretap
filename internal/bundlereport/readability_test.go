@@ -65,11 +65,10 @@ func TestMissingTimestampsDoNotInventSequence(t *testing.T) {
 	}
 }
 
-func TestRunMarkdownStatesProvenanceAndExplorationScope(t *testing.T) {
+func TestRunMarkdownStatesProvenance(t *testing.T) {
 	run := &bundle.Run{RunID: "new-run", APIID: "payments", SUTTargetKind: "service", TestSource: map[string]any{"revision": "abc123"}}
-	captures := []*artifact.Artifact{{Exploration: &artifact.Exploration{SourceRunID: "new-run", SourceAttemptID: "source-attempt", SourceKind: "active_test", InvocationID: "explore-1", SourceFlowIDs: []string{"request-1"}, Version: "wiretap-negative-1"}}}
-	page := runMarkdown(run, captures)
-	for _, expected := range []string{"API identity: payments", "abc123", "Not recorded at run level", "source-attempt", "explore-1", "request-1", "not yet committed", "downstream traffic actually observed"} {
+	page := runMarkdown(run)
+	for _, expected := range []string{"API identity: payments", "abc123", "Not recorded at run level"} {
 		if !strings.Contains(page, expected) {
 			t.Errorf("missing %q", expected)
 		}

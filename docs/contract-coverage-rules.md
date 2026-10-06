@@ -74,18 +74,6 @@ No invalid-value targets are generated for mocks. Provider and dependency keys
 match when API identity, normalized
 contract and measurement profile match.
 
-Provider exploration has a separate generated rule catalogue for supported
-standard Protovalidate annotations across all four RPC shapes. Every credited
-case must isolate the declared violation, retain complete decoded Protobuf
-observations, and receive the configured upstream validation code (3 by default,
-or explicitly 11). Authentication, proxy errors and transport failures earn no
-rejection coverage. A trailers-only rejection needs no fabricated response
-message. The target key excludes stream index, while each witness links its
-actual message index and location. Intentionally invalid requests do not earn
-positive request conditions. This does not invent ranges absent from plain
-Protobuf, expand passive structural coverage to arbitrary annotations, or
-synthesize arbitrary CEL and stream business rules. See [exploration](exploration.md#native-grpc-cases).
-
 Native streams require verified direction observations: complete framing, EOF,
 no omitted messages, valid terminal status and complete structurally valid
 payloads. Field observations and combination fingerprints identify the exact
@@ -142,10 +130,8 @@ Explicit limitations:
 - Combination fingerprints describe condition keys and exact instance locations,
   not arbitrary payload equality. No value-normalisation or payload hashing is
   performed. Unsupported combinations are not invented.
-- The optional exploration call records expected-rejection assertion evidence
-  in a separate provider rejection catalogue. Full API inventory declarations,
-  expected-negative annotations for ordinary captured tests, and cross-revision
-  target mapping remain future work. No inferred mock draft enters a denominator.
+- No inferred mock draft enters a denominator. Cross-revision target mapping and
+  explicit expected-negative annotations remain future work.
 
 ## Purpose
 
@@ -342,7 +328,7 @@ earns no positive request-condition credit. A documented, valid error response
 can earn response-condition credit if the attempt otherwise qualifies as passing
 and complete; this alone does not prove the rejection scenario was asserted.
 
-Intentionally invalid requests need a separate **rejection coverage** result:
+A future executor could measure rejection assurance separately. It would need to:
 
 - Record which request constraint was violated.
 - Associate the documented rejection response with that request.
@@ -356,13 +342,9 @@ Intentionally invalid requests need a separate **rejection coverage** result:
   resilience. Such resilience intent needs its own explicit test evidence.
 
 Ordinary capture retains strict validation and its existing framework-owned
-assertions. The optional [exploration API](exploration.md) generates
-isolated invalid provider inputs, verifies the final violation before sending,
-and records explicit expected-status and response-schema assertions. Its baseline
-catalogue supplies the bounded rejection denominator, with covered, failed and
-not-covered targets. Authentication failures, server errors and unasserted
-rejections earn no rejection credit. Expected invalid requests remain ineligible
-for valid-request coverage, while valid error responses can earn response credit.
+assertions. Wiretap does not currently measure rejection assurance: observing an
+error status is not evidence that a test asserted the intended validation rule.
+Generated tests and their execution are outside the local tool's scope.
 
 ## 6. Measure individual conditions and combinations separately
 

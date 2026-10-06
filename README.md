@@ -25,14 +25,13 @@ npm ci --prefix sdk/js
 ./examples/run-basic-rest-e2e.sh
 ```
 
-The example captures an existing test, then calls `wiretap.explore()` inside that
-test to generate invalid-input checks from its happy path. It prints one bundle
-containing both authored and generated checks. Open
+The example captures existing tests and their dependency calls. It prints a bundle
+containing API evidence and spec-based coverage. Open
 `docs/viewer.html` for the offline dashboard or `index.md` for the linked
 Markdown pages. No report server is needed.
 
 [More examples](examples/README.md) cover parallel Jest tests, database fixtures,
-the Speedscale Microsvc Transactions service with authentication hooks, and
+the Speedscale Microsvc Transactions service with authenticated tests, and
 [native gRPC with a mock dependency](examples/grpc-boundaries/README.md).
 
 ## Add Wiretap to your tests
@@ -51,9 +50,6 @@ OpenAPI specs are required by default for HTTP; individual HTTP APIs can explici
 opt out. gRPC requires a Protobuf contract: reflection is the default source,
 with local `.proto` files or a descriptor set as alternatives. See the
 [gRPC guide](docs/grpc-user-guide.md). Unary and all three streaming shapes support capture and structural coverage.
-Native gRPC exploration generates invalid-input checks from supported standard
-Protovalidate annotations, including recorded streaming requests. See the
-[gRPC exploration example](examples/grpc-exploration/README.md).
 Parallel tests sharing one application need working W3C trace propagation from
 its server to its outbound clients. Otherwise run sequentially or isolate
 workers. The application does not need to propagate a Wiretap-specific ID.
@@ -66,9 +62,15 @@ See [configuration](docs/configuration.md) and [tracing](docs/otel-adoption.md).
 | `bundle.json` | The provided APIs and dependencies, their contracts and the recorded tests that exercised them. |
 | APIs and dependencies | Which boundaries and operations were observed, with requests, responses and inferred OpenAPI drafts for HTTP mocks. |
 | Contract coverage | Which specified cases were exercised, such as enum values, optional fields and boundaries; gaps and uncertain results remain visible. |
-| Test runs | What executed and what happened, with authored tests separate from generated checks and links to the conditions they exercised. |
+| Test runs | What executed and what happened, with links to the conditions they exercised. |
 | System overview and verification work | How the recorded APIs fit together and which assumptions, mismatches or gaps need further checks. |
 | `docs/knowledge.json` | The API map, verification tasks and evidence references for a knowledge base or agent. |
+
+The supported spec rules define concrete cases, such as each enum value, an
+optional field being absent, or a value at a declared boundary. Expand
+**Observed case combinations** to see which cases occurred together in an actual
+request or response. Gaps identify cases for future tests; Wiretap neither
+executes them nor claims coverage of every possible permutation.
 
 One test can cover many contract conditions. A mock response records a test
 assumption; it does not prove the real provider behaves that way. Cross-repository
@@ -76,8 +78,7 @@ comparison is not yet implemented.
 
 The [bundle format](docs/bundle-evidence.md) keeps `bundle.json`, `contracts/`,
 `tests/` and `payloads/` as the source data, with an OKF `index.md` and rebuildable
-views under `docs/`. Recorded tests are also the input to exploration; hooks and
-environment setup remain in your project.
+views under `docs/`. Test execution, fixtures and environment setup remain in your project.
 
 The bundle format supports consumer-only systems such as UIs, provider-only
 systems without mocks, and mixed systems. Application identity is independent of
@@ -92,29 +93,6 @@ The bundle contains authoritative JSON evidence, frozen schemas and retained
 payloads. Its Markdown, HTML and knowledge views are generated automatically
 and can be rebuilt with `wiretap report`. See the [bundle guide](docs/okf-bundles.md)
 for reading, sharing and exporting results.
-
-## Explore invalid inputs
-
-Call exploration from the test that has just exercised a happy path:
-
-```javascript
-await wiretap.explore({
-  operations: ["POST /orders"],
-  hooks: {
-    beforeCase: async () => resetFixtures(),
-    checkCase: async event => checkDatabaseEffects(event),
-    afterCase: async () => cleanUpFixtures()
-  }
-});
-```
-
-The SDK calls Wiretap's HTTP API and invokes these callbacks in your test process.
-Wiretap checks a fresh baseline, then generates supported invalid requests from
-the captured traffic and OpenAPI contract. The call fails your ordinary test if
-any generated check fails. Authentication failures and server errors never count
-as successful validation checks. All cases contribute evidence to the same run
-bundle; fixtures, credentials and callback code stay in your project. See
-[exploration and hooks](docs/exploration.md) for setup and supported mutations.
 
 ## Documentation
 

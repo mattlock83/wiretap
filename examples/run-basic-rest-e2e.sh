@@ -148,24 +148,5 @@ if [[ "${TEST_STATUS}" -ne 0 ]]; then
   exit "${TEST_STATUS}"
 fi
 
-# The Jest variant demonstrates parallel capture; the Node test also explores.
-if [[ "${WIRETAP_TEST_RUNNER:-node}" != "jest" ]]; then
-# Check the generated evidence and views, including rejection coverage.
-node - "${BUNDLE_DIR}" <<'NODE'
-const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
-const bundle = process.argv[2];
-const read = name => JSON.parse(fs.readFileSync(path.join(bundle, name)));
-assert.equal(read('bundle.json').run_state, 'complete');
-assert.ok(fs.existsSync(path.join(bundle, 'index.md')));
-assert.ok(fs.existsSync(path.join(bundle, 'docs/viewer.html')));
-const coverage = read('docs/contract-coverage.json').rejection_coverage;
-assert.ok(coverage?.covered > 0, 'expected passing generated rejection cases');
-assert.equal(coverage.failed, 0);
-assert.equal(coverage.not_covered, 0);
-console.log(`Verified ${coverage.covered} generated rejection targets.`);
-NODE
-fi
 
 popd >/dev/null

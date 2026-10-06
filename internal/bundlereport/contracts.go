@@ -23,16 +23,6 @@ func contractCoverageMarkdown(report *coverage.ContractCoverage) string {
 		}
 		out.WriteString("\n")
 	}
-	if r := report.Rejections; r != nil {
-		fmt.Fprintf(&out, "## Provider rejection coverage\n\n%d covered, %d failed, %d not covered. %s. Invalid requests never earn valid-request condition credit.\n\n", r.Covered, r.Failed, r.NotCovered, escape(r.Scope))
-		for _, t := range r.Targets {
-			fmt.Fprintf(&out, "- **%s** — %s, %s, %s; catalogue expects %s; key `%s`\n", t.State, escape(t.Operation), escape(t.Location), escape(t.Constraint), rejectionStatusLabel(t.RejectionTarget), t.Key)
-			for _, e := range t.Evidence {
-				fmt.Fprintf(&out, "  - [%s](%s), flow %s, %s: %s. %s\n", escape(e.TestName), "../"+e.Path, escape(e.FlowID), escape(e.InstanceLocation), e.Result, escape(e.Reason))
-			}
-		}
-		out.WriteString("\n")
-	}
 	for _, spec := range report.Specs {
 		fmt.Fprintf(&out, "## %s — %s (%s)\n\nSchema: %s. Contract revision: `%s`. Condition denominator known: **%t**.\n\n", escape(spec.APIID), escape(spec.Origin), escape(spec.TargetKind), escape(spec.SchemaID), spec.Revision, spec.DenominatorKnown)
 		for _, note := range spec.Notes {
@@ -63,9 +53,19 @@ func contractCoverageMarkdown(report *coverage.ContractCoverage) string {
 			out.WriteString("### Violations\n\n")
 		}
 		for _, v := range spec.Violations {
-			fmt.Fprintf(&out, "- [%s](%s), flow %s, %s (expected negative input: %t): %s\n", escape(v.Evidence.TestName), "../"+v.Evidence.Path, escape(v.Evidence.FlowID), v.Evidence.Phase, v.Expected, escape(v.Reason))
+			fmt.Fprintf(&out, "- [%s](%s), flow %s, %s: %s\n", escape(v.Evidence.TestName), "../"+v.Evidence.Path, escape(v.Evidence.FlowID), v.Evidence.Phase, escape(v.Reason))
 		}
-		fmt.Fprintf(&out, "\n%d request/response condition combinations retained in the JSON catalogue, with exact array-item locations. Independent observations are never assembled into a synthetic exchange.\n\n", len(spec.Combinations))
+		if len(spec.Combinations) > 0 {
+			out.WriteString("\n### Observed case combinations\n\nEach observation preserves the cases exercised together in one message. Separate observations are never assembled into a synthetic exchange; these are not all possible permutations.\n\n")
+			for _, combination := range contractCombinations(spec) {
+				e := combination.Evidence
+				fmt.Fprintf(&out, "- **%s · %s**: [%s](../%s), flow %s; test %s, validation %s, capture incomplete %t. %s Fingerprint: `%s`.\n", escape(combination.Operation), escape(combination.Phase), escape(e.TestName), e.Path, escape(e.FlowID), escape(e.Outcome), escape(e.Validation), e.CaptureIncomplete, escape(e.TransportError), combination.Fingerprint)
+				for _, hit := range combination.Hits {
+					fmt.Fprintf(&out, "  - %s — %s; instance %s.\n", escape(hit.Field), escape(hit.Label), escape(hit.Location))
+				}
+			}
+			out.WriteString("\n")
+		}
 	}
 	return out.String()
 }

@@ -2,13 +2,67 @@ package bundlereport
 
 import (
 	"encoding/json"
+	"html/template"
 	"reflect"
 	"strings"
 	"testing"
 
-	"github.com/phrond/wiretap/internal/artifact"
 	"github.com/phrond/wiretap/internal/coverage"
 )
+
+func TestViewerCombinationsPreserveMessageWitnessesAndCounts(t *testing.T) {
+	first := &coverage.ContractTarget{Key: "enum", OperationKey: "op", Operation: "/orders.Orders/Create", Phase: "request", FieldPath: "Order.state", Family: "enum", Condition: "PENDING", State: "covered"}
+	second := &coverage.ContractTarget{Key: "presence", OperationKey: "op", Operation: first.Operation, Phase: "request", FieldPath: "Order.note", Family: "presence", Condition: "absent", State: "not_covered"}
+	index := 2
+	evidence := coverage.ContractEvidence{AttemptID: "failed-attempt", TestName: "create order", Path: "tests/failed-attempt.json", FlowID: "stream", Phase: "request", MessageIndex: &index, InstanceLocation: "/messages/2/body", Outcome: "fail", Validation: "valid", Result: "observed"}
+	spec := &coverage.ContractSpec{APIID: "orders", Targets: []*coverage.ContractTarget{first, second}, Combinations: []coverage.ContractCombination{{Fingerprint: "fingerprint", OperationKey: "op", Phase: "request", Hits: []coverage.ConditionHit{{Key: first.Key, InstanceLocation: "/messages/2/body/state"}, {Key: second.Key, InstanceLocation: "/messages/2/body/note"}}, Evidence: evidence}}}
+	report := &coverage.ContractCoverage{Specs: []*coverage.ContractSpec{spec}}
+	before, _ := json.Marshal(report)
+	views := buildViewerCoverage(report)
+	after, _ := json.Marshal(report)
+	if string(before) != string(after) || views[0].Counts.Covered != 1 || views[0].Counts.NotCovered != 1 {
+		t.Fatal("presenting observed combinations changed measured coverage")
+	}
+	combination := views[0].Operations[0].Combinations[0]
+	if combination.Evidence.Outcome != "fail" || combination.Evidence.MessageIndex == nil || *combination.Evidence.MessageIndex != 2 || combination.Hits[0].Location != "/messages/2/body/note" {
+		t.Fatal("combination lost its failed attempt or exact stream witness")
+	}
+	for _, term := range []string{"fingerprint", "create order", "Order.note", "omitted", "/messages/2/body/note"} {
+		if !strings.Contains(combination.Search, term) {
+			t.Errorf("combination search missing %q", term)
+		}
+	}
+	tpl, err := template.New("viewer").Parse(viewerHTML + viewerSections)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rendered strings.Builder
+	if err := tpl.ExecuteTemplate(&rendered, "contractPane", viewerData{Contracts: report, ContractSpecs: views}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(rendered.String(), `class="technical filter-leaf" data-state="observed" data-attention="true" data-search=`) {
+		t.Fatal("combination is not connected to search and coverage filters")
+	}
+	for _, output := range []string{rendered.String(), contractCoverageMarkdown(report)} {
+		for _, expected := range []string{"Observed case combinations", "Order.note", "omitted", "/messages/2/body/note", "fingerprint", "fail"} {
+			if !strings.Contains(output, expected) {
+				t.Errorf("combination view missing %q", expected)
+			}
+		}
+	}
+	// A passing observation elsewhere may cover every individual condition;
+	// that must not promote this failed message to a covered combination.
+	second.State = "covered"
+	passing := spec.Combinations[0]
+	passing.Evidence.AttemptID = "passing-attempt"
+	passing.Evidence.Outcome, passing.Evidence.Result = "pass", "covered"
+	spec.Combinations = append(spec.Combinations, passing)
+	view := buildViewerCoverage(report)[0]
+	op := view.Operations[0]
+	if view.Counts.Covered != 2 || !view.Attention || !op.Attention || len(op.Combinations) != 2 || !op.Combinations[0].Attention || op.Combinations[1].Attention {
+		t.Fatal("observations were merged or their outcomes were inferred from aggregate coverage")
+	}
+}
 
 func TestViewerCoverageGroupsWithoutChangingMeasurement(t *testing.T) {
 	const operation = "POST /transactions"
@@ -29,7 +83,6 @@ func TestViewerCoverageGroupsWithoutChangingMeasurement(t *testing.T) {
 		// Presentation must not sum these duplicated aggregates.
 		Counts: map[string]coverage.ContractCounts{"phase:request": {Covered: 1, NotCovered: 1}, "family:number": {Covered: 1}, "family:nullable": {NotCovered: 1}},
 		Violations: []coverage.ContractViolation{
-			{Operation: operation, Expected: true, Reason: "deliberately invalid request", Evidence: evidence},
 			{Operation: operation, Reason: "unexpected response mismatch", Evidence: evidence},
 			{Operation: "GET /undeclared", Reason: "undeclared operation", Evidence: evidence},
 		},
@@ -48,15 +101,15 @@ func TestViewerCoverageGroupsWithoutChangingMeasurement(t *testing.T) {
 	if view.Counts != (coverage.ContractCounts{Covered: 1, NotCovered: 1, Unknown: 1, Unsupported: 1, Excluded: 1}) {
 		t.Fatalf("targets counted incorrectly: %+v", view.Counts)
 	}
-	if view.ExpectedViolations != 1 || view.UnexpectedViolations != 2 || !view.Attention {
-		t.Fatalf("expected negative inputs were conflated with mismatches: %+v", view)
+	if view.ViolationCount != 2 || !view.Attention {
+		t.Fatalf("contract mismatch count is incorrect: %+v", view)
 	}
 	op := view.Operations[1]
 	if op.Name != operation || len(op.Groups) != 3 || op.Groups[0].Label != "Request" || op.Groups[1].Label != "Response" || !op.Groups[2].Limits {
 		t.Fatalf("unexpected groups: %+v", op)
 	}
-	if len(op.Violations) != 1 || len(op.ExpectedViolations) != 1 || !view.Operations[0].Attention {
-		t.Fatalf("mismatch-only operation or expected input lost: %+v", view.Operations)
+	if len(op.Violations) != 1 || !view.Operations[0].Attention {
+		t.Fatalf("mismatch-only operation or evidence lost: %+v", view.Operations)
 	}
 	if op.Violations[0].Evidence.TestURL != "#attempt-"+shortHash(evidence.AttemptID) {
 		t.Fatalf("mismatch has no linked test: %+v", op.Violations)
@@ -125,65 +178,12 @@ func TestViewerConditionLabels(t *testing.T) {
 	}
 }
 
-func TestViewerRejectionsKeepExecutionFailuresSeparate(t *testing.T) {
-	evidence := coverage.ContractEvidence{AttemptID: "case-one", TestName: "withdrawal invalid amount", Outcome: "fail", Reason: "Generated case did not satisfy rejection checks (HTTP 401)"}
-	report := &coverage.RejectionCoverage{Targets: []*coverage.RejectionCoverageTarget{
-		{RejectionTarget: artifact.RejectionTarget{Key: "a", SchemaID: "banking", Operation: "POST /withdraw", Location: "/body/amount", Constraint: "minimum", ExpectedStatuses: []int{400}}, State: "covered"},
-		{RejectionTarget: artifact.RejectionTarget{Key: "b", SchemaID: "banking", Operation: "POST /withdraw", Location: "/body/accountId", Constraint: "type", ExpectedStatuses: []int{400}}, State: "failed", Evidence: []coverage.ContractEvidence{evidence}},
-		{RejectionTarget: artifact.RejectionTarget{Key: "c", SchemaID: "banking", Operation: "POST /withdraw", Location: "/body", Constraint: "required", ExpectedStatuses: []int{400}}, State: "not_covered"},
-		{RejectionTarget: artifact.RejectionTarget{Key: "d", SchemaID: "other", Operation: "POST /withdraw", Location: "/query/id", Constraint: "type", ExpectedStatuses: []int{422}}, State: "covered"},
-	}}
-	before, _ := json.Marshal(report)
-	views := buildViewerRejections(report)
-	after, _ := json.Marshal(report)
-	if string(before) != string(after) {
-		t.Fatal("viewer changed rejection evidence")
-	}
-	if len(views) != 2 {
-		t.Fatalf("distinct API schemas merged: %+v", views)
-	}
-	op := views[0]
-	if op.Covered != 1 || op.Failed != 1 || op.NotCovered != 1 || !op.Attention {
-		t.Fatalf("failed authentication counted as rejection coverage: %+v", op)
-	}
-	if !strings.Contains(op.Search, "HTTP 401") || !strings.Contains(op.Search, "withdrawal invalid amount") {
-		t.Fatalf("execution evidence not searchable: %s", op.Search)
-	}
-	for _, row := range op.Rows {
-		if row.Key == "b" && (row.Label != "wrong value type" || row.Field != "Body · accountId" || row.Evidence[0].TestURL != "#attempt-"+shortHash("case-one")) {
-			t.Fatalf("invalid input description/link lost: %+v", row)
-		}
-	}
-	if views[1].Attention || !strings.HasPrefix(op.ID, "rejection-") {
-		t.Fatalf("unexpected attention or unstable ID: %+v", views)
-	}
-}
-
 func TestViewerCoverageEmptyReports(t *testing.T) {
-	if buildViewerCoverage(nil) != nil || buildViewerRejections(nil) != nil {
+	if buildViewerCoverage(nil) != nil {
 		t.Fatal("nil coverage should produce no view")
 	}
 	view := buildViewerCoverage(&coverage.ContractCoverage{Specs: []*coverage.ContractSpec{nil, {APIID: "missing-spec", Notes: []string{"No supplied contract"}}}})
 	if len(view) != 1 || len(view[0].Operations) != 0 || view[0].DenominatorKnown || !reflect.DeepEqual(view[0].Counts, coverage.ContractCounts{}) {
 		t.Fatalf("unknown denominator was presented as measured coverage: %+v", view)
-	}
-}
-
-func TestNativeRejectionViewsUseApplicationStatusAndExactWitnesses(t *testing.T) {
-	index := 0
-	target := artifact.RejectionTarget{Key: "native-target", Protocol: "grpc", SchemaID: "orders", Operation: "/orders.v1.Orders/CreateOrder", Location: "/messages/0/body/sku", MessageIndex: &index, Constraint: "string.min_len", ExpectedStatuses: []int{3, 11}}
-	evidence := coverage.ContractEvidence{AttemptID: "case-two", InstanceLocation: "/messages/1/body/sku", Reason: "Intended request violation verified (gRPC status 3)"}
-	report := &coverage.RejectionCoverage{Covered: 1, Targets: []*coverage.RejectionCoverageTarget{{RejectionTarget: target, State: "covered", Evidence: []coverage.ContractEvidence{evidence}}}}
-	view := buildViewerRejections(report)
-	row := view[0].Rows[0]
-	if row.StatusLabel != "gRPC INVALID_ARGUMENT (3) or OUT_OF_RANGE (11)" || row.Field != "Message 1 · sku" || row.Label != "string too short" {
-		t.Fatalf("native target lost its meaning: %+v", row)
-	}
-	if row.Evidence[0].InstanceLocation != evidence.InstanceLocation {
-		t.Fatal("later stream witness replaced with catalogue representative")
-	}
-	markdown := contractCoverageMarkdown(&coverage.ContractCoverage{Rejections: report})
-	if !strings.Contains(markdown, row.StatusLabel) || !strings.Contains(markdown, "/messages/1/body/sku") || strings.Contains(markdown, "HTTP [3") {
-		t.Fatalf("native markdown status or witness is incorrect: %s", markdown)
 	}
 }

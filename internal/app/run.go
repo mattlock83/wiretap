@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/phrond/wiretap/internal/bundle"
@@ -88,11 +87,6 @@ func (a *App) finishRun(ctx context.Context) (string, error) {
 	return current.Path(), err
 }
 func (a *App) interruptRun() error {
-	stopCtx, stopCancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer stopCancel()
-	if err := a.stopExplorations(stopCtx); err != nil {
-		return fmt.Errorf("stop exploration: %w", err)
-	}
 	a.controlMu.Lock()
 	defer a.controlMu.Unlock()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

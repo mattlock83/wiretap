@@ -29,11 +29,9 @@ alone do not prove the inventory is complete.
 | Consumer only | Nonempty `consumes`; `provides` omitted or empty. | Dependency routes and test lifecycle calls must work with `sut` omitted. Do not require a dummy inbound API, provider request, provider spec or provider URL. |
 | Mixed | Both sides have entries. | Bind the relevant provided API and dependency targets while retaining separate boundary roles. |
 
-A provider-only service gains conformance checks, coverage and supported provider
-exploration from its own tests. A consumer-only UI gains evidence of its API
-requests and mocked dependency assumptions; planned comparison and variation
-checks help it handle actual or permitted provider behaviour. The
-[roadmap](roadmap.md#value-on-either-side-of-an-api) describes these propositions.
+A provider-only service gains spec conformance, operation and condition coverage
+from its own tests. A consumer-only UI gains evidence of its API assumptions and
+dependency coverage. Neither role requires a synthetic API or dependency.
 
 The UI's existing test framework remains the owner of browser execution, setup,
 assertions and outcomes. Wiretap must associate outbound API exchanges with
@@ -56,11 +54,6 @@ Consumer coverage describes its exercised dependency usage; uncalled provider
 operations are not automatically UI test obligations. Scope consumer verification
 work to declared or observed usage and expectations, without claiming that mock
 observations verify the provider.
-
-With neither side declared, metadata can still be retained, but capture or
-exploration without a bound API must explain that there is no applicable target.
-It must not report a meaningful API-assurance pass. Declared but unbound APIs
-remain visible and untested, independently of the application's role.
 
 These are requirements for the proposed configuration/runtime model, not a claim
 that the current binary has a complete consumer-only UI capture workflow.

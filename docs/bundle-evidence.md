@@ -308,7 +308,7 @@ import or validated the schema's semantics.
 This envelope represents these protocols; it does not enable their live capture,
 semantic validation, replay or coverage adapters. Live capture and contract
 measurement currently cover HTTP/OpenAPI and native gRPC/Protobuf, including
-all four RPC shapes. Execution supports HTTP and native gRPC provider exploration.
+all four RPC shapes. Execution adapters are outside the local capture tool.
 Generic event recordings remain visible as unsupported for measurement/execution
 until the relevant adapter is implemented. Native gRPC uses its typed RPC record
 and the observation fields below; it does not duplicate payloads into generic events.
@@ -360,68 +360,18 @@ indices, monotonic timing and sequence uniqueness, as well as the existing hashe
 Protobuf bytes and JSON projections. A drain snapshot is immutable: subsequent
 traffic cannot update the committed attempt or migrate into the next test.
 
-## Execution and local test hooks
+## External execution
 
-Execution reads the same `tests/<attempt-id>.json` records and payloads used by
-the documentation. There is no second representation of a test to keep in sync.
-Traffic order, timestamps and correlation fields describe the captured sequence;
-timing-based attribution is not proof of causality. The format does not grant a
-runner permission to execute arbitrary code or treat recorded responses as
-exact-match assertions.
+The bundle is a build artifact, not a test runner. A future Hub or independent
+executor can read `tests/<attempt-id>.json`, frozen contracts and ordinary payload
+files. Sequence, stream events and correlation remain available without a second
+scenario representation. Captured responses are observations, not exact-match
+assertions or permission to execute code.
 
-The current provider exploration executor supports HTTP and native gRPC, invoked inside
-an active captured test through the SDK or HTTP API. It snapshots completed
-provider exchanges and the frozen OpenAPI or Protobuf contract, runs a fresh baseline, and
-generates invalid-input variations. Full dependency replay, arbitrary original
-test assertions are not implemented. See
-[exploration](exploration.md) for the local callback lifecycle.
-
-Callbacks receive ordinary JSON request/response data and execution context.
-They run in the user's test process, where database connections and fixture
-helpers already exist. Returned bindings can refresh fields such as generated
-IDs; request callbacks can sign final requests or refresh authentication.
-Fixture, authentication and inspection traffic produced during callbacks is
-excluded from retained evidence and coverage. Callback requests still use the
-parent or generated case's W3C context for correct routing. Setup, cleanup,
-credentials and callback code stay outside the bundle. There are
-no placeholders to interpret in Markdown or embedded scripts.
-
-Generated cases are separate immutable attempts in the same open run bundle,
-linked to their parent authored test and seed snapshot. The final coverage view
-combines all qualifying evidence. Failed or unexecuted generated cases remain
-visible, and an awaited exploration call fails its enclosing framework test when
-its checks fail.
-
-## Generated provider attempts
-
-Generated provider attempts also contain optional `capture.exploration` evidence:
-generator version, source run and parent attempt, exploration invocation, seed
-flow IDs, baseline or rejection mode, targeted constraint,
-and whether the transmitted request was verified to violate that
-constraint. The baseline contains the generated target catalogue and generation
-limits/diagnostics. Ordinary `assertions` record expected rejection status,
-response schema conformance and any explicit property results. An intentionally
-invalid request has schema status `expected_rejection`; unrelated failures still
-fail the attempt. Normal capture enforcement is unchanged.
-
-Native gRPC rejection targets declare `protocol: "grpc"`, a zero-based
-`message_index`, and an exact location such as `/messages/1/body/quantity`.
-`expected_statuses` then contains native application codes (3 or 11), never HTTP
-status codes. The target key identifies the contract rule independent of stream
-position; each attempt retains its own witness location, index and expected
-statuses. Derived rejection evidence preserves these per-attempt expectations,
-even if another invocation used a different allowed validation code. HTTP targets
-keep their existing status semantics and may omit `protocol`.
-Attempts carrying a native target or catalogue require `grpc-exploration.v1`.
-Readers must reject unsupported required capabilities rather than interpret
-these codes as HTTP results. This is additive within evidence format 3.1 and
-requires no new folders or parallel execution representation.
-
-Hook code, runtime bindings, fixture state and credentials are not
-execution metadata in the bundle. Captured message values follow redaction rules.
-Each generated attempt records freshly executed evidence. The seed snapshot
-identifies the authored traffic used for generation; it does not count as a
-second execution.
+Authentication, fixture setup, substitutions and cleanup belong to project-owned
+code outside the bundle. There are no embedded hooks, scripts or Markdown
+placeholders. A future executor must preserve original evidence and distinguish
+new execution results from the captured run.
 
 ## Derived contract coverage
 
@@ -433,15 +383,6 @@ Each observation links back to an attempt path and flow ID, with phase, instance
 location, test name, outcome, message validation, capture completeness and
 transport failure details. See [contract coverage rules](contract-coverage-rules.md)
 for status meanings and unsupported measurement scopes.
-
-Exploration's generated `rejection_coverage` catalogue is another derived view,
-separate from valid-condition targets. It counts only complete passing attempts
-with explicit request-verification, rejection-status and response-schema checks.
-For gRPC this also requires complete decoded messages, an upstream application
-status and verified descriptor identity; a complete trailers-only error is
-valid. Intentionally invalid requests cannot earn positive input-condition
-coverage. Failed or unexecuted targets remain visible. No hook execution is required to
-rebuild or export it. See [exploration](exploration.md).
 
 ### gRPC contract readiness
 

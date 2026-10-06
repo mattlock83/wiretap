@@ -7,8 +7,7 @@ import secrets
 import unittest
 from urllib.error import HTTPError
 
-from hooks import ACCOUNT_ID, HAPPY_CALLS, WITHDRAWAL, auth_headers, checks, cleanup, prepare, request, verify_authentication
-from explore_http import explore
+from fixtures import ACCOUNT_ID, HAPPY_CALLS, WITHDRAWAL, checks, cleanup, prepare, request, verify_authentication
 
 CONTROL = os.environ["WIRETAP_BASE_URL"]
 PROXY = os.environ["WIRETAP_SUT_URL"]
@@ -25,6 +24,7 @@ def control(path, body):
 class Transactions(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        verify_authentication()
         capture = control("startRun", {})
         cls.addClassCleanup(control, "finishRun", {})
         Path(os.environ["CAPTURE_PATH_FILE"]).write_text(capture["bundle_path"])
@@ -40,7 +40,6 @@ class Transactions(unittest.TestCase):
             "meta": {"example": "speedscale/microsvc", "image": os.environ["TRANSACTIONS_IMAGE"],
                      "image_id": os.environ["TRANSACTIONS_IMAGE_ID"]},
         })
-        self.session_id = session["session_id"]
         self.headers = {**fixture["headers"], "traceparent": traceparent}
         outcome = "fail"
         try:
@@ -66,25 +65,6 @@ class Transactions(unittest.TestCase):
             for check in checks(user_id, True, HAPPY_CALLS):
                 self.assertTrue(check["passed"], check["name"])
 
-            # This awaited operation belongs to the existing unittest test. Each
-            # baseline/rejection gets fresh auth and independent account state.
-            result = explore(control, self.session_id,
-                operations=["POST /api/transactions/withdraw"],
-                expected_statuses=[400], request_timeout="20s",
-                hooks={
-                    "before_explore": lambda event: verify_authentication(),
-                    "before_case": lambda event: prepare(),
-                    "before_request": {
-                        "operations": ["GET /api/transactions", "POST /api/transactions/withdraw"],
-                        "handler": lambda event: {"headers": auth_headers(event["state"]["user_id"])},
-                    },
-                    "check_case": lambda event: {"checks": checks(
-                        event["state"]["user_id"], event["mode"] == "baseline",
-                        HAPPY_CALLS if event["mode"] == "baseline" else [])},
-                    "after_case": lambda event: cleanup(),
-                })
-            self.assertGreater(result["executed"], 0)
-            self.assertEqual(result["failed"], 0)
 
     def test_insufficient_funds(self):
         with self.capture("insufficient funds leave the account unchanged") as user_id:

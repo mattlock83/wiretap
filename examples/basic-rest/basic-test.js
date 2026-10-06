@@ -20,20 +20,5 @@ if (!RUN_E2E) {
     const result = await fetch(`${wiretap.sutUrl}/process`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: "123", action: "process" }) });
     assert.equal(result.status, 200);
     assert.deepEqual(await result.json(), { message: "processed", id: "123", action: "process" });
-
-    // Generated checks are awaited by this ordinary node:test case. Stateful
-    // applications can reset fixtures in beforeCase and release them in afterCase.
-    await wiretap.explore({
-      operations: ["POST /process"],
-      hooks: {
-        checkCase: {
-          operations: ["POST /process"],
-          handler: async event => ({ checks: [{
-            name: "the provider returned a response",
-            passed: event.exchanges.length > 0
-          }] })
-        }
-      }
-    });
   }));
 }

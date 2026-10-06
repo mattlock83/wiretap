@@ -861,37 +861,37 @@ a:focus-visible,button:focus-visible,summary:focus-visible,[tabindex]:focus-visi
   line-height:1.6;
 }
 
-.explore-layout {
+.coverage-layout {
   display:grid;
   grid-template-columns:1fr 1.08fr;
   gap:85px;
   align-items:center;
 }
 
-.explore-copy h2 {
+.coverage-copy h2 {
   margin-top:18px;
   font-size:clamp(1.9rem,3vw,2.65rem);
   line-height:1.17;
 }
 
-.explore-copy>p:not(.eyebrow) {
+.coverage-copy>p:not(.eyebrow) {
   margin-top:22px;
   font-size:1rem;
   line-height:1.8;
 }
 
-.explore-copy .text-link {
+.coverage-copy .text-link {
   margin-top:24px;
 }
 
-.explore-copy .scope-note {
+.coverage-copy .scope-note {
   font-size:.8125rem;
   color:var(--muted);
   line-height:1.75;
   max-width:405px;
 }
 
-.explore-example {
+.coverage-example {
   background:#12291f;
   color:#fff;
   border:1px solid #193c2c;
@@ -945,7 +945,7 @@ a:focus-visible,button:focus-visible,summary:focus-visible,[tabindex]:focus-visi
   margin-right:5px;
 }
 
-.generated-heading {
+.case-heading {
   display:flex;
   justify-content:space-between;
   gap:12px;
@@ -954,7 +954,7 @@ a:focus-visible,button:focus-visible,summary:focus-visible,[tabindex]:focus-visi
   margin-bottom:7px;
 }
 
-.generated-row {
+.case-row {
   display:flex;
   align-items:center;
   justify-content:space-between;
@@ -964,16 +964,12 @@ a:focus-visible,button:focus-visible,summary:focus-visible,[tabindex]:focus-visi
   font-size:.8rem;
 }
 
-.generated-row>span:last-child {
+.case-row>span:last-child {
   font:400 .75rem/1.5 var(--mono);
   color:#cbe7b8;
   white-space:nowrap;
 }
 
-.case-mark {
-  color:#a9d887;
-  margin-right:9px;
-}
 
 .terminal-result {
   font-size:.75rem;
@@ -1333,7 +1329,7 @@ a:focus-visible,button:focus-visible,summary:focus-visible,[tabindex]:focus-visi
   .flow-kicker {
     font-size:.75rem;
   }
-  .explore-layout,.knowledge-layout {
+  .coverage-layout,.knowledge-layout {
     gap:45px;
   }
   .questions-section {
@@ -1360,7 +1356,7 @@ a:focus-visible,button:focus-visible,summary:focus-visible,[tabindex]:focus-visi
   .terminal-body {
     padding:22px;
   }
-  .generated-row {
+  .case-row {
     font-size:.75rem;
   }
   .demo-topbar {
@@ -1480,18 +1476,18 @@ a:focus-visible,button:focus-visible,summary:focus-visible,[tabindex]:focus-visi
   .learning-item h3 {
     font-size:1.3rem;
   }
-  .explore-layout {
+  .coverage-layout {
     grid-template-columns:1fr;
     gap:35px;
   }
-  .explore-copy {
+  .coverage-copy {
     max-width:630px;
   }
-  .explore-example {
+  .coverage-example {
     max-width:650px;
     width:100%;
   }
-  .explore-copy .scope-note {
+  .coverage-copy .scope-note {
     max-width:none;
   }
   .knowledge-layout {
@@ -1777,7 +1773,7 @@ a:focus-visible,button:focus-visible,summary:focus-visible,[tabindex]:focus-visi
   .learning-item .text-link {
     margin-top:17px;
   }
-  .explore-copy h2 {
+  .coverage-copy h2 {
     font-size:2rem;
   }
   .terminal-bar {
@@ -1795,16 +1791,14 @@ a:focus-visible,button:focus-visible,summary:focus-visible,[tabindex]:focus-visi
     font-size:.75rem;
     line-height:1.9;
   }
-  .generated-row {
+  .case-row {
     font-size:.75rem;
     gap:10px;
   }
-  .generated-row>span:last-child {
+  .case-row>span:last-child {
     font-size:.75rem;
   }
-  .case-mark {
-    margin-right:5px;
-  }
+
   .terminal-result {
     font-size:.75rem;
     padding:13px 10px;

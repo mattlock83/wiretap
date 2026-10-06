@@ -26,15 +26,13 @@ type Deps struct {
 }
 
 type App struct {
-	project       *project.Config
-	cfg           core.Config
-	logger        *slog.Logger
-	lifecycle     *core.Lifecycle
-	server        *http.Server
-	bundleMu      sync.Mutex
-	bundle        *bundle.Writer
-	explorationMu sync.Mutex
-	explorations  map[string]*explorationJob
+	project   *project.Config
+	cfg       core.Config
+	logger    *slog.Logger
+	lifecycle *core.Lifecycle
+	server    *http.Server
+	bundleMu  sync.Mutex
+	bundle    *bundle.Writer
 
 	proxyComponent  *ProxyComponent
 	grpcMu          sync.RWMutex

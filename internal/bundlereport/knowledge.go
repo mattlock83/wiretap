@@ -89,23 +89,12 @@ type knowledgeEvidence struct {
 }
 
 type knowledgeAttempt struct {
-	ID          string            `json:"attempt_id"`
-	Name        string            `json:"name"`
-	Status      string            `json:"status"`
-	Kind        string            `json:"kind"`
-	Page        string            `json:"page"`
-	Path        string            `json:"path"`
-	Exploration *knowledgeLineage `json:"exploration,omitempty"`
-}
-
-type knowledgeLineage struct {
-	SourceRunID       string   `json:"source_run_id"`
-	SourceAttemptID   string   `json:"source_attempt_id"`
-	SourceSHA256      string   `json:"source_sha256,omitempty"`
-	SourceKind        string   `json:"source_kind,omitempty"`
-	InvocationID      string   `json:"exploration_id,omitempty"`
-	SourceFlowIDs     []string `json:"source_flow_ids,omitempty"`
-	SourceAttemptPath string   `json:"source_attempt_path,omitempty"`
+	ID     string `json:"attempt_id"`
+	Name   string `json:"name"`
+	Status string `json:"status"`
+	Kind   string `json:"kind"`
+	Page   string `json:"page"`
+	Path   string `json:"path"`
 }
 
 type verificationTask struct {
@@ -143,24 +132,9 @@ func buildKnowledge(root string, run *bundle.Run, captures []*artifact.Artifact,
 		paths[a.AttemptID] = a.Path
 	}
 	byAttempt := map[string]*artifact.Artifact{}
-	explored := false
 	for _, a := range captures {
 		byAttempt[a.TestCase.ID] = a
-		kind := "authored"
-		var lineage *knowledgeLineage
-		if a.Exploration != nil {
-			kind = "generated_" + a.Exploration.Mode
-			explored = true
-			x := a.Exploration
-			lineage = &knowledgeLineage{SourceRunID: x.SourceRunID, SourceAttemptID: x.SourceAttemptID, SourceSHA256: x.SourceSHA256, SourceKind: x.SourceKind, InvocationID: x.InvocationID, SourceFlowIDs: append([]string(nil), x.SourceFlowIDs...)}
-			if explorationParentCommitted(run, x) {
-				lineage.SourceAttemptPath = paths[x.SourceAttemptID]
-			}
-		}
-		k.Attempts = append(k.Attempts, knowledgeAttempt{a.TestCase.ID, a.TestCase.Name, a.TestCase.Status, kind, "tests/" + a.TestCase.ID + ".md", paths[a.TestCase.ID], lineage})
-	}
-	if explored {
-		k.Scope = append(k.Scope, explorationScope)
+		k.Attempts = append(k.Attempts, knowledgeAttempt{a.TestCase.ID, a.TestCase.Name, a.TestCase.Status, "authored", "tests/" + a.TestCase.ID + ".md", paths[a.TestCase.ID]})
 	}
 	if run.RunState != "complete" || len(run.Pending) > 0 {
 		k.Scope = append(k.Scope, "This run is not a finalized complete snapshot; pending or interrupted work must not be treated as absent coverage.")
@@ -173,9 +147,6 @@ func buildKnowledge(root string, run *bundle.Run, captures []*artifact.Artifact,
 		e := knowledgeEvidence{Protocol: s.Protocol, AttemptID: s.TestCaseID, FlowID: s.FlowID, Path: paths[s.TestCaseID], TestName: s.TestCase, TestStatus: s.TestStatus, SchemaValidation: validation, CaptureIncomplete: s.CaptureIncomplete, TransportError: s.TransportError, TestCorrelation: s.TestCorrelation, ParentFlowID: s.ParentFlowID, ParentCorrelation: s.ParentCorrelation}
 		if a := byAttempt[s.TestCaseID]; a != nil {
 			e.AttemptKind = "authored"
-			if a.Exploration != nil {
-				e.AttemptKind = "generated_" + a.Exploration.Mode
-			}
 			e.RedactionsConfigured = len(a.Redactions) > 0
 			for _, f := range a.Traffic {
 				if f.ID != s.FlowID {
@@ -450,7 +421,7 @@ func buildKnowledge(root string, run *bundle.Run, captures []*artifact.Artifact,
 		}
 		for _, op := range api.Operations {
 			if op.ContractMatch == "unsupported" {
-				k.addTask(api, "unsupported_measurement", "normal", op.Operation, "This event interaction is retained but the installed coverage and execution engines do not support it.", "Inspect the recorded event sequence and contract using a compatible protocol adapter before claiming coverage or generating executable checks.", op.Page, op.Evidence, nil)
+				k.addTask(api, "unsupported_measurement", "normal", op.Operation, "This event interaction is retained but the installed coverage evaluators do not support it.", "Inspect the recorded event sequence and contract using a compatible protocol adapter before claiming coverage or generating executable checks.", op.Page, op.Evidence, nil)
 			}
 			if op.ContractMatch != "unsupported" && !op.Declared && hasSuppliedContract && (api.SchemaID == "" || op.ContractMatch == "unmatched") {
 				k.addTask(api, "reconcile_unmatched_operation", "high", op.Operation, "Captured exchanges did not match any supplied operation for this API.", "Compare the captured method and path with the intended frozen contract and API version. Investigate undocumented routes, wrong routing or a stale contract before deriving coverage or generating permutations.", op.Page, op.Evidence, nil)
@@ -484,7 +455,7 @@ func buildKnowledge(root string, run *bundle.Run, captures []*artifact.Artifact,
 		for _, f := range a.Traffic {
 			evidence = append(evidence, ref(coverage.FlowSample{TestCaseID: a.TestCase.ID, FlowID: f.ID, TestCase: a.TestCase.Name, TestStatus: a.TestCase.Status, CaptureIncomplete: a.CaptureIncomplete, TransportError: f.TransportError}))
 		}
-		kind, reason, action := "investigate_attempt", "One or more test attempts did not pass.", "Inspect test outcomes, assertions and transport diagnostics before attributing a failure to an API contract. Reproduce with the authored test or appropriate exploration hooks."
+		kind, reason, action := "investigate_attempt", "One or more test attempts did not pass.", "Inspect test outcomes, assertions and transport diagnostics before attributing a failure to an API contract. Reproduce with the original test and its existing fixtures."
 		if a.CaptureIncomplete {
 			kind, reason, action = "repair_capture", "One or more attempts have incomplete capture evidence.", "Resolve capture diagnostics and recapture the scenario before concluding what was exercised or which dependency assumptions hold."
 		}
@@ -520,26 +491,11 @@ func buildKnowledge(root string, run *bundle.Run, captures []*artifact.Artifact,
 			}
 			violations := map[string][]knowledgeEvidence{}
 			for _, v := range spec.Violations {
-				if v.Expected {
-					continue
-				}
 				e := v.Evidence
 				violations[v.Operation] = append(violations[v.Operation], ref(coverage.FlowSample{TestCaseID: e.AttemptID, FlowID: e.FlowID, TestCase: e.TestName, TestStatus: e.Outcome, CaptureIncomplete: e.CaptureIncomplete, TransportError: e.TransportError}))
 			}
 			for op, evidence := range violations {
 				k.addTask(api, "contract_mismatch", "high", op, "Retained traffic has unexpected violations of its supplied contract.", "Inspect violation details and payloads against the frozen schema. Establish whether the application, mock, or supplied spec is wrong; this alone does not prove disagreement with a real provider.", "contract-coverage.md", evidence, nil)
-			}
-		}
-		if r := report.Contracts.Rejections; r != nil {
-			for _, t := range r.Targets {
-				if t.State == "covered" {
-					continue
-				}
-				var evidence []knowledgeEvidence
-				for _, e := range t.Evidence {
-					evidence = append(evidence, ref(coverage.FlowSample{TestCaseID: e.AttemptID, FlowID: e.FlowID, TestCase: e.TestName, TestStatus: e.Outcome, CaptureIncomplete: e.CaptureIncomplete, TransportError: e.TransportError}))
-				}
-				k.addTask(knowledgeAPI{ID: run.APIID, Role: "provided", SchemaID: t.SchemaID, Protocol: t.Protocol}, "rejection_"+t.State, "high", t.Operation, "Generated invalid-input target is "+t.State+": "+t.Location+" "+t.Constraint+".", "Inspect rejection and property assertions. Repair authentication/fixtures or the application as appropriate, then rerun exploration from the authored seed using project-owned hooks. Do not count authentication failures as input validation.", "contract-coverage.md", evidence, []string{t.Key})
 			}
 		}
 	}
@@ -601,11 +557,8 @@ func (k *knowledgeIndex) addTask(api knowledgeAPI, kind, priority, operation, re
 	if identity == "" {
 		identity = api.SchemaSet
 	}
-	conditionIdentity := ""
-	if strings.HasPrefix(kind, "rejection_") {
-		conditionIdentity = strings.Join(keys, ",")
-	}
-	t.ID = "verify-" + shortHash(strings.Join([]string{"knowledge-1", api.Role, api.ID, api.SchemaID, identity, kind, operation, conditionIdentity}, "|"))
+	// Keep the final identity slot empty so existing knowledge-1 task IDs remain stable.
+	t.ID = "verify-" + shortHash(strings.Join([]string{"knowledge-1", api.Role, api.ID, api.SchemaID, identity, kind, operation, ""}, "|"))
 	for i := range k.Verification {
 		if k.Verification[i].ID == t.ID {
 			k.Verification[i].Evidence = append(k.Verification[i].Evidence, evidence...)
@@ -751,7 +704,7 @@ func writeKnowledge(root string, k *knowledgeIndex, write func(string, string, s
 	if len(k.Attempts) == 0 {
 		system.WriteString("No committed test attempts in this snapshot.\n")
 	}
-	system.WriteString("\n## Knowledge-base ingestion\n\nStart with `docs/knowledge.json` for identities, observations and open verification tasks. Preserve the run ID and snapshot revision on each imported record. Resolve every evidence pointer against `bundle.json`; follow attempt body references for retained payloads. Index the Markdown concepts for readable context and the contract catalogue for exact condition keys.\n\nCompare dependency API IDs with provider API IDs, then select intended source/build revisions and compare contract revisions and condition-rule versions. Matching operation/condition keys identify comparable evidence, not proven compatibility. Different contracts need explicit comparison; lack of a provider sample is unknown, not incorrect.\n\nDo not merge pass/fail attempts, authored/generated scenarios, mock/service targets, or different contract revisions into an unqualified claim. The verification queue is a derived backlog, not executable bundle code or proof of permission to run tests.\n")
+	system.WriteString("\n## Knowledge-base ingestion\n\nStart with `docs/knowledge.json` for identities, observations and open verification tasks. Preserve the run ID and snapshot revision on each imported record. Resolve every evidence pointer against `bundle.json`; follow attempt body references for retained payloads. Index the Markdown concepts for readable context and the contract catalogue for exact condition keys.\n\nCompare dependency API IDs with provider API IDs, then select intended source/build revisions and compare contract revisions and condition-rule versions. Matching operation/condition keys identify comparable evidence, not proven compatibility. Different contracts need explicit comparison; lack of a provider sample is unknown, not incorrect.\n\nDo not merge pass/fail attempts, different test scenarios, mock/service targets, or different contract revisions into an unqualified claim. The verification queue is a derived backlog, not executable bundle code or proof of permission to run tests.\n")
 	if err = write("system.md", "system", "System API evidence: "+systemName, "Tested API boundaries, dependency assumptions and evidence limits", system.String(), map[string]any{"evidence": "bundle.json"}); err != nil {
 		return err
 	}
@@ -819,7 +772,7 @@ func writeVerificationTasks(out *strings.Builder, tasks []verificationTask) {
 			}
 			fmt.Fprintf(out, "[Supporting details](%s)", "../"+task.Page)
 			if len(task.ConditionKeys) > 0 {
-				fmt.Fprintf(out, "; %d exact condition/rejection keys in this task's `condition_keys` in [knowledge.json](knowledge.json)", len(task.ConditionKeys))
+				fmt.Fprintf(out, "; %d exact condition keys in this task's `condition_keys` in [knowledge.json](knowledge.json)", len(task.ConditionKeys))
 			}
 			out.WriteString(".\n\n")
 			if len(task.Evidence) > 0 {
@@ -876,10 +829,6 @@ func knowledgeScenarioLabel(value string) string {
 	switch value {
 	case "authored":
 		return "Authored test"
-	case "generated_baseline":
-		return "Generated baseline replay"
-	case "generated_rejection":
-		return "Generated invalid-input case"
 	default:
 		return knowledgeWords(orUnknown(value))
 	}
@@ -913,14 +862,6 @@ func knowledgeTaskLabel(kind string) string {
 		return "Review unsupported contract conditions"
 	case "contract_mismatch":
 		return "Investigate contract violations"
-	case "rejection_failed":
-		return "Investigate invalid-input failures"
-	case "rejection_not_covered":
-		return "Exercise missing invalid-input cases"
-	case "rejection_unknown":
-		return "Resolve uncertain invalid-input results"
-	case "rejection_error":
-		return "Repair invalid-input execution errors"
 	case "establish_provenance":
 		return "Establish source and build provenance"
 	default:

@@ -27,7 +27,6 @@ type viewerData struct {
 	HasProvided, HasDependencies bool
 	Contracts                    *coverage.ContractCoverage
 	ContractSpecs                []viewerContractSpec
-	RejectionOperations          []viewerRejectionOperation
 	TestGroups                   []viewerTestGroup
 	RunID, State, GeneratedAt    string
 	APIID, TargetKind            string
@@ -67,15 +66,13 @@ type viewerSample struct {
 
 type viewerAttempt struct {
 	Coverage                                                                      []viewerCoverageLink
-	Exploration                                                                   *artifact.Exploration
 	Assertions                                                                    []artifact.Assertion
 	ID, Name, Status, TraceID, EvidenceURL, MarkdownURL, ValidationStatus, Search string
-	ParentAnchor                                                                  string
 	Incomplete                                                                    bool
 	Chronological                                                                 bool
 	Diagnostics                                                                   []string
 	Flows                                                                         []viewerFlow
-	Anchor, DisplayName, OriginLabel, Operation, Summary, GroupKey, GroupName     string
+	Anchor, DisplayName                                                           string
 	Attention                                                                     bool
 	ChecksPassed, ChecksOther                                                     int
 }
@@ -118,10 +115,7 @@ func writeViewer(root string, run *bundle.Run, captures []*artifact.Artifact, re
 		data.Description = run.Application.Description
 	}
 	data.ContractSpecs = buildViewerCoverage(report.Contracts)
-	if report.Contracts != nil {
-		data.RejectionOperations = buildViewerRejections(report.Contracts.Rejections)
-	}
-	coverageLinks := viewerCoverageLinks(data.ContractSpecs, data.RejectionOperations)
+	coverageLinks := viewerCoverageLinks(data.ContractSpecs)
 	if data.APIID == "" {
 		data.APIID = "Unidentified system"
 	}
@@ -232,36 +226,14 @@ func writeViewer(root string, run *bundle.Run, captures []*artifact.Artifact, re
 			return fmt.Errorf("viewer: missing attempt %s", ref.AttemptID)
 		}
 		attempt := viewerAttempt{
-			Exploration: capture.Exploration, Assertions: capture.Assertions,
-			ID: ref.AttemptID, Name: capture.TestCase.Name, Status: capture.TestCase.Status,
+			Assertions: capture.Assertions,
+			ID:         ref.AttemptID, Name: capture.TestCase.Name, Status: capture.TestCase.Status,
 			TraceID: capture.TestCase.TraceID, Incomplete: capture.CaptureIncomplete,
 			EvidenceURL: "../" + ref.Path, MarkdownURL: "tests/" + ref.AttemptID + ".md",
 		}
 		attempt.Anchor = "attempt-" + shortHash(ref.AttemptID)
 		attempt.Coverage = coverageLinks[ref.AttemptID]
 		attempt.DisplayName = attemptName(capture)
-		attempt.OriginLabel = "Authored test"
-		attempt.GroupKey = "authored"
-		attempt.GroupName = "Authored tests"
-		if x := capture.Exploration; x != nil {
-			attempt.GroupKey = "generated|" + explorationGroupKey(x)
-			if explorationParentCommitted(run, x) {
-				attempt.ParentAnchor = "attempt-" + shortHash(x.SourceAttemptID)
-			}
-			attempt.GroupName = capture.TestCase.Name
-			if i := strings.LastIndex(attempt.GroupName, " ["); i >= 0 {
-				attempt.GroupName = attempt.GroupName[:i]
-			}
-			attempt.OriginLabel = "Generated input check"
-			if x.Mode == "baseline" {
-				attempt.OriginLabel = "Baseline replay"
-				attempt.DisplayName = "Happy-path baseline"
-			}
-			if x.Target != nil {
-				attempt.Operation = x.Target.Operation
-				attempt.DisplayName = viewerMutationLabel(x.Target.Location, x.Target.Constraint)
-			}
-		}
 		attempt.Diagnostics = append(attempt.Diagnostics, capture.CaptureDiagnostics...)
 		if capture.SchemaValidation != nil {
 			attempt.ValidationStatus = capture.SchemaValidation.Status
@@ -282,14 +254,6 @@ func writeViewer(root string, run *bundle.Run, captures []*artifact.Artifact, re
 			} else {
 				attempt.ChecksOther++
 				attempt.Attention = true
-			}
-		}
-		if capture.Exploration != nil && capture.Exploration.Target != nil {
-			target := capture.Exploration.Target
-			for _, flow := range capture.Traffic {
-				if flow.ID == target.FlowID && flow.Response.HTTP != nil {
-					attempt.Summary = fmt.Sprintf("Expected %s · received HTTP %d", knowledgeStatuses(target.ExpectedStatuses), flow.Response.HTTP.Status)
-				}
 			}
 		}
 		data.Attempts++
@@ -346,7 +310,7 @@ func writeViewer(root string, run *bundle.Run, captures []*artifact.Artifact, re
 			})
 			data.Flows++
 		}
-		attempt.Search = strings.Join([]string{attempt.Name, attempt.ID, attempt.Status, attempt.OriginLabel, attempt.DisplayName, attempt.Summary, attempt.Operation, strings.Join(attempt.Diagnostics, " ")}, " ")
+		attempt.Search = strings.Join([]string{attempt.Name, attempt.ID, attempt.Status, attempt.DisplayName, strings.Join(attempt.Diagnostics, " ")}, " ")
 		for _, flow := range attempt.Flows {
 			attempt.Search += " " + flow.Request.Method + " " + flow.Request.URL + " " + flow.AssetID + " " + flow.Response.Status
 		}

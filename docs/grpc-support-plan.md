@@ -52,11 +52,9 @@ HTTP/gRPC paths, metadata, trailers-only failures, deadlines and TLS.
 Keep capture integrated with the user's test lifecycle. No mandatory Wiretap
 RPC client, application-specific trace IDs, automatic client instrumentation,
 reflection requirement, or new test framework. Keep payload attachments as
-hashed `.bin` files. Native gRPC exploration now supports finite standard
-Protovalidate rule witnesses across all four RPC shapes, with local test hooks
-and one shared bundle. See [code exploration](code-exploration-plan.md) and the
-[guide](exploration.md#native-grpc-cases). Connect's wire protocol, gRPC-Web, mTLS
-and broader semantic coverage remain follow-ups.
+hashed `.bin` files. Local Wiretap captures traffic and reports spec coverage;
+it does not generate or execute additional tests. Connect's wire protocol,
+gRPC-Web, mTLS and broader semantic coverage remain follow-ups.
 
 ### A. Native Node interoperability and adoption example
 
@@ -365,7 +363,6 @@ the fallback when the application does not propagate context.
 | Streaming | Implemented for all four RPC shapes, with explicit evidence quality, message timing, bounded retention and structural coverage. |
 | Validation | Observe and report contract violations at test finalization, as today. Never reject or rewrite an application message because passive validation failed. |
 | Reports | Extend existing bundle evidence, coverage, OKF, knowledge and static viewer; no separate RPC reporting pipeline. |
-| Exploration | Native unary and streaming invalid-input generation from supported standard Protovalidate rules, using SDK/HTTP local callbacks and recorded input prefixes. Unsupported provider sequences fail explicitly. |
 | Other protocols | The Connect wire protocol and gRPC-Web are separate follow-ups, even though ConnectRPC supports them. |
 
 Initial exclusions: HTTP CONNECT interception of gRPC, mTLS identity forwarding,
@@ -915,11 +912,6 @@ scattering `if grpc` conditions through HTML templates.
   inferred `.proto`. Pending/failed contract acquisition stays visible as an
   unresolved boundary with an unknown denominator. A missing descriptor claimed
   as resolved is an integrity error when reading a bundle.
-- Preserve explicit rejection of unsupported provider sequences before network
-  traffic or fixture hooks. The original HTTP-only restriction is superseded
-  by native unary and streaming exploration. Generated provider calls can
-  capture their fresh HTTP/gRPC downstream traffic through existing mocks; the
-  engine does not synthesize or replay dependency responses.
 - Emit specific verification tasks for untested methods, unobserved valid field
   cases and unsupported validation semantics. Missing contracts indicate an
   explicit HTTP opt-out or failed/pending gRPC acquisition; distinguish them.
@@ -1021,7 +1013,7 @@ unchanged native generated clients in reflection and local-source modes.
   operation/message view models. Gate `mock_openapi.go` on HTTP.
 - [ ] Test offline rebuilding, exact message links, zero-traffic RPC inventory,
   unresolved/incomplete inventories, non-OK statuses, cross-role/source key
-  matching where normalized contracts agree, and explicit exploration rejection.
+  matching where normalized contracts agree, and explicit unsupported-scope reporting.
 
 Done when the bundle explains what was tested and assumed, with truthful scope
 and identical measurements across JSON, Markdown and the static viewer.
@@ -1049,7 +1041,7 @@ and identical measurements across JSON, Markdown and the static viewer.
   verify `go test -race ./...` for shared transport/session/capture state.
 
 Packages 0–5 form the unary release. Do not announce complete gRPC streaming,
-arbitrary validation coverage, or gRPC exploration at this point.
+arbitrary validation coverage.
 
 ### 6. Complete streaming support
 
@@ -1083,23 +1075,20 @@ arbitrary validation coverage, or gRPC exploration at this point.
 | Privacy/integrity | Redacted secrets absent from raw attachments, binary metadata, JSON, logs, status details and views; missing/tampered descriptor or message rejected. |
 | Coverage | Uncalled methods visible; no fake HTTP statuses or OpenAPI drafts; condition identities stable across workspace moves/roles; unsupported annotations and scopes visible; multiple conditions per message. |
 | Streaming milestone | All three streaming shapes, early responses, half-close, slow reader, cancellation, empty-message flood, partial capture on drain and interruption. |
-| Regression | Existing HTTP capture, schema enforcement, redaction, tracing, bundle rebuilding, exploration and SDK lifecycle tests still pass. |
+| Regression | Existing HTTP capture, schema enforcement, redaction, tracing, bundle rebuilding and SDK lifecycle tests still pass. |
 
 Use targeted protocol tests for each package, then the full regression suites at
 the release gates. No need to add tests for documentation wording itself.
 
 ## Follow-ups after capture is established
 
-1. **Broader semantic coverage.** Native exploration evaluates Protovalidate
-   and generates a finite supported subset of standard rule witnesses. Passive
-   condition coverage still measures structural Protobuf classes. Extend either
-   only with explicit, defensible rule semantics; arbitrary CEL generation and
-   unknown custom validation systems remain unsupported.
-2. **Broader gRPC exploration.** The SDK/HTTP lifecycle now generates native
-   unary and streaming invalid-input cases from captured message prefixes.
-   Continue with richer supported rules and application-specific stream
-   properties, without inventing conversations or treating arbitrary non-OK
-   status as validation. See the current [exploration guide](exploration.md).
+1. **Broader semantic coverage.** Passive condition coverage measures structural
+   Protobuf classes. Extend it only with explicit, defensible semantics;
+   arbitrary CEL and unknown custom validation systems remain unsupported.
+   Preserve constraints without fabricating coverage for unevaluated annotations.
+2. **Future Hub execution.** Generated checks and bundle execution belong to a
+   separate Hub workflow, with project-owned fixtures and authentication outside
+   the bundle. They are not part of the proxy, SDK or local runtime HTTP API.
 3. **Connect and gRPC-Web wire formats.** Add distinct adapters and conformance
    tests while sharing protobuf contracts, identities and reports. Do not enable
    them merely because a dependency library advertises support.

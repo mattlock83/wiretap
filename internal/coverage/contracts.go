@@ -21,7 +21,6 @@ const ProtobufRulesVersion = "wiretap-protobuf-2"
 // It deliberately makes no all-API, assertion, or provider-compatibility claim.
 type ContractCoverage struct {
 	Unmeasured       []UnmeasuredInteraction `json:"unmeasured_interactions,omitempty" yaml:"unmeasured_interactions,omitempty"`
-	Rejections       *RejectionCoverage      `json:"rejection_coverage,omitempty" yaml:"rejection_coverage,omitempty"`
 	RulesVersion     string                  `json:"rules_version" yaml:"rules_version"`
 	RunID            string                  `json:"run_id" yaml:"run_id"`
 	RunState         string                  `json:"run_state" yaml:"run_state"`
@@ -73,7 +72,6 @@ type ContractTarget struct {
 }
 
 type ContractEvidence struct {
-	ExpectedStatuses  []int  `json:"expected_statuses,omitempty" yaml:"expected_statuses,omitempty"`
 	MessageIndex      *int   `json:"message_index,omitempty" yaml:"message_index,omitempty"`
 	CaptureIncomplete bool   `json:"capture_incomplete" yaml:"capture_incomplete"`
 	TransportError    string `json:"transport_error,omitempty" yaml:"transport_error,omitempty"`
@@ -91,7 +89,6 @@ type ContractEvidence struct {
 }
 
 type ContractViolation struct {
-	Expected       bool             `json:"expected,omitempty" yaml:"expected,omitempty"`
 	Constraint     string           `json:"constraint,omitempty" yaml:"constraint,omitempty"`
 	SchemaLocation string           `json:"schema_location,omitempty" yaml:"schema_location,omitempty"`
 	Evidence       ContractEvidence `json:"evidence" yaml:"evidence"`
@@ -163,7 +160,6 @@ func (t *ContractTarget) observe(e ContractEvidence) {
 
 func buildContractCoverage(run *bundle.Run, captures []*artifact.Artifact) *ContractCoverage {
 	out := &ContractCoverage{RulesVersion: ContractRulesVersion, RunID: run.RunID, RunState: run.RunState, SnapshotRevision: run.Revision, Complete: run.RunState == "complete" && len(run.Pending) == 0, Scope: "registered supplied contracts only; condition combinations are observations, not compatibility or assertion proof", Specs: []*ContractSpec{}}
-	out.Rejections = buildRejectionCoverage(run, captures)
 	out.Unmeasured = unmeasuredInteractions(captures)
 	if len(out.Unmeasured) > 0 {
 		out.Complete = false

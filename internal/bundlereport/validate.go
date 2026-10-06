@@ -105,18 +105,6 @@ func validateContractCatalogue(root string, run *bundle.Run, flows map[string]ma
 		}
 		return nil
 	}
-	if report.Rejections != nil {
-		for _, target := range report.Rejections.Targets {
-			if target == nil {
-				return fmt.Errorf("view %s: null rejection target", name)
-			}
-			for _, evidence := range target.Evidence {
-				if err := checkEvidence(evidence); err != nil {
-					return err
-				}
-			}
-		}
-	}
 	for _, spec := range report.Specs {
 		if spec == nil {
 			return fmt.Errorf("view %s: null contract specification", name)
@@ -211,11 +199,6 @@ func validateKnowledge(root string, run *bundle.Run, flows map[string]map[string
 	keys := map[string]bool{}
 	for _, s := range contracts.Specs {
 		for _, t := range s.Targets {
-			keys[t.Key] = true
-		}
-	}
-	if contracts.Rejections != nil {
-		for _, t := range contracts.Rejections.Targets {
 			keys[t.Key] = true
 		}
 	}

@@ -82,6 +82,17 @@ func readKnowledge(t *testing.T, root string) knowledgeIndex {
 	return k
 }
 
+func TestKnowledgeVerificationIdentityRemainsStable(t *testing.T) {
+	var index knowledgeIndex
+	api := knowledgeAPI{Role: "dependency", ID: "stock", SchemaID: "stock-spec", ContractRevision: "revision-1"}
+	index.addTask(api, "verify_dependency", "normal", "GET /stock", "", "", "", nil, nil)
+	// This ID is part of the knowledge-1 format and can be referenced by a
+	// knowledge base independently of the report's presentation or runner.
+	if got := index.Verification[0].ID; got != "verify-c5f6311700a52e78debd" {
+		t.Fatalf("verification identity changed: %s", got)
+	}
+}
+
 func TestKnowledgeSeparatesMockClaimsGapsAndUnmatchedTraffic(t *testing.T) {
 	root := knowledgeFixture(t)
 	k := readKnowledge(t, root)
@@ -132,36 +143,6 @@ func TestKnowledgeSeparatesMockClaimsGapsAndUnmatchedTraffic(t *testing.T) {
 	data, _ := os.ReadFile(filepath.Join(root, "docs/knowledge.json"))
 	if strings.Contains(string(data), "token=omitted") {
 		t.Fatal("index copied query values")
-	}
-}
-
-func TestKnowledgeExpectedNegativesAndLineageAreNotProviderContradictions(t *testing.T) {
-	run := &bundle.Run{RunID: "new-run", APIID: "orders", RunState: "complete", Revision: 1, Attempts: []bundle.AttemptRef{{AttemptID: "negative", FileRef: bundle.FileRef{Path: "tests/negative.json"}}}}
-	a := &artifact.Artifact{TestCase: artifact.TestCase{ID: "negative", Name: "reject invalid order", Status: "pass"}, Exploration: &artifact.Exploration{Mode: "rejection", SourceRunID: "seed", SourceAttemptID: "happy", SourceSHA256: "digest"}}
-	report := &coverage.Report{Contracts: &coverage.ContractCoverage{Specs: []*coverage.ContractSpec{{APIID: "orders", Origin: "provided", Revision: "contract", Violations: []coverage.ContractViolation{{Expected: true, Operation: "POST /orders"}}}}}}
-	k := buildKnowledge(t.TempDir(), run, []*artifact.Artifact{a}, report)
-	for _, task := range k.Verification {
-		if task.Kind == "contract_mismatch" || task.Kind == "investigate_attempt" {
-			t.Fatal("expected rejection became a defect")
-		}
-	}
-	if !strings.Contains(strings.Join(k.Scope, " "), "downstream traffic actually observed") {
-		t.Fatal("exploration dependency scope missing")
-	}
-	if k.Attempts[0].Kind != "generated_rejection" || k.Attempts[0].Exploration.SourceRunID != "seed" || len(k.SUTSource) != 0 {
-		t.Fatal("seed lineage lost or promoted to current SUT provenance")
-	}
-	a.TestCase.Status = "fail"
-	a.CaptureIncomplete = true
-	k = buildKnowledge(t.TempDir(), run, []*artifact.Artifact{a}, report)
-	found := false
-	for _, task := range k.Verification {
-		if task.Kind == "repair_capture" {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatal("incomplete evidence omitted from verification work")
 	}
 }
 

@@ -48,25 +48,17 @@ def inspect_bundle(path):
     if run["run_state"] != "complete" or not (path / "docs/viewer.html").exists():
         raise RuntimeError(f"Incomplete bundle: {path}")
     coverage = json.loads((path / "docs/contract-coverage.json").read_text())
-    rejection = coverage.get("rejection_coverage", {})
-    print(f"Rejection coverage: {rejection.get('covered', 0)} covered, "
-          f"{rejection.get('failed', 0)} failed, {rejection.get('not_covered', 0)} not covered")
-    if not rejection.get("targets"):
-        raise RuntimeError("Exploration did not generate rejection targets")
     if not any(s["api_id"] == "accounts" and s["target_kind"] == "mock" for s in coverage["specs"]):
         raise RuntimeError("Bundle is missing the Accounts mock contract")
     downstream = 0
     for attempt in run["tests"]:
         capture = json.loads((path / attempt["path"]).read_text())["capture"]
-        if capture.get("exploration"):
-            continue
         if capture.get("schema_validation", {}).get("status") != "pass":
             raise RuntimeError("Authored traffic did not match the supplied contracts; inspect the bundle")
         downstream += sum(f["channel"] == "sut_to_dependency" for f in capture["traffic"])
     if downstream < 5:
         raise RuntimeError(f"Expected at least five captured Accounts calls, found {downstream}")
     print(f"Verified {downstream} captured Accounts exchanges.")
-    return rejection["failed"] == 0 and rejection["not_covered"] == 0
 
 
 def run(args):
@@ -140,7 +132,6 @@ def run(args):
             environment = {**os.environ, "GOOS": "linux", "GOARCH": arch, "CGO_ENABLED": "0"}
             command(["go", "build", "-o", str(work / "wiretap"), "./cmd/wiretap"], cwd=ROOT, env=environment)
             shutil.copytree(HERE, work / "example", ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
-            shutil.copyfile(HERE.parent / "explore_http.py", work / "example/explore_http.py")
             shutil.copyfile(HERE / "Dockerfile", work / "Dockerfile")
             docker("build", "-q", "-t", utility_image, str(work))
             image_created = True
@@ -170,7 +161,7 @@ def run(args):
             wait_for(accounts, "http://wiretap:18000/healthz")
             sut = start_transactions("http://wiretap:18080/__wiretap/dep/accounts")
             wait_for(accounts, "http://transactions:8080/actuator/health")
-            print("Running authored tests and scoped exploration inside unittest...", flush=True)
+            print("Running the existing unittest suite...", flush=True)
             tests = subprocess.run(["docker", "exec", "-e", "WIRETAP_BASE_URL=http://wiretap:18000",
                                     "-e", "WIRETAP_SUT_URL=http://wiretap:18080", "-e", "TRANSACTIONS_IMAGE=" + transactions_image,
                                     "-e", "TRANSACTIONS_IMAGE_ID=" + image_ids[transactions_image],
@@ -179,7 +170,7 @@ def run(args):
             if source_result.returncode == 0:
                 bundles.append(("Combined", source_result.stdout.strip()))
             if tests.returncode:
-                raise RuntimeError("Tests or exploration failed; inspect the bundle and SUT logs")
+                raise RuntimeError("Tests failed; inspect the bundle and SUT logs")
 
         except (RuntimeError, subprocess.CalledProcessError, KeyboardInterrupt) as error:
             failure = error
@@ -203,8 +194,7 @@ def run(args):
     if bundles and not copied:
         raise RuntimeError("Could not copy Docker bundle output; see the example logs")
     for label, path in bundles:
-        if not inspect_bundle(output / Path(path).name) and failure is None:
-            failure = RuntimeError("Some generated rejection targets did not pass")
+        inspect_bundle(output / Path(path).name)
     if failure is not None:
         raise failure
 

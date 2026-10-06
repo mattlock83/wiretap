@@ -51,7 +51,8 @@ an expensive shared environment.
    them as soon as provider evidence or an implementation becomes available.
 2. **Start with how teams already work.** Keep their languages, test frameworks,
    clients, assertions, mocks and CI. Capture remains a library integration;
-   derived verification and exploration are called from tests through the SDK/HTTP API.
+   the local SDK/HTTP API handles capture lifecycle. Future generated checks and
+   bundle execution belong to the Hub, outside the proxy runtime.
 3. **Require no Wiretap-specific application instrumentation.** Reuse standard
    tracing where available. Without propagation, use sequential execution or
    isolated workers; never guess which parallel test owns a request.
@@ -80,9 +81,9 @@ These are proposed product boundaries, not currently available plans or prices.
 
 | Offering | What users receive | Commercial role |
 | --- | --- | --- |
-| **Free open local engine** | Capture, validation, OKF, comparison, verification, exploration and offline reporting as those capabilities ship. Works with public or private projects, local files and compatible artifact stores. | Individual adoption, trust and an open ecosystem. No account or subscription needed for local use. |
-| **Free public registry** | Publish, discover, browse and pull openly licensed bundles for open-source APIs; release history, provenance and public verification evidence. | Reusable provider knowledge, examples and discovery that benefit maintainers and consumers. Operates within published usage limits. |
-| **Paid private registries** | Managed organization namespaces, private catalogues and dependency graphs, team access, retention, audit history, ownership, policies and verification coordination. | Recurring revenue for operating API assurance across teams. Customers can consume public bundles while keeping their own evidence private. |
+| **Free open local engine** | HTTP/gRPC proxies, validation, stable OKF bundles and offline spec-coverage reporting. Works with public or private projects, local files and compatible artifact stores. | Individual adoption, trust and an open ecosystem. No account or subscription needed for local use. |
+| **Free public Hub registry** | Publish, discover, browse and pull openly licensed bundles for open-source APIs; release history, provenance and public verification evidence; future bundle execution and generated checks. | Reusable provider knowledge, examples and discovery that benefit maintainers and consumers. Operates within published usage limits. |
+| **Paid private Hub registries** | Managed organization namespaces, private catalogues and dependency graphs, team access, retention, audit history, ownership, policies and verification coordination. | Recurring revenue for operating API assurance across teams. Customers can consume public bundles while keeping their own evidence private. |
 | **Enterprise options, after validation** | Organization-wide identity integration, advanced governance, support commitments and potentially dedicated or self-hosted deployments. | Meet demonstrated procurement and deployment needs without building every hosting model at launch. |
 
 Payment is for the managed private service. Private local use, private comparison
@@ -125,17 +126,25 @@ Wiretap already provides:
   payloads, with derived Markdown, an offline HTML viewer and a knowledge index.
 - Distinct provider observations and dependency assumptions, source provenance,
   evidence limitations and a suggested verification backlog.
-- HTTP and native gRPC provider invalid-input exploration within a captured test,
-  with local callbacks for fixtures, authentication, cleanup and assertions,
-  and generated attempts in the same bundle.
 
-Cross-bundle comparison, provider verification of consumer scenarios, recorded
-dependency simulation, general stateful exploration, automatic work selection,
-registry services and the connected web runner are still to be built. Current
-exploration does not synthesize downstream dependency responses. Native gRPC
-exploration uses supported standard Protovalidate rules and recorded message
-prefixes across all four RPC shapes. Arbitrary CEL and application-level stream
-semantics remain outside finite generation.
+Cross-bundle comparison, provider verification, dependency simulation, generated
+tests, registry services and interactive execution are still to be built.
+
+### Scope decision: capture locally, execute through the Hub
+
+Local Wiretap owns HTTP/gRPC proxies, correlation, contract validation, the
+stable evidence bundle and an offline report. It does not replay traffic,
+generate tests or manage execution callbacks. Teams keep their existing tests,
+fixtures and mocks. Reports show the finite supported spec cases, gaps, and
+observed combinations; they do not claim exhaustive Cartesian coverage.
+
+The Hub will publish and resolve bundles, compare assumptions across systems,
+and provide future interactive execution and generation. Those features can
+use user-managed workers on local or CI infrastructure; a paid hosted runner is
+not required. Execution code and credentials stay outside published artifacts.
+The execution phases below describe that future Hub surface, not additions to
+the local proxy or its lifecycle SDK. Its runner and hooks must be designed
+separately when that phase begins.
 
 The [architecture](architecture.md), [coverage rules](contract-coverage-rules.md),
 [bundle knowledge](bundle-knowledge.md) and [gRPC plan](grpc-support-plan.md)
@@ -153,15 +162,15 @@ internal storage, a browser interface or other implementation details.
 
 | Application role | Value proposition | Useful evidence |
 | --- | --- | --- |
-| **Provider only:** a service with no outbound API dependencies | Know what the API promises, what tests exercised, and where further verification is needed. | Contract conformance, operation/condition coverage, provider test scenarios and generated rejection results. Publish evidence for future consumers without waiting for them to adopt Wiretap. |
+| **Provider only:** a service with no outbound API dependencies | Know what the API promises, what tests exercised, and where further verification is needed. | Contract conformance, operation/condition coverage, provider test scenarios and visible coverage gaps. Publish evidence for future consumers without waiting for them to adopt Wiretap. |
 | **Consumer only:** a UI or client that exposes no API | Know whether it works against what its dependencies can actually return. | Captured API requests, mocked-response assumptions, named test outcomes, dependency contract conformance and gaps requiring provider evidence or consumer variation checks. |
 | **Provider and consumer:** a service calling other APIs | Verify both its promises to callers and its assumptions about dependencies. | Linked inbound/outbound observations, with each boundary's coverage, assumptions and provenance kept distinct. |
 
-For a provider-only service, start with its existing API tests: validate responses,
-show untested operations and conditions, and use the existing HTTP invalid-input
-explorer where applicable. Broader valid-boundary and property exploration follows
-the roadmap. The team gets value before publishing a bundle or involving another
-team; sharing later makes that evidence useful to its consumers.
+For a provider-only service, start with existing API tests: validate responses,
+show untested operations and spec cases, and retain concrete observations. The
+team gets value before publishing a bundle or involving another team; sharing
+later makes that evidence useful to consumers. Additional generated checks
+belong to future Hub execution.
 
 For a consumer-only UI, the intended workflow is to route its API calls through
 Wiretap while its existing UI test framework owns execution and assertions.
@@ -308,14 +317,15 @@ previously verified relationships without blocking adoption on every old gap.
 **Done when:** a two-repository example distinguishes an actual contract
 contradiction, a supported scenario and an unverified assumption; flags a changed
 outbound call despite an unchanged successful response; and cannot pass using a
-stale or incorrectly mapped provider version. Include a thin provider-check path
-using existing hooks so one finding can be resolved end to end.
+stale or incorrectly mapped provider version. Resolve one finding through an
+existing provider test and capture its evidence. Hub-managed execution follows
+in Phase 2.
 
 ### Phase 2: turn assumptions into executable verification
 
 Build provider verification from selected consumer scenarios. The provider
 project supplies its target, fixture setup, fresh authentication, bindings and
-business assertions through the existing language-neutral hook mechanism.
+business assertions through a future language-neutral Hub runner interface.
 Expectations must be explicit: contract conformance, a declared property, or a
 reviewed response matcher. Do not silently promote every recorded value into a
 requirement.
@@ -347,8 +357,7 @@ verify a provider and exercise a consumer dependency variant. Authentication
 refresh, ID binding, cleanup and isolated workers work reliably. Missing fixtures,
 redacted inputs and ambiguous matching are explicit blockers, not passes. A
 failure reproduces from a clean start with its execution prerequisites recorded.
-This adds general targeted execution beyond the existing schema-driven gRPC exploration; broader exploration remains later
-work.
+This introduces execution in the Hub; it does not expand the local capture runtime.
 
 ### Phase 3: generate useful tests and smaller failures
 
@@ -431,7 +440,7 @@ resulting examples and checks; duplicate events do not produce duplicate PRs.
 
 Native gRPC interoperability, rich errors and streaming capture/coverage are
 implemented with explicit message and lifecycle semantics. Build gRPC execution
-on that evidence. Extend the finite Protovalidate exploration subset to further constraints that can actually be
+on that evidence. The future Hub can generate finite validation cases for constraints that can actually be
 evaluated; do not invent error-code or validation requirements from structural
 types alone.
 
@@ -636,8 +645,8 @@ assurance. Freshness is relevance to a build and contract, not just recent time.
 
 Keep a small set of clear boundaries: contract/evidence readers, candidate
 generation, protocol execution, fixture/property hooks, verdicts, and report/query
-adapters. Customer languages integrate through existing tests and external
-commands. Avoid maintaining an application instrumentation SDK for every language
+adapters. Local capture integrates through existing test lifecycles. Future Hub runners
+use project-owned execution code. Avoid maintaining an application instrumentation SDK for every language
 or building a universal plugin framework before extension points are proven.
 
 Evaluate Hegel early as an optional search/shrinking engine. Its current design
@@ -654,8 +663,8 @@ See [Hegel architecture](https://hegel.dev/explanation/how-hegel-works),
 [Go implementation](https://github.com/hegeldev/hegel-go).
 
 Store concrete minimized scenarios alongside engine-specific reproduction data
-so artifacts remain useful when an engine changes. Keep existing deterministic
-invalid-input generation usable independently. Apply the same build-or-reuse
+so artifacts remain useful when an engine changes. Keep future deterministic
+invalid-input generation usable without a particular search engine. Apply the same build-or-reuse
 test to schema compatibility and protocol libraries: reuse mature machinery,
 retain open interfaces and control Wiretap's evidence semantics.
 
@@ -753,7 +762,7 @@ The next detailed plan should deliver the Phase 1 loop in small reviewable piece
    for unsupported semantics, then outbound-aware baseline comparison.
 4. Produce portable result artifacts and readable explanations over the same
    machine-readable findings; add complete API inventory declarations.
-5. Resolve one selected finding through a provider check using existing hooks,
+5. Resolve one selected finding through a provider check using the future Hub runner interface,
    fresh fixtures and explicit expectations; link its new evidence back to the
    original assumption.
 
@@ -773,4 +782,4 @@ Add a bounded registry design/spike alongside that implementation:
 Run the bounded Hegel feasibility spike as capacity permits. Defer broad protocol expansion, generalized simulation,
 hosted execution and richer search until the initial comparison-to-verification
 loop is trustworthy. Registry design can proceed early; commercial coordination
-must build on working local capabilities.
+must build on verified local evidence.

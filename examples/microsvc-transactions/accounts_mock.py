@@ -5,7 +5,7 @@ import math
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from hooks import ACCOUNT_ID, INITIAL_BALANCE
+from fixtures import ACCOUNT_ID, INITIAL_BALANCE
 
 lock = threading.Lock()
 state = {"user_id": None, "balance": INITIAL_BALANCE, "calls": []}

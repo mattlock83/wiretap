@@ -33,7 +33,7 @@ points between them. Keep that geometry consistent between the mark and favicon.
 The Phrond footer mark combines a fern silhouette with a diagonal stem, angular
 branches and graph nodes, reflecting its roots in visualising dependencies.
 
-The order flow and exploration results are **illustrative examples**, not a live
+The order flow and coverage cases are **illustrative examples**, not a live
 Wiretap report or measured customer results. Keep them consistent with the product
 docs. Do not turn mock evidence into a claim of proven provider agreement.
 

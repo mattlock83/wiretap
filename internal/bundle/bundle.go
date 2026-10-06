@@ -346,9 +346,6 @@ func (w *Writer) Commit(art *artifact.Artifact) (string, error) {
 	if art == nil {
 		return "", errors.New("capture is nil")
 	}
-	if err := validateExplorationProtocols(art); err != nil {
-		return "", err
-	}
 	if err := artifact.ValidateInteractions(art); err != nil {
 		return "", err
 	}
@@ -724,9 +721,6 @@ func Load(root string) (*Run, []*artifact.Artifact, error) {
 			return nil, nil, fmt.Errorf("attempt %q capability declaration disagrees with content", ref.AttemptID)
 		}
 		if err := resolveSchemas(root, attempt.Capture.Schemas); err != nil {
-			return nil, nil, err
-		}
-		if err := validateExplorationProtocols(&attempt.Capture); err != nil {
 			return nil, nil, err
 		}
 		if err := validateGRPCMessages(attempt.EvidenceVersion, attempt.Capture); err != nil {

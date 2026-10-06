@@ -1,7 +1,7 @@
 # CI example
 
 This is a minimal GitHub Actions workflow that runs Go tests, JS SDK tests,
-and the capture/exploration example in this repository, then uploads the bundles.
+and the capture example in this repository, then uploads the bundles.
 For another project, substitute its existing harness and test command while
 keeping complete bundle directories as CI artifacts.
 
@@ -37,7 +37,7 @@ jobs:
         working-directory: sdk/js
         run: npm ci && npm test
 
-      - name: Capture and explore the example
+      - name: Capture the example
         run: ./examples/run-basic-rest-e2e.sh
 
       - name: Upload artifacts

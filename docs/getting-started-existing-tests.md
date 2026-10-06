@@ -130,5 +130,5 @@ whole bundle for CI or agent use.
 Start with **Test runs** to inspect the recorded requests and responses, then
 **Contract coverage** for the conditions those executions covered. A mock reply
 records a test assumption, not proof of real provider behaviour. See the
-[bundle guide](okf-bundles.md) for interpretation and
-[provider exploration](exploration.md) to generate additional rejection checks.
+[bundle guide](okf-bundles.md) for interpretation and the
+[coverage rules](contract-coverage-rules.md) for supported cases and limits.

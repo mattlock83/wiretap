@@ -4,15 +4,13 @@ Wiretap captures HTTP and native gRPC exchanges during existing tests and turns 
 portable record of tested API behaviour and observed dependency assumptions.
 In capture mode, the test harness owns the application, mocks, test execution,
 and assertions. Wiretap owns capture, correlation, schema validation, and the
-resulting bundle. An optional exploration call inside a captured test runs generated provider
-cases and invokes local test callbacks for fixtures and business checks.
+resulting bundle.
 
 ## Components
 
 | Component | Responsibility |
 | --- | --- |
 | `cmd/wiretap` | Host the HTTP runtime; offline report/export and CA utilities. |
-| `internal/explore`, `internal/hooks` | Generate isolated invalid provider inputs, replay sequences, request local lifecycle callbacks over HTTP and persist checks. |
 | `sdk/js`, `sdk/go` | Test lifecycle helpers, standard trace context, and capture locations. JavaScript includes Node and Jest adapters. |
 | `internal/app` | Run and test sessions, dependency routes, draining, and schema validation. |
 | `internal/proxy`, `internal/capture` | Forward traffic and retain bounded request/response evidence. |
@@ -27,8 +25,7 @@ cases and invokes local test callbacks for fixtures and business checks.
 
 Capture start/finalization is controlled through the HTTP API. SDKs are libraries
 called from existing test frameworks. Capture has one session map, admission
-path and drain procedure. Exploration uses the same HTTP runtime and bundle
-writer, with isolated generated attempts inside the enclosing framework test.
+path and drain procedure.
 
 The runtime exposes one control listener and one capture listener. The capture
 listener forwards inbound calls to the configured SUT and dependency calls to
@@ -118,19 +115,7 @@ supplied contract, records individual observations and per-message combinations,
 and separates provider from mock/service provenance. The versioned rules and
 current support limits are in [contract coverage rules](contract-coverage-rules.md).
 Its generated JSON catalogue, Markdown page and HTML tab use the same calculation.
-Ordinary capture validation remains strict. Exploration explicitly records the
-intended invalid request and asserted rejection in a separate coverage catalogue.
-
-The exploration HTTP API snapshots a completed happy path within an active
-parent test. It runs a fresh baseline, then replays prefixes with one invalid
-request at a time. SDK callbacks execute in the user's test process through a
-poll/respond handoff; the binary owns generation, execution and evidence.
-Generated attempts are committed to the same open bundle, each with distinct
-identity and a link to the parent test. Parent lifecycle and normal capture
-remain owned by the existing test framework. Callback HTTP traffic uses the
-parent/case trace for routing but is excluded from recording and coverage while
-that callback is active. Awaited callback requests drain before execution
-continues. See [exploration](exploration.md).
+Capture validation remains strict. Wiretap does not execute or generate tests.
 
 Native gRPC includes unary and all streaming shapes, with bounded incremental
 observation, per-message evidence and direction-completeness checks. WebSocket,

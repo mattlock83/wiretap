@@ -22,7 +22,7 @@
       <a class="brand wiretap-brand" href="#top" aria-label="Wiretap, top of page"><svg class="wiretap-icon header-symbol" viewBox="0 0 64 48" fill="none" aria-hidden="true" focusable="false"><use href="./wiretap-icon.svg#mark"/></svg>wiretap</a>
       <nav aria-label="Main navigation">
         <a class="desktop-link" href="#how-it-works">How it works</a>
-        <a class="desktop-link" href="#explore">Explore</a>
+        <a class="desktop-link" href="#coverage">Coverage</a>
         <a href="https://github.com/phrond/wiretap/blob/main/docs/README.md">Docs</a>
       </nav>
       <a class="button button-small button-outline header-cta" href="https://github.com/phrond/wiretap">View on GitHub</a>
@@ -124,13 +124,12 @@
       </div>
     </section>
 
-    <section class="section container" id="explore" aria-labelledby="explore-title">
-      <div class="explore-layout">
-        <div class="explore-copy"><p class="eyebrow">Go further with HTTP explore</p><h2 id="explore-title">Start with a happy path.<br>Give the bad inputs a turn.</h2><p>Call explore from your existing HTTP API test. Wiretap checks missing fields, wrong types and out-of-range values against the happy path your test just exercised.</p><p>Local callbacks provide fresh authentication and fixtures, check side effects, and clean up. Authored and generated checks share one bundle, and your existing test framework reports failures.</p><a class="text-link" href="https://github.com/phrond/wiretap/blob/main/docs/exploration.md">Explore from your tests</a><p class="scope-note">Bounded, targeted checks. A 401 or a server error is a failed check, not proof that input validation worked.</p></div>
-        <div class="explore-example"><div class="terminal-bar"><span class="terminal-dots" aria-hidden="true"><i></i><i></i><i></i></span><span>Inside your existing test</span><span>Example checks</span></div><div class="terminal-body"><pre><code>await wiretap.explore({
-  operations: ['POST /orders'],
-  hooks: { beforeCase: resetFixtures }
-});</code></pre><div class="generated-heading"><span>Input</span><span>Expected response</span></div><div class="generated-row"><span><span class="case-mark" aria-hidden="true">✓</span> Original happy path</span><span>201 Created</span></div><div class="generated-row"><span><span class="case-mark" aria-hidden="true">✓</span> Required quantity missing</span><span>400 / 422</span></div><div class="generated-row"><span><span class="case-mark" aria-hidden="true">✓</span> Text instead of a number</span><span>400 / 422</span></div><div class="generated-row"><span><span class="case-mark" aria-hidden="true">✓</span> Quantity below its minimum</span><span>400 / 422</span></div><div class="terminal-result"><span aria-hidden="true">＋</span> More checks. More evidence. One bundle.</div></div></div>
+    <section class="section container" id="coverage" aria-labelledby="coverage-title">
+      <div class="coverage-layout">
+        <div class="coverage-copy"><p class="eyebrow">Coverage from your API spec</p><h2 id="coverage-title">See the cases your API promises.<br>Find the ones your tests missed.</h2><p>Wiretap turns supported spec rules into concrete cases: enum values, optional fields, collection sizes and declared boundaries. Each covered case links to the test and captured exchange that exercised it.</p><p>One request or response can cover many cases. The report keeps their observed combinations together and makes gaps and measurement limits visible.</p><a class="text-link" href="https://github.com/phrond/wiretap/blob/main/docs/contract-coverage-rules.md">Read the coverage rules</a><p class="scope-note">Spec coverage is evidence of tested cases, not proof that every possible combination or business behavior was tested. Mock responses remain assumptions about their providers.</p></div>
+        <div class="coverage-example"><div class="terminal-bar"><span class="terminal-dots" aria-hidden="true"><i></i><i></i><i></i></span><span>POST /orders</span><span>Illustrative spec cases</span></div><div class="terminal-body"><pre><code>quantity: { type: integer, minimum: 1 }
+status:   { enum: [PENDING, COMPLETE] }
+note:     { type: string } # optional</code></pre><div class="case-heading"><span>Specified case</span><span>Evidence</span></div><div class="case-row"><span>Quantity equals its minimum</span><span>Covered</span></div><div class="case-row"><span>Status is PENDING</span><span>Covered</span></div><div class="case-row"><span>Status is COMPLETE</span><span>Gap</span></div><div class="case-row"><span>Optional note omitted</span><span>Gap</span></div><div class="terminal-result"><span aria-hidden="true">＋</span> Existing tests. Concrete evidence. One bundle.</div></div></div>
       </div>
     </section>
 
@@ -165,7 +164,7 @@
     <section class="section container questions-section" aria-labelledby="questions-title"><div><p class="eyebrow">A few practical details</p><h2 id="questions-title">Fits your tests.<br>Keeps its promises clear.</h2></div><div class="questions">
       <details><summary>Do I need to change my test framework?</summary><p>No. Call Wiretap from the setup and cleanup hooks your framework already provides. JavaScript and Go SDKs help with the plumbing; other languages can use the HTTP API. Your framework still owns the tests and assertions.</p></details>
       <details><summary>Does my application need Wiretap-specific code?</summary><p>Configure your test environment's URLs so traffic passes through Wiretap. For parallel tests sharing one application, reuse working OpenTelemetry/W3C trace propagation. Without it, run sequentially or isolate workers. There is no Wiretap-specific ID to propagate through the application.</p></details>
-      <details><summary>Do I need a spec?</summary><p>HTTP APIs use OpenAPI; an individual HTTP API can explicitly opt out with unknown contract coverage. Native gRPC requires Protobuf descriptors, obtained by reflection or supplied locally. Native gRPC coverage includes methods and supported field cases such as enums, presence and collections across unary and streaming calls. Generated invalid-input checks use OpenAPI constraints or supported standard Protovalidate annotations.</p></details>
+      <details><summary>Do I need a spec?</summary><p>HTTP APIs use OpenAPI; an individual HTTP API can explicitly opt out with unknown contract coverage. Native gRPC requires Protobuf descriptors, obtained by reflection or supplied locally. Native gRPC coverage includes methods and supported field cases such as enums, presence and collections across unary and streaming calls. Unevaluated validation annotations remain visible as measurement limits.</p></details>
       <details><summary>Does it prove my mocks match the real provider?</summary><p>Wiretap makes the assumptions visible and preserves the evidence needed to investigate them. A passing consumer test alone cannot prove provider agreement. Automatic comparison between provider and consumer repositories is not yet included.</p></details>
     </div></section>
 

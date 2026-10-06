@@ -1,4 +1,4 @@
-# Basic REST capture and exploration
+# Basic REST capture
 
 The runner starts the demo SUT and an external inventory dependency separately.
 The SUT is configured to reach that dependency through Wiretap's existing capture
@@ -21,17 +21,6 @@ and HTML dashboard also link to an inferred OpenAPI draft for `inventory-service
 It is generated from observed mock traffic alongside the supplied spec, which
 continues to control validation.
 
-The Node test awaits `wiretap.explore({ operations: ["POST /process"], ... })`
-after its happy-path assertions. Generated cases check that missing, null and
-incorrectly typed inputs receive a documented HTTP 400 response. The authored
-and generated attempts share one bundle; the shell harness verifies its
-rejection coverage. The SUT and mock remain running throughout the test.
-
-The example's local `checkCase` callback is scoped to that operation. For fresh
-authentication, database fixtures and cleanup callbacks, see the
-[SQLite example](../provider-exploration/demo.py) and
-[exploration guide](../../docs/exploration.md).
-
 ## Ordinary clients and parallel test traces
 
 Run the Jest variant with the same harness, which starts the demo application,
@@ -49,8 +38,7 @@ The shell harness starts Wiretap with [.wiretap.yaml](.wiretap.yaml) alongside t
 demo services. Native Node suite hooks or Jest global teardown finalize capture
 over HTTP; Jest workers only own their test attempts. The bundle and views are
 written automatically, without a report command.
-This variant focuses on parallel capture; the default Node variant demonstrates
-exploration inside a test.
+The default Node variant uses sequential capture.
 
 For an uninstrumented SUT with serial capture:
 

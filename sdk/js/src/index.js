@@ -99,23 +99,15 @@ class CoreClient {
   teardownTest(payload) { return this._request("POST", "/v1/teardownTest", payload || {}); }
   report(payload) { return this._request("POST", "/v1/report", payload || {}); }
   finishRun() { return this._request("POST", "/v1/finishRun", {}); }
-  startExploration(payload, options) { return this._request("POST", "/v1/explore", payload, options); }
-  nextExploration(payload, options) { return this._request("POST", "/v1/explore/next", payload, options); }
-  respondExploration(payload, options) { return this._request("POST", "/v1/explore/respond", payload, options); }
-  cancelExploration(payload, options) { return this._request("POST", "/v1/explore/cancel", payload, options); }
 
-  async _request(method, path, payload, requestOptions = {}) {
+  async _request(method, path, payload) {
     if (typeof fetch !== "function") throw new Error("global fetch is not available; require Node.js >= 18");
     const options = { method, headers: { "content-type": "application/json" } };
     if (payload !== undefined) options.body = JSON.stringify(payload);
-    let timeout, abort;
-    options.signal = requestOptions.signal;
+    let timeout;
     if (this.timeoutMs > 0) {
       const controller = new AbortController();
       options.signal = controller.signal;
-      abort = () => controller.abort(requestOptions.signal.reason);
-      if (requestOptions.signal?.aborted) abort();
-      else requestOptions.signal?.addEventListener('abort', abort, { once: true });
       timeout = setTimeout(() => controller.abort(), this.timeoutMs);
       timeout.unref?.();
     }
@@ -132,7 +124,6 @@ class CoreClient {
       return body;
     } finally {
       if (timeout) clearTimeout(timeout);
-      if (abort) requestOptions.signal?.removeEventListener('abort', abort);
     }
   }
 }
@@ -286,14 +277,7 @@ class Runtime {
     const sessionId = options.sessionId || this.activeSession?.sessionId;
     if (!sessionId) return { status: "idle" };
     const session = this.activeSession;
-    let explorationFailure;
     if (session?.sessionId === sessionId && this.sessions.getStore()) this.sessions.getStore().closed = true;
-    if (session?.sessionId === sessionId && session.explorationPending) {
-      explorationFailure = new Error('enclosing test ended before exploration completed');
-      session.cancelExploration();
-      await session.explorationDone;
-      options = { ...options, status: 'fail', error: explorationFailure };
-    }
     let failure;
     try {
       const response = await this.client.teardownTest({ session_id: sessionId, status: options.status || "pass",
@@ -313,7 +297,6 @@ class Runtime {
         err.response = response;
         throw err;
       }
-      if (explorationFailure) throw explorationFailure;
       return response;
     } catch (err) { failure = err; throw err; }
     finally {
@@ -324,8 +307,6 @@ class Runtime {
   report(options = {}) {
     return this.client.report({ bundle_path: options.bundlePath });
   }
-
-  explore(options = {}) { return require('./explore').explore(this, options); }
 
   async finishRun() {
     await Promise.all(this.pendingCleanup);
@@ -425,5 +406,4 @@ function createNodeTestSuite(config = {}) {
   return suite;
 }
 
-module.exports = { startCapture, bindTest, createNodeTestSuite, CoreClient,
-  ExplorationError: require('./explore').ExplorationError, initializeTracing: tracing.initializeTracing };
+module.exports = { startCapture, bindTest, createNodeTestSuite, initializeTracing: tracing.initializeTracing };

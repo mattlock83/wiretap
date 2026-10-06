@@ -327,13 +327,7 @@ func (b *contractBuilder) measureHTTP(spec *openapiSpec, plans map[string]*contr
 		if validationErr != nil {
 			e.Result = "observed"
 			e.Validation = "invalid"
-			firstViolation := len(b.spec.Violations)
 			b.validationViolations(name, e, phase, mp, validationErr)
-			if x := a.Exploration; phase == "request" && x != nil && x.RequestVerified && x.Target != nil && x.Target.FlowID == f.ID {
-				for i := firstViolation; i < len(b.spec.Violations); i++ {
-					b.spec.Violations[i].Expected = true
-				}
-			}
 		} else if a.TestCase.Status == "pass" && !a.CaptureIncomplete && f.TransportError == "" {
 			e.Result = "covered"
 		}

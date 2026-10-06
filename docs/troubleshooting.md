@@ -26,9 +26,6 @@ propagation through the application. Untraced explicit sessions need isolated,
 session-scoped routes. In-process mocks that never send traffic to the proxy
 cannot be captured. See [tracing](otel-adoption.md#choosing-a-supported-setup).
 
-Exploration records provider traffic only. Its output does not include a fresh
-capture of downstream dependency calls.
-
 ### HTTPS or an upstream connection fails
 
 For decrypted HTTPS capture, trust Wiretap's CA and use
@@ -89,7 +86,7 @@ One owner must finalize a shared run after every worker has torn down its
 attempts. Use `manageRuntime: false` in worker integrations. `finishRun` stops
 the proxy and finalizes the bundle; the control process stays available.
 
-## Schemas, exploration and reports
+## Schemas and reports
 
 ### Setup requires an OpenAPI or Protobuf contract
 
@@ -102,23 +99,6 @@ Set `schema` in `.wiretap.yaml`, or supply the schema through the SDK/API.
 For an API with no spec, explicitly set `schema_required: false` on that API.
 Supplied specs still validate, even with this setting. Inferred mock drafts
 document observations and cannot replace a supplied contract.
-
-### Generated tests all return 401 or 403
-
-Exploration clears recorded credentials. Supply fresh authentication in
-`before_case` or `before_request`, and prepare the corresponding user/fixtures.
-These statuses never count as successful input rejection. If the fresh baseline
-passes but invalid requests fail authentication, inspect the application's error
-handling as well as the hook. The [Microsvc example](../examples/microsvc-transactions/README.md#authentication-and-spring-error-dispatch)
-documents one such case.
-
-### Exploration succeeds but some targets remain uncovered
-
-`max_cases` limits executed cases. A successful exit means the baseline and
-executed checks passed, not that every generated target ran. Check
-**Contract coverage → Invalid-input coverage** and increase the budget if needed.
-The generator supports representative isolated mutations; it does not cover
-every payload permutation. See [exploration limits](exploration.md#generated-cases-and-coverage).
 
 ### Bodies are truncated in a bundle
 

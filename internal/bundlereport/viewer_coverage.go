@@ -14,19 +14,20 @@ import (
 // value is distinct from executing a test or verifying an invalid input.
 type viewerContractSpec struct {
 	*coverage.ContractSpec
-	ID, Search                               string
-	Counts                                   coverage.ContractCounts
-	UnexpectedViolations, ExpectedViolations int
-	Attention                                bool
-	Operations                               []viewerContractOperation
+	ID, Search     string
+	Counts         coverage.ContractCounts
+	ViolationCount int
+	Attention      bool
+	Operations     []viewerContractOperation
 }
 
 type viewerContractOperation struct {
-	ID, Name, Search               string
-	Counts                         coverage.ContractCounts
-	Attention                      bool
-	Groups                         []viewerConditionGroup
-	Violations, ExpectedViolations []viewerContractViolation
+	ID, Name, Search string
+	Counts           coverage.ContractCounts
+	Attention        bool
+	Groups           []viewerConditionGroup
+	Violations       []viewerContractViolation
+	Combinations     []contractCombination
 }
 
 type viewerConditionGroup struct {
@@ -51,20 +52,6 @@ type viewerConditionEvidence struct {
 type viewerContractViolation struct {
 	coverage.ContractViolation
 	Evidence viewerConditionEvidence
-}
-
-type viewerRejectionOperation struct {
-	ID, Name, SchemaID, Search  string
-	Covered, Failed, NotCovered int
-	Attention                   bool
-	Rows                        []viewerRejectionRow
-}
-
-type viewerRejectionRow struct {
-	*coverage.RejectionCoverageTarget
-	Field, Label, StatusLabel string
-	Attention                 bool
-	Evidence                  []viewerConditionEvidence
 }
 
 func buildViewerCoverage(report *coverage.ContractCoverage) []viewerContractSpec {
@@ -94,7 +81,7 @@ func buildViewerCoverage(report *coverage.ContractCoverage) []viewerContractSpec
 				continue
 			}
 			op := operationFor(target.Operation)
-			row := viewerConditionRow{ContractTarget: target, Field: viewerConditionField(target.Location, target.Phase), Label: viewerConditionLabel(target), Detail: target.Reason, Attention: target.State != "covered" && target.State != "excluded", Evidence: viewerCoverageEvidence(target.Evidence)}
+			row := viewerConditionRow{ContractTarget: target, Field: viewerTargetField(target), Label: viewerConditionLabel(target), Detail: target.Reason, Attention: target.State != "covered" && target.State != "excluded", Evidence: viewerCoverageEvidence(target.Evidence)}
 			phase, label := target.Phase, "Operation"
 			switch phase {
 			case "request":
@@ -125,17 +112,18 @@ func buildViewerCoverage(report *coverage.ContractCoverage) []viewerContractSpec
 			op.Attention = op.Attention || row.Attention
 			op.Search += " " + row.Field + " " + row.Label + " " + viewerCoverageSearch(target)
 		}
+		for _, combination := range contractCombinations(spec) {
+			op := operationFor(combination.Operation)
+			op.Combinations = append(op.Combinations, combination)
+			op.Attention = op.Attention || combination.Attention
+			op.Search += " " + combination.Search
+		}
 		for _, violation := range spec.Violations {
 			op := operationFor(violation.Operation)
 			view := viewerContractViolation{ContractViolation: violation, Evidence: viewerConditionEvidence{ContractEvidence: violation.Evidence, TestURL: viewerEvidenceTestURL(violation.Evidence)}}
-			if violation.Expected {
-				op.ExpectedViolations = append(op.ExpectedViolations, view)
-				item.ExpectedViolations++
-			} else {
-				op.Violations = append(op.Violations, view)
-				op.Attention = true
-				item.UnexpectedViolations++
-			}
+			op.Violations = append(op.Violations, view)
+			op.Attention = true
+			item.ViolationCount++
 			op.Search += " " + viewerCoverageSearch(violation)
 		}
 		for _, op := range operations {
@@ -161,48 +149,6 @@ func buildViewerCoverage(report *coverage.ContractCoverage) []viewerContractSpec
 	sort.Slice(result, func(i, j int) bool {
 		a, b := result[i], result[j]
 		return strings.Join([]string{a.Origin, a.APIID, a.SchemaID, a.Revision}, "\x00") < strings.Join([]string{b.Origin, b.APIID, b.SchemaID, b.Revision}, "\x00")
-	})
-	return result
-}
-
-func buildViewerRejections(report *coverage.RejectionCoverage) []viewerRejectionOperation {
-	if report == nil {
-		return nil
-	}
-	operations := map[string]*viewerRejectionOperation{}
-	for _, target := range report.Targets {
-		if target == nil {
-			continue
-		}
-		key := target.Protocol + "\x00" + target.SchemaID + "\x00" + target.Operation
-		op := operations[key]
-		if op == nil {
-			op = &viewerRejectionOperation{ID: "rejection-" + shortHash(key), Name: target.Operation, SchemaID: target.SchemaID, Search: target.SchemaID + " " + target.Operation}
-			operations[key] = op
-		}
-		row := viewerRejectionRow{RejectionCoverageTarget: target, Field: viewerInstanceField(target.Location), Label: viewerRejectionLabel(target.Constraint), StatusLabel: rejectionStatusLabel(target.RejectionTarget), Attention: target.State != "covered", Evidence: viewerCoverageEvidence(target.Evidence)}
-		op.Rows = append(op.Rows, row)
-		switch target.State {
-		case "covered":
-			op.Covered++
-		case "failed":
-			op.Failed++
-		default:
-			op.NotCovered++
-		}
-		op.Attention = op.Attention || row.Attention
-		op.Search += " " + row.Field + " " + row.Label + " " + viewerCoverageSearch(target)
-	}
-	var result []viewerRejectionOperation
-	for _, operation := range operations {
-		sort.SliceStable(operation.Rows, func(i, j int) bool {
-			a, b := operation.Rows[i], operation.Rows[j]
-			return strings.Join([]string{a.Field, a.Label, a.Key}, "\x00") < strings.Join([]string{b.Field, b.Label, b.Key}, "\x00")
-		})
-		result = append(result, *operation)
-	}
-	sort.Slice(result, func(i, j int) bool {
-		return result[i].SchemaID+"\x00"+result[i].Name < result[j].SchemaID+"\x00"+result[j].Name
 	})
 	return result
 }
@@ -325,6 +271,13 @@ func viewerConditionField(location, phase string) string {
 	return base + branches
 }
 
+func viewerTargetField(target *coverage.ContractTarget) string {
+	if target.FieldPath != "" {
+		return target.FieldPath
+	}
+	return viewerConditionField(target.Location, target.Phase)
+}
+
 func viewerParameterLabel(in string) string {
 	switch in {
 	case "query":
@@ -340,27 +293,6 @@ func viewerParameterLabel(in string) string {
 	default:
 		return in
 	}
-}
-
-func viewerInstanceField(location string) string {
-	parts := viewerPointerParts(location)
-	if len(parts) == 0 || parts[0] == "" {
-		return "Request"
-	}
-	if len(parts) >= 3 && parts[0] == "messages" && parts[2] == "body" {
-		if index, err := strconv.Atoi(parts[1]); err == nil && index >= 0 {
-			label := "Message " + strconv.Itoa(index+1)
-			if len(parts) > 3 {
-				label += " · " + strings.Join(parts[3:], ".")
-			}
-			return label
-		}
-	}
-	base := viewerParameterLabel(parts[0])
-	if len(parts) > 1 {
-		base += " · " + strings.Join(parts[1:], ".")
-	}
-	return base
 }
 
 func viewerConditionLabel(target *coverage.ContractTarget) string {
@@ -407,46 +339,5 @@ func viewerConditionLabel(target *coverage.ContractTarget) string {
 		return condition
 	default:
 		return strings.ReplaceAll(target.Family, "_", " ") + ": " + condition
-	}
-}
-
-func viewerRejectionLabel(constraint string) string {
-	switch constraint {
-	case "required":
-		return "required value missing"
-	case "type":
-		return "wrong value type"
-	case "nullable":
-		return "null where disallowed"
-	case "enum", "enum.in", "enum.not_in", "enum.defined_only", "enum.const":
-		return "value outside allowed choices"
-	case "minimum":
-		return "below minimum"
-	case "exclusiveMinimum":
-		return "at or below exclusive minimum"
-	case "maximum":
-		return "above maximum"
-	case "exclusiveMaximum":
-		return "at or above exclusive maximum"
-	case "minLength", "string.min_len":
-		return "string too short"
-	case "maxLength", "string.max_len":
-		return "string too long"
-	case "string.len":
-		return "wrong string length"
-	case "bool.const":
-		return "wrong boolean value"
-	case "pattern":
-		return "pattern mismatch"
-	case "minItems", "repeated.min_items":
-		return "too few array items"
-	case "maxItems", "repeated.max_items":
-		return "too many array items"
-	case "repeated.unique":
-		return "duplicate items"
-	case "map.min_pairs":
-		return "too few map entries"
-	default:
-		return "violates " + constraint
 	}
 }
