@@ -185,12 +185,13 @@ test("explicit schema omission permits skipped validation and finalizes the run"
       sutBaseUrl: "http://sut.test",
       schemaRequired: false
     });
-    await runtime.setupTest({ name: "creates an order" });
+    await runtime.setupTest({ name: "creates an order", knowledge: { testId: "test:orders:create", key: "create-order", executionGroup: "default", attemptOrdinal: 0 } });
     await runtime.teardownTest({ status: "pass" });
     const result = await runtime.finishRun();
 
     const setup = calls.find((call) => call.path === "/v1/setupTest");
     assert.equal(setup.body.schema_required, false);
+    assert.deepEqual(setup.body.application_knowledge, { test_id: "test:orders:create", key: "create-order", execution_group: "default", attempt_ordinal: 0 });
     assert.deepEqual(setup.body.schemas, []);
     const paths = calls.map((call) => call.path);
     assert.deepEqual(paths, ["/v1/startRun", "/v1/setupTest", "/v1/teardownTest", "/v1/finishRun"]);

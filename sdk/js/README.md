@@ -5,6 +5,12 @@ It controls a separately running Wiretap service over HTTP and creates standard
 trace contexts for capture. It does not discover, schedule, or launch tests.
 TypeScript declarations are included. See [configuration](../../docs/configuration.md).
 
+For a [maintained repository bundle](../../docs/repository-bundles.md), pass
+`knowledge: {testId, key?, executionGroup?, attemptOrdinal?}` to `setupTest` or the
+existing adapter options. Variants use distinct logical IDs; retry ordinals are
+assigned by the harness, starting at zero. Capture sessions and traces still
+receive fresh execution identities.
+
 ## Native test lifecycle
 
 For a simple Node suite, retain the standard test function and hooks:

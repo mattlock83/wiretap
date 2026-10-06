@@ -232,6 +232,12 @@ class Runtime {
       ? this.defaultDependencies
       : normalizeDependencies(options.dependencies);
     const payload = {
+      application_knowledge: options.knowledge ? {
+        test_id: options.knowledge.testId,
+        key: options.knowledge.key,
+        execution_group: options.knowledge.executionGroup,
+        attempt_ordinal: options.knowledge.attemptOrdinal
+      } : undefined,
       name: pickFirstString(options.name) || undefined,
       tags: options.tags,
       meta: options.meta,

@@ -35,6 +35,10 @@ func TestParallelTestsUseExistingClientsWithSeparateRoots(t *testing.T) {
 		defer mu.Unlock()
 		if r.URL.Path == "/v1/setupTest" {
 			name := payload["name"].(string)
+			identity := payload["application_knowledge"].(map[string]any)
+			if identity["test_id"] != "test:"+name || identity["attempt_ordinal"] != float64(0) {
+				t.Errorf("logical identity lost: %#v", identity)
+			}
 			carrier := propagation.MapCarrier{"traceparent": payload["trace_context"].(map[string]any)["traceparent"].(string)}
 			sc := trace.SpanContextFromContext(propagation.TraceContext{}.Extract(r.Context(), carrier))
 			roots["/"+name] = sc.TraceID().String()
@@ -53,7 +57,7 @@ func TestParallelTestsUseExistingClientsWithSeparateRoots(t *testing.T) {
 		for i := 0; i < 4; i++ {
 			t.Run(fmt.Sprint(i), func(t *testing.T) {
 				t.Parallel()
-				session := runtime.StartTest(t, TestOptions{SchemaRequired: new(bool), ExplicitSession: true})
+				session := runtime.StartTest(t, TestOptions{SchemaRequired: new(bool), ExplicitSession: true, Knowledge: &TestKnowledgeIdentity{TestID: "test:" + t.Name(), AttemptOrdinal: new(int)}})
 				client := session.HTTPClient(original)
 				res, err := client.Get(session.SUTURL + "/" + t.Name())
 				if err != nil {

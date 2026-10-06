@@ -11,6 +11,7 @@ import (
 
 	"github.com/phrond/wiretap/internal/bundlereport"
 	"github.com/phrond/wiretap/internal/coverage"
+	"github.com/phrond/wiretap/internal/knowledge"
 )
 
 var errUsage = errors.New("usage")
@@ -44,6 +45,43 @@ func reportCommand(args []string) error {
 	}
 	if bundlePath == "" {
 		return fmt.Errorf("%w: --bundle is required", errUsage)
+	}
+	// Publications select observations rather than describing one synthetic run.
+	// Export verified records without inventing aggregate coverage across sources.
+	if b, err := os.ReadFile(filepath.Join(bundlePath, "bundle.json")); err == nil {
+		if v, err := knowledge.Decode(b); err == nil {
+			if m, ok := v.(map[string]any); ok && m["profile"] != nil {
+				records, err := knowledge.Read(bundlePath)
+				if err != nil {
+					return err
+				}
+				if format == "okf" {
+					if outputPath != "" {
+						return fmt.Errorf("%w: --output is only for file exports", errUsage)
+					}
+					p, err := filepath.Abs(filepath.Join(bundlePath, "index.md"))
+					if err != nil {
+						return err
+					}
+					fmt.Println(p)
+					return nil
+				}
+				var data []byte
+				if format == "json" {
+					data, err = knowledge.Canonical(records)
+				} else {
+					data, err = knowledge.YAML(records)
+				}
+				if err != nil {
+					return err
+				}
+				if outputPath != "" {
+					return os.WriteFile(outputPath, data, 0644)
+				}
+				_, err = os.Stdout.Write(data)
+				return err
+			}
+		}
 	}
 	if format == "okf" {
 		if outputPath != "" {

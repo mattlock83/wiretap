@@ -58,4 +58,12 @@ Notes:
   artifact size requires a different bound; `0` means unlimited.
 - Upload after failures as well as successes: failed attempts are useful evidence.
   This example uses `if: always()` for the upload step.
+
 - If HTTPS MITM is used in CI, add the proxy CA to the trust store (see [HTTPS trust](https-trust.md)).
+
+For [maintained repository bundles](repository-bundles.md), check in the identity
+and selection configuration together with `docs/knowledge`. After producing a
+closed run, run `wiretap check --bundle <run> --config .wiretap-publication.json`.
+It fails CI when the tracked publication differs from the candidate. Run the same
+inputs through `wiretap publish` locally and include the resulting diff in the PR.
+Keep the whole immutable source run as a CI artifact, including failed attempts.

@@ -111,7 +111,8 @@
             "properties": {
               "attempt_id": { "$ref": "#/$defs/id" },
               "name": { "type": "string" },
-              "started_at": { "type": "string", "format": "date-time" }
+              "started_at": { "type": "string", "format": "date-time" },
+              "meta": { "type": "object" }
             }
           }
         },

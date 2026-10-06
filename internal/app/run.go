@@ -7,6 +7,7 @@ import (
 
 	"github.com/phrond/wiretap/internal/bundle"
 	"github.com/phrond/wiretap/internal/bundlereport"
+	"github.com/phrond/wiretap/internal/knowledge"
 	"github.com/phrond/wiretap/internal/proxy"
 )
 
@@ -84,6 +85,13 @@ func (a *App) finishRun(ctx context.Context) (string, error) {
 		return "", nil
 	}
 	_, err = bundlereport.Refresh(current.Path())
+	if err == nil && a.project != nil && a.project.Publication != nil {
+		c, configErr := knowledge.ReadConfig(a.project.Publication.Config)
+		if configErr != nil {
+			return current.Path(), configErr
+		}
+		_, err = knowledge.Publish(current.Path(), a.project.Publication.Output, c, false)
+	}
 	return current.Path(), err
 }
 func (a *App) interruptRun() error {

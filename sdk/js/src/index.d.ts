@@ -17,6 +17,8 @@ export interface Dependency {
   schemaRequired?: boolean;
 }
 export interface TestOptions {
+  /** Stable logical identity; retry ordinals are assigned by the test harness. */
+  knowledge?: { testId: string; key?: string; executionGroup?: string; attemptOrdinal?: number };
   name?: string;
   tags?: string[];
   meta?: Record<string, unknown>;

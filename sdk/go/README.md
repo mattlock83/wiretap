@@ -6,6 +6,12 @@ start `wiretap` alongside the SUT and mocks using your existing harness. Run tes
 normally with `go test`. The SDK inherits runtime defaults over HTTP; it never
 invokes the CLI or launches test processes.
 
+For a [maintained repository bundle](../../docs/repository-bundles.md), pass
+`TestOptions.Knowledge` with a stable `TestKnowledgeIdentity.TestID`, optional
+`Key`/`ExecutionGroup`, and a harness-assigned `AttemptOrdinal` pointer. Variants
+use distinct IDs; retry ordinals begin at zero. These fields preserve logical
+identity independently of the fresh capture session and trace.
+
 ```go
 runtime := wiretap.Runtime{} // WIRETAP_BASE_URL or http://127.0.0.1:18000
 

@@ -1,0 +1,30 @@
+{
+  "$id": "wiretap-recording.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["profile", "run_id", "attempt_id", "capture", "contract_ids", "boundary", "source_record_sha256"],
+  "properties": {
+    "profile": {
+      "type": "object",
+      "required": ["id", "version"],
+      "properties": {
+        "id": {"const": "urn:phrond:wiretap:recording"},
+        "version": {"const": "1.0.0-draft.1"}
+      }
+    },
+    "run_id": {"$ref": "common.schema.json#/$defs/id"},
+    "attempt_id": {"$ref": "common.schema.json#/$defs/id"},
+    "source_record_sha256": {"$ref": "common.schema.json#/$defs/sha256"},
+    "capture": {"$ref": "../bundle-evidence.schema.json#/$defs/capture"},
+    "contract_ids": {"type": "object", "additionalProperties": {"$ref": "common.schema.json#/$defs/id"}},
+    "boundary": {
+      "type": "object",
+      "required": ["api_id", "sut_target_kind", "dependency_kinds"],
+      "properties": {
+        "api_id": {"type": "string"},
+        "sut_target_kind": {"enum": ["mock", "service", "unknown"]},
+        "dependency_kinds": {"type": "object", "additionalProperties": {"enum": ["mock", "service", "unknown"]}}
+      }
+    }
+  }
+}

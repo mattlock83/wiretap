@@ -27,6 +27,11 @@ configuration file. `${VARIABLE}` references in URLs, paths, and listener
 addresses resolve from the runtime's environment; missing variables are errors.
 Unknown fields and multiple YAML documents are rejected.
 
+Optional `publication: {config: .wiretap-publication.json, output: docs/knowledge}`
+maintains a repository bundle when `/v1/finishRun` succeeds. Both paths resolve
+relative to this file. Its identity/selection configuration and the `publish`,
+`check` and `validate` commands are described in [Repository bundles](repository-bundles.md).
+
 `WIRETAP_HTTP_LISTEN`, `WIRETAP_PROXY_LISTEN`, `WIRETAP_OUTPUT_DIR`, and
 `WIRETAP_PROXY_CA_DIR` override file settings. Relative environment paths are
 relative to the process's working directory. Additional capture and proxy

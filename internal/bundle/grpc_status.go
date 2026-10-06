@@ -125,6 +125,10 @@ func restoreGRPCStatusBody(root string, flows map[string]*artifact.Flow, seen ma
 }
 
 func verifyGRPCStatus(capture artifact.Artifact, seen map[string]bool) error {
+	return verifyGRPCStatusUsing(capture, seen, os.ReadFile)
+}
+
+func verifyGRPCStatusUsing(capture artifact.Artifact, seen map[string]bool, readContract func(string) ([]byte, error)) error {
 	for _, flow := range capture.Traffic {
 		if flow.Request.GRPC != nil && flow.Request.GRPC.StatusDetails != nil {
 			return fmt.Errorf("gRPC request cannot contain response status details")
@@ -195,7 +199,7 @@ func verifyGRPCStatus(capture artifact.Artifact, seen map[string]bool) error {
 		if ref == nil {
 			return fmt.Errorf("status details have no boundary contract")
 		}
-		rawContract, err := os.ReadFile(ref.Source.Path)
+		rawContract, err := readContract(ref.Source.Path)
 		if err != nil {
 			return err
 		}

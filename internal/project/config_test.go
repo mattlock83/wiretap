@@ -7,6 +7,19 @@ import (
 	"testing"
 )
 
+func TestPublicationConfigurationResolvesRepositoryPaths(t *testing.T) {
+	root := t.TempDir()
+	p := filepath.Join(root, ".wiretap.yaml")
+	os.WriteFile(p, []byte("version: 1\nsut: {schema: api.yaml}\npublication: {config: knowledge-publication.json}\n"), 0644)
+	c, err := Load(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Publication.Config != filepath.Join(root, "knowledge-publication.json") || c.Publication.Output != filepath.Join(root, "docs/knowledge") {
+		t.Fatalf("%+v", c.Publication)
+	}
+}
+
 func TestLoadResolvesPathsAndEnvironmentFromProject(t *testing.T) {
 	root := t.TempDir()
 	child := filepath.Join(root, "tests")

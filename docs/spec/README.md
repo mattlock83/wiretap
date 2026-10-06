@@ -1,10 +1,12 @@
 # Application knowledge bundle specification
 
 **Status:** implementation draft, `1.0.0-draft.1`, 6 October 2026. Profile ID:
-`application-knowledge`. This specifies a new publication format. Wiretap's
-existing [run bundle format 3.1](../bundle-evidence.md) and
-[OKF profile 1.0](../okf-profile.md) remain the current implementation; they do
-not yet conform to this draft.
+`application-knowledge`. Wiretap implements this publication format through
+[`publish`, `check` and `validate`](../repository-bundles.md), alongside the
+existing [run archive format 3.1](../bundle-evidence.md) and its
+[OKF views](../okf-profile.md). Archives are explicit inputs to publication;
+they are not silently relabelled as this profile. The independently implemented
+producer/consumer exchange for a stable release remains outstanding.
 
 An application knowledge bundle is a portable, self-contained description of an
 application's APIs, dependencies, contracts, tests and supporting evidence. Its
@@ -43,7 +45,7 @@ The following files are part of this draft:
 | [Concept schema](concept.schema.json) | Frontmatter for the profile's primary concept pages after parsing YAML. |
 | [Conformance requirements](conformance.md) | Positive, negative and change-diff acceptance cases. |
 | [Example bundles](examples/README.md) | A documentation-only bundle and a bundle with a tested API. |
-| [Wiretap adoption requirements](wiretap-adoption.md) | Migration from the current producer without claiming the migration is implemented. |
+| [Wiretap adoption requirements](wiretap-adoption.md) | Implementation mapping, regression checks and remaining release gates. |
 
 Schemas use JSON Schema Draft 2020-12. Schemas constrain record shapes; the
 normative text also constrains references, paths, identity, semantics and

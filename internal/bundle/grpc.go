@@ -149,6 +149,10 @@ func validateGRPCMessages(version string, capture artifact.Artifact) error {
 // Projections are convenient to read but never an independent source of truth.
 // Check them against the verified descriptor and wire attachment on every load.
 func verifyGRPCPayloads(capture artifact.Artifact) error {
+	return verifyGRPCPayloadsUsing(capture, os.ReadFile)
+}
+
+func verifyGRPCPayloadsUsing(capture artifact.Artifact, readContract func(string) ([]byte, error)) error {
 	contracts := map[string]*grpccontract.Contract{}
 	for _, flow := range capture.Traffic {
 		if flow.Protocol != "grpc" || flow.Interaction != nil {
@@ -157,7 +161,7 @@ func verifyGRPCPayloads(capture artifact.Artifact) error {
 		ref := grpcSchemaFor(flow, capture.Schemas)
 		contract := contracts[ref.Source.Path+strings.Join(ref.Services, ",")]
 		if contract == nil {
-			raw, err := os.ReadFile(ref.Source.Path)
+			raw, err := readContract(ref.Source.Path)
 			if err != nil {
 				return err
 			}

@@ -1,5 +1,11 @@
 # Wiretap bundle format 3.1
 
+This is the immutable run archive format. The
+[repository publisher](repository-bundles.md) converts it explicitly into the
+[application knowledge draft](spec/README.md), with readable stable paths and
+separate execution evidence. Existing archive readers and recording rules remain
+valid for 3.1.
+
 A bundle is a portable recording of tests at API boundaries. The same recorded
 tests support documentation, coverage, comparison and execution. There is no
 separate scenario definition, results directory, template language or executable
@@ -393,3 +399,8 @@ the run open and the denominator unknown. A resolved entry must match a frozen
 Protobuf schema; a complete run cannot contain pending or failed contracts.
 Diagnostics omit reflection credentials and filesystem paths. Successful
 acquisition provenance is stored on the boundary's schema reference.
+
+Pending test records retain setup `meta`, including `application_knowledge` identity
+and harness retry ordinals, so interrupted attempts can be published under the
+same stable test and group as their completed predecessors. Older archives without
+this metadata require explicit publication mappings.

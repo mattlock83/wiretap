@@ -1,0 +1,54 @@
+{
+  "artifacts": [
+    {
+      "kind": "recording",
+      "media_type": "application/json",
+      "name": "recording",
+      "path": "evidence/tests/checkout/primary/recording.json",
+      "profile": {
+        "id": "urn:phrond:wiretap:recording",
+        "version": "1.0.0-draft.1"
+      },
+      "sha256": "ca71aa29d2cd3267fd77010fc2364e214ab7b40da251a50adf5b94e42f9209dd"
+    }
+  ],
+  "attempt_id": "attempt-1",
+  "attempt_ordinal": 0,
+  "capture_scope": {
+    "description": "Wiretap's configured recording boundaries; the recording preserves HTTP, gRPC and event observations, assertions, validation and capture limitations without claiming exhaustive application behavior.",
+    "subject_ids": [
+      "api:shop",
+      "op:shop:checkout"
+    ]
+  },
+  "capture_state": "complete",
+  "contracts": [
+    {
+      "contract_id": "contract:shop-v1",
+      "manifest_sha256": "c428bf8b2723bc3f772951752d1aa1ddbe0a988b0ffa6f46e6672e10f9b47503"
+    }
+  ],
+  "diagnostics": [],
+  "execution_group": "default",
+  "finished_at": "2026-10-06T00:00:01Z",
+  "outcome": "pass",
+  "profile": {
+    "id": "test-result",
+    "version": "1.0.0-draft.1"
+  },
+  "run_id": "example-wiretap-http",
+  "source_ids": [
+    "application-source-0ce21158a98846a9",
+    "tests-source-4a58b11193de380c"
+  ],
+  "started_at": "2026-10-06T00:00:00Z",
+  "test_id": "test:checkout",
+  "transformation": {
+    "description": "Restore retained inline payload bytes and map frozen contract references to stable publication packages; preserve ordered observations and original execution identity.",
+    "profile": {
+      "id": "urn:phrond:wiretap:recording",
+      "version": "1.0.0-draft.1"
+    },
+    "source_record_sha256": "b909965ba53a8fe186c5f4cef0ea2030312f806eb73aab203b40978ac01fa447"
+  }
+}

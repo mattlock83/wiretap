@@ -37,23 +37,33 @@ func (r *Runtime) FinishRun(ctx context.Context) error {
 }
 
 type TestOptions struct {
-	SchemaRequired  *bool          `json:"schema_required,omitempty"`
-	Redactions      []Redaction    `json:"redactions,omitempty"`
-	APIID           string         `json:"api_id,omitempty"`
-	SUTTargetKind   string         `json:"sut_target_kind,omitempty"`
-	TestSource      map[string]any `json:"test_source,omitempty"`
-	SUTSource       map[string]any `json:"sut_source,omitempty"`
-	SUTBaseURL      string         `json:"sut_base_url,omitempty"`
-	SUTProtocol     string         `json:"sut_protocol,omitempty"`
-	Schemas         []Schema       `json:"schemas,omitempty"`
-	Dependencies    []Dependency   `json:"dependencies,omitempty"`
-	ExplicitSession bool           `json:"explicit_session,omitempty"`
-	Tags            []string       `json:"tags,omitempty"`
-	Meta            map[string]any `json:"meta,omitempty"`
-	DrainTimeout    time.Duration  `json:"-"`
+	Knowledge       *TestKnowledgeIdentity `json:"application_knowledge,omitempty"`
+	SchemaRequired  *bool                  `json:"schema_required,omitempty"`
+	Redactions      []Redaction            `json:"redactions,omitempty"`
+	APIID           string                 `json:"api_id,omitempty"`
+	SUTTargetKind   string                 `json:"sut_target_kind,omitempty"`
+	TestSource      map[string]any         `json:"test_source,omitempty"`
+	SUTSource       map[string]any         `json:"sut_source,omitempty"`
+	SUTBaseURL      string                 `json:"sut_base_url,omitempty"`
+	SUTProtocol     string                 `json:"sut_protocol,omitempty"`
+	Schemas         []Schema               `json:"schemas,omitempty"`
+	Dependencies    []Dependency           `json:"dependencies,omitempty"`
+	ExplicitSession bool                   `json:"explicit_session,omitempty"`
+	Tags            []string               `json:"tags,omitempty"`
+	Meta            map[string]any         `json:"meta,omitempty"`
+	DrainTimeout    time.Duration          `json:"-"`
 	// SetupTimeout includes first-test contract discovery for every boundary.
 	// Zero uses 30 seconds. Increase it for larger or slower gRPC inventories.
 	SetupTimeout time.Duration `json:"-"`
+}
+
+// TestKnowledgeIdentity separates a logical test from its execution ID. Retries
+// use harness-assigned ordinals, beginning at zero; variants use distinct IDs.
+type TestKnowledgeIdentity struct {
+	TestID         string `json:"test_id"`
+	Key            string `json:"key,omitempty"`
+	ExecutionGroup string `json:"execution_group,omitempty"`
+	AttemptOrdinal *int   `json:"attempt_ordinal,omitempty"`
 }
 
 type Session struct {

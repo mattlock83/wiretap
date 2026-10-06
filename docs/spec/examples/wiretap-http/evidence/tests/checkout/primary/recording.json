@@ -1,0 +1,77 @@
+{
+  "attempt_id": "attempt-1",
+  "boundary": {
+    "api_id": "",
+    "dependency_kinds": {},
+    "sut_target_kind": "unknown"
+  },
+  "capture": {
+    "meta": {
+      "precise": 9007199254740993
+    },
+    "schemas": [
+      {
+        "asset_sha": "5c673125ffd86e3dc4e4168ad2d86b8166fad89ae6af57cc49fd61ca635a826b",
+        "id": "shop",
+        "role": "sut",
+        "source": {
+          "format": "json",
+          "path": "contracts/shop-v1/openapi.json",
+          "sha256": "5c673125ffd86e3dc4e4168ad2d86b8166fad89ae6af57cc49fd61ca635a826b",
+          "type": "file"
+        },
+        "type": "openapi"
+      }
+    ],
+    "testcase": {
+      "finished_at": "2026-10-06T00:00:01Z",
+      "id": "attempt-1",
+      "name": "checkout",
+      "started_at": "2026-10-06T00:00:00Z",
+      "status": "pass"
+    },
+    "traffic": [
+      {
+        "channel": "test_to_sut",
+        "id": "flow-1",
+        "protocol": "http",
+        "request": {
+          "body": {
+            "encoding": "json",
+            "text": "{\"item\":\"book\"}"
+          },
+          "headers": {
+            "content-type": [
+              "application/json"
+            ]
+          },
+          "method": "POST",
+          "url": "http://example.test/checkout"
+        },
+        "response": {
+          "body": {
+            "encoding": "json",
+            "text": "{\"accepted\":true}"
+          },
+          "headers": {
+            "content-type": [
+              "application/json"
+            ]
+          },
+          "status": 200
+        },
+        "started_at": "0001-01-01T00:00:00Z"
+      }
+    ],
+    "version": 3
+  },
+  "contract_ids": {
+    "shop": "contract:shop-v1"
+  },
+  "profile": {
+    "id": "urn:phrond:wiretap:recording",
+    "version": "1.0.0-draft.1"
+  },
+  "run_id": "example-wiretap-http",
+  "source_record_sha256": "b909965ba53a8fe186c5f4cef0ea2030312f806eb73aab203b40978ac01fa447"
+}

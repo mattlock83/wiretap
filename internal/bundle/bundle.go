@@ -36,9 +36,10 @@ type AttemptRef struct {
 }
 
 type PendingAttempt struct {
-	AttemptID string    `json:"attempt_id"`
-	Name      string    `json:"name"`
-	StartedAt time.Time `json:"started_at"`
+	AttemptID string         `json:"attempt_id"`
+	Name      string         `json:"name"`
+	StartedAt time.Time      `json:"started_at"`
+	Meta      map[string]any `json:"meta,omitempty"`
 }
 
 type Run struct {
@@ -268,8 +269,19 @@ func (w *Writer) Register(tc artifact.TestCase, schemas []artifact.SchemaRef) ([
 		}
 		frozen = append(frozen, ref)
 	}
+	// Persist setup identity before traffic admission, including for interrupted tests.
+	metaBytes, err := json.Marshal(tc.Meta)
+	if err != nil {
+		return nil, err
+	}
+	var meta map[string]any
+	decoder := json.NewDecoder(bytes.NewReader(metaBytes))
+	decoder.UseNumber()
+	if err := decoder.Decode(&meta); err != nil {
+		return nil, err
+	}
 	previous := w.run
-	w.run.Pending = append(w.run.Pending, PendingAttempt{AttemptID: tc.ID, Name: tc.Name, StartedAt: tc.StartedAt})
+	w.run.Pending = append(w.run.Pending, PendingAttempt{AttemptID: tc.ID, Name: tc.Name, StartedAt: tc.StartedAt, Meta: meta})
 	for _, ref := range frozen {
 		stored := ref
 		if stored.Source.Path != "" {
@@ -667,8 +679,13 @@ func Load(root string) (*Run, []*artifact.Artifact, error) {
 		return nil, nil, err
 	}
 	var run Run
-	if err := json.Unmarshal(data, &run); err != nil {
+	runDecoder := json.NewDecoder(bytes.NewReader(data))
+	runDecoder.UseNumber()
+	if err := runDecoder.Decode(&run); err != nil {
 		return nil, nil, err
+	}
+	if err := runDecoder.Decode(new(any)); err != io.EOF {
+		return nil, nil, fmt.Errorf("run manifest contains trailing JSON or invalid data")
 	}
 	if !supportedEvidenceVersion(run.EvidenceVersion) {
 		return nil, nil, fmt.Errorf("unsupported evidence version %q", run.EvidenceVersion)

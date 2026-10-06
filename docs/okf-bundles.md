@@ -1,8 +1,9 @@
 # Bundles and reports
 
-For the draft convention intended for bundles committed alongside application
-changes, see the [application knowledge bundle specification](spec/README.md).
-This guide describes the current run-bundle implementation.
+For maintained bundles committed alongside application changes, use
+[`wiretap publish`](repository-bundles.md), which implements the
+[application knowledge bundle draft](spec/README.md). This guide describes
+immutable run archives and their existing viewer/coverage exports.
 
 Wiretap writes one portable directory per run under `./artifacts` by default.
 Use `output_dir` in `.wiretap.yaml` or `WIRETAP_OUTPUT_DIR` to choose another

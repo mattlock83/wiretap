@@ -95,6 +95,7 @@ func (a *App) handleStartRun(w http.ResponseWriter, r *http.Request) {
 }
 
 type setupTestRequest struct {
+	Knowledge       *testKnowledgeIdentity   `json:"application_knowledge,omitempty"`
 	SUTProtocol     string                   `json:"sut_protocol,omitempty"`
 	SchemaRequired  *bool                    `json:"schema_required,omitempty"`
 	Redactions      []artifact.Redaction     `json:"redactions,omitempty"`
@@ -112,6 +113,13 @@ type setupTestRequest struct {
 	TraceContext    *tracecontext.Context    `json:"trace_context,omitempty"`
 }
 
+type testKnowledgeIdentity struct {
+	TestID         string `json:"test_id"`
+	Key            string `json:"key,omitempty"`
+	ExecutionGroup string `json:"execution_group,omitempty"`
+	AttemptOrdinal *int   `json:"attempt_ordinal,omitempty"`
+}
+
 func (a *App) handleSetupTest(w http.ResponseWriter, r *http.Request) {
 	a.extendGRPCControlDeadline(w)
 	if r.Method != http.MethodPost {
@@ -126,6 +134,30 @@ func (a *App) handleSetupTest(w http.ResponseWriter, r *http.Request) {
 	if err := decodeStrictJSON(r, &payload); err != nil && !errors.Is(err, io.EOF) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
 		return
+	}
+	if identity := payload.Knowledge; identity != nil {
+		if identity.TestID == "" || strings.ContainsAny(identity.TestID, " \t\r\n") || (identity.AttemptOrdinal != nil && *identity.AttemptOrdinal < 0) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "application_knowledge requires a stable test_id and nonnegative attempt_ordinal"})
+			return
+		}
+		if payload.Meta == nil {
+			payload.Meta = map[string]any{}
+		}
+		if payload.Meta["application_knowledge"] != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "declare application_knowledge once, either directly or in meta"})
+			return
+		}
+		binding := map[string]any{"test_id": identity.TestID}
+		if identity.Key != "" {
+			binding["key"] = identity.Key
+		}
+		if identity.ExecutionGroup != "" {
+			binding["execution_group"] = identity.ExecutionGroup
+		}
+		if identity.AttemptOrdinal != nil {
+			binding["attempt_ordinal"] = *identity.AttemptOrdinal
+		}
+		payload.Meta["application_knowledge"] = binding
 	}
 	var root trace.SpanContext
 	if payload.TraceContext != nil {
@@ -460,11 +492,21 @@ func (a *App) handleFinishRun(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 		return
 	}
-	if _, err := a.finishRun(r.Context()); err != nil {
-		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+	archivePath, err := a.finishRun(r.Context())
+	if err != nil {
+		response := map[string]string{"error": err.Error()}
+		if archivePath != "" {
+			response["run_archive_path"] = archivePath
+		}
+		writeJSON(w, http.StatusConflict, response)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "complete"})
+	response := map[string]string{"status": "complete"}
+	if a.project != nil && a.project.Publication != nil && archivePath != "" {
+		response["run_archive_path"] = archivePath
+		response["publication_path"] = a.project.Publication.Output
+	}
+	writeJSON(w, http.StatusOK, response)
 }
 
 func (a *App) configureProxy(payload proxyOptions) error {

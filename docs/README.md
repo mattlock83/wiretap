@@ -25,6 +25,7 @@ evidence, dependency assumptions and coverage.
 | Guide | Use it to |
 | --- | --- |
 | [Bundles and reports](okf-bundles.md) | Read the viewer, distinguish coverage from test runs, rebuild views and export results. |
+| [Repository bundles](repository-bundles.md) | Publish a stable bundle with your application, select evidence, preserve ownership and check PR changes. |
 | [Contract coverage rules](contract-coverage-rules.md) | Understand condition keys, counts, evidence quality and measurement limits. |
 | [Bundle knowledge](bundle-knowledge.md) | Load API evidence and verification tasks into a knowledge base or agent. |
 
@@ -32,7 +33,8 @@ evidence, dependency assumptions and coverage.
 
 | Reference | Scope |
 | --- | --- |
-| [Application knowledge bundle specification](spec/README.md) | Draft requirements, schemas and examples for stable repository bundles and independent producers/consumers; not yet implemented by Wiretap. |
+| [Application knowledge bundle specification](spec/README.md) | Draft requirements, schemas and examples implemented by `publish`, `check` and `validate`; independent implementation exchange remains a release gate. |
+| [Wiretap recording profile](spec/wiretap-recording.md) | Versioned HTTP, gRPC and ordered-event attachments for repository publications. |
 | [Bundle format](bundle-evidence.md) | Parse API dependencies, recorded tests, contracts and payloads; understand recording structure and integrity. |
 | [OKF profile](okf-profile.md) | Generated Markdown, frontmatter and ownership of bundle paths. |
 | [Architecture](architecture.md) | Runtime, SDK, proxy, storage and reporting responsibilities. |

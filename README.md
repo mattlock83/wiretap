@@ -57,6 +57,12 @@ See [configuration](docs/configuration.md) and [tracing](docs/otel-adoption.md).
 
 ## Understand what has been tested
 
+For a bundle reviewed and versioned alongside the application, use
+[`wiretap publish`](docs/repository-bundles.md). It writes the application knowledge
+draft at `docs/knowledge`, with meaningful stable paths, explicit test selection,
+ownership checks and a read-only `wiretap check` workflow. Run archives retain
+their existing recording format and viewer.
+
 | Bundle view | What it tells you |
 | --- | --- |
 | `bundle.json` | The provided APIs and dependencies, their contracts and the recorded tests that exercised them. |

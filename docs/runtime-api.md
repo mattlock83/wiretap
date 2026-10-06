@@ -90,10 +90,21 @@ owner must control finalization when suites/workers share a runtime. This stops
 capture and completes the bundle; it leaves the control process running. The reverse SUT
 target cannot be changed while sessions are active.
 
+When `.wiretap.yaml` opts into `publication`, successful finalization also publishes
+the stable repository bundle and returns `publication_path` and `run_archive_path`.
+A publication conflict returns 409 with the preserved archive path for an explicit
+`wiretap publish` retry. See [Repository bundles](repository-bundles.md).
+
 ## Test lifecycle
 
 `POST /v1/setupTest` creates a named capture session. It also starts the proxy
 if needed, so lower-level consumers do not have to call `startRun` first.
+
+Optional `application_knowledge` binds the attempt to a stable logical scenario:
+`{test_id, key?, execution_group?, attempt_ordinal?}`. The ordinal is nonnegative
+and assigned by the harness, starting at zero. It is persisted in testcase
+`meta.application_knowledge`; do not also declare the same field in `meta`.
+Execution/session IDs remain independent of the logical scenario ID.
 Omitted fields inherit project defaults. Supplied arrays replace the defaults.
 OpenAPI specs are required and validated for HTTP before the session starts; an API can
 explicitly allow an absent spec with `schema_required: false`. An invalid

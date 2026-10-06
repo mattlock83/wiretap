@@ -8,7 +8,9 @@ require (
 	connectrpc.com/connect v1.17.0
 	connectrpc.com/grpcreflect v1.2.0
 	github.com/bufbuild/protocompile v0.14.1
+	github.com/dlclark/regexp2 v1.11.5
 	github.com/getkin/kin-openapi v0.133.0
+	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.60.0
 	go.opentelemetry.io/otel v1.35.0
 	go.opentelemetry.io/otel/sdk v1.35.0

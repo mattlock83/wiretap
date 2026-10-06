@@ -24,6 +24,9 @@ import (
 type schemaFile struct {
 	Path   string `json:"path"`
 	SHA256 string `json:"sha256"`
+	// SourceName preserves the logical source name for repository publication.
+	// It never participates in the immutable archive's existing hash identity.
+	SourceName string `json:"source_name,omitempty"`
 }
 
 type schemaManifest struct {
@@ -210,7 +213,13 @@ func (w *Writer) freezeSchema(ref artifact.SchemaRef) (artifact.SchemaRef, error
 		if err := writeContent(w.root, rel, data); err != nil {
 			return ref, err
 		}
-		manifest.Files = append(manifest.Files, schemaFile{Path: rel, SHA256: digest(data)})
+		sourceName := "openapi.json"
+		if doc.uri.Scheme == rootURL.Scheme && doc.uri.Host == rootURL.Host && doc.uri.Path != "" {
+			if name, err := filepath.Rel(filepath.Dir(rootURL.Path), doc.uri.Path); err == nil {
+				sourceName = filepath.ToSlash(name)
+			}
+		}
+		manifest.Files = append(manifest.Files, schemaFile{Path: rel, SHA256: digest(data), SourceName: sourceName})
 		if key == rootURL.String() {
 			manifest.Root = rel
 			ref.Source = artifact.SchemaSource{Type: "file", Path: filepath.Join(w.root, filepath.FromSlash(rel)), SHA256: digest(data), Format: "json"}
