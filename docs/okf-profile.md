@@ -1,5 +1,10 @@
 # Wiretap OKF profile 1.0
 
+This describes the current run-oriented output. The
+[application knowledge bundle specification](spec/README.md) defines the draft
+target for producer-neutral repository publication, stable concept paths and
+reviewable diffs. Its schemas and requirements are separate from this profile.
+
 Wiretap's generated pages follow [OKF v0.2](https://github.com/GoogleCloudPlatform/open-knowledge-format/blob/ad30107c/SPEC.md), reviewed at revision `ad30107c`.
 This profile describes the readable projection. It is versioned separately
 from [JSON capture evidence](bundle-evidence.md). The

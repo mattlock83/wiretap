@@ -1,0 +1,16 @@
+{
+  "contract_id": "contract:payments-v1",
+  "entrypoint": "openapi.json",
+  "files": [
+    {
+      "path": "openapi.json",
+      "sha256": "f3656dee9897c0351d2f7b49aae928cfa8de97a90da36af2b1ba7705f894d009"
+    },
+    {
+      "path": "schemas/payment.json",
+      "sha256": "35ac7b6eaf89bf107a01dd7118be9f851d014c6e1cbd0b786d0c9e24b91c9b1c"
+    }
+  ],
+  "format": "openapi",
+  "source_map": []
+}

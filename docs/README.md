@@ -32,6 +32,7 @@ evidence, dependency assumptions and coverage.
 
 | Reference | Scope |
 | --- | --- |
+| [Application knowledge bundle specification](spec/README.md) | Draft requirements, schemas and examples for stable repository bundles and independent producers/consumers; not yet implemented by Wiretap. |
 | [Bundle format](bundle-evidence.md) | Parse API dependencies, recorded tests, contracts and payloads; understand recording structure and integrity. |
 | [OKF profile](okf-profile.md) | Generated Markdown, frontmatter and ownership of bundle paths. |
 | [Architecture](architecture.md) | Runtime, SDK, proxy, storage and reporting responsibilities. |

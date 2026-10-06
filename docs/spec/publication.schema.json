@@ -1,0 +1,187 @@
+{
+  "$id": "publication.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "diagnostics": {
+      "items": {
+        "$ref": "common.schema.json#/$defs/diagnostic"
+      },
+      "type": "array"
+    },
+    "extensions": {
+      "$ref": "common.schema.json#/$defs/extensions"
+    },
+    "producer": {
+      "properties": {
+        "name": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "version": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "version"
+      ],
+      "type": "object"
+    },
+    "selection": {
+      "properties": {
+        "mode": {
+          "const": "replace-selected-tests"
+        },
+        "reason": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "scope": {
+          "enum": [
+            "complete",
+            "partial"
+          ]
+        },
+        "test_ids": {
+          "$ref": "common.schema.json#/$defs/ids"
+        }
+      },
+      "required": [
+        "mode",
+        "scope",
+        "test_ids"
+      ],
+      "type": "object"
+    },
+    "sources": {
+      "allOf": [
+        {
+          "contains": {
+            "properties": {
+              "role": {
+                "const": "application"
+              }
+            },
+            "required": [
+              "role"
+            ]
+          }
+        },
+        {
+          "contains": {
+            "properties": {
+              "role": {
+                "const": "tests"
+              }
+            },
+            "required": [
+              "role"
+            ]
+          }
+        }
+      ],
+      "items": {
+        "allOf": [
+          {
+            "else": {
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "revision"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "build_digest"
+                    ]
+                  }
+                ]
+              }
+            },
+            "if": {
+              "properties": {
+                "state": {
+                  "const": "known"
+                }
+              }
+            },
+            "then": {
+              "anyOf": [
+                {
+                  "required": [
+                    "revision"
+                  ]
+                },
+                {
+                  "required": [
+                    "build_digest"
+                  ]
+                }
+              ]
+            }
+          }
+        ],
+        "properties": {
+          "build_digest": {
+            "$ref": "common.schema.json#/$defs/sha256"
+          },
+          "description": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "dirty": {
+            "type": "boolean"
+          },
+          "id": {
+            "$ref": "common.schema.json#/$defs/id"
+          },
+          "repository": {
+            "$ref": "common.schema.json#/$defs/uri"
+          },
+          "revision": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "application",
+              "tests",
+              "contract",
+              "configuration",
+              "other"
+            ]
+          },
+          "state": {
+            "enum": [
+              "known",
+              "unknown"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "role",
+          "state"
+        ],
+        "type": "object"
+      },
+      "minItems": 2,
+      "type": "array"
+    },
+    "target_source_ids": {
+      "$ref": "common.schema.json#/$defs/ids",
+      "minItems": 2
+    }
+  },
+  "required": [
+    "producer",
+    "sources",
+    "selection",
+    "diagnostics",
+    "target_source_ids"
+  ],
+  "title": "Application knowledge publication provenance draft 1",
+  "type": "object"
+}

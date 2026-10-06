@@ -1,0 +1,28 @@
+{
+  "diagnostics": [],
+  "producer": {
+    "name": "example-producer",
+    "version": "1.0"
+  },
+  "selection": {
+    "mode": "replace-selected-tests",
+    "scope": "complete",
+    "test_ids": []
+  },
+  "sources": [
+    {
+      "id": "application-source",
+      "role": "application",
+      "state": "unknown"
+    },
+    {
+      "id": "test-source",
+      "role": "tests",
+      "state": "unknown"
+    }
+  ],
+  "target_source_ids": [
+    "application-source",
+    "test-source"
+  ]
+}

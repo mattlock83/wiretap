@@ -1,0 +1,54 @@
+{
+  "$id": "contract.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "contract_id": {
+      "$ref": "common.schema.json#/$defs/id"
+    },
+    "entrypoint": {
+      "$ref": "common.schema.json#/$defs/path"
+    },
+    "extensions": {
+      "$ref": "common.schema.json#/$defs/extensions"
+    },
+    "files": {
+      "items": {
+        "$ref": "common.schema.json#/$defs/fileRef"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "format": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "source_map": {
+      "items": {
+        "properties": {
+          "path": {
+            "$ref": "common.schema.json#/$defs/path"
+          },
+          "source": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "path"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "contract_id",
+    "format",
+    "entrypoint",
+    "files",
+    "source_map"
+  ],
+  "title": "Application knowledge contract package draft 1",
+  "type": "object"
+}

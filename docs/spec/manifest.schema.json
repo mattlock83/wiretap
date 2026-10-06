@@ -1,0 +1,433 @@
+{
+  "$id": "manifest.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "evidence": {
+            "minItems": 1
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "required_capabilities": {
+            "contains": {
+              "const": "test-result.v1"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "properties": {
+    "application": {
+      "properties": {
+        "id": {
+          "$ref": "common.schema.json#/$defs/uri"
+        },
+        "title": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title"
+      ],
+      "type": "object"
+    },
+    "bundle_id": {
+      "$ref": "common.schema.json#/$defs/uri"
+    },
+    "contracts": {
+      "items": {
+        "properties": {
+          "format": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "id": {
+            "$ref": "common.schema.json#/$defs/id"
+          },
+          "key": {
+            "$ref": "common.schema.json#/$defs/key"
+          },
+          "manifest": {
+            "$ref": "common.schema.json#/$defs/path"
+          },
+          "origin": {
+            "enum": [
+              "supplied",
+              "inferred"
+            ]
+          },
+          "subject_ids": {
+            "items": {
+              "$ref": "common.schema.json#/$defs/id"
+            },
+            "minItems": 1,
+            "type": "array",
+            "uniqueItems": true
+          }
+        },
+        "required": [
+          "id",
+          "key",
+          "subject_ids",
+          "origin",
+          "format",
+          "manifest"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "evidence": {
+      "items": {
+        "properties": {
+          "group": {
+            "$ref": "common.schema.json#/$defs/key"
+          },
+          "path": {
+            "$ref": "common.schema.json#/$defs/path"
+          },
+          "slot": {
+            "$ref": "common.schema.json#/$defs/key"
+          },
+          "test_id": {
+            "$ref": "common.schema.json#/$defs/id"
+          }
+        },
+        "required": [
+          "test_id",
+          "slot",
+          "group",
+          "path"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "extensions": {
+      "$ref": "common.schema.json#/$defs/extensions"
+    },
+    "files": {
+      "items": {
+        "properties": {
+          "media_type": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "owner": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "ownership": {
+            "enum": [
+              "authored",
+              "generated"
+            ]
+          },
+          "path": {
+            "$ref": "common.schema.json#/$defs/path"
+          },
+          "role": {
+            "enum": [
+              "index",
+              "concept",
+              "provenance",
+              "contract",
+              "evidence",
+              "measurement",
+              "view",
+              "extension"
+            ]
+          },
+          "sha256": {
+            "$ref": "common.schema.json#/$defs/sha256"
+          }
+        },
+        "required": [
+          "path",
+          "sha256",
+          "media_type",
+          "role",
+          "ownership",
+          "owner"
+        ],
+        "type": "object"
+      },
+      "minItems": 3,
+      "type": "array"
+    },
+    "inventory_scope": {
+      "enum": [
+        "declared",
+        "observed",
+        "declared-and-observed"
+      ]
+    },
+    "measurements": {
+      "items": {
+        "properties": {
+          "id": {
+            "$ref": "common.schema.json#/$defs/id"
+          },
+          "key": {
+            "$ref": "common.schema.json#/$defs/key"
+          },
+          "path": {
+            "$ref": "common.schema.json#/$defs/path"
+          },
+          "profile": {
+            "$ref": "common.schema.json#/$defs/profile"
+          },
+          "subject_ids": {
+            "items": {
+              "$ref": "common.schema.json#/$defs/id"
+            },
+            "minItems": 1,
+            "type": "array",
+            "uniqueItems": true
+          }
+        },
+        "required": [
+          "id",
+          "key",
+          "subject_ids",
+          "path",
+          "profile"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "migrations": {
+      "items": {
+        "properties": {
+          "from": {
+            "$ref": "common.schema.json#/$defs/path"
+          },
+          "reason": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "subject_id": {
+            "$ref": "common.schema.json#/$defs/id"
+          },
+          "to": {
+            "$ref": "common.schema.json#/$defs/path"
+          }
+        },
+        "required": [
+          "subject_id",
+          "from",
+          "to",
+          "reason"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "okf_version": {
+      "const": "0.2"
+    },
+    "profile": {
+      "properties": {
+        "id": {
+          "const": "application-knowledge"
+        },
+        "version": {
+          "const": "1.0.0-draft.1"
+        }
+      },
+      "required": [
+        "id",
+        "version"
+      ],
+      "type": "object"
+    },
+    "publication": {
+      "const": "publication.json"
+    },
+    "removed_subjects": {
+      "items": {
+        "properties": {
+          "id": {
+            "$ref": "common.schema.json#/$defs/id"
+          },
+          "key": {
+            "$ref": "common.schema.json#/$defs/key"
+          },
+          "kind": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "path": {
+            "$ref": "common.schema.json#/$defs/path"
+          },
+          "reason": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "key",
+          "path",
+          "reason"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "required_capabilities": {
+      "$ref": "common.schema.json#/$defs/capabilities"
+    },
+    "subjects": {
+      "items": {
+        "allOf": [
+          {
+            "else": {
+              "required": [
+                "parent_id"
+              ]
+            },
+            "if": {
+              "properties": {
+                "kind": {
+                  "const": "application"
+                }
+              }
+            },
+            "then": {
+              "not": {
+                "required": [
+                  "parent_id"
+                ]
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "const": "operation"
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "protocol",
+                "operation"
+              ]
+            }
+          }
+        ],
+        "properties": {
+          "contract_ids": {
+            "$ref": "common.schema.json#/$defs/ids"
+          },
+          "extensions": {
+            "$ref": "common.schema.json#/$defs/extensions"
+          },
+          "id": {
+            "$ref": "common.schema.json#/$defs/id"
+          },
+          "key": {
+            "$ref": "common.schema.json#/$defs/key"
+          },
+          "kind": {
+            "enum": [
+              "application",
+              "provided-api",
+              "dependency",
+              "operation",
+              "test"
+            ]
+          },
+          "operation": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "page": {
+            "$ref": "common.schema.json#/$defs/path"
+          },
+          "parent_id": {
+            "$ref": "common.schema.json#/$defs/id"
+          },
+          "protocol": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "replaces_id": {
+            "$ref": "common.schema.json#/$defs/id"
+          },
+          "resource": {
+            "$ref": "common.schema.json#/$defs/uri"
+          },
+          "source": {
+            "properties": {
+              "path": {
+                "$ref": "common.schema.json#/$defs/path"
+              },
+              "source_id": {
+                "$ref": "common.schema.json#/$defs/id"
+              },
+              "symbol": {
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "source_id"
+            ],
+            "type": "object"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "deprecated"
+            ]
+          },
+          "title": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "key",
+          "title",
+          "page",
+          "status"
+        ],
+        "type": "object"
+      },
+      "minItems": 1,
+      "type": "array"
+    }
+  },
+  "required": [
+    "profile",
+    "okf_version",
+    "bundle_id",
+    "application",
+    "inventory_scope",
+    "publication",
+    "required_capabilities",
+    "subjects",
+    "contracts",
+    "evidence",
+    "measurements",
+    "files",
+    "migrations",
+    "removed_subjects"
+  ],
+  "title": "Application knowledge bundle manifest draft 1",
+  "type": "object"
+}

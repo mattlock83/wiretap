@@ -1,0 +1,52 @@
+{
+  "artifacts": [
+    {
+      "kind": "payload",
+      "media_type": "application/json",
+      "name": "create-payment-response",
+      "path": "evidence/tests/create-payment/primary/response.json",
+      "retention": {
+        "original_bytes": 57,
+        "redacted": false,
+        "retained_bytes": 57,
+        "state": "complete"
+      },
+      "sha256": "691a307fd02a374a9111ab3e01c37c983ca8f2e23efaf3c0ec312170a7d70892"
+    }
+  ],
+  "attempt_id": "example-attempt-1",
+  "attempt_ordinal": 0,
+  "capture_scope": {
+    "description": "Runner outcome and retained response payload for payment creation; request metadata and a complete exchange are unavailable.",
+    "subject_ids": [
+      "api:payments"
+    ]
+  },
+  "capture_state": "partial",
+  "contracts": [
+    {
+      "contract_id": "contract:payments-v1",
+      "manifest_sha256": "e70769c14cd3ae264db4d2e025d28db24ac04eaf4d7058b67a765d6d63b5a6f7"
+    }
+  ],
+  "diagnostics": [
+    {
+      "code": "example-payload-only",
+      "message": "This illustrative fixture retains a response payload and runner outcome; it does not contain a complete HTTP exchange."
+    }
+  ],
+  "execution_group": "default",
+  "finished_at": "2026-10-06T00:00:01Z",
+  "outcome": "pass",
+  "profile": {
+    "id": "test-result",
+    "version": "1.0.0-draft.1"
+  },
+  "run_id": "example-run-1",
+  "source_ids": [
+    "application-source",
+    "test-source"
+  ],
+  "started_at": "2026-10-06T00:00:00Z",
+  "test_id": "test:create-payment"
+}

@@ -1,5 +1,9 @@
 # Bundles and reports
 
+For the draft convention intended for bundles committed alongside application
+changes, see the [application knowledge bundle specification](spec/README.md).
+This guide describes the current run-bundle implementation.
+
 Wiretap writes one portable directory per run under `./artifacts` by default.
 Use `output_dir` in `.wiretap.yaml` or `WIRETAP_OUTPUT_DIR` to choose another
 parent directory. SDK/API responses return the exact bundle and viewer paths.

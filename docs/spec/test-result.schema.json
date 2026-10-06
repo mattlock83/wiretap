@@ -1,0 +1,307 @@
+{
+  "$id": "test-result.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "capture_state": {
+            "const": "complete"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "finished_at"
+        ]
+      }
+    },
+    {
+      "if": {
+        "not": {
+          "required": [
+            "finished_at"
+          ]
+        }
+      },
+      "then": {
+        "properties": {
+          "capture_state": {
+            "enum": [
+              "partial",
+              "unavailable"
+            ]
+          },
+          "diagnostics": {
+            "minItems": 1
+          },
+          "outcome": {
+            "enum": [
+              "error",
+              "unknown"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "capture_state": {
+            "enum": [
+              "partial",
+              "unavailable"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "diagnostics": {
+            "minItems": 1
+          }
+        }
+      }
+    }
+  ],
+  "properties": {
+    "artifacts": {
+      "items": {
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "recording",
+                    "assertions"
+                  ]
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "profile"
+              ]
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "const": "payload"
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "retention"
+              ]
+            }
+          }
+        ],
+        "properties": {
+          "extensions": {
+            "$ref": "common.schema.json#/$defs/extensions"
+          },
+          "kind": {
+            "enum": [
+              "recording",
+              "payload",
+              "assertions",
+              "other"
+            ]
+          },
+          "media_type": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "name": {
+            "$ref": "common.schema.json#/$defs/key"
+          },
+          "path": {
+            "$ref": "common.schema.json#/$defs/path"
+          },
+          "profile": {
+            "$ref": "common.schema.json#/$defs/profile"
+          },
+          "retention": {
+            "properties": {
+              "original_bytes": {
+                "$ref": "common.schema.json#/$defs/count"
+              },
+              "redacted": {
+                "type": "boolean"
+              },
+              "retained_bytes": {
+                "$ref": "common.schema.json#/$defs/count"
+              },
+              "state": {
+                "enum": [
+                  "complete",
+                  "truncated",
+                  "unknown"
+                ]
+              }
+            },
+            "required": [
+              "state",
+              "redacted",
+              "retained_bytes"
+            ],
+            "type": "object"
+          },
+          "sha256": {
+            "$ref": "common.schema.json#/$defs/sha256"
+          }
+        },
+        "required": [
+          "name",
+          "kind",
+          "path",
+          "sha256",
+          "media_type"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "attempt_id": {
+      "$ref": "common.schema.json#/$defs/id"
+    },
+    "attempt_ordinal": {
+      "$ref": "common.schema.json#/$defs/count"
+    },
+    "capture_scope": {
+      "properties": {
+        "description": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "subject_ids": {
+          "$ref": "common.schema.json#/$defs/ids"
+        }
+      },
+      "required": [
+        "description",
+        "subject_ids"
+      ],
+      "type": "object"
+    },
+    "capture_state": {
+      "enum": [
+        "complete",
+        "partial",
+        "unavailable"
+      ]
+    },
+    "contracts": {
+      "items": {
+        "properties": {
+          "contract_id": {
+            "$ref": "common.schema.json#/$defs/id"
+          },
+          "manifest_sha256": {
+            "$ref": "common.schema.json#/$defs/sha256"
+          }
+        },
+        "required": [
+          "contract_id",
+          "manifest_sha256"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "diagnostics": {
+      "items": {
+        "$ref": "common.schema.json#/$defs/diagnostic"
+      },
+      "type": "array"
+    },
+    "execution_group": {
+      "$ref": "common.schema.json#/$defs/key"
+    },
+    "extensions": {
+      "$ref": "common.schema.json#/$defs/extensions"
+    },
+    "finished_at": {
+      "$ref": "common.schema.json#/$defs/timestamp"
+    },
+    "outcome": {
+      "enum": [
+        "pass",
+        "fail",
+        "skip",
+        "error",
+        "unknown"
+      ]
+    },
+    "profile": {
+      "properties": {
+        "id": {
+          "const": "test-result"
+        },
+        "version": {
+          "const": "1.0.0-draft.1"
+        }
+      },
+      "required": [
+        "id",
+        "version"
+      ],
+      "type": "object"
+    },
+    "run_id": {
+      "$ref": "common.schema.json#/$defs/id"
+    },
+    "source_ids": {
+      "$ref": "common.schema.json#/$defs/ids",
+      "minItems": 2
+    },
+    "started_at": {
+      "$ref": "common.schema.json#/$defs/timestamp"
+    },
+    "test_id": {
+      "$ref": "common.schema.json#/$defs/id"
+    },
+    "transformation": {
+      "properties": {
+        "description": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "profile": {
+          "$ref": "common.schema.json#/$defs/profile"
+        },
+        "source_record_sha256": {
+          "$ref": "common.schema.json#/$defs/sha256"
+        }
+      },
+      "required": [
+        "source_record_sha256",
+        "profile",
+        "description"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "profile",
+    "test_id",
+    "execution_group",
+    "attempt_ordinal",
+    "run_id",
+    "attempt_id",
+    "started_at",
+    "outcome",
+    "capture_state",
+    "source_ids",
+    "contracts",
+    "artifacts",
+    "diagnostics",
+    "capture_scope"
+  ],
+  "title": "Application knowledge test result evidence draft 1",
+  "type": "object"
+}
