@@ -1,6 +1,12 @@
 package app
 
-import "github.com/phrond/wiretap/internal/artifact"
+import (
+	"errors"
+	"strings"
+
+	"github.com/phrond/wiretap/internal/artifact"
+	"github.com/phrond/wiretap/internal/bundle"
+)
 
 func requiresSchema(required *bool) bool { return required == nil || *required }
 func omittedSchema(id, role string) artifact.SchemaRef {
@@ -27,9 +33,46 @@ func (a *App) testDefaults() setupTestRequest {
 		id = "sut"
 	}
 	out := setupTestRequest{APIID: id, SUTBaseURL: cfg.SUT.TargetURL(), SUTTargetKind: cfg.SUT.Kind, SUTProtocol: cfg.SUT.Protocol, Schemas: cfg.SUT.Schemas(id, "sut"), SchemaRequired: cfg.SUT.SchemaRequired}
+	if cfg.Application != nil {
+		application := *cfg.Application
+		out.Application = &application
+	}
 	for _, id := range cfg.DependencyIDs() {
 		dep := cfg.Dependencies[id]
-		out.Dependencies = append(out.Dependencies, dependencyRegistration{AssetID: id, UpstreamURL: dep.TargetURL(), UpstreamKind: dep.Kind, Protocol: dep.Protocol, Schemas: dep.Schemas(id, "dependency"), SchemaRequired: dep.SchemaRequired})
+		out.Dependencies = append(out.Dependencies, dependencyRegistration{AssetID: id, AssetName: dep.Name, UpstreamURL: dep.TargetURL(), UpstreamKind: dep.Kind, Protocol: dep.Protocol, Schemas: dep.Schemas(id, "dependency"), SchemaRequired: dep.SchemaRequired})
 	}
 	return out
+}
+
+// Application identity belongs to the run. Omitted values inherit it, while
+// explicit values must agree with both the project and any existing run.
+func (a *App) resolveApplication(input *bundle.Application) (*bundle.Application, error) {
+	var configured, current *bundle.Application
+	if a.project != nil {
+		configured = a.project.Application
+	}
+	if writer := a.currentBundle(); writer != nil {
+		current = writer.Snapshot().Application
+	}
+	selected := input
+	if selected == nil {
+		selected = configured
+	}
+	if selected == nil {
+		selected = current
+	}
+	if selected == nil {
+		return nil, nil
+	}
+	if strings.TrimSpace(selected.Name) == "" && strings.TrimSpace(selected.ID) == "" {
+		return nil, errors.New("application requires a name or ID")
+	}
+	if configured != nil && *configured != *selected {
+		return nil, errors.New("application identity conflicts with project configuration")
+	}
+	if current != nil && *current != *selected {
+		return nil, errors.New("application identity conflicts with this run")
+	}
+	application := *selected
+	return &application, nil
 }

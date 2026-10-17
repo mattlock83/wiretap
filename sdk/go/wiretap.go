@@ -37,6 +37,7 @@ func (r *Runtime) FinishRun(ctx context.Context) error {
 }
 
 type TestOptions struct {
+	Application     *Application           `json:"application,omitempty"`
 	Knowledge       *TestKnowledgeIdentity `json:"application_knowledge,omitempty"`
 	SchemaRequired  *bool                  `json:"schema_required,omitempty"`
 	Redactions      []Redaction            `json:"redactions,omitempty"`

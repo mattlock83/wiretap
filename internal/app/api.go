@@ -43,8 +43,9 @@ func (a *App) handleProxyCA(w http.ResponseWriter, r *http.Request) {
 }
 
 type startRunRequest struct {
-	Proxy      proxyOptions    `json:"proxy,omitempty"`
-	Boundaries json.RawMessage `json:"boundaries,omitempty"`
+	Proxy       proxyOptions        `json:"proxy,omitempty"`
+	Boundaries  json.RawMessage     `json:"boundaries,omitempty"`
+	Application *bundle.Application `json:"application,omitempty"`
 }
 
 func (a *App) handleStartRun(w http.ResponseWriter, r *http.Request) {
@@ -61,6 +62,11 @@ func (a *App) handleStartRun(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
 		return
 	}
+	application, err := a.resolveApplication(payload.Application)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
 	if err := a.configureRunBoundaries(payload.Boundaries); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
@@ -73,6 +79,16 @@ func (a *App) handleStartRun(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
+	if application != nil {
+		if err := a.currentBundle().Configure(bundle.Identity{Application: application}); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		if _, err := bundlereport.Refresh(a.currentBundle().Path()); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+	}
 	if err := a.initializeRunContracts(); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
@@ -82,11 +98,13 @@ func (a *App) handleStartRun(w http.ResponseWriter, r *http.Request) {
 	if a.project != nil && a.project.SUT.Protocol == "grpc" {
 		sutURL = a.grpcSUTURL()
 	}
+	defaults := a.testDefaults()
+	defaults.Application = a.currentBundle().Snapshot().Application
 	response := map[string]any{
 		"proxy":               info,
 		"sut_url":             sutURL,
 		"dependency_base_url": sutURL + "/__wiretap/dep",
-		"defaults":            a.testDefaults(),
+		"defaults":            defaults,
 		"dependencies":        a.grpcDependencyURLs(),
 		"contracts":           a.currentBundle().Snapshot().Contracts,
 	}
@@ -95,6 +113,7 @@ func (a *App) handleStartRun(w http.ResponseWriter, r *http.Request) {
 }
 
 type setupTestRequest struct {
+	Application     *bundle.Application      `json:"application,omitempty"`
 	Knowledge       *testKnowledgeIdentity   `json:"application_knowledge,omitempty"`
 	SUTProtocol     string                   `json:"sut_protocol,omitempty"`
 	SchemaRequired  *bool                    `json:"schema_required,omitempty"`
@@ -131,10 +150,19 @@ func (a *App) handleSetupTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	payload := a.testDefaults()
+	// Decode an explicitly supplied application as a whole object. In particular,
+	// a failed partial override must never mutate project or run defaults.
+	payload.Application = nil
 	if err := decodeStrictJSON(r, &payload); err != nil && !errors.Is(err, io.EOF) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
 		return
 	}
+	application, err := a.resolveApplication(payload.Application)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	payload.Application = application
 	if identity := payload.Knowledge; identity != nil {
 		if identity.TestID == "" || strings.ContainsAny(identity.TestID, " \t\r\n") || (identity.AttemptOrdinal != nil && *identity.AttemptOrdinal < 0) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "application_knowledge requires a stable test_id and nonnegative attempt_ordinal"})
@@ -277,7 +305,7 @@ func (a *App) handleSetupTest(w http.ResponseWriter, r *http.Request) {
 	for id, dep := range dependencies {
 		dependencyKinds[id] = dep.UpstreamKind
 	}
-	if err := bundleWriter.Configure(bundle.Identity{APIID: payload.APIID, SUTTargetKind: payload.SUTTargetKind, DependencyKinds: dependencyKinds, TestSource: payload.TestSource, SUTSource: payload.SUTSource}); err != nil {
+	if err := bundleWriter.Configure(bundle.Identity{Application: payload.Application, APIID: payload.APIID, SUTTargetKind: payload.SUTTargetKind, DependencyKinds: dependencyKinds, TestSource: payload.TestSource, SUTSource: payload.SUTSource}); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}

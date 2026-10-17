@@ -77,7 +77,7 @@ func (a *App) ensureBundle() (*bundle.Writer, error) {
 			}
 			kinds[dep.AssetID] = kind
 		}
-		if err := w.Configure(bundle.Identity{APIID: defaults.APIID, SUTTargetKind: defaults.SUTTargetKind, DependencyKinds: kinds}); err != nil {
+		if err := w.Configure(bundle.Identity{Application: defaults.Application, APIID: defaults.APIID, SUTTargetKind: defaults.SUTTargetKind, DependencyKinds: kinds}); err != nil {
 			return nil, err
 		}
 	}

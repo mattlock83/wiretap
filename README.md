@@ -100,6 +100,15 @@ payloads. Its Markdown, HTML and knowledge views are generated automatically
 and can be rebuilt with `wiretap report`. See the [bundle guide](docs/okf-bundles.md)
 for reading, sharing and exporting results.
 
+Export captured HTTP tests to Postman collections with
+`wiretap export --bundle ./artifacts/<run-id> --format postman --output-dir postman`.
+The SUT and each mocked dependency with HTTP traffic get separate collections,
+with a folder per test, requests in execution order, saved response examples and
+status-code checks. gRPC and requests to real dependencies are skipped. The
+SUT collection name is `<application.name> - <application.id>`; mock collection
+names use the dependency name and ID.
+See the [Postman export guide](docs/okf-bundles.md#postman-collections).
+
 ## Documentation
 
 Start with the [documentation index](docs/README.md) for setup, SDKs, commands,

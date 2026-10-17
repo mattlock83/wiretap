@@ -56,6 +56,60 @@ func TestLoadRejectsMistakesAndKeepsSpecsRequired(t *testing.T) {
 	}
 }
 
+func TestApplicationConfiguration(t *testing.T) {
+	for _, identity := range []string{
+		`{name: Orders, id: orders-app, description: "Order processing"}`,
+		`{name: Orders}`,
+		`{id: orders-app}`,
+	} {
+		cfg, err := Decode([]byte("version: 1\napplication: "+identity+"\nsut: {id: orders-api, schema_required: false}\n"), filepath.Join(t.TempDir(), ".wiretap.yaml"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cfg.Application == nil || cfg.SUT.ID != "orders-api" {
+			t.Fatalf("application or independent API identity lost: %+v", cfg)
+		}
+		if strings.Contains(identity, "name:") && cfg.Application.Name != "Orders" {
+			t.Fatalf("application name = %q", cfg.Application.Name)
+		}
+		if strings.Contains(identity, "id:") && cfg.Application.ID != "orders-app" {
+			t.Fatalf("application ID = %q", cfg.Application.ID)
+		}
+		if strings.Contains(identity, "description:") && cfg.Application.Description != "Order processing" {
+			t.Fatalf("application description = %q", cfg.Application.Description)
+		}
+	}
+	for _, identity := range []string{`{}`, `{name: " ", id: " "}`, `{description: Orders}`, `{name: Orders, app_id: orders-app}`} {
+		if _, err := Decode([]byte("version: 1\napplication: "+identity+"\nsut: {schema_required: false}\n"), ".wiretap.yaml"); err == nil {
+			t.Fatalf("accepted invalid application: %s", identity)
+		}
+	}
+}
+
+func TestAPINameConfiguration(t *testing.T) {
+	data := `version: 1
+sut: {id: orders-api, name: Orders API, schema_required: false}
+dependencies:
+  inventory: {name: Inventory Service, kind: mock, url: http://inventory.test, schema_required: false}
+`
+	cfg, err := Decode([]byte(data), filepath.Join(t.TempDir(), ".wiretap.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.SUT.Name != "Orders API" || cfg.SUT.ID != "orders-api" || cfg.Dependencies["inventory"].Name != "Inventory Service" {
+		t.Fatalf("API display names or independent IDs lost: %+v", cfg)
+	}
+	for _, dependency := range []string{
+		`{display_name: Inventory Service, schema_required: false}`,
+		`{name: {label: Inventory Service}, schema_required: false}`,
+	} {
+		_, err := Decode([]byte("version: 1\nsut: {schema_required: false}\ndependencies:\n  inventory: "+dependency+"\n"), ".wiretap.yaml")
+		if err == nil {
+			t.Fatalf("accepted invalid API name configuration: %s", dependency)
+		}
+	}
+}
+
 func TestGRPCConfigDefaultsAndLocalSourcePaths(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, ".wiretap.yaml")

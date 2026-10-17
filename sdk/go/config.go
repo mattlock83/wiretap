@@ -1,5 +1,12 @@
 package wiretap
 
+// Application identifies the system under test across capture runs.
+type Application struct {
+	Name        string `json:"name"`
+	ID          string `json:"id"`
+	Description string `json:"description,omitempty"`
+}
+
 // Schema and Dependency are optional per-test overrides of .wiretap.yaml defaults.
 type Schema struct {
 	ID     string       `json:"id,omitempty"`

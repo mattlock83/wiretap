@@ -52,4 +52,11 @@ func TestKnowledgeCLIWorkflowAndExport(t *testing.T) {
 	if err != nil || v.(map[string]any)["manifest"] == nil {
 		t.Fatal("export did not return verified publication records")
 	}
+	if code := execute(context.Background(), []string{"export", "--bundle", output, "--format", "postman", "--output", export}); code != 1 {
+		t.Fatalf("Postman export of a publication = %d, want capture bundle error", code)
+	}
+	after, err := os.ReadFile(export)
+	if err != nil || string(after) != string(b) {
+		t.Fatal("failed Postman export changed existing records export")
+	}
 }

@@ -150,13 +150,66 @@ wiretap export --bundle ./artifacts/<run-id> --format yaml --output coverage.yam
 
 `report` rebuilds the views and prints the absolute `index.md` path. It uses only
 the bundle, without the original workspace, running application or hooks.
-`export` writes a diagnostic coverage report; omit `--output` to use stdout.
-Both formats include detailed results under `contract_coverage`.
+`export --format json|yaml` writes a diagnostic coverage report; omit `--output`
+to use stdout. Both formats include detailed results under `contract_coverage`.
 
 Body previews are limited to 4 KiB; attachments contain the retained bytes.
 Capture retains up to 4 MiB per body by default. A truncated attachment remains
 incomplete even after rebuilding. See [troubleshooting](troubleshooting.md) for
 capture limits and integrity errors.
+
+### Postman collections
+
+Export a capture run as separate Postman Collection v2.1 JSON files:
+
+```bash
+wiretap export --bundle ./artifacts/<run-id> --format postman \
+  --output-dir ./postman
+```
+
+Import the resulting files in Postman. The directory contains one collection
+for the SUT and one for each dependency marked `kind: mock` (API:
+`upstream_kind: mock`) with recorded HTTP traffic. Dependencies without HTTP
+traffic, real services, unknown target kinds and gRPC are excluded from mock
+collections. Filenames normally use `sut-<application-id>.postman_collection.json`
+and `mock-<dependency-id>.postman_collection.json`; unusual or conflicting IDs
+receive stable, unique filenames.
+
+The SUT collection name is `<application.name> - <application.id>`, for example
+`Orders - orders-app`. If the application ID is absent, the API ID is used; if
+either part is absent, the available name or ID is used. Mock collection names
+use `<dependency.name> - <dependency-id>`, or just the ID when no name is recorded.
+Set a dependency's optional `name` in `.wiretap.yaml`, or pass `asset_name` in its
+SDK/API registration. `--sut-name` overrides only the SUT collection name.
+
+`--output orders.postman_collection.json` writes the SUT to that filename and
+places mock collection files alongside it. The chosen filename must not collide
+with a mock collection filename. Use either `--output` or `--output-dir`.
+Omitting both writes to stdout when the run produces only the SUT collection;
+runs with mock collections require a file or directory destination.
+
+`wiretap report --format postman` accepts the same options. The export reads and
+verifies the run's captured evidence and retained payloads, so the original
+workspace and running systems are not required. Repository knowledge
+publications are not Postman export inputs.
+
+Each captured test attempt becomes a folder named after its test. Repeated test
+attempts remain separate folders, including empty folders when a system had no
+HTTP requests in that test. The SUT collection contains requests from tests to
+the SUT; each mock collection contains the SUT's requests to that dependency.
+Requests are ordered by request start time. If a request lacks a start time,
+the folder retains capture order and notes that limit. A recorded response is
+saved as an example, with a basic Postman test that checks its HTTP status code.
+Requests without a recorded response status have a skipped status check.
+Request and response bodies use the retained capture, including its redactions
+and capture limits. Binary request bodies are embedded as base64 file content
+that Postman decodes when sending. Binary response examples are labeled and
+saved as base64.
+Postman's cookie jar, automatic URL encoding and optional generated headers are
+disabled so replay uses the captured URL and application headers. Postman still
+calculates transport headers such as Host and Content-Length for the request.
+Raw bodies use text mode with the recorded Content-Type header, preserving even
+malformed JSON used by negative tests.
 
 ## Inferred mock assumptions
 

@@ -1,5 +1,7 @@
 import type { TracerProvider, Span } from '@opentelemetry/api';
 
+export type Application = { description?: string } &
+  ({ name: string; id?: string } | { name?: string; id: string });
 export interface Schema {
   id?: string;
   role?: 'sut' | 'dependency';
@@ -17,6 +19,7 @@ export interface Dependency {
   schemaRequired?: boolean;
 }
 export interface TestOptions {
+  application?: Application;
   /** Stable logical identity; retry ordinals are assigned by the test harness. */
   knowledge?: { testId: string; key?: string; executionGroup?: string; attemptOrdinal?: number };
   name?: string;
