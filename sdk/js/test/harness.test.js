@@ -220,11 +220,12 @@ test("strict schema violations fail teardown", async () => {
 
 test("project defaults are inherited and shared suites leave finalization to their owner", async () => {
   const calls = [];
+  const application = { name: "Order service", id: "orders", description: "Accepts customer orders" };
   const server = await controlServer((path, body) => {
     calls.push({ path, body });
     if (path === "/v1/startRun") return {
       sut_url: "http://127.0.0.1:20010",
-      defaults: { sut_base_url: "http://sut.test", api_id: "orders", schema_required: false,
+      defaults: { application, sut_base_url: "http://sut.test", api_id: "orders", schema_required: false,
         dependencies: [{ asset_id: "inventory", upstream_url: "http://mock.test", schema_required: false, upstream_kind: "mock" }] }
     };
     if (path === "/v1/setupTest") return { session_id: "configured", sut_url: "http://127.0.0.1:20010" };
@@ -238,6 +239,8 @@ test("project defaults are inherited and shared suites leave finalization to the
     await runtime.runTest("configured test", () => {});
     await runtime.finishRun();
     const setup = calls.find(call => call.path === "/v1/setupTest").body;
+    assert.deepEqual(setup.application, application);
+    assert.equal(Object.hasOwn(calls[0].body, "application"), false);
     assert.equal(setup.schema_required, false);
     assert.equal(setup.sut_base_url, "http://sut.test");
     assert.equal(setup.dependencies[0].schema_required, false);
@@ -247,6 +250,31 @@ test("project defaults are inherited and shared suites leave finalization to the
     assert.equal(calls.some(call => call.path === "/v1/finishRun"), false);
   } finally {
     if (previousBase === undefined) delete process.env.WIRETAP_BASE_URL; else process.env.WIRETAP_BASE_URL = previousBase;
+    await server.close();
+  }
+});
+
+test("application metadata is sent at run start and resolved for each test", async () => {
+  const calls = [];
+  const projectApplication = { name: "Project service", id: "project" };
+  const application = { name: "Order service", id: "orders", description: "Accepts customer orders" };
+  const testApplication = { name: "Other service", id: "other" };
+  const server = await controlServer((path, body) => {
+    calls.push({ path, body });
+    if (path === "/v1/startRun") return { defaults: { application: projectApplication, schema_required: false } };
+    if (path === "/v1/setupTest") return { session_id: body.name };
+    return {};
+  });
+  try {
+    const runtime = await startCapture({ baseUrl: server.baseUrl, application });
+    await runtime.runTest("runtime application", () => {});
+    await runtime.runTest("test application", () => {}, { application: testApplication });
+    await runtime.runTest("runtime application again", () => {});
+    await runtime.finishRun();
+    assert.deepEqual(calls[0].body.application, application);
+    const setups = calls.filter(call => call.path === "/v1/setupTest").map(call => call.body.application);
+    assert.deepEqual(setups, [application, testApplication, application]);
+  } finally {
     await server.close();
   }
 });

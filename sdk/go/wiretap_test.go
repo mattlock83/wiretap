@@ -9,9 +9,42 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"sync"
 	"testing"
 )
+
+func TestApplicationMetadataIsForwardedOrLeftToRuntimeDefaults(t *testing.T) {
+	setups := make(chan map[string]any, 2)
+	core := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/setupTest" {
+			var payload map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+				t.Error(err)
+			}
+			setups <- payload
+			json.NewEncoder(w).Encode(map[string]any{"session_id": "application-test"})
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]any{"capture": map[string]any{"testcase": map[string]string{"status": "pass"}}})
+	}))
+	defer core.Close()
+	runtime := Runtime{BaseURL: core.URL}
+	t.Run("explicit application", func(t *testing.T) {
+		runtime.StartTest(t, TestOptions{Application: &Application{Name: "Order service", ID: "orders", Description: "Accepts customer orders"}})
+	})
+	want := map[string]any{"name": "Order service", "id": "orders", "description": "Accepts customer orders"}
+	if payload := <-setups; !reflect.DeepEqual(payload["application"], want) {
+		t.Fatalf("application metadata changed: %#v", payload["application"])
+	}
+	t.Run("runtime default", func(t *testing.T) {
+		runtime.StartTest(t, TestOptions{})
+	})
+	payload := <-setups
+	if _, exists := payload["application"]; exists {
+		t.Fatalf("omitted application should inherit runtime defaults: %#v", payload["application"])
+	}
+}
 
 func TestParallelTestsUseExistingClientsWithSeparateRoots(t *testing.T) {
 	var mu sync.Mutex

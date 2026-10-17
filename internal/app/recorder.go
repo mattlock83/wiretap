@@ -547,13 +547,18 @@ func bodyFromCapturedHTTP(headers artifact.Headers, raw capture.Body, maxBodyByt
 	}
 	encoding := strings.ToLower(strings.TrimSpace(firstHeaderValue(headers, "Content-Encoding")))
 	decoded := raw
+	contentDecoded := false
 	if !raw.Truncated && encoding != "" && encoding != "identity" {
 		if out, ok := decompressBody(encoding, raw.Bytes, maxBodyBytes); ok {
 			decoded = out
+			contentDecoded = true
 		}
 	}
 	body := bodyFromBytes(decoded.Bytes)
-	if body != nil && encoding != "" && encoding != "identity" {
+	if body == nil && contentDecoded {
+		body = &artifact.Body{Encoding: "utf8"}
+	}
+	if body != nil && contentDecoded {
 		body.ContentEncoding = encoding
 	}
 	if body != nil && decoded.Truncated {

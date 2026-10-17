@@ -140,6 +140,7 @@ class Runtime {
     this.schemaRequired = config.schemaRequired;
     this.defaultDependencies = normalizeDependencies(config.dependencies);
     this.defaultRedactions = config.redactions;
+    this.application = config.application;
     this.apiId = pickFirstString(config.apiId);
     this.sutTargetKind = pickFirstString(config.sutTargetKind);
     this.testSource = config.testSource;
@@ -232,6 +233,7 @@ class Runtime {
       ? this.defaultDependencies
       : normalizeDependencies(options.dependencies);
     const payload = {
+      application: options.application ?? this.application,
       application_knowledge: options.knowledge ? {
         test_id: options.knowledge.testId,
         key: options.knowledge.key,
@@ -328,9 +330,10 @@ async function startCapture(config = {}) {
   schemaConfiguration(config, true);
   if (config.dependencies !== undefined) normalizeDependencies(config.dependencies);
   const client = new CoreClient({ baseUrl: config.baseUrl, timeoutMs: config.timeoutMs });
-  const runtimeInfo = await client.startRun({ proxy: normalizeProxyConfig(config) });
+  const runtimeInfo = await client.startRun({ proxy: normalizeProxyConfig(config), application: config.application });
   const defaults = runtimeInfo.defaults || {};
   const resolved = {
+    application: defaults.application,
     sutBaseUrl: defaults.sut_base_url,
     sutProtocol: defaults.sut_protocol,
     apiId: defaults.api_id,

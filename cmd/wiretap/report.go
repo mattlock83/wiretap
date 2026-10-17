@@ -21,12 +21,14 @@ func reportCommand(args []string) error {
 	var bundlePath string
 	var sutName string
 	var outputPath string
+	var outputDir string
 	var format string
 	var includeArtifacts bool
 	flags.StringVar(&bundlePath, "bundle", "", "capture bundle directory")
-	flags.StringVar(&sutName, "sut-name", "", "SUT name to display in the report")
-	flags.StringVar(&outputPath, "output", "", "output file path (default: stdout)")
-	flags.StringVar(&format, "format", "okf", "output format: okf, json, yaml")
+	flags.StringVar(&sutName, "sut-name", "", "SUT name in the report or SUT Postman collection name")
+	flags.StringVar(&outputPath, "output", "", "output file path; additional Postman collections are written alongside the primary collection (default: stdout)")
+	flags.StringVar(&outputDir, "output-dir", "", "Postman collection output directory")
+	flags.StringVar(&format, "format", "okf", "output format: okf, json, yaml, postman")
 	flags.BoolVar(&includeArtifacts, "include-artifacts", false, "include artifact file paths in the report")
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -39,12 +41,21 @@ func reportCommand(args []string) error {
 	}
 	format = strings.ToLower(strings.TrimSpace(format))
 	switch format {
-	case "okf", "json", "yaml":
+	case "okf", "json", "yaml", "postman":
 	default:
 		return fmt.Errorf("%w: unsupported format: %s", errUsage, format)
 	}
 	if bundlePath == "" {
 		return fmt.Errorf("%w: --bundle is required", errUsage)
+	}
+	if outputDir != "" && format != "postman" {
+		return fmt.Errorf("%w: --output-dir is only for Postman exports", errUsage)
+	}
+	if outputDir != "" && outputPath != "" {
+		return fmt.Errorf("%w: use either --output-dir or --output", errUsage)
+	}
+	if format == "postman" {
+		return exportPostman(bundlePath, sutName, outputPath, outputDir)
 	}
 	// Publications select observations rather than describing one synthetic run.
 	// Export verified records without inventing aggregate coverage across sources.

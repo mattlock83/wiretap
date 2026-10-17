@@ -14,12 +14,14 @@ import (
 	"time"
 
 	"github.com/phrond/wiretap/internal/artifact"
+	"github.com/phrond/wiretap/internal/bundle"
 	"gopkg.in/yaml.v3"
 )
 
 type API struct {
 	URL            string      `yaml:"url"`
 	ID             string      `yaml:"id"`
+	Name           string      `yaml:"name"`
 	Kind           string      `yaml:"kind"`
 	Schema         string      `yaml:"schema"`
 	Protocol       string      `yaml:"protocol"`
@@ -48,7 +50,7 @@ type GRPCSchema struct {
 }
 
 func (a *API) UnmarshalYAML(node *yaml.Node) error {
-	allowed := map[string]bool{"url": true, "id": true, "kind": true, "schema": true, "protocol": true, "services": true, "capture_listen": true, "schema_required": true, "capture_tls": true, "upstream_tls": true}
+	allowed := map[string]bool{"url": true, "id": true, "name": true, "kind": true, "schema": true, "protocol": true, "services": true, "capture_listen": true, "schema_required": true, "capture_tls": true, "upstream_tls": true}
 	for i := 0; i+1 < len(node.Content); i += 2 {
 		key := node.Content[i].Value
 		if !allowed[key] {
@@ -70,6 +72,7 @@ func (a *API) UnmarshalYAML(node *yaml.Node) error {
 	type rawAPI struct {
 		URL            string    `yaml:"url"`
 		ID             string    `yaml:"id"`
+		Name           string    `yaml:"name"`
 		Kind           string    `yaml:"kind"`
 		Schema         yaml.Node `yaml:"schema"`
 		Protocol       string    `yaml:"protocol"`
@@ -83,7 +86,7 @@ func (a *API) UnmarshalYAML(node *yaml.Node) error {
 	if err := node.Decode(&raw); err != nil {
 		return err
 	}
-	*a = API{URL: raw.URL, ID: raw.ID, Kind: raw.Kind, Protocol: raw.Protocol, Services: raw.Services, CaptureListen: raw.CaptureListen, CaptureTLS: raw.CaptureTLS, UpstreamTLS: raw.UpstreamTLS, SchemaRequired: raw.SchemaRequired}
+	*a = API{URL: raw.URL, ID: raw.ID, Name: raw.Name, Kind: raw.Kind, Protocol: raw.Protocol, Services: raw.Services, CaptureListen: raw.CaptureListen, CaptureTLS: raw.CaptureTLS, UpstreamTLS: raw.UpstreamTLS, SchemaRequired: raw.SchemaRequired}
 	if raw.Schema.Kind == 0 {
 		return nil
 	}
@@ -123,15 +126,16 @@ func (a API) Schemas(id, role string) []artifact.SchemaRef {
 }
 
 type Config struct {
-	Version      int            `yaml:"version"`
-	HTTPListen   string         `yaml:"http_listen"`
-	ProxyListen  string         `yaml:"proxy_listen"`
-	OutputDir    string         `yaml:"output_dir"`
-	CADir        string         `yaml:"ca_dir"`
-	SUT          API            `yaml:"sut"`
-	Dependencies map[string]API `yaml:"dependencies"`
-	Path         string         `yaml:"-"`
-	Publication  *Publication   `yaml:"publication,omitempty"`
+	Version      int                 `yaml:"version"`
+	Application  *bundle.Application `yaml:"application,omitempty"`
+	HTTPListen   string              `yaml:"http_listen"`
+	ProxyListen  string              `yaml:"proxy_listen"`
+	OutputDir    string              `yaml:"output_dir"`
+	CADir        string              `yaml:"ca_dir"`
+	SUT          API                 `yaml:"sut"`
+	Dependencies map[string]API      `yaml:"dependencies"`
+	Path         string              `yaml:"-"`
+	Publication  *Publication        `yaml:"publication,omitempty"`
 }
 
 // Publication opts into maintaining a repository bundle when a run finishes.
@@ -190,6 +194,9 @@ func Decode(raw []byte, path string) (*Config, error) {
 	}
 	if cfg.Version != 1 {
 		return nil, fmt.Errorf("%s: version must be 1", path)
+	}
+	if cfg.Application != nil && strings.TrimSpace(cfg.Application.Name) == "" && strings.TrimSpace(cfg.Application.ID) == "" {
+		return nil, fmt.Errorf("%s: application requires a name or ID", path)
 	}
 	cfg.Path = path
 	base := filepath.Dir(path)

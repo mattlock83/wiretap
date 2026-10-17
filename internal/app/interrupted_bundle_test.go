@@ -19,6 +19,7 @@ func TestConfiguredBoundariesSurviveRunWithNoTests(t *testing.T) {
 	cfg.Artifact.OutputDir = t.TempDir()
 	cfg.Proxy.CABaseDir = t.TempDir()
 	appInstance, err := New(Deps{Config: cfg, Project: &project.Config{
+		Application:  &bundle.Application{Name: "Orders", ID: "orders-app", Description: "Order processing"},
 		SUT:          project.API{ID: "orders", Kind: "service", URL: "http://localhost:8080"},
 		Dependencies: map[string]project.API{"payments": {Kind: "service", URL: "http://localhost:8081"}},
 	}})
@@ -38,6 +39,9 @@ func TestConfiguredBoundariesSurviveRunWithNoTests(t *testing.T) {
 	}
 	if len(run.Attempts) != 0 || len(run.ProvidedAPIs) != 1 || len(run.Dependencies) != 1 {
 		t.Fatalf("configured inventory lost: %+v", run)
+	}
+	if run.Application == nil || run.Application.Name != "Orders" || run.Application.ID != "orders-app" || run.Application.Description != "Order processing" {
+		t.Fatalf("configured application identity lost: %+v", run.Application)
 	}
 	dep := run.Dependencies[0]
 	if dep.ID != "payments" || !dep.Configured || dep.TargetKind != "service" || len(dep.ObservedIn) != 0 {

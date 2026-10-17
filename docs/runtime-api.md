@@ -25,6 +25,7 @@ Wiretap and does not itself establish that authentication was tested.
 
 ```json
 {
+  "application": {"name": "Orders", "id": "orders-app"},
   "proxy": {
     "listen_addr": "127.0.0.1:19000",
     "target_url": "http://127.0.0.1:18090"
@@ -42,6 +43,12 @@ with no path prefix. `startRun` allocates them before the SUT and mocks start;
 it reports contract inventory as unresolved. The first `setupTest` resolves
 all Protobuf contracts before traffic admission. See the [gRPC guide](grpc-user-guide.md).
 Repeated startup calls without new boundary definitions reuse the active run.
+
+Optional `application: {name, id, description?}` identifies the SUT independently
+of its API boundaries. It inherits `.wiretap.yaml` when omitted, and at least a
+name or ID is required when supplied. It is retained in `bundle.json` and names
+Postman collections as `Orders - orders-app`. Application identity stays fixed
+for a run; later requests can omit it or repeat the same object.
 
 Without a project file, register the same boundary definitions through HTTP:
 
@@ -117,6 +124,7 @@ per-attempt redaction rules.
 ```json
 {
   "name": "hello world happy flow",
+  "application": {"name": "Orders", "id": "orders-app"},
   "api_id": "orders",
   "sut_target_kind": "service",
   "tags": ["smoke"],
@@ -142,6 +150,11 @@ per-attempt redaction rules.
   }]
 }
 ```
+
+`application` may also be supplied on `setupTest` when the SDK starts a run
+lazily. Omitted application metadata reuses the active run's identity.
+Dependency `asset_name` supplies its display name in Postman mock collection
+exports, for example `Inventory Service - inventory`.
 
 The response includes `session_id`, `sut_url`, `proxy_listen`, `run_id`,
 `bundle_path`, `index_path`, `viewer_path`, and a

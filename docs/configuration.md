@@ -7,6 +7,9 @@ Test integrations can then focus on names, outcomes, and trace context.
 
 ```yaml
 version: 1
+application:
+  name: Orders
+  id: orders-app
 output_dir: artifacts
 http_listen: 127.0.0.1:18000
 proxy_listen: 127.0.0.1:18080
@@ -17,6 +20,7 @@ sut:
   schema: schemas/orders.openapi.yaml
 dependencies:
   inventory:
+    name: Inventory Service
     url: ${INVENTORY_MOCK_URL}
     kind: mock
     schema: schemas/inventory.openapi.yaml
@@ -38,9 +42,16 @@ relative to the process's working directory. Additional capture and proxy
 settings are listed below. Per-test SDK/API values override project test
 defaults; an explicitly supplied dependency list replaces that list.
 
+Optional `application` metadata records the SUT's human-readable `name`, stable
+`id` and optional `description` in the capture bundle. For example, the
+application above exports a Postman collection named `Orders - orders-app`.
+At least a name or ID must be supplied when the object is present.
+
 The SUT `id` identifies the provided API. Dependency keys identify their APIs;
 use stable IDs when comparing repositories. `kind` is `mock`, `service`, or
 `unknown`. It describes the actual target used during the tests.
+An optional dependency `name` supplies its display name in Postman exports;
+the inventory mock above exports as `Inventory Service - inventory`.
 
 ## Start the runtime
 
@@ -155,6 +166,7 @@ through the [HTTP API](runtime-api.md), usually via an SDK.
 | `wiretap [--config path]` | Start the HTTP control service; wait for capture lifecycle calls. |
 | `wiretap report --bundle <path>` | Rebuild a bundle's Markdown, HTML, knowledge and coverage views offline. |
 | `wiretap export --bundle <path> --format json` | Export a diagnostic coverage report to stdout; `--format yaml` and `--output <file>` are also supported. |
+| `wiretap export --bundle <path> --format postman --output-dir <directory>` | Export HTTP v2.1 and gRPC v3 JSON collections for the SUT and mocked dependencies, with test folders and saved interactions. |
 | `wiretap ca [--config path]` | Print the public proxy CA certificate, creating the local CA if needed. |
 
 Normal capture already writes the bundle views. `report` is useful for copied

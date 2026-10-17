@@ -12,8 +12,10 @@ import (
 	"github.com/phrond/wiretap/internal/artifact"
 	"github.com/phrond/wiretap/internal/bundle"
 	"github.com/phrond/wiretap/internal/bundlereport"
+	"github.com/phrond/wiretap/internal/postman"
 	"github.com/phrond/wiretap/internal/project"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
+	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -88,6 +90,40 @@ func TestNativeGRPCRichErrorsRemainTransparentAndPortable(t *testing.T) {
 			}
 			if response.StatusDetails.Details[1].DescriptorSource != "boundary" {
 				t.Fatal("custom Any did not use frozen boundary registry")
+			}
+			exports, exportErr := postman.GenerateAll(root, "Health")
+			if redacted {
+				if exportErr == nil {
+					t.Fatal("v3 export must not invent or restore a redacted error envelope")
+				}
+			} else {
+				if exportErr != nil {
+					t.Fatal(exportErr)
+				}
+				if len(exports) != 1 || exports[0].GRPC == nil {
+					t.Fatalf("wrong gRPC-only exports: %+v", exports)
+				}
+				example := exports[0].GRPC.Items[0].Items[0].Examples[0].Response
+				if example.Code != 3 || len(example.Messages) != 1 || example.Messages[0].Type != "outgoing" {
+					t.Fatalf("non-OK example lost status or invented response: %+v", example)
+				}
+				var encoded string
+				for _, header := range append(example.Metadata, example.Trailers...) {
+					if header.Key == "grpc-status-details-bin" {
+						encoded = header.Value
+					}
+				}
+				raw, err := base64.StdEncoding.DecodeString(encoded)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var exported statuspb.Status
+				if err := proto.Unmarshal(raw, &exported); err != nil {
+					t.Fatal(err)
+				}
+				if !proto.Equal(direct.Proto(), &exported) {
+					t.Fatal("v3 export changed the RPC error details")
+				}
 			}
 			if _, err := bundlereport.Rebuild(root); err != nil {
 				t.Fatal(err)
