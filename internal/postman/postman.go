@@ -1,4 +1,5 @@
-// Package postman exports captured test requests as Postman v2.1 collections.
+// Package postman exports captured HTTP requests as Postman v2.1 collections
+// and native gRPC conversations as Postman v3 collections.
 package postman
 
 import (
@@ -26,6 +27,10 @@ func Generate(bundlePath, sutName string) ([]Export, error) {
 	if err != nil {
 		return nil, err
 	}
+	return generateHTTP(run, captures, sutName)
+}
+
+func generateHTTP(run *bundle.Run, captures []*artifact.Artifact, sutName string) ([]Export, error) {
 	if strings.TrimSpace(sutName) == "" {
 		sutName = collectionName(run)
 	}

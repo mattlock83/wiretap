@@ -216,7 +216,7 @@ boundary kinds. `report --format okf` validates an existing repository publicati
 `export --format json|yaml` exports its verified manifest, provenance, envelopes
 and supported recordings. Existing run archives retain their viewer/rebuild and
 coverage export behavior and support [Postman collection export](okf-bundles.md#postman-collections)
-from captured HTTP tests. Postman export requires a run archive rather than a
+from captured HTTP and gRPC interactions. Postman export requires a run archive rather than a
 repository publication.
 
 Repository publication does not currently generate a measurement profile or

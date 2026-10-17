@@ -160,20 +160,23 @@ capture limits and integrity errors.
 
 ### Postman collections
 
-Export a capture run as separate Postman Collection v2.1 JSON files:
+Export a capture run as separate Postman JSON collections. HTTP uses the
+existing Collection v2.1 format; native gRPC uses Collection v3.0.0:
 
 ```bash
 wiretap export --bundle ./artifacts/<run-id> --format postman \
   --output-dir ./postman
 ```
 
-Import the resulting files in Postman. The directory contains one collection
-for the SUT and one for each dependency marked `kind: mock` (API:
-`upstream_kind: mock`) with recorded HTTP traffic. Dependencies without HTTP
-traffic, real services, unknown target kinds and gRPC are excluded from mock
-collections. Filenames normally use `sut-<application-id>.postman_collection.json`
-and `mock-<dependency-id>.postman_collection.json`; unusual or conflicting IDs
-receive stable, unique filenames.
+The directory contains separate collections for the SUT and each dependency
+marked `kind: mock` (API: `upstream_kind: mock`) with recorded traffic. Real
+services and unknown target kinds are excluded from dependency collections.
+HTTP filenames normally use `sut-<application-id>.postman_collection.json` and
+`mock-<dependency-id>.postman_collection.json`. gRPC uses
+`sut-<application-id>.grpc.postman_collection.json` and
+`mock-<dependency-id>.grpc.postman_collection.json`. Unusual or conflicting IDs
+receive stable, unique filenames. A gRPC-only run does not add an empty SUT HTTP
+collection. HTTP-only exports keep their previous files and encoding.
 
 The SUT collection name is `<application.name> - <application.id>`, for example
 `Orders - orders-app`. If the application ID is absent, the API ID is used; if
@@ -182,18 +185,20 @@ use `<dependency.name> - <dependency-id>`, or just the ID when no name is record
 Set a dependency's optional `name` in `.wiretap.yaml`, or pass `asset_name` in its
 SDK/API registration. `--sut-name` overrides only the SUT collection name.
 
-`--output orders.postman_collection.json` writes the SUT to that filename and
-places mock collection files alongside it. The chosen filename must not collide
-with a mock collection filename. Use either `--output` or `--output-dir`.
-Omitting both writes to stdout when the run produces only the SUT collection;
-runs with mock collections require a file or directory destination.
+`--output orders.postman_collection.json` names the primary collection and
+places the remaining collection files alongside it. The primary is the SUT
+HTTP collection when present, otherwise the SUT gRPC collection, or the first
+dependency collection for a dependency-only run. The chosen filename must not
+collide with another collection filename. Use either `--output` or
+`--output-dir`. Omitting both writes to stdout only when the run produces one
+collection.
 
 `wiretap report --format postman` accepts the same options. The export reads and
 verifies the run's captured evidence and retained payloads, so the original
 workspace and running systems are not required. Repository knowledge
 publications are not Postman export inputs.
 
-Each captured test attempt becomes a folder named after its test. Repeated test
+For HTTP, each captured test attempt becomes a folder named after its test. Repeated test
 attempts remain separate folders, including empty folders when a system had no
 HTTP requests in that test. The SUT collection contains requests from tests to
 the SUT; each mock collection contains the SUT's requests to that dependency.
@@ -210,6 +215,33 @@ disabled so replay uses the captured URL and application headers. Postman still
 calculates transport headers such as Host and Content-Length for the request.
 Raw bodies use text mode with the recorded Content-Type header, preserving even
 malformed JSON used by negative tests.
+
+gRPC v3 collections contain one folder per test with retained gRPC interactions.
+Unary, server-streaming, client-streaming and bidirectional calls preserve their
+decoded protobuf JSON messages. Saved examples contain outgoing and incoming
+messages in the order Wiretap observed their completion, plus request metadata,
+response metadata, trailers and final RPC status. Binary metadata values use
+canonical padded base64; rich errors retain the verified original
+`grpc-status-details-bin` envelope. The first outgoing message is also the
+request's initial `message`, as required to describe the invocable request; it
+is not an additional send in the saved conversation.
+
+gRPC output contains no execution result, attempt ID, timestamp or duration.
+An RPC error status is still interaction knowledge. Repeated test names are
+rejected rather than disambiguated using attempt IDs. Export also rejects
+incomplete capture, undecoded messages, missing terminal status, and request
+trailers that v3 cannot represent. Complete negative RPC responses are exported.
+The v3 schema cannot represent explicit half-close events or raw protobuf
+message bytes; those are not added as invented messages. Timing is excluded.
+
+The captured gRPC records do not retain an endpoint URL or a portable source
+`.proto` path, so the exporter omits `url` and `schema` rather than inventing
+them. Supply contracts as separate files and associate them through the OKF
+tool's `wiretap.json`; configure a server and schema in Postman for replay.
+The exporter emits the official single-document JSON representation, not the
+native-Git YAML directory layout. Its output is checked against the
+[official v3 JSON schema](https://schema.postman.com/collection/json/v3.0.0/draft-07/collection.json);
+a Postman desktop import/export round trip is not covered by the test suite.
 
 ## Inferred mock assumptions
 

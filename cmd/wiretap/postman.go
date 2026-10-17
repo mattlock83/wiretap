@@ -12,17 +12,17 @@ import (
 )
 
 func exportPostman(bundlePath, sutName, outputPath, outputDir string) error {
-	exports, err := postman.Generate(bundlePath, sutName)
+	exports, err := postman.GenerateAll(bundlePath, sutName)
 	if err != nil {
 		return err
 	}
 	if outputPath == "" && outputDir == "" && len(exports) > 1 {
-		return fmt.Errorf("%w: multiple Postman collections require --output-dir <directory> or --output <SUT file>", errUsage)
+		return fmt.Errorf("%w: multiple Postman collections require --output-dir <directory> or --output <primary file>", errUsage)
 	}
 	if outputPath != "" {
 		for _, export := range exports[1:] {
 			if strings.EqualFold(filepath.Base(outputPath), export.Filename) {
-				return fmt.Errorf("%w: --output filename conflicts with mock collection %q; use --output-dir or choose another filename", errUsage, export.Filename)
+				return fmt.Errorf("%w: --output filename conflicts with additional collection %q; use --output-dir or choose another filename", errUsage, export.Filename)
 			}
 		}
 	}
@@ -36,7 +36,7 @@ func exportPostman(bundlePath, sutName, outputPath, outputDir string) error {
 	files := make([]outputFile, len(exports))
 	for i, export := range exports {
 		var encoded bytes.Buffer
-		if err := postman.Write(&encoded, export.Collection); err != nil {
+		if err := postman.WriteExport(&encoded, export); err != nil {
 			return err
 		}
 		file := &files[i]

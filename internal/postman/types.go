@@ -11,6 +11,7 @@ type Collection struct {
 type Export struct {
 	Filename   string
 	Collection *Collection
+	GRPC       *GRPCCollection
 }
 
 type ProtocolBehavior struct {

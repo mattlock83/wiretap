@@ -166,7 +166,7 @@ through the [HTTP API](runtime-api.md), usually via an SDK.
 | `wiretap [--config path]` | Start the HTTP control service; wait for capture lifecycle calls. |
 | `wiretap report --bundle <path>` | Rebuild a bundle's Markdown, HTML, knowledge and coverage views offline. |
 | `wiretap export --bundle <path> --format json` | Export a diagnostic coverage report to stdout; `--format yaml` and `--output <file>` are also supported. |
-| `wiretap export --bundle <path> --format postman --output-dir <directory>` | Export separate HTTP collections for the SUT and mocked dependencies, with test folders, saved responses and status checks. |
+| `wiretap export --bundle <path> --format postman --output-dir <directory>` | Export HTTP v2.1 and gRPC v3 JSON collections for the SUT and mocked dependencies, with test folders and saved interactions. |
 | `wiretap ca [--config path]` | Print the public proxy CA certificate, creating the local CA if needed. |
 
 Normal capture already writes the bundle views. `report` is useful for copied

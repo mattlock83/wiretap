@@ -26,7 +26,7 @@ func reportCommand(args []string) error {
 	var includeArtifacts bool
 	flags.StringVar(&bundlePath, "bundle", "", "capture bundle directory")
 	flags.StringVar(&sutName, "sut-name", "", "SUT name in the report or SUT Postman collection name")
-	flags.StringVar(&outputPath, "output", "", "output file path; Postman mock collections are written alongside the SUT file (default: stdout)")
+	flags.StringVar(&outputPath, "output", "", "output file path; additional Postman collections are written alongside the primary collection (default: stdout)")
 	flags.StringVar(&outputDir, "output-dir", "", "Postman collection output directory")
 	flags.StringVar(&format, "format", "okf", "output format: okf, json, yaml, postman")
 	flags.BoolVar(&includeArtifacts, "include-artifacts", false, "include artifact file paths in the report")

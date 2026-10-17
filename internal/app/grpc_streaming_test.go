@@ -24,6 +24,7 @@ import (
 	"github.com/phrond/wiretap/internal/bundlereport"
 	"github.com/phrond/wiretap/internal/core"
 	"github.com/phrond/wiretap/internal/coverage"
+	"github.com/phrond/wiretap/internal/postman"
 	"github.com/phrond/wiretap/internal/project"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -236,6 +237,32 @@ func TestNativeGRPCAllShapesProviderConsumerAndMixed(t *testing.T) {
 				requireStreamCoverage(t, root, method, mode == "consumer", true)
 			}
 			postDependencyJSON(t, control.URL, "/v1/finishRun", map[string]any{})
+			// The ordinary runtime capture exports all four shapes without needing
+			// the live server or synthesizing a flattened request/response order.
+			exports, err := postman.GenerateAll(root, "Streams")
+			if err != nil {
+				t.Fatal(err)
+			}
+			var grpcCollection *postman.GRPCCollection
+			for _, export := range exports {
+				if export.GRPC != nil {
+					grpcCollection = export.GRPC
+				}
+			}
+			if grpcCollection == nil || len(grpcCollection.Items) != 4 {
+				t.Fatalf("missing runtime gRPC exports: %+v", exports)
+			}
+			for _, folder := range grpcCollection.Items {
+				response := folder.Items[0].Examples[0].Response
+				if response.Code != 0 || len(response.Messages) < 2 || len(response.Trailers) == 0 {
+					t.Fatalf("incomplete runtime example: %+v", response)
+				}
+				if strings.HasSuffix(folder.Name, "Chat") {
+					if len(response.Messages) != 4 || response.Messages[0].Type != "outgoing" || response.Messages[1].Type != "incoming" || response.Messages[2].Type != "outgoing" || response.Messages[3].Type != "incoming" {
+						t.Fatalf("bidi order lost: %+v", response.Messages)
+					}
+				}
+			}
 			// Frozen contracts and attachments must remain sufficient after source removal.
 			for _, api := range append([]project.API{instance.project.SUT}, mapAPIs(instance.project.Dependencies)...) {
 				if api.GRPCSchema != nil {
