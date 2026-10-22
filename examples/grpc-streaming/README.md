@@ -24,11 +24,10 @@ bidirectional `Chat` call to the mock through its Wiretap capture address, so th
 bundle contains both tested provider behavior and dependency assumptions. The
 SDK only handles test lifecycle; traffic uses ordinary grpc-go clients.
 
-Bundles are written to `artifacts/grpc-streaming/run-*/`. Open
-`docs/viewer.html` in the latest run to inspect messages, raw `.bin` payloads,
+Raw captures are written to `artifacts/grpc-streaming/run-*/`. Inspect
+`bundle.json` and `tests/*.json` for messages, raw `.bin` payload references,
 readable Protobuf JSON, message timing, half-close and terminal metadata.
-`bundle.json` and `tests/*.json` hold canonical evidence; the viewer is a derived
-view of the same bundle. Override the destination with:
+`coverage.json` contains the exported JSON coverage. Override the destination with:
 
 ```sh
 WIRETAP_GRPC_STREAMING_ARTIFACT_DIR=/tmp/wiretap-streaming ./examples/grpc-streaming/run.sh
@@ -43,7 +42,7 @@ interrupted or undecodable evidence cannot establish complete stream coverage.
 The repeatable integration suite also exercises HTTP provider → gRPC dependency,
 gRPC provider → HTTP dependency, TLS on capture and upstream listeners,
 concurrent W3C trace ownership, cancellation,
-drain snapshots, retention limits, and rebuilding reports from frozen contracts:
+drain snapshots, retention limits, and rebuilding coverage from frozen contracts:
 
 ```sh
 go test ./internal/app -run 'TestNativeGRPC(AllShapes|EmptyStreams|StreamOmissions|BidiDrain|StreamCancellation|ParallelStreams|StreamingTLS)' -count=1

@@ -3,16 +3,12 @@ package app
 import (
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/phrond/wiretap/internal/artifact"
-	"gopkg.in/yaml.v3"
 )
 
-func TestMockDraftGenerationNeverReplacesContractEnforcement(t *testing.T) {
+func TestMockCapturePreservesContractEnforcement(t *testing.T) {
 	for _, supplied := range []bool{false, true} {
 		name := "omitted spec"
 		if supplied {
@@ -57,26 +53,12 @@ paths:
 				wantStatus, wantValidation = "fail", "fail"
 			}
 			if capture.TestCase.Status != wantStatus || capture.SchemaValidation.Status != wantValidation {
-				t.Fatalf("draft changed enforcement: %s / %s", capture.TestCase.Status, capture.SchemaValidation.Status)
+				t.Fatalf("capture changed enforcement: %s / %s", capture.TestCase.Status, capture.SchemaValidation.Status)
 			}
-			root := result["bundle_path"].(string)
-			paths, err := filepath.Glob(filepath.Join(root, "docs/dependencies/mocks/*.openapi.yaml"))
-			if err != nil || len(paths) != 1 {
-				t.Fatalf("missing automatic mock draft: %v %v", paths, err)
+			if len(capture.Traffic) != 1 || capture.Traffic[0].Response.HTTP == nil || capture.Traffic[0].Response.HTTP.Body == nil || capture.Traffic[0].Response.HTTP.Body.Text != `{"value":42}` {
+				t.Fatalf("archive lost actual mock response: %+v", capture.Traffic)
 			}
-			raw, err := os.ReadFile(paths[0])
-			if err != nil {
-				t.Fatal(err)
-			}
-			var doc map[string]any
-			if err := yaml.Unmarshal(raw, &doc); err != nil {
-				t.Fatal(err)
-			}
-			// The actual numeric mock shape is documented even when its supplied
-			// string contract rejected it; it is never promoted to a validation spec.
-			if !strings.Contains(string(raw), "type: integer") || !strings.Contains(string(raw), "used_for_validation: false") {
-				t.Fatalf("draft did not describe actual mock evidence: %s", raw)
-			}
+
 			postDependencyJSON(t, control.URL, "/v1/finishRun", map[string]any{})
 		})
 	}

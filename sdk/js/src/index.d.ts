@@ -20,8 +20,6 @@ export interface Dependency {
 }
 export interface TestOptions {
   application?: Application;
-  /** Stable logical identity; retry ordinals are assigned by the test harness. */
-  knowledge?: { testId: string; key?: string; executionGroup?: string; attemptOrdinal?: number };
   name?: string;
   tags?: string[];
   meta?: Record<string, unknown>;
@@ -58,17 +56,12 @@ export interface Session {
   dependencyUrls: Record<string, string>;
   runId: string;
   bundlePath: string;
-  indexPath: string;
-  viewerPath: string;
   traceContext: { traceparent: string; tracestate?: string };
 }
 export interface CaptureResponse {
   run_id?: string;
   bundle_path?: string;
-  index_path?: string;
-  viewer_path?: string;
   attempt_path?: string;
-  attempt_page_path?: string;
   [key: string]: unknown;
 }
 export interface Runtime {

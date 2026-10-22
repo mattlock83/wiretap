@@ -135,13 +135,6 @@ type Config struct {
 	SUT          API                 `yaml:"sut"`
 	Dependencies map[string]API      `yaml:"dependencies"`
 	Path         string              `yaml:"-"`
-	Publication  *Publication        `yaml:"publication,omitempty"`
-}
-
-// Publication opts into maintaining a repository bundle when a run finishes.
-type Publication struct {
-	Config string `yaml:"config"`
-	Output string `yaml:"output"`
 }
 
 // Load discovers .wiretap.yaml in the working directory or its ancestors.
@@ -231,20 +224,6 @@ func Decode(raw []byte, path string) (*Config, error) {
 		*field, err = resolve(*field)
 		if err != nil {
 			return nil, err
-		}
-	}
-	if cfg.Publication != nil {
-		if cfg.Publication.Config == "" {
-			return nil, errors.New("publication.config is required")
-		}
-		if cfg.Publication.Output == "" {
-			cfg.Publication.Output = "docs/knowledge"
-		}
-		for _, field := range []*string{&cfg.Publication.Config, &cfg.Publication.Output} {
-			*field, err = resolve(*field)
-			if err != nil {
-				return nil, err
-			}
 		}
 	}
 	for _, field := range []*string{&cfg.HTTPListen, &cfg.ProxyListen} {

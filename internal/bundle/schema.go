@@ -24,7 +24,7 @@ import (
 type schemaFile struct {
 	Path   string `json:"path"`
 	SHA256 string `json:"sha256"`
-	// SourceName preserves the logical source name for repository publication.
+	// SourceName preserves the original contract filename within its source package.
 	// It never participates in the immutable archive's existing hash identity.
 	SourceName string `json:"source_name,omitempty"`
 }

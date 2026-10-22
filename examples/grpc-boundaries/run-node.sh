@@ -22,4 +22,4 @@ export WIRETAP_EXAMPLE_TLS_DIR="$WORK"
 export WIRETAP_GRPC_ARTIFACT_DIR="${WIRETAP_GRPC_ARTIFACT_DIR:-$ROOT/artifacts/grpc-node}"
 cd "$EXAMPLE"
 npm test
-echo "OKF bundles: $WIRETAP_GRPC_ARTIFACT_DIR"
+echo "Raw captures and JSON coverage: $WIRETAP_GRPC_ARTIFACT_DIR"

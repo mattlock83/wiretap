@@ -1,0 +1,35 @@
+name: Go and JavaScript SDK tests
+
+on:
+  pull_request:
+    paths: ['.github/workflows/tests.yml', 'go.mod', 'go.sum', 'cmd/**', 'internal/**', 'sdk/**', 'examples/**']
+  push:
+    branches: [main]
+    paths: ['.github/workflows/tests.yml', 'go.mod', 'go.sum', 'cmd/**', 'internal/**', 'sdk/**', 'examples/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go test ./...
+  javascript:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: sdk/js/package-lock.json
+      - run: npm ci --prefix sdk/js
+      - run: npm test --prefix sdk/js

@@ -234,12 +234,6 @@ class Runtime {
       : normalizeDependencies(options.dependencies);
     const payload = {
       application: options.application ?? this.application,
-      application_knowledge: options.knowledge ? {
-        test_id: options.knowledge.testId,
-        key: options.knowledge.key,
-        execution_group: options.knowledge.executionGroup,
-        attempt_ordinal: options.knowledge.attemptOrdinal
-      } : undefined,
       name: pickFirstString(options.name) || undefined,
       tags: options.tags,
       meta: options.meta,
@@ -274,8 +268,6 @@ class Runtime {
       sutUrl: session.sut_url,
       runId: session.run_id,
       bundlePath: session.bundle_path,
-      indexPath: session.index_path,
-      viewerPath: session.viewer_path,
       dependencyUrls: session.dependencies,
     };
     return this.activeSession;

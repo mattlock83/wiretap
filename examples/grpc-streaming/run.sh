@@ -65,5 +65,7 @@ for target in "$MOCK_PORT" "$SUT_PORT"; do
 done
 WIRETAP_GRPC_STREAMING_EXAMPLE=1 WIRETAP_BASE_URL="http://127.0.0.1:${CONTROL_PORT}" go test -count=1 -v ./examples/grpc-streaming
 curl --fail-with-body -sS "http://127.0.0.1:${CONTROL_PORT}/v1/finishRun" -H 'Content-Type: application/json' -d '{}' >"$WORK/finish.json"
-echo "OKF bundles: $OUTPUT"
-echo 'Open the latest run directory and docs/viewer.html to inspect the RPCs and their message timeline.'
+CAPTURE_DIR="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["bundle_path"])' "$WORK/finish.json")"
+"$WORK/wiretap" report --bundle "$CAPTURE_DIR" --format json --output "$CAPTURE_DIR/coverage.json"
+echo "Raw capture: $CAPTURE_DIR"
+echo "JSON coverage: $CAPTURE_DIR/coverage.json"

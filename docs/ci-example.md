@@ -52,7 +52,7 @@ Notes:
 
 - The service writes a bundle to `./artifacts/<run-id>/` by default. Override
   the output root with `WIRETAP_OUTPUT_DIR` in CI. Upload the whole bundle so
-  `bundle.json`, `index.md`, `tests/`, `contracts/`, `payloads/`, and `docs/` remain together.
+  `bundle.json`, `tests/`, `contracts/` and `payloads/` remain together.
 - Body capture defaults to 4 MiB per request or response. Set
   `WIRETAP_MAX_CAPTURE_BYTES` to another non-negative byte count when CI
   artifact size requires a different bound; `0` means unlimited.
@@ -61,9 +61,7 @@ Notes:
 
 - If HTTPS MITM is used in CI, add the proxy CA to the trust store (see [HTTPS trust](https-trust.md)).
 
-For [maintained repository bundles](repository-bundles.md), check in the identity
-and selection configuration together with `docs/knowledge`. After producing a
-closed run, run `wiretap check --bundle <run> --config .wiretap-publication.json`.
-It fails CI when the tracked publication differs from the candidate. Run the same
-inputs through `wiretap publish` locally and include the resulting diff in the PR.
-Keep the whole immutable source run as a CI artifact, including failed attempts.
+Generate a JSON or YAML coverage report from a completed artifact with
+`wiretap report --bundle <run> --output coverage.json`. Keep the complete raw run
+as a CI artifact, including failed attempts, so another process can verify and
+export it offline.

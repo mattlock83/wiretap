@@ -6,7 +6,7 @@ import (
 )
 
 func TestCLIRejectsTestOrchestration(t *testing.T) {
-	for _, args := range [][]string{{"explore"}, {"run", "--", "npm", "test"}, {"serve"}, {"--", "npm", "test"}, {"ca", "unexpected"}} {
+	for _, args := range [][]string{{"explore"}, {"run", "--", "npm", "test"}, {"serve"}, {"publish"}, {"check"}, {"validate"}, {"--", "npm", "test"}, {"ca", "unexpected"}} {
 		if code := execute(context.Background(), args); code != 2 {
 			t.Fatalf("execute(%q) = %d, want usage error", args, code)
 		}
@@ -23,7 +23,7 @@ func TestCLIHelp(t *testing.T) {
 
 func TestCLIRejectsRemovedExportFormats(t *testing.T) {
 	for _, command := range []string{"report", "export"} {
-		for _, format := range []string{"workflow", "openapi"} {
+		for _, format := range []string{"workflow", "openapi", "okf"} {
 			if code := execute(context.Background(), []string{command, "--bundle", t.TempDir(), "--format", format}); code != 2 {
 				t.Fatalf("%s accepted removed %s export format: exit %d", command, format, code)
 			}

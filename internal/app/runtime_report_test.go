@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -14,9 +15,10 @@ import (
 	"github.com/phrond/wiretap/internal/artifact"
 	"github.com/phrond/wiretap/internal/bundle"
 	"github.com/phrond/wiretap/internal/core"
+	"github.com/phrond/wiretap/internal/coverage"
 )
 
-func TestRuntimeReportRefreshesBundle(t *testing.T) {
+func TestRuntimeReportReturnsCoverageWithoutGeneratedViews(t *testing.T) {
 	outputDir := t.TempDir()
 	cfg := core.DefaultConfig()
 	cfg.Artifact.OutputDir = outputDir
@@ -116,16 +118,30 @@ paths:
 	if err := json.Unmarshal(body, &response); err != nil {
 		t.Fatalf("decode report response: %v", err)
 	}
-	for _, key := range []string{"index_path", "viewer_path"} {
-		path, ok := response[key].(string)
-		if !ok {
-			t.Fatalf("missing %s: %v", key, response)
-		}
-		if _, err := os.Stat(path); err != nil {
-			t.Fatalf("%s: %v", key, err)
+	if response["bundle_path"] != writer.Path() || response["run_id"] != writer.Snapshot().RunID {
+		t.Fatalf("missing archive identity: %v", response)
+	}
+	encodedReport, err := json.Marshal(response["report"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var report coverage.Report
+	if err := json.Unmarshal(encodedReport, &report); err != nil {
+		t.Fatal(err)
+	}
+	if report.ArtifactCount != 1 || len(report.Provided.Specs) != 1 || len(report.Dependent.Specs) != 1 || len(report.Provided.Specs[0].Exercised) != 1 || len(report.Dependent.Specs[0].Exercised) != 1 {
+		t.Fatalf("report lost provided/dependent coverage: %+v", report)
+	}
+	for _, key := range []string{"index_path", "viewer_path", "publication_path"} {
+		if _, exists := response[key]; exists {
+			t.Fatalf("response advertises removed view %s", key)
 		}
 	}
-
+	for _, path := range []string{"index.md", "docs"} {
+		if _, err := os.Stat(filepath.Join(writer.Path(), path)); !os.IsNotExist(err) {
+			t.Fatalf("report created %s: %v", path, err)
+		}
+	}
 }
 
 func TestRuntimeReportRejectsWorkflowExport(t *testing.T) {

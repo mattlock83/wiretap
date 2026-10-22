@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
-	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"io"
@@ -21,7 +20,6 @@ import (
 	streaming "github.com/phrond/wiretap/examples/grpc-streaming/fixture"
 	"github.com/phrond/wiretap/internal/artifact"
 	"github.com/phrond/wiretap/internal/bundle"
-	"github.com/phrond/wiretap/internal/bundlereport"
 	"github.com/phrond/wiretap/internal/core"
 	"github.com/phrond/wiretap/internal/coverage"
 	"github.com/phrond/wiretap/internal/postman"
@@ -271,49 +269,24 @@ func TestNativeGRPCAllShapesProviderConsumerAndMixed(t *testing.T) {
 					}
 				}
 			}
-			if _, err := bundlereport.Rebuild(root); err != nil {
-				t.Fatal(err)
-			}
-			knowledge, err := os.ReadFile(filepath.Join(root, "docs/knowledge.json"))
+			_, captures, err := bundle.Load(root)
 			if err != nil {
 				t.Fatal(err)
 			}
-			var document struct {
-				APIs []struct {
-					Operations []struct {
-						Evidence []struct {
-							Capture *struct {
-								StreamKind string `json:"stream_kind"`
-								Request    struct {
-									Observation *artifact.GrpcObservation `json:"observation"`
-								} `json:"request"`
-								Response struct {
-									Observation *artifact.GrpcObservation `json:"observation"`
-								} `json:"response"`
-								Events []artifact.GrpcEvent `json:"lifecycle_events"`
-							} `json:"grpc_capture"`
-						} `json:"evidence"`
-					} `json:"operations"`
-				} `json:"apis"`
-			}
-			if err := json.Unmarshal(knowledge, &document); err != nil {
-				t.Fatal(err)
-			}
 			foundBidi := false
-			for _, api := range document.APIs {
-				for _, operation := range api.Operations {
-					for _, evidence := range operation.Evidence {
-						if capture := evidence.Capture; capture != nil && capture.StreamKind == "bidirectional" {
-							foundBidi = true
-							if capture.Request.Observation == nil || capture.Response.Observation == nil || capture.Request.Observation.CompleteFrames != 2 || capture.Response.Observation.CompleteFrames != 2 || len(capture.Events) == 0 {
-								t.Fatalf("knowledge omitted bidi accounting/lifecycle: %+v", capture)
-							}
-						}
+			for _, capture := range captures {
+				for _, flow := range capture.Traffic {
+					if flow.Request.GRPC == nil || flow.Request.GRPC.StreamKind != "bidirectional" {
+						continue
+					}
+					foundBidi = true
+					if flow.Request.GRPC.Observation == nil || flow.Response.GRPC.Observation == nil || flow.Request.GRPC.Observation.CompleteFrames != 2 || flow.Response.GRPC.Observation.CompleteFrames != 2 || len(flow.GRPCEvents) == 0 {
+						t.Fatalf("archive omitted bidi accounting/lifecycle: %+v", flow)
 					}
 				}
 			}
 			if !foundBidi {
-				t.Fatal("knowledge omitted bidirectional evidence")
+				t.Fatal("archive omitted bidirectional evidence")
 			}
 		})
 	}

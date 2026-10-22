@@ -1,7 +1,7 @@
 # Wiretap product roadmap
 
 **Direction:** make Wiretap the default API testing accelerator, turning existing
-tests into shared integration knowledge and using that knowledge to find and
+tests into shared integration evidence and using that evidence to find and
 verify the cases teams have not written.
 
 **Status:** proposed product and commercial direction, updated 2 October 2026. The
@@ -81,8 +81,8 @@ These are proposed product boundaries, not currently available plans or prices.
 
 | Offering | What users receive | Commercial role |
 | --- | --- | --- |
-| **Free open local engine** | HTTP/gRPC proxies, validation, stable OKF bundles and offline spec-coverage reporting. Works with public or private projects, local files and compatible artifact stores. | Individual adoption, trust and an open ecosystem. No account or subscription needed for local use. |
-| **Free public Hub registry** | Publish, discover, browse and pull openly licensed bundles for open-source APIs; release history, provenance and public verification evidence; future bundle execution and generated checks. | Reusable provider knowledge, examples and discovery that benefit maintainers and consumers. Operates within published usage limits. |
+| **Free open local engine** | HTTP/gRPC proxies, validation, portable JSON capture artifacts and offline spec-coverage reporting. Works with public or private projects, local files and compatible artifact stores. | Individual adoption, trust and an open ecosystem. No account or subscription needed for local use. |
+| **Free public Hub registry** | Publish, discover, browse and pull openly licensed bundles for open-source APIs; release history, provenance and public verification evidence; future bundle execution and generated checks. | Reusable provider evidence, examples and discovery that benefit maintainers and consumers. Operates within published usage limits. |
 | **Paid private Hub registries** | Managed organization namespaces, private catalogues and dependency graphs, team access, retention, audit history, ownership, policies and verification coordination. | Recurring revenue for operating API assurance across teams. Customers can consume public bundles while keeping their own evidence private. |
 | **Enterprise options, after validation** | Organization-wide identity integration, advanced governance, support commitments and potentially dedicated or self-hosted deployments. | Meet demonstrated procurement and deployment needs without building every hosting model at launch. |
 
@@ -122,10 +122,10 @@ Wiretap already provides:
 - HTTP/OpenAPI and native gRPC/Protobuf capture for all four RPC shapes, validation and bounded
   contract-condition coverage. gRPC uses reflection by default, with local
   contracts as an alternative.
-- OKF bundles containing authoritative JSON evidence, frozen contracts and
-  payloads, with derived Markdown, an offline HTML viewer and a knowledge index.
+- Raw capture artifacts containing authoritative JSON evidence, frozen contracts
+  and retained payloads; offline JSON/YAML coverage and Postman collection exports.
 - Distinct provider observations and dependency assumptions, source provenance,
-  evidence limitations and a suggested verification backlog.
+  evidence limitations and contract-condition gaps.
 
 Cross-bundle comparison, provider verification, dependency simulation, generated
 tests, registry services and interactive execution are still to be built.
@@ -147,7 +147,7 @@ the local proxy or its lifecycle SDK. Its runner and hooks must be designed
 separately when that phase begins.
 
 The [architecture](architecture.md), [coverage rules](contract-coverage-rules.md),
-[bundle knowledge](bundle-knowledge.md) and [gRPC plan](grpc-support-plan.md)
+[artifact guide](artifacts.md) and [gRPC support record](grpc-support-plan.md)
 remain the detailed references. This roadmap does not mark their future features
 as implemented.
 
@@ -204,7 +204,7 @@ acceptance requirements.
 Existing tests and mocks
           |
           v
-Capture API behaviour, assumptions and coverage into OKF
+Capture API behaviour and assumptions into JSON artifacts
           |
           v
 Compare with contracts, provider evidence and previous versions
@@ -299,7 +299,7 @@ only assert ordering where the scenario or causal evidence supports it.
 
 Add a declared complete API inventory so absent operations and entirely untested
 registered services are visible. Without that declaration, report coverage only
-over known scope. Keep inferred mock specs outside coverage denominators.
+over known scope. Only supplied contracts define coverage denominators.
 
 Make `.wiretap.yaml` the declaration of application name, optional stable ID,
 description, provided APIs/specs and consumed APIs/specs. Keep consumer aliases
@@ -310,8 +310,7 @@ Support provider-only, consumer-only and mixed declarations. Deliver a
 consumer-only capture example with no SUT API binding, using the existing test
 lifecycle and dependency routes, before calling that adoption path supported.
 
-Expose the findings as JSON, readable OKF pages, an offline view and configurable
-CI outcomes. Begin with advisory unknowns; allow teams to prevent regressions in
+Expose the findings as portable JSON and configurable CI outcomes. Begin with advisory unknowns; allow teams to prevent regressions in
 previously verified relationships without blocking adoption on every old gap.
 
 **Done when:** a two-repository example distinguishes an actual contract
@@ -446,7 +445,7 @@ types alone.
 
 Broaden OpenAPI/JSON Schema support, starting with an explicit supported-dialect
 matrix and OpenAPI 3.1. Add AsyncAPI/message boundaries with correlation,
-acknowledgement, ordering, duplication and delivery-failure semantics. Prioritize
+acevidencement, ordering, duplication and delivery-failure semantics. Prioritize
 specific transports from adopter demand, followed by other API forms such as
 GraphQL or WebSockets where the same evidence loop is valuable.
 
@@ -474,9 +473,9 @@ and declaration do not imply that an API was exercised or verified.
 
 Version specs independently from application builds and evidence bundles. A
 human-friendly spec version resolves to exact frozen content; each test run
-records its build and actual spec revisions. Repeating tests or rebuilding a
-viewer requires no manual spec or bundle release. Standalone spec publication
-supports providers that do not yet have test evidence, while complete OKF bundles
+records its build and actual spec revisions. Repeating tests or exporting a
+report requires no manual spec or bundle release. Standalone spec publication
+supports providers that do not yet have test evidence, while complete capture artifacts
 remain self-contained.
 
 Consumers can name and version modified specs, including codegen adjustments,
@@ -502,7 +501,7 @@ Keep storage, analysis and execution separate:
 | Web workspace | Browse evidence, inspect the graph, select scenarios or variations, choose a configured target and request execution. |
 
 Use OCI-compatible distribution for the initial packaging design, subject to an
-interoperability spike. OKF remains the content format. OCI already supports
+interoperability spike. Preserve raw JSON evidence semantics. OCI already supports
 non-container artifacts and associations useful for provenance or result
 attachments; a new proprietary storage protocol is unnecessary. Define the
 Wiretap artifact profile and demonstrate transport through two independent
@@ -514,7 +513,7 @@ run is not publishing a new application version. Release references select
 evidence without merging results across incompatible builds or profiles.
 Friendly tags aid discovery; comparisons and executions resolve exact digests.
 Track the OCI package digest separately from authoritative evidence identity:
-recompression or rebuilding HTML can change packaging without creating another
+recompression can change packaging without creating another
 observation. Verify transport integrity and preserve the underlying run/snapshot
 lineage so republishing cannot inflate independent evidence.
 Separate verification artifacts record their inputs, expectations, execution
@@ -536,7 +535,7 @@ project. Bind each runner connection to an authenticated session and allowed
 project scope. Viewing or pulling a bundle never executes commands or sends API
 requests. User edits produce new scenario/result artifacts with lineage, never
 rewrite captured evidence. An interactive request without assertions is an
-observation, not a passing test. Retain the standalone offline viewer.
+observation, not a passing test. Preserve offline artifact access.
 
 ### Public and private publication boundaries
 
@@ -545,8 +544,8 @@ Require explicit destination/visibility policy, publisher namespace ownership,
 redistribution terms for bundled content and a reviewable publication preview.
 Prefer sanitized fixture-based captures; secret scanning helps but cannot certify
 that arbitrary payloads are safe. Sanitization creates a new artifact with stated
-evidence/replay limits. Do not host an uploaded bundle's executable HTML on the
-registry origin; render validated evidence with trusted viewer code.
+evidence/replay limits. Render validated evidence with trusted application code
+rather than executing uploaded content.
 
 Private access rules cover payloads, search, graphs, derived findings, job logs
 and PR content. A private consumer can use public provider evidence without
@@ -614,7 +613,7 @@ attestation is needed when who produced it matters.
 ## How the network effect works
 
 There are two connected networks. The public registry accumulates reusable
-open-source provider knowledge and attracts adopters. Private registries connect
+open-source provider evidence and attracts adopters. Private registries connect
 internal teams, their dependencies and selected public evidence, creating ongoing
 organizational value. Neither requires companies to publish internal evidence.
 
@@ -652,7 +651,7 @@ or building a universal plugin framework before extension points are proven.
 Evaluate Hegel early as an optional search/shrinking engine. Its current design
 uses Rust `libhegel` with language bindings, rather than the older Python-server
 architecture. Wiretap should own contract translation, transport, fixture
-lifecycle, properties, coverage and OKF evidence. Hegel can supply search
+lifecycle, properties, coverage and raw JSON evidence. Hegel can supply search
 machinery. Its beta stability, packaging, supported platforms and structured
 result access need a bounded feasibility spike before adoption.
 Check the current Go binding's Go 1.26 requirement against Wiretap's Go 1.24
@@ -684,7 +683,7 @@ tools. This is not a requirement to reproduce every platform feature.
 
 Specifications, local execution and AI-generated tests alone are not distinctive.
 The defensible advantage is the compounding loop between provider evidence,
-consumer assumptions, targeted execution and portable knowledge. The
+consumer assumptions, targeted execution and portable evidence. The
 [Pact roadmap](https://docs.pact.io/roadmap) and
 [September 2026 update](https://docs.pact.io/blog/2026/09/14/pact-open-source-update-sept-2026)
 also show why a competitor checklist would quickly become stale.
@@ -701,7 +700,7 @@ Alongside Phase 1, choose and publish an open-source license and contribution
 policy; produce reproducible binary/container releases; document the format and
 support matrix; and ship a compact two-repository demo with known integration
 defects. Licensing is a prerequisite for the public open-source release. Keep
-the CLI, machine interfaces, examples and offline viewer aligned.
+the CLI, machine interfaces, examples and capture formats aligned.
 
 Seed the public registry with maintained HTTP and gRPC reference projects and a
 short publish/consume example. Work with maintainers to publish useful release
@@ -769,7 +768,7 @@ The next detailed plan should deliver the Phase 1 loop in small reviewable piece
 Add a bounded registry design/spike alongside that implementation:
 
 1. Specify package namespaces, visibility, release references, provenance and
-   digest-pinned dependency manifests without changing OKF's evidence semantics.
+   digest-pinned dependency manifests without changing raw evidence semantics.
    Include independent spec publication, local/remote source locking and
    consumer-variant lineage, with explicit rebase semantics.
 2. Prove publish/pull, integrity verification and offline use through two

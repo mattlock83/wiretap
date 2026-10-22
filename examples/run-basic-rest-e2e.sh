@@ -135,15 +135,16 @@ else
 fi
 
 BUNDLE_DIR="$(find "${ARTIFACT_DIR}" -mindepth 1 -maxdepth 1 -type d -name 'run-*' -print | sort | tail -n 1)"
-if [[ -z "${BUNDLE_DIR}" || ! -f "${BUNDLE_DIR}/bundle.json" || ! -f "${BUNDLE_DIR}/docs/viewer.html" ]]; then
+if [[ -z "${BUNDLE_DIR}" || ! -f "${BUNDLE_DIR}/bundle.json" ]]; then
   echo "Wiretap did not produce a bundle under ${ARTIFACT_DIR}" >&2
   exit 1
 fi
-# Views must already exist from HTTP finalization; no report command is needed.
+# HTTP finalization writes the raw capture; coverage is a separate JSON export.
 node -e 'const fs = require("node:fs"); const run = JSON.parse(fs.readFileSync(process.argv[1])); if (run.run_state !== "complete") throw new Error("test hooks did not finalize capture")' "${BUNDLE_DIR}/bundle.json"
 
-echo "OKF bundle: ${BUNDLE_DIR}/index.md"
-echo "HTML dashboard: ${BUNDLE_DIR}/docs/viewer.html"
+"${BUILD_DIR}/wiretap-runtime" report --bundle "${BUNDLE_DIR}" --format json --output "${BUNDLE_DIR}/coverage.json"
+echo "Raw capture: ${BUNDLE_DIR}"
+echo "JSON coverage: ${BUNDLE_DIR}/coverage.json"
 if [[ "${TEST_STATUS}" -ne 0 ]]; then
   exit "${TEST_STATUS}"
 fi

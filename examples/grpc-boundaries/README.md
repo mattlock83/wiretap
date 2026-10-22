@@ -8,12 +8,13 @@ Requires Go 1.24+, Bash, Python 3 and curl.
 
 Run `./examples/grpc-boundaries/run.sh` from the repository root. It builds
 Wiretap and two small grpc-go servers, runs an existing Go test through the
-capture listeners, finalizes the run, and prints the OKF output directory.
+capture listeners, finalizes the run, and prints the raw capture directory and
+`coverage.json` path.
 
 The test keeps its generated `HealthClient`; the SUT keeps its generated client
 for the mock. Both servers advertise reflection, so the Wiretap configuration
 only selects the service. The setup call freezes both contracts before the test
-RPC begins. The bundle should show one `test_to_sut` RPC, one
+RPC begins. The raw attempts in `tests/` should show one `test_to_sut` RPC, one
 `sut_to_dependency` RPC, their Protobuf payloads, and the selected methods
 including methods this test did not call.
 

@@ -5,12 +5,6 @@ It controls a separately running Wiretap service over HTTP and creates standard
 trace contexts for capture. It does not discover, schedule, or launch tests.
 TypeScript declarations are included. See [configuration](../../docs/configuration.md).
 
-For a [maintained repository bundle](../../docs/repository-bundles.md), pass
-`knowledge: {testId, key?, executionGroup?, attemptOrdinal?}` to `setupTest` or the
-existing adapter options. Variants use distinct logical IDs; retry ordinals are
-assigned by the harness, starting at zero. Capture sessions and traces still
-receive fresh execution identities.
-
 ## Native test lifecycle
 
 For a simple Node suite, retain the standard test function and hooks:
@@ -146,10 +140,7 @@ Wiretap-specific RPC client, collector or reflection service is required.
 API-provided file paths resolve on the runtime host. HTTP schemas are required by
 default. Set `schemaRequired: false` only on an API whose spec is intentionally
 absent; supplied specs still validate strictly. Dependencies retain this same
-per-API requirement. Dependencies marked `upstreamKind: "mock"` automatically get
-a separate inferred OpenAPI draft in the bundle, even with a supplied spec.
-The draft documents observations and never changes validation. Follow the
-Dependencies links in the bundle to inspect it.
+per-API requirement.
 
 ## Lower-level integration
 
@@ -162,12 +153,12 @@ Dependencies links in the bundle to inspect it.
   custom fixtures. Manual setup registers a span but does not activate it around
   arbitrary requests; use `runTest` or standard OTel context binding.
 - `runtime.dependencyUrl(assetId)` returns the configured dependency capture URL.
-- `runtime.report({ bundlePath })` refreshes bundle views.
+- `runtime.report({ bundlePath })` returns a JSON coverage report for the archive.
 - `runtime.finishRun()` finalizes capture when `manageRuntime` is enabled.
   It never terminates the control process.
 
-Sessions expose `runId`, `bundlePath`, `indexPath`, and `viewerPath`. Teardown
-returns `attempt_path` and `attempt_page_path`. Capture drains accepted requests
+Sessions expose `runId` and `bundlePath`. Teardown returns `attempt_path` for
+the recorded JSON evidence. Capture drains accepted requests
 for five seconds by default; `drainTimeoutMs` selects 0–60000ms. Incomplete
 capture and enforced schema failures fail cleanup. An original callback error
 is preserved if cleanup also fails. Explicitly omitted schemas show skipped or

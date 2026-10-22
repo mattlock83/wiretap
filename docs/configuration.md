@@ -31,11 +31,6 @@ configuration file. `${VARIABLE}` references in URLs, paths, and listener
 addresses resolve from the runtime's environment; missing variables are errors.
 Unknown fields and multiple YAML documents are rejected.
 
-Optional `publication: {config: .wiretap-publication.json, output: docs/knowledge}`
-maintains a repository bundle when `/v1/finishRun` succeeds. Both paths resolve
-relative to this file. Its identity/selection configuration and the `publish`,
-`check` and `validate` commands are described in [Repository bundles](repository-bundles.md).
-
 `WIRETAP_HTTP_LISTEN`, `WIRETAP_PROXY_LISTEN`, `WIRETAP_OUTPUT_DIR`, and
 `WIRETAP_PROXY_CA_DIR` override file settings. Relative environment paths are
 relative to the process's working directory. Additional capture and proxy
@@ -95,7 +90,7 @@ to a global teardown hook. For multiple Go packages sharing a runtime, finalize
 once in the outer harness, not in each package's `TestMain`. Independently owned
 runtimes can be finalized by each package or suite.
 
-Finalization writes a complete bundle and its Markdown/HTML views automatically.
+Finalization writes the completed raw run artifact.
 `finishRun` stops capture and finalizes the run; the HTTP
 control process stays available for another run. The harness stops that process
 when it is no longer needed. Stopping it with unfinished capture preserves an
@@ -136,12 +131,6 @@ status is `partial` when some APIs have specs and others explicitly omit them, `
 them, and `fail` if any enforced schema fails. `skipped` lists the omitted API
 schema IDs. These exceptions never turn a validation failure into a pass.
 
-For HTTP dependencies marked `kind: mock`, Wiretap always generates a separate OpenAPI
-draft from captured requests and responses, including when a spec was supplied.
-It appears in the bundle's Dependencies page and HTML dashboard. Omitted specs
-still need `schema_required: false`; inferred drafts do not enforce contracts or
-change coverage. See [inferred mock assumptions](okf-bundles.md#inferred-mock-assumptions).
-
 ## Capture and proxy settings
 
 Set these on the Wiretap process:
@@ -164,11 +153,11 @@ through the [HTTP API](runtime-api.md), usually via an SDK.
 | Command | Purpose |
 | --- | --- |
 | `wiretap [--config path]` | Start the HTTP control service; wait for capture lifecycle calls. |
-| `wiretap report --bundle <path>` | Rebuild a bundle's Markdown, HTML, knowledge and coverage views offline. |
+| `wiretap report --bundle <path>` | Print a JSON coverage report from verified raw artifacts; `--format yaml` and `--output <file>` are supported. |
 | `wiretap export --bundle <path> --format json` | Export a diagnostic coverage report to stdout; `--format yaml` and `--output <file>` are also supported. |
 | `wiretap export --bundle <path> --format postman --output-dir <directory>` | Export HTTP v2.1 and gRPC v3 JSON collections for the SUT and mocked dependencies, with test folders and saved interactions. |
 | `wiretap ca [--config path]` | Print the public proxy CA certificate, creating the local CA if needed. |
 
-Normal capture already writes the bundle views. `report` is useful for copied
-bundles or after a viewer update; it does not execute tests. See the
-[bundle guide](okf-bundles.md#rebuild-or-export) for examples.
+`report` and `export` support `json`, `yaml` and `postman`; JSON is the default.
+They work offline from complete capture directories and do not execute tests.
+See [capture artifacts and exports](artifacts.md) for examples.

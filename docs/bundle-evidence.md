@@ -1,15 +1,11 @@
 # Wiretap bundle format 3.1
 
-This is the immutable run archive format. The
-[repository publisher](repository-bundles.md) converts it explicitly into the
-[application knowledge draft](spec/README.md), with readable stable paths and
-separate execution evidence. Existing archive readers and recording rules remain
-valid for 3.1.
+This is the portable raw run artifact format. It stores captured tests, frozen
+contracts and retained payloads for offline inspection and exports.
 
 A bundle is a portable recording of tests at API boundaries. The same recorded
-tests support documentation, coverage, comparison and execution. There is no
-separate scenario definition, results directory, template language or executable
-Markdown. Hook implementations and environment configuration stay in the project.
+tests support coverage and external analysis. Test hooks, fixtures and environment
+configuration stay in the project.
 
 ```text
 wiretap-bundle/
@@ -17,20 +13,16 @@ wiretap-bundle/
   contracts/<hash>/            frozen contracts, imports and integrity manifests
   tests/<attempt-id>.json       test metadata, interactions, assertions and outcomes
   payloads/<sha256>.bin         retained message bodies and binary representations
-  index.md                     OKF entry point
-  docs/                        generated documentation and knowledge/coverage indexes
-    viewer.html                offline HTML report
 ```
 
 `contracts/` and `payloads/` appear when there are corresponding files. The
 manifest always includes `provided_apis`, `dependencies` and `tests` arrays, even
-when empty. `index.md` and everything generated under `docs/` can be rebuilt from
-the manifest, recorded tests, frozen contracts and payloads.
+when empty. Coverage reports are calculated from these verified inputs.
 
 ## Discover APIs and dependencies
 
 Read `bundle.json` directly to discover `provided_apis` and `dependencies`.
-No Markdown, HTML, live application or original project configuration is needed.
+No live application or original project configuration is needed.
 Each boundary includes:
 
 | Field | Meaning |
@@ -66,8 +58,8 @@ mapping must be supplied explicitly. Recorded source/build metadata helps assess
 which implementation was tested.
 
 The reader verifies that the inventory agrees with the registered contracts,
-configured target kinds and committed recordings. Coverage and richer operation
-summaries remain generated views under `docs/`.
+configured target kinds and committed recordings. Coverage reports are derived
+from these verified inputs.
 
 ## Consumer-only, provider-only and mixed systems
 
@@ -100,7 +92,7 @@ adapter to appear in a bundle.
 ## Authoritative records
 
 `bundle.json` and `tests/<attempt-id>.json` are the capture
-source of truth. This contract is separate from the generated OKF profile.
+source of truth.
 The [JSON Schema](bundle-evidence.schema.json) describes the main record shape;
 the reader also enforces identity, hash, duplicate-key, version, path, and
 attachment checks that JSON Schema cannot express.
@@ -141,7 +133,7 @@ index. An application error can have HTTP 200 and a nonzero `grpc_status`.
 Redacted payloads do not retain raw wire bytes.
 Run-level `contract_resolutions` retain each declared gRPC boundary while acquisition is
 `pending`, `resolved`, or `failed`. Unresolved boundaries have an unknown
-coverage denominator and an acquisition task in the knowledge view. A complete
+coverage denominator and explicit acquisition diagnostics. A complete
 run requires resolved contracts; each resolved entry must match its frozen
 descriptor and selected services.
 An empty Protobuf message still has a zero-byte wire attachment; it is distinct
@@ -206,7 +198,7 @@ Unknown optional metadata may be ignored. Minor versions may add optional
 metadata; incompatible interpretation requires a major version. Unsupported
 major versions and corrupt or missing required evidence fail explicitly.
 A stable exchange identity is `{run_id, attempt_id, flow_id}`; an event adds
-`event_id`. Test names, trace IDs, Markdown paths, ephemeral ports and timestamps
+`event_id`. Test names, trace IDs, filesystem paths, ephemeral ports and timestamps
 are labels or evidence, not exchange identity.
 
 Both the run and each attempt explicitly list `required_capabilities`, including
@@ -375,15 +367,14 @@ scenario representation. Captured responses are observations, not exact-match
 assertions or permission to execute code.
 
 Authentication, fixture setup, substitutions and cleanup belong to project-owned
-code outside the bundle. There are no embedded hooks, scripts or Markdown
-placeholders. A future executor must preserve original evidence and distinguish
+code outside the bundle. There are no embedded hooks or scripts. A future executor must preserve original evidence and distinguish
 new execution results from the captured run.
 
 ## Derived contract coverage
 
-`docs/contract-coverage.json`, `docs/contract-coverage.md`, and the HTML **Contract coverage**
-tab are rebuildable views of this evidence and the supplied frozen contracts.
-They never become evidence inputs. The catalogue identifies the run snapshot, measurement
+`wiretap report` and `wiretap export` calculate JSON/YAML coverage reports from
+this evidence and the supplied frozen contracts. Reports never become evidence
+inputs. The catalogue under `contract_coverage` identifies the run snapshot, measurement
 rule version, content-based contract revision, and API/operation/condition keys.
 Each observation links back to an attempt path and flow ID, with phase, instance
 location, test name, outcome, message validation, capture completeness and
@@ -400,7 +391,5 @@ Protobuf schema; a complete run cannot contain pending or failed contracts.
 Diagnostics omit reflection credentials and filesystem paths. Successful
 acquisition provenance is stored on the boundary's schema reference.
 
-Pending test records retain setup `meta`, including `application_knowledge` identity
-and harness retry ordinals, so interrupted attempts can be published under the
-same stable test and group as their completed predecessors. Older archives without
-this metadata require explicit publication mappings.
+Pending test records retain setup metadata and the attempt identity so interrupted
+work remains distinguishable from committed capture.

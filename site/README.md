@@ -34,7 +34,7 @@ The Phrond footer mark combines a fern silhouette with a diagonal stem, angular
 branches and graph nodes, reflecting its roots in visualising dependencies.
 
 The order flow and coverage cases are **illustrative examples**, not a live
-Wiretap report or measured customer results. Keep them consistent with the product
+Wiretap capture interface or measured customer results. Keep them consistent with the product
 docs. Do not turn mock evidence into a claim of proven provider agreement.
 
 Without JavaScript the first example, all product copy, quickstart and FAQs still

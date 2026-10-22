@@ -1,20 +1,20 @@
 # Wiretap
 
-Wiretap turns existing HTTP and gRPC API tests into a portable record of your system's
-APIs and the assumptions your tests make about its dependencies. It captures requests,
-responses and their sequence, checks them against OpenAPI or Protobuf contracts, and writes an
-OKF bundle for people and agents to read.
+Wiretap captures existing HTTP and native gRPC API tests, checks traffic against
+OpenAPI or Protobuf contracts, and writes portable JSON artifacts with frozen
+contracts and retained payloads. Coverage reports show which declared operations
+and supported contract conditions your tests exercised.
 
 ```text
 Existing tests → Wiretap → Your application → Wiretap → Existing mocks or services
                    └──────────────┬──────────────┘
-                              OKF bundle
-                   APIs · assumptions · tests · coverage
+                            Capture artifacts
+                     JSON · contracts · payloads
 ```
 
-Keep your test framework, HTTP or gRPC client, assertions and mocks. Start Wiretap as
-another service in your test environment, route traffic through it, and call
-its JavaScript SDK, Go SDK or HTTP API from test lifecycle hooks.
+Keep your test framework, clients, assertions and mocks. Start Wiretap alongside
+your application, route traffic through it, and call its JavaScript SDK, Go SDK
+or HTTP API from test lifecycle hooks.
 
 ## Try it
 
@@ -25,95 +25,70 @@ npm ci --prefix sdk/js
 ./examples/run-basic-rest-e2e.sh
 ```
 
-The example captures existing tests and their dependency calls. It prints a bundle
-containing API evidence and spec-based coverage. Open
-`docs/viewer.html` for the offline dashboard or `index.md` for the linked
-Markdown pages. No report server is needed.
+The example prints its artifact directory. Read `bundle.json` and the referenced
+JSON test recordings, or generate a coverage report:
+
+```bash
+wiretap report --bundle ./artifacts/<run-id> --output coverage.json
+```
 
 [More examples](examples/README.md) cover parallel Jest tests, database fixtures,
-the Speedscale Microsvc Transactions service with authenticated tests, and
+Microsvc Transactions with authenticated tests, and
 [native gRPC with a mock dependency](examples/grpc-boundaries/README.md).
 
 ## Add Wiretap to your tests
 
-1. Put the application URL, dependency URLs and OpenAPI or Protobuf contracts in `.wiretap.yaml`.
+1. Put application/dependency URLs and OpenAPI or Protobuf contracts in `.wiretap.yaml`.
 2. Start Wiretap alongside your application and mocks using your existing harness.
 3. Point test requests and the application's dependency endpoints at Wiretap.
 4. Connect suite/test setup and cleanup through an SDK or the HTTP API.
-5. Run your tests normally and keep the generated bundle as a build artifact.
+5. Run your tests normally and keep the complete artifact directory.
 
-Follow the [existing-tests guide](docs/getting-started-existing-tests.md) for a
-complete setup, or go directly to the [JavaScript](sdk/js/README.md),
-[Go](sdk/go/README.md) or [HTTP API](docs/runtime-api.md) reference.
+Follow the [existing-tests guide](docs/getting-started-existing-tests.md), or the
+[JavaScript](sdk/js/README.md), [Go](sdk/go/README.md) and
+[HTTP API](docs/runtime-api.md) references.
 
-OpenAPI specs are required by default for HTTP; individual HTTP APIs can explicitly
-opt out. gRPC requires a Protobuf contract: reflection is the default source,
-with local `.proto` files or a descriptor set as alternatives. See the
-[gRPC guide](docs/grpc-user-guide.md). Unary and all three streaming shapes support capture and structural coverage.
-Parallel tests sharing one application need working W3C trace propagation from
-its server to its outbound clients. Otherwise run sequentially or isolate
-workers. The application does not need to propagate a Wiretap-specific ID.
-See [configuration](docs/configuration.md) and [tracing](docs/otel-adoption.md).
+HTTP requires an OpenAPI spec by default; individual APIs can explicitly opt out.
+gRPC requires a Protobuf contract: reflection is the default, with local `.proto`
+files or descriptor sets as alternatives. Unary, server-streaming,
+client-streaming and bidirectional calls support capture and structural coverage.
+See the [gRPC guide](docs/grpc-user-guide.md).
 
-## Understand what has been tested
+Parallel tests sharing one application need W3C trace propagation from its server
+to its outbound clients. Otherwise run sequentially or isolate workers. See
+[configuration](docs/configuration.md) and [tracing](docs/otel-adoption.md).
 
-For a bundle reviewed and versioned alongside the application, use
-[`wiretap publish`](docs/repository-bundles.md). It writes the application knowledge
-draft at `docs/knowledge`, with meaningful stable paths, explicit test selection,
-ownership checks and a read-only `wiretap check` workflow. Run archives retain
-their existing recording format and viewer.
+## Read and export results
 
-| Bundle view | What it tells you |
+| Artifact or report | Contents |
 | --- | --- |
-| `bundle.json` | The provided APIs and dependencies, their contracts and the recorded tests that exercised them. |
-| APIs and dependencies | Which boundaries and operations were observed, with requests, responses and inferred OpenAPI drafts for HTTP mocks. |
-| Contract coverage | Which specified cases were exercised, such as enum values, optional fields and boundaries; gaps and uncertain results remain visible. |
-| Test runs | What executed and what happened, with links to the conditions they exercised. |
-| System overview and verification work | How the recorded APIs fit together and which assumptions, mismatches or gaps need further checks. |
-| `docs/knowledge.json` | The API map, verification tasks and evidence references for a knowledge base or agent. |
-
-The supported spec rules define concrete cases, such as each enum value, an
-optional field being absent, or a value at a declared boundary. Expand
-**Observed case combinations** to see which cases occurred together in an actual
-request or response. Gaps identify cases for future tests; Wiretap neither
-executes them nor claims coverage of every possible permutation.
+| `bundle.json` | Run identity, configured/observed APIs and dependencies, frozen contracts and test references. |
+| `tests/*.json` | Per-attempt requests/responses, test outcomes, validation and capture diagnostics. |
+| `contracts/`, `payloads/` | Frozen contracts and retained, redacted payload bytes with integrity hashes. |
+| JSON/YAML coverage | Operation coverage, supported contract conditions, observations, combinations and explicit gaps/limits. |
+| Postman collections | Captured HTTP and gRPC interactions grouped by test, for the SUT and mocked dependencies. |
 
 One test can cover many contract conditions. A mock response records a test
-assumption; it does not prove the real provider behaves that way. Cross-repository
-comparison is not yet implemented.
+assumption; it does not prove real-provider agreement. Missing, unsupported or
+incomplete evidence remains visible. Cross-repository comparison is not yet
+implemented. Wiretap does not generate or execute additional tests.
 
-The [bundle format](docs/bundle-evidence.md) keeps `bundle.json`, `contracts/`,
-`tests/` and `payloads/` as the source data, with an OKF `index.md` and rebuildable
-views under `docs/`. Test execution, fixtures and environment setup remain in your project.
+```bash
+wiretap export --bundle ./artifacts/<run-id> --format yaml --output coverage.yaml
+wiretap export --bundle ./artifacts/<run-id> --format postman --output-dir postman
+```
 
-The bundle format supports consumer-only systems such as UIs, provider-only
-systems without mocks, and mixed systems. Application identity is independent of
-the provided/dependency inventories. Its event representation can retain
-bidirectional gRPC streams, publish/consume messaging, Kafka/Avro and GraphQL
-subscriptions, alongside frozen AsyncAPI or other contract packages. Kafka/Avro, AsyncAPI and GraphQL remain format capabilities. Live capture,
-validation and coverage adapters currently
-support HTTP and native gRPC, including bidirectional streams. The existing runtime configuration remains centred
-on a SUT. See the [format's support boundaries](docs/bundle-evidence.md).
+Postman HTTP collections use v2.1 JSON; native gRPC collections use v3 JSON with
+saved unary/streaming conversations, metadata, trailers and RPC status. Real
+dependencies are skipped. See the [artifact and export guide](docs/artifacts.md).
 
-The bundle contains authoritative JSON evidence, frozen schemas and retained
-payloads. Its Markdown, HTML and knowledge views are generated automatically
-and can be rebuilt with `wiretap report`. See the [bundle guide](docs/okf-bundles.md)
-for reading, sharing and exporting results.
-
-Export captured HTTP and gRPC interactions to Postman collections with
-`wiretap export --bundle ./artifacts/<run-id> --format postman --output-dir postman`.
-HTTP keeps the existing v2.1 JSON collections, response examples and status-code
-checks. Native gRPC uses separate v3 JSON collections with saved unary and
-streaming conversations, metadata, trailers and RPC status. Real dependencies
-are skipped. Each collection uses test names as folder names. The
-SUT collection name is `<application.name> - <application.id>`; mock collection
-names use the dependency name and ID.
-See the [Postman export guide](docs/okf-bundles.md#postman-collections).
+The [format reference](docs/bundle-evidence.md) documents the raw capture format,
+including generic event storage for future transports. Live capture, validation
+and coverage currently support HTTP and native gRPC. Runtime configuration
+remains centred on a SUT.
 
 ## Documentation
 
 Start with the [documentation index](docs/README.md) for setup, SDKs, commands,
-bundle formats, CI and troubleshooting.
-
-The [landing page guide](site/README.md) covers previewing and publishing the
-Wiretap website with GitHub Pages.
+formats, CI and troubleshooting. The [landing page guide](site/README.md) covers
+the website preview and GitHub Pages setup.

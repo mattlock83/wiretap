@@ -64,9 +64,8 @@ timing-based parent inferences and ambiguity.
    background dependency activity. Closing the test early cannot establish the
    ownership of later work reliably.
 6. **Supply schemas.** Configure specs in `.wiretap.yaml`. An individual API
-   can explicitly omit a spec with `schema_required: false`. Inferred mock
-   drafts document observations and do not replace supplied contracts. See
-   [configuration](configuration.md).
+   can explicitly omit a spec with `schema_required: false`; its coverage
+   denominator remains unknown. See [configuration](configuration.md).
 
 Your harness starts the Wiretap process; test framework hooks call its HTTP API
 through the SDK to start and finalize capture. Set `WIRETAP_BASE_URL` when needed.
@@ -222,8 +221,8 @@ Attempts retain `testcase.trace_id`, `testcase.root_span_id`, sender
 `request_span_id`, `trace_context_source`, `test_correlation`, and
 `parent_correlation`. A trace match identifies the test; `trace_unique` and
 `timing` parent relationships are inferences. `ambiguous`/`unmatched` flows omit
-`parent_flow_id`. The bundle's test pages show these distinctions and preserve
-retry IDs; the bundled HTML dashboard presents the same evidence.
+`parent_flow_id`. The raw test recordings preserve these distinctions and each
+attempt's identity.
 Captured evidence retains the received W3C context.
 
 Await all expected activity before finishing a test. Teardown stops new

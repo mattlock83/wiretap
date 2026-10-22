@@ -13,13 +13,10 @@ npm ci --prefix sdk/js
 ./examples/run-basic-rest-e2e.sh
 ```
 
-The capture writes a bundle under `artifacts/<run-id>/`. Open
-`docs/viewer.html` for the offline dashboard or `index.md` for the OKF pages.
-Inspect `tests/` for the exact captured attempts, including the inventory
-response. The harness starts and configures the SUT and dependency. The Dependencies page
-and HTML dashboard also link to an inferred OpenAPI draft for `inventory-service`.
-It is generated from observed mock traffic alongside the supplied spec, which
-continues to control validation.
+The capture writes raw artifacts under `artifacts/<run-id>/`. Inspect
+`bundle.json` and `tests/` for the exact captured attempts, including the inventory
+response. The harness starts and configures the SUT and dependency, then writes
+JSON coverage to `coverage.json` from the captured traffic and supplied contracts.
 
 ## Ordinary clients and parallel test traces
 
@@ -36,8 +33,8 @@ no Wiretap header forwarding. The tests check separate traces and captured
 inbound and downstream payloads in their own test-attempt evidence.
 The shell harness starts Wiretap with [.wiretap.yaml](.wiretap.yaml) alongside the
 demo services. Native Node suite hooks or Jest global teardown finalize capture
-over HTTP; Jest workers only own their test attempts. The bundle and views are
-written automatically, without a report command.
+over HTTP; Jest workers only own their test attempts. Raw artifacts are written
+automatically. The shell harness then exports JSON coverage with `wiretap report`.
 The default Node variant uses sequential capture.
 
 For an uninstrumented SUT with serial capture:

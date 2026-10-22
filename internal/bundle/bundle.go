@@ -1,4 +1,4 @@
-// Package bundle stores a run's immutable captures independently of its OKF views.
+// Package bundle stores a run's immutable captures, frozen contracts and payloads.
 package bundle
 
 import (
@@ -231,8 +231,7 @@ func newWriter(path string, child bool) (*Writer, error) {
 	return w, nil
 }
 
-func (w *Writer) Path() string      { return w.root }
-func (w *Writer) IndexPath() string { return filepath.Join(w.root, "index.md") }
+func (w *Writer) Path() string { return w.root }
 
 func (w *Writer) Snapshot() Run {
 	w.mu.Lock()

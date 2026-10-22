@@ -19,13 +19,8 @@ func execute(ctx context.Context, args []string) int {
 		command = args[0]
 		args = args[1:]
 	}
-	if command == "report" || command == "export" || command == "publish" || command == "check" || command == "validate" {
-		var err error
-		if command == "report" || command == "export" {
-			err = reportCommand(args)
-		} else {
-			err = knowledgeCommand(command, args)
-		}
+	if command == "report" || command == "export" {
+		err := reportCommand(args)
 		if err != nil {
 			if errors.Is(err, flag.ErrHelp) {
 				return 0
@@ -39,13 +34,13 @@ func execute(ctx context.Context, args []string) int {
 		return 0
 	}
 	if command != "" && command != "ca" {
-		fmt.Fprintf(os.Stderr, "unknown command %q; use wiretap, report, export, publish, check, validate, or ca\n", command)
+		fmt.Fprintf(os.Stderr, "unknown command %q; use wiretap, report, export, or ca\n", command)
 		return 2
 	}
 	flags := flag.NewFlagSet("wiretap "+command, flag.ContinueOnError)
 	configPath := flags.String("config", "", "project configuration (default: discover .wiretap.yaml)")
 	flags.Usage = func() {
-		fmt.Fprintln(flags.Output(), "Usage: wiretap [--config path]\n  wiretap ca [--config path]\n  wiretap report --bundle <directory>\n  wiretap export --bundle <directory> --format json --output coverage.json\n  wiretap export --bundle <directory> --format postman --output-dir postman\n  wiretap publish --bundle <run> --config <publication.json> [--output docs/knowledge]\n  wiretap check --bundle <run> --config <publication.json> [--output docs/knowledge]\n  wiretap validate --bundle <directory>")
+		fmt.Fprintln(flags.Output(), "Usage: wiretap [--config path]\n  wiretap ca [--config path]\n  wiretap report --bundle <directory> [--format json|yaml]\n  wiretap export --bundle <directory> --format json --output coverage.json\n  wiretap export --bundle <directory> --format postman --output-dir postman")
 		flags.PrintDefaults()
 	}
 	if err := flags.Parse(args); err != nil {

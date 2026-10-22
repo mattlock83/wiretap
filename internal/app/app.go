@@ -11,7 +11,6 @@ import (
 
 	"github.com/phrond/wiretap/internal/artifact"
 	"github.com/phrond/wiretap/internal/bundle"
-	"github.com/phrond/wiretap/internal/bundlereport"
 	"github.com/phrond/wiretap/internal/core"
 	"github.com/phrond/wiretap/internal/grpccontract"
 	"github.com/phrond/wiretap/internal/project"
@@ -80,9 +79,6 @@ func (a *App) ensureBundle() (*bundle.Writer, error) {
 		if err := w.Configure(bundle.Identity{Application: defaults.Application, APIID: defaults.APIID, SUTTargetKind: defaults.SUTTargetKind, DependencyKinds: kinds}); err != nil {
 			return nil, err
 		}
-	}
-	if _, err := bundlereport.Refresh(w.Path()); err != nil {
-		return nil, err
 	}
 	a.bundle = w
 	return w, nil

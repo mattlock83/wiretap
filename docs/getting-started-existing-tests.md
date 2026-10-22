@@ -115,7 +115,7 @@ One suite owner finalizes capture after every worker finishes. Workers finish
 their own attempts; they must not stop a shared run early. Await captured HTTP
 calls and expected dependency work before finishing an attempt.
 
-## 5. Choose concurrency and inspect the bundle
+## 5. Choose concurrency and inspect the artifacts
 
 A shared application must propagate W3C `traceparent` from its server to its
 outbound clients for parallel test correlation. The mock needs no instrumentation.
@@ -123,12 +123,11 @@ Without application propagation, run tests and requests sequentially or give
 each worker its own application and Wiretap runtime. See
 [tracing and concurrency](otel-adoption.md).
 
-SDK/API responses give the exact `index.md` and `docs/viewer.html` paths.
-Wiretap writes the views automatically; no report command is needed. Keep the
-whole bundle for CI or agent use.
+SDK/API responses give the exact `bundle_path`. Read `bundle.json` and its
+referenced `tests/*.json` recordings to inspect requests, responses and outcomes.
+Keep the complete directory for CI or external analysis.
 
-Start with **Test runs** to inspect the recorded requests and responses, then
-**Contract coverage** for the conditions those executions covered. A mock reply
-records a test assumption, not proof of real provider behaviour. See the
-[bundle guide](okf-bundles.md) for interpretation and the
+Generate coverage with `wiretap report --bundle <path> --output coverage.json`.
+A mock reply records a test assumption, not proof of real provider behaviour.
+See the [artifact guide](artifacts.md) for exports and the
 [coverage rules](contract-coverage-rules.md) for supported cases and limits.

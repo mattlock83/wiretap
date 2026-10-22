@@ -162,7 +162,7 @@ SUT or running tests.
 | Contract revision | Normalized frozen contract under a named revision profile. Some representation changes, such as supported Protobuf comment/order changes, can retain the same revision. Equality is not universal compatibility proof. |
 | Consumer variant identity/version | Consumer-owned derivative, scoped by owner, upstream API and variant name. Its version and digest are independent of upstream releases. |
 | Evidence identity | A particular run/snapshot and its build, contracts, attempts and assertions. More test runs do not require new spec versions. |
-| Distribution digest | Integrity of a packaged spec or OKF bundle. Repacking or rebuilding derived views does not create another independent observation. |
+| Distribution digest | Integrity of a packaged spec or capture artifact. Repacking does not create another independent observation. |
 
 For OpenAPI, the source document's `info.version` can supply a default spec label;
 retain it separately if an explicit publication label differs. The `openapi`
@@ -272,7 +272,7 @@ versioning and evidence linkage.
 ## Registry publication
 
 Allow standalone spec artifacts before provider tests exist; classify them as
-declared contracts without test evidence. Later OKF bundles reference their
+declared contracts without test evidence. Later capture artifacts reference their
 provided and consumed spec revisions and retain complete frozen copies for
 offline use. Storage can deduplicate these bytes without making a copied bundle
 depend on a live registry.

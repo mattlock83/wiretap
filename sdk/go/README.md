@@ -6,12 +6,6 @@ start `wiretap` alongside the SUT and mocks using your existing harness. Run tes
 normally with `go test`. The SDK inherits runtime defaults over HTTP; it never
 invokes the CLI or launches test processes.
 
-For a [maintained repository bundle](../../docs/repository-bundles.md), pass
-`TestOptions.Knowledge` with a stable `TestKnowledgeIdentity.TestID`, optional
-`Key`/`ExecutionGroup`, and a harness-assigned `AttemptOrdinal` pointer. Variants
-use distinct IDs; retry ordinals begin at zero. These fields preserve logical
-identity independently of the fresh capture session and trace.
-
 ```go
 runtime := wiretap.Runtime{} // WIRETAP_BASE_URL or http://127.0.0.1:18000
 
@@ -80,17 +74,14 @@ instrumentation for parallel ownership. See the [gRPC guide](../../docs/grpc-use
 contains capture URLs. Configure the SUT's dependency endpoints once to stable
 `/__wiretap/dep/<asset-id>` URLs for traced sessions. Each API requires its spec unless its
 `SchemaRequired` pointer is explicitly false; supplied specs always validate.
-HTTP dependencies marked `UpstreamKind: "mock"` always get a separate inferred OpenAPI
-draft in the bundle, including with a supplied spec. It documents observed mock
-traffic and never changes enforcement. The bundle's Dependencies view links to it.
 `DrainTimeout` defaults to five seconds; use a positive duration up to one minute.
 
-Each runtime run writes an OKF bundle automatically. `Session.RunID`,
-`Session.BundlePath`, `Session.IndexPath`, and `Session.ViewerPath` identify it.
-Open `ViewerPath` for the offline HTML dashboard. Test cleanup commits the
-attempt's JSON evidence and regenerates both views. Set
-`WIRETAP_OUTPUT_DIR` on the runtime process to choose the output parent. See
-the [bundle guide](../../docs/okf-bundles.md) for coverage and optional exports.
+Each runtime run writes a portable Wiretap archive. `Session.RunID` and
+`Session.BundlePath` identify it. Test cleanup commits the attempt's JSON evidence,
+frozen contracts and retained payloads. Set `WIRETAP_OUTPUT_DIR` on the runtime
+process to choose the output parent. Use `wiretap report` for JSON or YAML
+coverage and `wiretap export --format postman` for REST and gRPC collections. See the
+[archive guide](../../docs/bundle-evidence.md).
 
 One runtime has one reverse SUT target. Distinct per-test `httptest.NewServer`
 instances need distinct runtimes if they overlap. Direct handler tests using

@@ -6,12 +6,9 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
-	"github.com/phrond/wiretap/internal/bundlereport"
 	"github.com/phrond/wiretap/internal/coverage"
-	"github.com/phrond/wiretap/internal/knowledge"
 )
 
 var errUsage = errors.New("usage")
@@ -28,7 +25,7 @@ func reportCommand(args []string) error {
 	flags.StringVar(&sutName, "sut-name", "", "SUT name in the report or SUT Postman collection name")
 	flags.StringVar(&outputPath, "output", "", "output file path; additional Postman collections are written alongside the primary collection (default: stdout)")
 	flags.StringVar(&outputDir, "output-dir", "", "Postman collection output directory")
-	flags.StringVar(&format, "format", "okf", "output format: okf, json, yaml, postman")
+	flags.StringVar(&format, "format", "json", "output format: json, yaml, postman")
 	flags.BoolVar(&includeArtifacts, "include-artifacts", false, "include artifact file paths in the report")
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -41,7 +38,7 @@ func reportCommand(args []string) error {
 	}
 	format = strings.ToLower(strings.TrimSpace(format))
 	switch format {
-	case "okf", "json", "yaml", "postman":
+	case "json", "yaml", "postman":
 	default:
 		return fmt.Errorf("%w: unsupported format: %s", errUsage, format)
 	}
@@ -57,58 +54,6 @@ func reportCommand(args []string) error {
 	if format == "postman" {
 		return exportPostman(bundlePath, sutName, outputPath, outputDir)
 	}
-	// Publications select observations rather than describing one synthetic run.
-	// Export verified records without inventing aggregate coverage across sources.
-	if b, err := os.ReadFile(filepath.Join(bundlePath, "bundle.json")); err == nil {
-		if v, err := knowledge.Decode(b); err == nil {
-			if m, ok := v.(map[string]any); ok && m["profile"] != nil {
-				records, err := knowledge.Read(bundlePath)
-				if err != nil {
-					return err
-				}
-				if format == "okf" {
-					if outputPath != "" {
-						return fmt.Errorf("%w: --output is only for file exports", errUsage)
-					}
-					p, err := filepath.Abs(filepath.Join(bundlePath, "index.md"))
-					if err != nil {
-						return err
-					}
-					fmt.Println(p)
-					return nil
-				}
-				var data []byte
-				if format == "json" {
-					data, err = knowledge.Canonical(records)
-				} else {
-					data, err = knowledge.YAML(records)
-				}
-				if err != nil {
-					return err
-				}
-				if outputPath != "" {
-					return os.WriteFile(outputPath, data, 0644)
-				}
-				_, err = os.Stdout.Write(data)
-				return err
-			}
-		}
-	}
-	if format == "okf" {
-		if outputPath != "" {
-			return fmt.Errorf("%w: --output is only for file exports", errUsage)
-		}
-		if _, err := bundlereport.Rebuild(bundlePath); err != nil {
-			return err
-		}
-		path, err := filepath.Abs(filepath.Join(bundlePath, "index.md"))
-		if err != nil {
-			return err
-		}
-		fmt.Println(path)
-		return nil
-	}
-
 	report, err := coverage.Generate(context.Background(), bundlePath, sutName, includeArtifacts)
 	if err != nil {
 		return err

@@ -7,12 +7,10 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/phrond/wiretap/internal/bundle"
-	"github.com/phrond/wiretap/internal/bundlereport"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 )
@@ -69,9 +67,6 @@ func TestGRPCAPIOnlyBoundariesAreFrozenAndAvailableBeforeSetup(t *testing.T) {
 	if captures[0].Traffic[0].Request.GRPC.SchemaRef != "api-only" {
 		t.Fatal("wrong provider schema reference")
 	}
-	if _, err := bundlereport.Refresh(path); err != nil {
-		t.Fatal(err)
-	}
 }
 
 func TestGRPCFailedAcquisitionPersistsScopeAndCanRetry(t *testing.T) {
@@ -98,10 +93,6 @@ func TestGRPCFailedAcquisitionPersistsScopeAndCanRetry(t *testing.T) {
 	if run.RunState != "open" || len(captures) > 0 || len(run.Pending) > 0 || run.Contracts[0].State != "failed" {
 		t.Fatalf("invalid failed snapshot: %+v", run)
 	}
-	knowledge, err := os.ReadFile(filepath.Join(path, "docs/knowledge.json"))
-	if err != nil || !strings.Contains(string(knowledge), `"contract_resolution": "failed"`) {
-		t.Fatalf("failed discovery was not published in knowledge: %v", err)
-	}
 	if err := os.WriteFile(protoPath, []byte(`syntax="proto3";package fixture;message Empty{} service Example{rpc Call(Empty)returns(Empty);}`), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -116,8 +107,8 @@ func TestGRPCFailedAcquisitionPersistsScopeAndCanRetry(t *testing.T) {
 	if err := os.Remove(protoPath); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := bundlereport.Refresh(path); err != nil {
-		t.Fatalf("offline rebuild used source files: %v", err)
+	if _, _, err := bundle.Load(path); err != nil {
+		t.Fatalf("offline archive used source files: %v", err)
 	}
 }
 
