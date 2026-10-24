@@ -110,7 +110,7 @@ Consumers should check these versions before interpreting a result.
 | `consumer`, `provider` | Archive path, run ID, snapshot revision, run state, SHA-256 of `bundle.json` in `manifest_sha256`, optional application/API identity and collection input paths. |
 | `dependency`, `binding` | Selected consumer mock ID and `declared_mapping` or `explicit_inputs` relationship. |
 | `ignored_headers` | Effective header exclusion policy, including explicit additions. |
-| `counts` | `assumptions`, `verified`, `uncovered`, `mismatched` and `unverified` counts. |
+| `counts` | Selected exchange count in `assumptions`, matched exchange count in `verified`, and finding counts in `uncovered`, `mismatched` and `unverified`. |
 | `matches` | Consumer/provider evidence reference pairs supporting agreement. |
 | `findings` | `uncovered`, `mismatch` or `unverified` findings with diagnostic code, message and applicable operation, evidence references and differences. |
 | `excluded_provider_evidence` | Provider evidence that could not qualify, with a reason for each exclusion. |
@@ -119,14 +119,52 @@ Each evidence reference includes `run_id`, `attempt_id`, `test_name`, optional
 `test_identity`, `flow_id`, `evidence_path` and `test_outcome`. Preserve the
 referenced archives alongside the result. Uncovered, mismatched and unverified
 results all return exit status `1`; invalid inputs return `2`. See
-[assumption checks](assumption-checks.md) for the selection and value comparison
-policy.
+[interpreting results](assumption-checks.md#interpreting-results) for a worked
+example and the selection/value comparison policy.
+
+Use `compatible` as the verdict instead of deriving one from a count or the
+presence of `matches`. Run-level or identity findings can make a result
+unverified independently of the number of selected exchanges. The finding
+counts therefore need not partition `assumptions`. A reported match preserves
+one qualifying witness; it is not a list of every possible provider match.
+
+### Finding codes
+
+`kind` is the broad classification. Use `code` for the specific diagnostic
+under `wiretap-assumptions-1`:
+
+| Code | Kind | Meaning |
+| --- | --- | --- |
+| `provider_request_uncovered` | `uncovered` | No complete passing provider example matches this concrete request. This does not prove the request would fail at runtime. |
+| `provider_response_mismatch` | `mismatch` | Matching requests exist, but none has the mock's full response under the comparison policy. |
+| `provider_wire_mismatch` | `mismatch` | A prospective gRPC match fails request or response cross-decoding under the other side's frozen descriptor. |
+| `consumer_evidence_unavailable` | `unverified` | A selected consumer exchange cannot be checked because its attempt or retained evidence does not qualify. |
+| `consumer_run_incomplete`, `provider_run_incomplete` | `unverified` | A source run is not complete or still has pending attempts. |
+| `provider_not_service` | `unverified` | The supplied provider SUT is not declared as a service. |
+| `provider_identity_mismatch` | `unverified` | The supplied provider application/API does not match the consumer's declared mapping. |
+| `provider_version_unverified` | `unverified` | The provider's captured `sut_source.version` does not establish the mapped version. |
+| `no_consumer_assumptions` | `unverified` | The selected mock has no observed exchanges, so compatibility cannot be established. |
+
+`differences` identifies response paths or the `protobuf/wire` marker to inspect;
+it does not classify a change as behaviorally breaking. Extra optional response
+fields can differ even when a consumer tolerates them. Findings retain up to ten
+provider evidence references, and response differences are bounded to twenty
+paths against the first candidate. Follow the raw exchanges for the full context. See
+[issues the check finds](assumption-checks.md#issues-the-check-will-find) and
+[what it cannot establish](assumption-checks.md#what-the-check-will-not-establish)
+before using these diagnostics as a release policy.
+
+### Input errors and report files
 
 Incomplete runs, unverifiable provider identities and empty selections return
 an unverified result before collection verification. In an otherwise eligible
 comparison, missing, invalid or stale collections are input errors. Failed or
 incomplete provider attempts are listed as excluded evidence and cannot support
 a match; other complete passing attempts can still establish agreement.
+Input errors are diagnostics on stderr rather than `findings`; they may occur
+before any JSON report is written. A report write failure can also leave no new
+output. Consumers should preserve the exit status and stderr, and use a fresh
+report path rather than trusting an existing file after a failed invocation.
 
 `--output` requires an existing parent directory and a destination outside both
 archives and supplied Postman input directories. It cannot replace a collection

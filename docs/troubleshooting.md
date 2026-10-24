@@ -153,3 +153,101 @@ wiretap report --bundle ./artifacts/<run-id>
 truth. If reporting finds an integrity error, restore the missing or corrupt
 evidence from the original capture. Exporting cannot recover uncaptured or lost
 evidence. Keep the whole directory when copying it.
+
+## Assumption checks
+
+Use the [checking guide](assumption-checks.md) for setup and examples. Its
+[issue catalogue](assumption-checks.md#issues-the-check-will-find),
+[limits](assumption-checks.md#what-the-check-will-not-establish) and
+[result interpretation](assumption-checks.md#interpreting-results) define what
+the verdict means.
+
+### Both suites test the endpoint, but the request is uncovered
+
+`provider_request_uncovered` means no complete passing provider example matches
+the concrete request. A consumer calling `GET /items/consumer-42` and a provider
+testing `GET /items/provider-17` exercise the same route but different scenarios.
+Query values, body fields, array order and application headers also participate.
+Equal operation or contract coverage does not establish a match.
+
+Follow the consumer and candidate provider evidence references and compare
+their actual values. Align shared synthetic fixtures or add the missing
+provider test, then recapture both suites. Do not rename a collection item to
+make the requests appear related. Explicit header exclusions can handle a
+header proven irrelevant to the assumption; payload wildcards and ignored body
+fields are not supported.
+
+### An optional response field causes a mismatch
+
+`provider_response_mismatch` checks the whole captured response. A mock returning
+`{"id":"42"}` and a provider returning `{"id":"42","label":"demo"}` differ,
+even if `label` is optional and the running consumer ignores it. Status, other
+body values, response headers and gRPC status details may also differ.
+
+Inspect `differences` and the referenced exchanges. Decide whether the mock
+should reflect the provider example, or whether the provider tested a different
+intended response scenario. Update the appropriate tests or fixtures and
+recapture. This strict mismatch alone does not prove a runtime compatibility
+break: Wiretap cannot infer which fields the consumer used or which assertions
+its test made. There is no response-field subset mode.
+
+### Provider examples are excluded even though some tests passed
+
+Inspect `excluded_provider_evidence` and its `reason`. A failed test, incomplete
+capture, transport error or unsupported selected exchange cannot establish
+provider agreement. A different complete passing provider exchange can still
+support the same mock, so unrelated failed examples do not automatically poison
+an otherwise verified check.
+
+If no qualifying provider exchange matches the request, the assumption remains
+uncovered. Fix the provider test or capture problem and generate a fresh
+complete archive. An interrupted run itself is unverified even when a few
+completed attempts remain available. A selected consumer example from a failed
+or incomplete attempt is also unverified.
+
+### A collection is stale or does not match its archive
+
+The checker verifies collection attempt IDs and saved interactions against the
+raw archive. A collection from another run, a hand-edited response, a missing
+attempt or an incomplete file set cannot replace the source evidence. Point
+both inputs to the intended versions, then regenerate from those exact archives:
+
+```sh
+wiretap export --bundle ./consumer-run --format postman --output-dir ./consumer-run/exports/postman
+wiretap export --bundle ./provider-run --format postman --output-dir ./provider-run/exports/postman
+```
+
+Keep the original contracts and payloads. Regeneration cannot recover missing
+raw evidence; restore the complete archive when integrity checks fail. Directory
+inputs discover `*.postman_collection.json` recursively. Supply
+`--consumer-collection` or `--provider-collection` explicitly when the files
+live elsewhere. Native gRPC replay URLs and source-schema settings may differ;
+HTTP collection URLs must still agree with their own archive. Request/response
+evidence must agree with the archive in both cases.
+
+### The check failed and no JSON report appeared
+
+Invalid flags, missing archives, corrupt evidence and missing or stale
+collections return exit `2` with a diagnostic on stderr. They may prevent the
+checker from constructing a report, even with `--format json`. An output write
+failure can also prevent a new report. Preserve the command's exit status and
+stderr; use a fresh output path so an old file cannot be confused with this run.
+See the [CI gate example](ci-example.md#gate-consumerprovider-assumptions-offline).
+
+The output's parent directory must exist. `--output` must be outside both input
+archives and supplied Postman directories, and cannot replace a collection
+file. Incomplete runs, unverifiable provider identities and an empty consumer
+selection instead produce an unverified result before collections are required.
+
+### The check passed, but an assertion or expected mock call is missing
+
+The checker compares recorded examples; it does not inspect assertion code or
+infer which calls an application should make. A test can capture a response
+without asserting its contents. A missing dependency call produces no exchange
+to compare, and an otherwise nonempty selection can still pass. An entirely
+empty selection is rejected, but that is not an expected-call assertion.
+
+Keep behavior assertions and expected mock-call counts in your test framework.
+Capture those scenarios and rerun the check after the assertions pass. A green
+comparison supports the observed examples, not unrecorded execution paths,
+state transitions or all behavior of the tested application.

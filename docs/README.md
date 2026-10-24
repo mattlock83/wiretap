@@ -39,6 +39,15 @@ data and dummy secrets: retained traffic is unchanged.
 | [gRPC user guide](grpc-user-guide.md) | Use reflection/local contracts and existing clients for unary and streaming capture. |
 | [gRPC support](grpc-support-plan.md) | Review supported scope, verification and protocol limits. |
 
+For assumption checks, start with
+[issues the check will find](assumption-checks.md#issues-the-check-will-find),
+[what the check will not establish](assumption-checks.md#what-the-check-will-not-establish)
+and [interpreting results](assumption-checks.md#interpreting-results). The
+[CI guide](ci-example.md#gate-consumerprovider-assumptions-offline) shows how to
+gate on the exit status while preserving reports and diagnostics;
+[troubleshooting](troubleshooting.md#assumption-checks) explains common fixture,
+collection and evidence failures.
+
 ## Product scope
 
 Wiretap captures and exports evidence from existing tests and checks concrete

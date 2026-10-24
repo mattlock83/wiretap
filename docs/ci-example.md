@@ -115,3 +115,72 @@ The repository's [package smoke](../scripts/package-smoke.mjs) verifies this
 harness from a fresh external installation with passing tests, deliberate
 negative requests, and a failing framework cleanup hook. No package publishing
 is needed to run it.
+
+## Gate consumer/provider assumptions offline
+
+After capturing both suites, restore the exact complete consumer and provider
+archives into the check job, including their `exports/postman/` directories.
+Select known run IDs or artifact versions from the tested revisions. Do not
+substitute the newest folder or an unrelated green provider build. The check
+needs no running application, mock server or provider, and executes no Postman
+scripts.
+
+The example below assumes `evidence/orders-run/` and
+`evidence/inventory-run/` have already been restored and `wiretap` is on `PATH`.
+The output directory is separate from both inputs. Use a fresh output directory
+per job so an old report cannot be mistaken for a new result.
+
+```yaml
+- name: Check captured assumptions
+  shell: bash
+  run: |
+    mkdir -p assumption-results
+    set +e
+    wiretap check consumer \
+      --consumer evidence/orders-run \
+      --provider evidence/inventory-run \
+      --dependency inventory \
+      --format json \
+      --output assumption-results/check.json \
+      2> assumption-results/check.stderr
+    check_status=$?
+    set -e
+    cat assumption-results/check.stderr >&2 || true
+    exit "$check_status"
+- name: Preserve the check and its inputs
+  if: always()
+  uses: actions/upload-artifact@v4
+  with:
+    name: assumption-check-evidence
+    path: |
+      assumption-results/
+      evidence/orders-run/
+      evidence/inventory-run/
+    if-no-files-found: error
+```
+
+The explicit status capture keeps the check as the gate even while saving its
+diagnostics. Exit `0` means every selected mock example has supporting provider
+evidence; `1` means an incompatible, uncovered or unverified result; `2` means
+invalid input or flags. Input errors are written to stderr and may prevent a
+JSON report from being written. Preserve diagnostics even when no report exists.
+
+For a provider repository's gate, change `check consumer` to `check provider`.
+Keep `--consumer` pointing to the consumer's mock archive and `--provider` to
+the provider's service archive. Both modes enforce the same relationship; the
+mode changes the viewpoint, not the direction of the assumptions. Run a separate
+check for each consumer or dependency to protect.
+
+Before making a check mandatory, align synthetic request fixtures between the
+suites. Different IDs or body values are uncovered scenarios. Decide which
+volatile headers are irrelevant and add explicit `--ignore-header` flags if
+needed; those exclusions affect requests and responses and are reported in
+`ignored_headers`. Payload fields have no ignore rule. An extra optional response
+field can therefore fail this strict example comparison without proving a
+runtime break.
+
+Read [issues the check finds](assumption-checks.md#issues-the-check-will-find),
+[what it cannot establish](assumption-checks.md#what-the-check-will-not-establish)
+and [interpreting results](assumption-checks.md#interpreting-results) before
+setting the gate's release policy. The check complements your suite's assertions
+and its expected-call checks; it cannot infer those from captured traffic.

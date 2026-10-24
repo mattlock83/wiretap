@@ -39,6 +39,27 @@ The separate [assumption checker](assumption-checks.md) uses concrete request an
 paired response evidence rather than equating coverage keys. It fails when a
 selected mock scenario is unsupported by qualifying provider tests.
 
+### Coverage and assumption checks answer different questions
+
+Contract coverage asks whether tests exercised a declared case, such as a
+nonempty array or a supported enum value. Assumption checks ask whether the
+provider tested the consumer's concrete request and produced the response its
+mock supplied. Two messages can cover the same conditions while carrying
+different application values. Equal coverage percentages or condition keys do
+not satisfy an assumption check.
+
+An uncovered assumption means no qualifying provider example matches that
+request; it does not prove the provider would reject it. A response mismatch
+means the captured responses disagree under the check's comparison policy; an
+extra optional field may trigger one even when the consumer would tolerate it.
+The checker cannot identify which fields an application consumed or infer its
+assertions. Keep those distinctions when turning results into a release gate.
+
+See [issues the check finds](assumption-checks.md#issues-the-check-will-find),
+[what it cannot establish](assumption-checks.md#what-the-check-will-not-establish)
+and [interpreting results](assumption-checks.md#interpreting-results) for concrete
+examples and the supported assurance claim.
+
 ## Current measurement profiles
 
 Each spec records its own `rules_version`. HTTP keeps `wiretap-contract-1`;

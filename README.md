@@ -116,6 +116,15 @@ check. Collections default to each run's `exports/postman/` directory and are
 verified against the raw archive. See [assumption checks](docs/assumption-checks.md)
 for dependency mapping, limits, custom collection paths and CI output.
 
+The checker finds changed mock responses, request scenarios absent from provider
+tests, and incompatible gRPC wire examples. Its strict comparison can also flag
+an extra optional response field that a running consumer would tolerate. Read
+[which issues it finds](docs/assumption-checks.md#issues-the-check-will-find),
+[what it cannot establish](docs/assumption-checks.md#what-the-check-will-not-establish)
+and [how to interpret failures](docs/assumption-checks.md#interpreting-results)
+before using it as a CI gate. Assertions about behavior and expected dependency
+calls remain part of your tests.
+
 ## Product scope and documentation
 
 Wiretap captures existing tests, exports their evidence and verifies concrete

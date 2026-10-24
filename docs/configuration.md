@@ -213,6 +213,11 @@ for incompatible/uncovered/unverified assumptions, and `2` for invalid inputs.
 The output's parent must exist; choose a destination outside both input
 archives and Postman input directories that does not replace a collection file.
 See [assumption checks](assumption-checks.md) for comparison rules and limits.
+That guide separates [issues the check finds](assumption-checks.md#issues-the-check-will-find)
+from [claims it cannot establish](assumption-checks.md#what-the-check-will-not-establish)
+and explains [result interpretation](assumption-checks.md#interpreting-results).
+An equal coverage condition is insufficient: the checker requires the same
+concrete request and a compatible response from one provider exchange.
 
 ## Suite outputs
 
