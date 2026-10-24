@@ -11,6 +11,9 @@ application:
   name: Orders
   id: orders-app
 output_dir: artifacts
+outputs:
+  coverage: [json]
+  postman: true
 http_listen: 127.0.0.1:18000
 proxy_listen: 127.0.0.1:18080
 sut:
@@ -161,3 +164,20 @@ through the [HTTP API](runtime-api.md), usually via an SDK.
 `report` and `export` support `json`, `yaml` and `postman`; JSON is the default.
 They work offline from complete capture directories and do not execute tests.
 See [capture artifacts and exports](artifacts.md) for examples.
+
+## Suite outputs
+
+Select `outputs: {coverage: [json, yaml], postman: true}` to generate exports when
+suite ownership calls `/v1/finishRun`. This is opt-in; without it capture continues
+to write only the raw archive. SDK options can select outputs for that finalization.
+The result returns `bundle_path`, `run_id`, and `outputs` containing exact coverage
+file paths, Postman file paths and export errors. Files live under the archive's
+`exports/` directory, with `exports/result.json` recording available outputs.
+
+Coverage and Postman exports are independent: a Postman failure leaves valid
+coverage and the raw failed/passing attempts available, while finalization reports
+an error. Preserve that cleanup error and any original test failure. Finalize
+only once in the outer harness after all workers have torn down their attempts.
+`wiretap export --bundle <exact-path> --format all` generates the standard JSON
+coverage and Postman outputs offline, for example to retry exports after fixing
+configuration. Avoid selecting a run by timestamp or scanning for the newest file.

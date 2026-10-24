@@ -38,6 +38,7 @@ export interface TestOptions {
   onSession?: (session: Session) => unknown | Promise<unknown>;
 }
 export interface Config extends TestOptions {
+  outputs?: OutputOptions;
   baseUrl?: string;
   timeoutMs?: number;
   proxy?: true | { listenAddr?: string; targetUrl?: string };
@@ -59,6 +60,7 @@ export interface Session {
   traceContext: { traceparent: string; tracestate?: string };
 }
 export interface CaptureResponse {
+  outputs?: OutputResult;
   run_id?: string;
   bundle_path?: string;
   attempt_path?: string;
@@ -73,7 +75,14 @@ export interface Runtime {
   runTest<T>(name: string, callback: (session: Session) => T | Promise<T>, options?: TestOptions): Promise<T>;
   dependencyUrl(assetId: string): string;
   report(options?: { bundlePath?: string }): Promise<CaptureResponse>;
-  finishRun(): Promise<CaptureResponse>;
+  finishRun(options?: { outputs?: OutputOptions }): Promise<CaptureResponse>;
+}
+export interface OutputOptions { coverage?: ('json' | 'yaml')[]; postman?: boolean; }
+export interface OutputResult {
+  bundle_path: string;
+  coverage: Record<string, string>;
+  postman: string[];
+  errors: { format: string; message: string }[];
 }
 export interface TestAttempt {
   /** Run test or fixture work inside this attempt's trace context. */

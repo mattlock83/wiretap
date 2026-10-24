@@ -36,6 +36,38 @@ func (r *Runtime) FinishRun(ctx context.Context) error {
 	return r.call(ctx, "/v1/finishRun", map[string]any{}, nil)
 }
 
+// OutputOptions selects exports made by the suite owner after all workers finish.
+// Omit these options to inherit the runtime project's outputs configuration.
+type OutputOptions struct {
+	Coverage []string `json:"coverage,omitempty"`
+	Postman  bool     `json:"postman,omitempty"`
+}
+type OutputResult struct {
+	BundlePath string            `json:"bundle_path"`
+	Coverage   map[string]string `json:"coverage"`
+	Postman    []string          `json:"postman"`
+	Errors     []struct {
+		Format  string `json:"format"`
+		Message string `json:"message"`
+	} `json:"errors"`
+}
+type FinishResult struct {
+	Status     string        `json:"status"`
+	RunID      string        `json:"run_id"`
+	BundlePath string        `json:"bundle_path"`
+	Outputs    *OutputResult `json:"outputs,omitempty"`
+}
+
+// FinishRunWithOutputs returns exact artifact paths, including available outputs
+// when a different export fails. The non-nil error still fails suite cleanup.
+func (r *Runtime) FinishRunWithOutputs(ctx context.Context, options *OutputOptions) (*FinishResult, error) {
+	result := &FinishResult{}
+	err := r.call(ctx, "/v1/finishRun", struct {
+		Outputs *OutputOptions `json:"outputs,omitempty"`
+	}{options}, result)
+	return result, err
+}
+
 type TestOptions struct {
 	Application     *Application   `json:"application,omitempty"`
 	SchemaRequired  *bool          `json:"schema_required,omitempty"`
@@ -215,6 +247,9 @@ func (r *Runtime) call(ctx context.Context, path string, payload, output any) er
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(res.Body, 8192))
+		if output != nil {
+			_ = json.Unmarshal(body, output)
+		}
 		return fmt.Errorf("Wiretap %s: HTTP %d: %s", path, res.StatusCode, body)
 	}
 	if output != nil {

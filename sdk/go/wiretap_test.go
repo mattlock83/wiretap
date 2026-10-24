@@ -111,3 +111,26 @@ func TestParallelTestsUseExistingClientsWithSeparateRoots(t *testing.T) {
 		seen[root] = true
 	}
 }
+
+func TestFinishRunWithOutputsPreservesAvailablePathsOnExportFailure(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload struct {
+			Outputs *OutputOptions `json:"outputs"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Error(err)
+		}
+		if payload.Outputs == nil || !payload.Outputs.Postman {
+			t.Error("missing output selection")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		fmt.Fprint(w, `{"bundle_path":"/capture/run","outputs":{"coverage":{"json":"/capture/run/exports/coverage.json"},"postman":[],"errors":[{"format":"postman","message":"incomplete capture"}]}}`)
+	}))
+	defer server.Close()
+	runtime := Runtime{BaseURL: server.URL}
+	result, err := runtime.FinishRunWithOutputs(t.Context(), &OutputOptions{Coverage: []string{"json"}, Postman: true})
+	if err == nil || result.BundlePath != "/capture/run" || result.Outputs == nil || result.Outputs.Coverage["json"] == "" || len(result.Outputs.Errors) != 1 {
+		t.Fatalf("lost export error or available outputs: %+v %v", result, err)
+	}
+}

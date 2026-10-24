@@ -98,7 +98,7 @@ class CoreClient {
   setupTest(payload) { return this._request("POST", "/v1/setupTest", payload || {}); }
   teardownTest(payload) { return this._request("POST", "/v1/teardownTest", payload || {}); }
   report(payload) { return this._request("POST", "/v1/report", payload || {}); }
-  finishRun() { return this._request("POST", "/v1/finishRun", {}); }
+  finishRun(payload = {}) { return this._request("POST", "/v1/finishRun", payload); }
 
   async _request(method, path, payload) {
     if (typeof fetch !== "function") throw new Error("global fetch is not available; require Node.js >= 18");
@@ -145,6 +145,7 @@ class Runtime {
     this.sutTargetKind = pickFirstString(config.sutTargetKind);
     this.testSource = config.testSource;
     this.sutSource = config.sutSource;
+    this.outputs = config.outputs;
     this.sutUrl = runtimeInfo.sut_url;
     this.runDependencyUrls = runtimeInfo.dependencies || {};
     this.sessions = new AsyncLocalStorage();
@@ -308,11 +309,11 @@ class Runtime {
     return this.client.report({ bundle_path: options.bundlePath });
   }
 
-  async finishRun() {
+  async finishRun(options = {}) {
     await Promise.all(this.pendingCleanup);
     if (this.openSessions.size) throw new Error("teardown all capture sessions before closing the runtime");
     if (!this.manageRuntime) return { status: "shared" };
-    return this.client.finishRun();
+    return this.client.finishRun({ outputs: options.outputs ?? this.outputs });
   }
 }
 

@@ -88,3 +88,11 @@ instances need distinct runtimes if they overlap. Direct handler tests using
 `httptest.NewRecorder` bypass the network and cannot be captured. Without SUT
 propagation, keep tests and SUT requests sequential or isolate each worker's SUT,
 Wiretap, and dependency routes. See [adoption notes](../../docs/otel-adoption.md).
+
+### Generate suite outputs
+
+Set `outputs: {coverage: [json], postman: true}` in `.wiretap.yaml` and retain the
+normal `FinishRun` cleanup. For explicit selection and returned paths, use
+`FinishRunWithOutputs(ctx, &wiretap.OutputOptions{Coverage: []string{"json"}, Postman: true})`.
+It returns the archive and available export paths even when another export fails;
+check its error and preserve the existing test exit status in the owning harness.

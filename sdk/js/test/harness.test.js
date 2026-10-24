@@ -306,3 +306,19 @@ test("gRPC project defaults preserve protocol and direct dependency targets", as
     await server.close();
   }
 });
+
+test("suite owner selects outputs and receives exact generated paths", async () => {
+  const outputs = { coverage: ["json", "yaml"], postman: true };
+  const expected = { bundle_path: "/capture/run-1", coverage: { json: "/capture/run-1/exports/coverage.json" }, postman: ["/capture/run-1/exports/postman/sut.json"], errors: [] };
+  let payload;
+  const server = await controlServer((path, body) => {
+    if (path === "/v1/finishRun") { payload = body; return { status: "complete", outputs: expected }; }
+    return {};
+  });
+  try {
+    const runtime = await startCapture({ baseUrl: server.baseUrl, schemaRequired: false, outputs });
+    const result = await runtime.finishRun();
+    assert.deepEqual(payload, { outputs });
+    assert.deepEqual(result.outputs, expected);
+  } finally { await server.close(); }
+});

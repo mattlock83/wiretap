@@ -163,3 +163,11 @@ for five seconds by default; `drainTimeoutMs` selects 0–60000ms. Incomplete
 capture and enforced schema failures fail cleanup. An original callback error
 is preserved if cleanup also fails. Explicitly omitted schemas show skipped or
 partial validation without turning unrelated schema failures into success.
+
+### Generate suite outputs
+
+Configure `outputs: {coverage: ["json"], postman: true}` in `startCapture`, or the
+matching `outputs` block in `.wiretap.yaml`. `await capture.finishRun()` returns
+`outputs.coverage` and `outputs.postman` with exact server-side paths. Shared
+workers leave this to the global run owner. Cleanup errors retain `error.body`
+with available outputs and archive path; preserve an original test error as well.

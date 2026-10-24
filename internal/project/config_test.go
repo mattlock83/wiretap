@@ -26,7 +26,7 @@ func TestLoadResolvesPathsAndEnvironmentFromProject(t *testing.T) {
 func TestLoadRejectsMistakesAndKeepsSpecsRequired(t *testing.T) {
 	for _, tc := range []struct{ name, body, want string }{
 		{"missing schema", "version: 1\nsut: {}", "schema is required"},
-		{"misspelled option", "version: 1\nsut: {schema: api.yaml}\noutputs: bad", "field outputs"},
+		{"misspelled option", "version: 1\nsut: {schema: api.yaml}\noutputz: bad", "field outputz"},
 		{"missing variable", "version: 1\nsut: {schema: '${WIRETAP_TEST_MISSING_VARIABLE}'}", "is not set"},
 		{"extra document", "version: 1\nsut: {schema: api.yaml}\n---\nversion: 1", "one YAML document"},
 		{"publication removed", "version: 1\nsut: {schema: api.yaml}\npublication: {config: publication.json}", "field publication"},

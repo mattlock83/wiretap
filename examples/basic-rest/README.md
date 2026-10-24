@@ -16,7 +16,7 @@ npm ci --prefix sdk/js
 The capture writes raw artifacts under `artifacts/<run-id>/`. Inspect
 `bundle.json` and `tests/` for the exact captured attempts, including the inventory
 response. The harness starts and configures the SUT and dependency, then writes
-JSON coverage to `coverage.json` from the captured traffic and supplied contracts.
+JSON coverage to `exports/coverage.json` and Postman collections to `exports/postman/` from the captured traffic and supplied contracts.
 
 ## Ordinary clients and parallel test traces
 
@@ -34,7 +34,7 @@ inbound and downstream payloads in their own test-attempt evidence.
 The shell harness starts Wiretap with [.wiretap.yaml](.wiretap.yaml) alongside the
 demo services. Native Node suite hooks or Jest global teardown finalize capture
 over HTTP; Jest workers only own their test attempts. Raw artifacts are written
-automatically. The shell harness then exports JSON coverage with `wiretap report`.
+automatically. Finalization generates the selected exports and returns their exact paths to the harness.
 The default Node variant uses sequential capture.
 
 For an uninstrumented SUT with serial capture:

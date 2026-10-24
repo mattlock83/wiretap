@@ -14,6 +14,7 @@ import (
 	"github.com/phrond/wiretap/internal/bundle"
 	"github.com/phrond/wiretap/internal/coverage"
 	"github.com/phrond/wiretap/internal/proxy"
+	"github.com/phrond/wiretap/internal/runoutput"
 	"github.com/phrond/wiretap/internal/tracecontext"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -482,6 +483,23 @@ func (a *App) handleFinishRun(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 		return
 	}
+	var payload struct {
+		Outputs *runoutput.Config `json:"outputs,omitempty"`
+	}
+	if err := decodeStrictJSON(r, &payload); err != nil && !errors.Is(err, io.EOF) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
+		return
+	}
+	selected := payload.Outputs
+	if selected == nil && a.project != nil {
+		selected = a.project.Outputs
+	}
+	if selected != nil {
+		if err := selected.Validate(); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+	}
 	runID := ""
 	if current := a.currentBundle(); current != nil {
 		runID = current.Snapshot().RunID
@@ -495,10 +513,19 @@ func (a *App) handleFinishRun(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusConflict, response)
 		return
 	}
-	response := map[string]string{"status": "complete"}
+	response := map[string]any{"status": "complete"}
 	if archivePath != "" {
 		response["bundle_path"] = archivePath
 		response["run_id"] = runID
+		if selected != nil {
+			outputs, err := runoutput.Generate(r.Context(), archivePath, *selected)
+			response["outputs"] = outputs
+			if err != nil {
+				response["error"] = err.Error()
+				writeJSON(w, http.StatusConflict, response)
+				return
+			}
+		}
 	}
 	writeJSON(w, http.StatusOK, response)
 }

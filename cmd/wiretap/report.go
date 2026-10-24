@@ -8,7 +8,9 @@ import (
 	"os"
 	"strings"
 
+	"encoding/json"
 	"github.com/phrond/wiretap/internal/coverage"
+	"github.com/phrond/wiretap/internal/runoutput"
 )
 
 var errUsage = errors.New("usage")
@@ -25,7 +27,7 @@ func reportCommand(args []string) error {
 	flags.StringVar(&sutName, "sut-name", "", "SUT name in the report or SUT Postman collection name")
 	flags.StringVar(&outputPath, "output", "", "output file path; additional Postman collections are written alongside the primary collection (default: stdout)")
 	flags.StringVar(&outputDir, "output-dir", "", "Postman collection output directory")
-	flags.StringVar(&format, "format", "json", "output format: json, yaml, postman")
+	flags.StringVar(&format, "format", "json", "output format: json, yaml, postman, all")
 	flags.BoolVar(&includeArtifacts, "include-artifacts", false, "include artifact file paths in the report")
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -38,7 +40,7 @@ func reportCommand(args []string) error {
 	}
 	format = strings.ToLower(strings.TrimSpace(format))
 	switch format {
-	case "json", "yaml", "postman":
+	case "json", "yaml", "postman", "all":
 	default:
 		return fmt.Errorf("%w: unsupported format: %s", errUsage, format)
 	}
@@ -53,6 +55,18 @@ func reportCommand(args []string) error {
 	}
 	if format == "postman" {
 		return exportPostman(bundlePath, sutName, outputPath, outputDir)
+	}
+	if format == "all" {
+		if outputPath != "" || outputDir != "" || sutName != "" || includeArtifacts {
+			return fmt.Errorf("%w: all writes standard outputs inside the capture archive; use --bundle only", errUsage)
+		}
+		result, exportErr := runoutput.Generate(context.Background(), bundlePath, runoutput.Defaults())
+		if result != nil {
+			if err := json.NewEncoder(os.Stdout).Encode(result); err != nil {
+				return err
+			}
+		}
+		return exportErr
 	}
 	report, err := coverage.Generate(context.Background(), bundlePath, sutName, includeArtifacts)
 	if err != nil {

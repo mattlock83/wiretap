@@ -68,7 +68,8 @@ export WIRETAP_PROXY_LISTEN="127.0.0.1:${PROXY_PORT}"
 export WIRETAP_OUTPUT_DIR="$ARTIFACT_DIR"
 export WIRETAP_BASE_URL="http://127.0.0.1:${WIRETAP_PORT}"
 # Keep generated example artifacts intentionally small.
-export WIRETAP_MAX_CAPTURE_BYTES="${WIRETAP_MAX_CAPTURE_BYTES:-64}"
+export WIRETAP_MAX_CAPTURE_BYTES="${WIRETAP_MAX_CAPTURE_BYTES:-4096}"
+export WIRETAP_RESULT_FILE="${BUILD_DIR}/finish.json"
 
 export SUT_LISTEN="127.0.0.1:${SUT_PORT}"
 export SUT_BASE_URL="http://${SUT_LISTEN}"
@@ -134,17 +135,22 @@ else
   node --require ./sdk/js/tracing.js --test ./examples/basic-rest/basic-test.js || TEST_STATUS=$?
 fi
 
-BUNDLE_DIR="$(find "${ARTIFACT_DIR}" -mindepth 1 -maxdepth 1 -type d -name 'run-*' -print | sort | tail -n 1)"
+if [[ ! -f "$WIRETAP_RESULT_FILE" ]]; then
+  if [[ "$TEST_STATUS" -ne 0 ]]; then exit "$TEST_STATUS"; fi
+  echo "Suite finalization returned no artifact paths" >&2
+  exit 1
+fi
+BUNDLE_DIR="$(node -e 'console.log(JSON.parse(require("node:fs").readFileSync(process.env.WIRETAP_RESULT_FILE)).bundle_path)')"
 if [[ -z "${BUNDLE_DIR}" || ! -f "${BUNDLE_DIR}/bundle.json" ]]; then
   echo "Wiretap did not produce a bundle under ${ARTIFACT_DIR}" >&2
   exit 1
 fi
-# HTTP finalization writes the raw capture; coverage is a separate JSON export.
+# Suite finalization returns the exact archive and all selected export paths.
 node -e 'const fs = require("node:fs"); const run = JSON.parse(fs.readFileSync(process.argv[1])); if (run.run_state !== "complete") throw new Error("test hooks did not finalize capture")' "${BUNDLE_DIR}/bundle.json"
 
-"${BUILD_DIR}/wiretap-runtime" report --bundle "${BUNDLE_DIR}" --format json --output "${BUNDLE_DIR}/coverage.json"
 echo "Raw capture: ${BUNDLE_DIR}"
-echo "JSON coverage: ${BUNDLE_DIR}/coverage.json"
+echo "JSON coverage: ${BUNDLE_DIR}/exports/coverage.json"
+echo "Postman collections: ${BUNDLE_DIR}/exports/postman"
 if [[ "${TEST_STATUS}" -ne 0 ]]; then
   exit "${TEST_STATUS}"
 fi

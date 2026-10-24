@@ -65,3 +65,16 @@ Generate a JSON or YAML coverage report from a completed artifact with
 `wiretap report --bundle <run> --output coverage.json`. Keep the complete raw run
 as a CI artifact, including failed attempts, so another process can verify and
 export it offline.
+
+For a suite that should always export both formats, configure:
+
+```yaml
+outputs:
+  coverage: [json]
+  postman: true
+```
+
+The suite owner finalizes once after all workers finish. Save the returned
+`bundle_path` and `outputs` paths directly; `exports/result.json` records successes
+and export errors inside that run. Upload this archive after test failures too.
+An original test failure must retain its exit code even if finalization also fails.

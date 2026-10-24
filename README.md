@@ -26,10 +26,12 @@ npm ci --prefix sdk/js
 ```
 
 The example prints its artifact directory. Read `bundle.json` and the referenced
-JSON test recordings, or generate a coverage report:
+JSON test recordings. Enable `outputs: {coverage: [json], postman: true}` in your
+configuration to produce coverage and Postman collections during suite finalization.
+To export an existing archive offline:
 
 ```bash
-wiretap report --bundle ./artifacts/<run-id> --output coverage.json
+wiretap export --bundle ./artifacts/<run-id> --format all
 ```
 
 [More examples](examples/README.md) cover parallel Jest tests, database fixtures,
