@@ -84,6 +84,7 @@ type archiveReader struct {
 	limits LoadLimits
 	reads  int
 	bytes  int64
+	paths  map[string]struct{}
 }
 
 func (reader *archiveReader) requireReads(count int) error {
@@ -129,6 +130,9 @@ func (reader *archiveReader) readFile(path string) ([]byte, error) {
 	}
 	reader.reads++
 	reader.bytes += int64(len(raw))
+	if reader.paths != nil {
+		reader.paths[path] = struct{}{}
+	}
 	return raw, nil
 }
 

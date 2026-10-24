@@ -82,7 +82,7 @@ outcome so deliberate rejection tests can pass.
 
 Output defaults to `artifacts/microsvc-transactions/`. The command prints the
 capture path. Inspect `bundle.json` and `tests/` for captured exchanges and
-`coverage.json` for spec-derived case coverage. Logs are kept in a sibling
+`exports/coverage.json` for spec-derived case coverage. Logs are kept in a sibling
 `logs-<run>` directory.
 
 - `schemas/transactions.yaml` is an example-maintained contract aligned with

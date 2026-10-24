@@ -2,6 +2,9 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,6 +15,108 @@ import (
 	"github.com/mattlock83/wiretap/internal/bundle"
 	"github.com/mattlock83/wiretap/internal/postman"
 )
+
+func TestCLIOutputsProtectDirectlyReferencedExportPayloads(t *testing.T) {
+	for _, target := range []string{"report", "report hardlink", "postman", "all coverage", "all postman", "all receipt"} {
+		t.Run(target, func(t *testing.T) {
+			root := postmanBundleFixture(t)
+			relative := filepath.Join("exports", "coverage.json")
+			if target == "all receipt" {
+				relative = filepath.Join("exports", "result.json")
+			}
+			if target == "all postman" {
+				exports, err := postman.Generate(root, "")
+				if err != nil {
+					t.Fatal(err)
+				}
+				relative = filepath.Join("exports", "postman", exports[0].Filename)
+			}
+			before := relocateHTTPBodyReference(t, root, relative)
+			source := filepath.Join(root, relative)
+			output := source
+			if target == "report hardlink" {
+				output = filepath.Join(t.TempDir(), "report.json")
+				if err := os.Link(source, output); err != nil {
+					t.Skip(err)
+				}
+			}
+			args := []string{"report", "--bundle", root, "--output", output}
+			if target == "postman" {
+				args = []string{"export", "--bundle", root, "--format", "postman", "--output", output}
+			}
+			if target == "all coverage" || target == "all postman" || target == "all receipt" {
+				args = []string{"report", "--bundle", root, "--format", "all"}
+			}
+			if code := execute(context.Background(), args); code == 0 {
+				t.Fatal("accepted output that replaces a referenced export payload")
+			}
+			if after, err := os.ReadFile(source); err != nil || string(after) != string(before) {
+				t.Fatalf("output changed referenced payload: %v", err)
+			}
+			if _, _, err := bundle.Load(root); err != nil {
+				t.Fatalf("output changed source archive: %v", err)
+			}
+		})
+	}
+}
+
+// HTTP body references can use any contained archive path. Keep the original
+// payload as a separate inode so protecting only canonical paths misses this case.
+func relocateHTTPBodyReference(t *testing.T, root, relative string) []byte {
+	t.Helper()
+	manifestPath := filepath.Join(root, "bundle.json")
+	raw, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var run bundle.Run
+	if err := json.Unmarshal(raw, &run); err != nil {
+		t.Fatal(err)
+	}
+	reference := &run.Attempts[0]
+	attemptPath := filepath.Join(root, filepath.FromSlash(reference.Path))
+	raw, err = os.ReadFile(attemptPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var attempt bundle.Attempt
+	if err := json.Unmarshal(raw, &attempt); err != nil {
+		t.Fatal(err)
+	}
+	body := &attempt.Bodies[0]
+	data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(body.Path)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	output := filepath.Join(root, relative)
+	if err := os.MkdirAll(filepath.Dir(output), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(output, data, 0644); err != nil {
+		t.Fatal(err)
+	}
+	body.Path = filepath.ToSlash(relative)
+	raw, err = json.MarshalIndent(attempt, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(attemptPath, raw, 0644); err != nil {
+		t.Fatal(err)
+	}
+	hash := sha256.Sum256(raw)
+	reference.SHA256 = hex.EncodeToString(hash[:])
+	raw, err = json.MarshalIndent(run, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(manifestPath, raw, 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := bundle.Load(root); err != nil {
+		t.Fatalf("relocated payload must remain valid evidence: %v", err)
+	}
+	return data
+}
 
 func TestCLICoverageOutputProtectsEvidence(t *testing.T) {
 	for _, command := range []string{"report", "export"} {

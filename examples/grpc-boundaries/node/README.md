@@ -30,7 +30,7 @@ installation command.
 
 Bundles are written beneath `artifacts/grpc-node/`; set
 `WIRETAP_GRPC_ARTIFACT_DIR` to choose another directory. Each test group prints
-its capture path. Inspect `bundle.json`, `tests/`, and `coverage.json`.
+its capture path. Inspect `bundle.json`, `tests/`, and `exports/coverage.json`.
 
 The fixture exercises:
 

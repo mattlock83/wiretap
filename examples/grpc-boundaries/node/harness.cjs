@@ -202,7 +202,9 @@ async function fixture(t, { name, mode = 'provider', tls = false, explicitSessio
       };
       await inspect({ root, manifest, attempts, projection });
       // Coverage must rebuild solely from the capture after upstreams and sources are gone.
-      const coveragePath = path.join(root, 'coverage.json');
+      const exports = path.join(root, 'exports');
+      await fs.mkdir(exports, { recursive: true });
+      const coveragePath = path.join(exports, 'coverage.json');
       execFileSync(process.env.WIRETAP_EXAMPLE_BINARY, ['report', '--bundle', root, '--format', 'json', '--output', coveragePath], { stdio: 'pipe' });
       const coverage = JSON.parse(await fs.readFile(coveragePath, 'utf8'));
       assert.equal(coverage.artifact_count, attempts.length);

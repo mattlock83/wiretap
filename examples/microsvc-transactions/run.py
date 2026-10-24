@@ -46,7 +46,7 @@ def inspect_bundle(path):
     run = json.loads((path / "bundle.json").read_text())
     if run["run_state"] != "complete":
         raise RuntimeError(f"Incomplete bundle: {path}")
-    coverage = json.loads((path / "coverage.json").read_text())["contract_coverage"]
+    coverage = json.loads((path / "exports" / "coverage.json").read_text())["contract_coverage"]
     if not any(s["api_id"] == "accounts" and s["target_kind"] == "mock" for s in coverage["specs"]):
         raise RuntimeError("Bundle is missing the Accounts mock contract")
     downstream = 0
@@ -170,8 +170,9 @@ def run(args):
             if source_result.returncode == 0:
                 capture_path = source_result.stdout.strip()
                 bundles.append(("Combined", capture_path))
+                docker("exec", runtime, "mkdir", "-p", capture_path + "/exports")
                 docker("exec", runtime, "wiretap", "report", "--bundle", capture_path,
-                       "--format", "json", "--output", capture_path + "/coverage.json")
+                       "--format", "json", "--output", capture_path + "/exports/coverage.json")
             if tests.returncode:
                 raise RuntimeError("Tests failed; inspect the bundle and SUT logs")
 
@@ -185,7 +186,7 @@ def run(args):
             if copied:
                 for label, path in bundles:
                     print(f"{label} raw capture: {output / Path(path).name}")
-                    print(f"{label} JSON coverage: {output / Path(path).name / 'coverage.json'}")
+                    print(f"{label} JSON coverage: {output / Path(path).name / 'exports' / 'coverage.json'}")
             for name in reversed(containers):
                 logs(name)
                 subprocess.run(["docker", "rm", "-f", name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

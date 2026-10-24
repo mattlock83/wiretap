@@ -724,7 +724,11 @@ func LoadWithLimits(root string, limits LoadLimits) (*Run, []*artifact.Artifact,
 		return nil, nil, err
 	}
 	reader := &archiveReader{limits: limits}
-	root, err = filepath.Abs(root)
+	return loadWithReader(root, reader)
+}
+
+func loadWithReader(root string, reader *archiveReader) (*Run, []*artifact.Artifact, error) {
+	root, err := filepath.Abs(root)
 	if err != nil {
 		return nil, nil, err
 	}

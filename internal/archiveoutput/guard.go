@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/mattlock83/wiretap/internal/bundle"
 )
 
 // ErrDestination identifies an output that would replace or alias raw evidence.
@@ -22,14 +24,18 @@ type Guard struct {
 	directories   []string
 }
 
-// New inventories source identities after the caller has verified the archive.
-// Only metadata is read, and the inventory is reused for all generated files.
+// New verifies the archive and inventories source identities. The inventory is
+// reused for all generated files, including sources stored in exports.
 func New(archive string) (*Guard, error) {
 	root, err := filepath.Abs(archive)
 	if err != nil {
 		return nil, err
 	}
 	root, err = filepath.EvalSymlinks(root)
+	if err != nil {
+		return nil, err
+	}
+	sources, err := bundle.EvidencePaths(root)
 	if err != nil {
 		return nil, err
 	}
@@ -79,6 +85,11 @@ func New(archive string) (*Guard, error) {
 			}
 		}
 		return nil
+	}
+	for _, source := range sources {
+		if err := collect(source); err != nil {
+			return nil, err
+		}
 	}
 	for _, name := range []string{"bundle.json", "tests", "contracts", "payloads"} {
 		path := filepath.Join(root, name)
