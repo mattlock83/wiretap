@@ -2,7 +2,7 @@ const childProcess = require('node:child_process');
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
-const { withoutTracing } = require('./tracing');
+const { CoreClient } = require('./control-client');
 
 function duration(value, fallback, name) {
   value ??= fallback;
@@ -32,7 +32,7 @@ async function startManagedRuntime(options = {}) {
   const env = { ...process.env, WIRETAP_READY_FILE: readyFile,
     WIRETAP_HTTP_LISTEN: '127.0.0.1:0', WIRETAP_PROXY_LISTEN: '127.0.0.1:0',
     ...(outputDir ? { WIRETAP_OUTPUT_DIR: outputDir } : {}) };
-  let child, exited = false, exitDescription, logs = '', baseUrl, runtimeInfo, closing;
+  let child, exited = false, exitDescription, logs = '', baseUrl, runtimeInfo, closing, client;
   let resolveExit;
   const exit = new Promise(resolve => { resolveExit = resolve; });
   // Keep useful startup diagnostics bounded even if a failing process is noisy.
@@ -44,23 +44,6 @@ async function startManagedRuntime(options = {}) {
     let timer;
     try { await Promise.race([exit, new Promise(resolve => { timer = setTimeout(resolve, shutdownTimeoutMs); })]); }
     finally { clearTimeout(timer); }
-  }
-  async function request(endpoint, body, signal) {
-    const deadline = AbortSignal.timeout(timeoutMs);
-    const response = await withoutTracing(() => fetch(new URL(endpoint, baseUrl), {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body), signal: signal ? AbortSignal.any([signal, deadline]) : deadline
-    }));
-    const text = await response.text();
-    let receipt;
-    try { receipt = JSON.parse(text); } catch { throw new Error(`Wiretap ${endpoint} returned an invalid JSON response (${response.status})`); }
-    if (!response.ok) {
-      const error = new Error(`Wiretap ${endpoint} failed (${response.status}): ${receipt.error || response.statusText}`);
-      error.status = response.status;
-      error.body = receipt;
-      throw error;
-    }
-    return receipt;
   }
   async function stop() {
     if (!child || exited) return;
@@ -76,7 +59,7 @@ async function startManagedRuntime(options = {}) {
     if (!closing) closing = (async () => {
       let receipt, failure;
       try {
-        if (runtimeInfo) receipt = await request('/v1/finishRun', {});
+        if (runtimeInfo) receipt = await client.finishRun();
       } catch (error) { failure = error; receipt = error.body; }
       try { await stop(); } catch (error) { failure ??= error; }
       process.removeListener('exit', onExit);
@@ -124,7 +107,8 @@ async function startManagedRuntime(options = {}) {
         await Promise.race([exit, wait(Math.min(25, Math.max(1, deadline - Date.now())))]);
       }
     }
-    runtimeInfo = await request('/v1/startRun', {}, options.signal);
+    client = new CoreClient({ baseUrl, timeoutMs, requireJSON: true });
+    runtimeInfo = await client.startRun({}, { signal: options.signal });
     if (options.signal?.aborted) throw abortError(options.signal);
     options.signal?.addEventListener('abort', onAbort, { once: true });
     return { baseUrl, sutUrl: runtimeInfo.sut_url, runtimeInfo, close };

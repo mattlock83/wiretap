@@ -1,6 +1,13 @@
 import type { ManagedRuntimeOptions } from './managed-runtime';
+import type { CaptureOptions, TestOptions } from './index';
 
 export interface WiretapJestOptions extends Omit<ManagedRuntimeOptions, 'signal' | 'cwd'> {
+  /** Express/Node handler module, loaded inside each Jest test file. Supports <rootDir>. */
+  app?: string;
+  /** Advanced serializable capture options; dynamic fixtures use captureJest. */
+  capture?: Omit<CaptureOptions, 'onSession' | 'explicitSession' | 'tracerProvider' | 'testDefaults'> & {
+    testDefaults?: Omit<TestOptions, 'onSession'>;
+  };
   /** Required for parallel workers; every boundary must propagate test trace context. */
   explicitSession?: boolean;
 }

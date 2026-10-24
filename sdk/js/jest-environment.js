@@ -60,6 +60,7 @@ class WiretapEnvironment extends TestEnvironment {
     super(config, context);
     this.relativeTestPath = path.relative(config.projectConfig.rootDir, context.testPath).split(path.sep).join('/');
     this.captureOptions = config.projectConfig.testEnvironmentOptions?.wiretap || {};
+    this.projectRoot = config.projectConfig.rootDir;
     if (this.captureOptions.autoCapture && config.globalConfig.maxWorkers > 1 && !this.captureOptions.explicitSession) {
       throw new Error('Wiretap Jest capture uses one worker by default; parallel workers require explicitSession: true and trace propagation from the SUT');
     }
@@ -69,6 +70,7 @@ class WiretapEnvironment extends TestEnvironment {
     await super.setup();
     sdk.initializeTracing({ instrumentation: this.global.process.env.WIRETAP_EXISTING_OTEL !== '1' });
     this.global.__wiretapSDK = sdk;
+    this.global.__wiretapJestApp = { module: this.captureOptions.app, rootDir: this.projectRoot };
   }
   async teardown() {
     try {
@@ -111,7 +113,7 @@ class WiretapEnvironment extends TestEnvironment {
         pending = test.fn.__wiretapStart(name);
         test.fn.__wiretapAttempt = pending;
       } else {
-        const { autoCapture, managed, globalSetup, globalTeardown, ...defaults } = this.captureOptions;
+        const { autoCapture, app, managed, globalSetup, globalTeardown, ...defaults } = this.captureOptions;
         const config = { ...defaults, ...this.global.__wiretapCaptureConfig, manageRuntime: false };
         this.runtime ||= sdk.startCapture(config);
         pending = this.runtime.then(runtime => runtime.createTestAttempt(name, {

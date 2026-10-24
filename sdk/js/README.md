@@ -8,24 +8,19 @@ TypeScript declarations are included. See [configuration](https://github.com/mat
 
 ## Existing Jest tests: automatic capture
 
-For Jest 29 or 30 on Node 22+, wrap your existing Node-environment configuration:
+For Jest 29 or 30 on Node 22+, wrap your existing configuration and name your app module:
 
 ```js
 // jest.config.cjs
 const { withWiretap } = require('@wiretap/sdk/jest');
-module.exports = withWiretap({
-  setupFilesAfterEnv: ['<rootDir>/test/wiretap.cjs'],
-  // Keep your existing testMatch, reporters and other Jest settings here.
+module.exports = withWiretap(existingConfig, {
+  app: '<rootDir>/app.js',
 });
 ```
 
-For an Express app, register its existing request handler:
-
-```js
-// test/wiretap.cjs
-const { captureJest } = require('@wiretap/sdk/jest');
-captureJest({ app: require('../app') });
-```
+The app loads inside Jest, so existing mocks and per-file isolation work normally.
+No extra setup file is required. For dynamic app construction or custom fixtures,
+see the [Jest guide](https://github.com/mattlock83/wiretap/blob/main/sdk/js/docs/jest.md).
 
 Point your shared client at `process.env.WIRETAP_SUT_URL`, for example
 `supertest(process.env.WIRETAP_SUT_URL || app)`. Keep existing test files,

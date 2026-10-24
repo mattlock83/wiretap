@@ -26,18 +26,9 @@ Keep the existing Jest settings and wrap them:
 ```js
 // jest.wiretap.config.cjs
 const { withWiretap } = require('@wiretap/sdk/jest');
-module.exports = withWiretap({
-  ...require('./package.json').jest,
-  setupFilesAfterEnv: ['<rootDir>/wiretap/setup.cjs'],
+module.exports = withWiretap(require('./package.json').jest, {
+  app: '<rootDir>/app.js',
 });
-```
-
-Register the existing Express app, which is isolated per Jest test file:
-
-```js
-// wiretap/setup.cjs
-const { captureJest } = require('@wiretap/sdk/jest');
-captureJest({ app: require('../app') });
 ```
 
 Change one shared client line in `utils/apiUtility.js`:
@@ -49,8 +40,11 @@ const api = supertest(process.env.WIRETAP_SUT_URL || app);
 The [project configuration](overlay/.wiretap.yaml) selects the
 [OpenAPI contract](overlay/wiretap/openapi.yaml) and outputs. The runtime URL is
 assigned automatically. No assertions or test files change. The SDK starts and
-stops Wiretap; the setup helper hosts the app. With an already running API, set
-`sut.url` in the project configuration and omit the setup helper.
+stops Wiretap and hosts the app. The app loads inside each Jest test file, after
+its mocks are registered, and stays available through user cleanup hooks. Existing
+setup files keep their order. With an already running API, set `sut.url` in the
+project configuration and omit `app`. For a dynamic fixture, keep using
+`captureJest({ app })` from your own setup file instead of the `app` option.
 
 To rerun the installed demo from its directory:
 

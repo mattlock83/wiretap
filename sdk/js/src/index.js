@@ -1,6 +1,6 @@
 const { AsyncLocalStorage } = require("node:async_hooks");
 const tracing = require("./tracing");
-const DEFAULT_BASE_URL = "http://127.0.0.1:18000";
+const { CoreClient } = require("./control-client");
 
 function rejectRemovedRedactions(options) {
   if (options && (Object.hasOwn(options, "redactions") ||
@@ -95,60 +95,6 @@ function normalizeDependencies(value) {
   });
 }
 
-class CoreClient {
-  constructor(config = {}) {
-    this.baseUrl = config.baseUrl || process.env.WIRETAP_BASE_URL || DEFAULT_BASE_URL;
-    this.timeoutMs = config.timeoutMs ?? 30000;
-    if (!Number.isSafeInteger(this.timeoutMs) || this.timeoutMs < 0 || this.timeoutMs > 2147483647) {
-      throw new Error("timeoutMs must be an integer between 0 and 2147483647 (0 disables the control request deadline)");
-    }
-    this.explicitTimeout = config.timeoutMs !== undefined;
-  }
-
-  startRun(payload) { return this._request("POST", "/v1/startRun", payload || {}); }
-  setupTest(payload) { return this._request("POST", "/v1/setupTest", payload || {}); }
-  teardownTest(payload) { return this._request("POST", "/v1/teardownTest", payload || {}); }
-  report(payload) { return this._request("POST", "/v1/report", payload || {}); }
-  finishRun(payload = {}) { return this._request("POST", "/v1/finishRun", payload); }
-
-  async _request(method, path, payload) {
-    if (typeof fetch !== "function") throw new Error("global fetch is not available; require Node.js >= 18");
-    const options = { method, headers: { "content-type": "application/json" } };
-    if (payload !== undefined) options.body = JSON.stringify(payload);
-    // A default cleanup deadline must allow the requested runtime drain. An
-    // explicitly configured deadline (including zero) always belongs to the caller.
-    const timeoutMs = !this.explicitTimeout && path === "/v1/teardownTest"
-      ? Math.max(this.timeoutMs, (payload?.drain_timeout_ms ?? 5000) + 10000)
-      : this.timeoutMs;
-    let timeout, controller, deadlineError;
-    if (timeoutMs > 0) {
-      controller = new AbortController();
-      options.signal = controller.signal;
-      timeout = setTimeout(() => {
-        deadlineError = new Error(`Wiretap control request ${method} ${path} timed out after ${timeoutMs}ms`);
-        deadlineError.name = "TimeoutError";
-        deadlineError.code = "WIRETAP_CONTROL_TIMEOUT";
-        controller.abort(deadlineError);
-      }, timeoutMs);
-    }
-    try {
-      const res = await tracing.withoutTracing(() => fetch(new URL(path, this.baseUrl), options));
-      const text = await res.text();
-      const body = text && (res.headers.get("content-type") || "").includes("application/json") ? JSON.parse(text) : (text || null);
-      if (!res.ok) {
-        const err = new Error(`request failed: ${res.status}${body?.error ? `: ${body.error}` : ""}`);
-        err.status = res.status;
-        err.body = body;
-        throw err;
-      }
-      return body;
-    } catch (error) {
-      throw deadlineError || error;
-    } finally {
-      if (timeout) clearTimeout(timeout);
-    }
-  }
-}
 
 class Runtime {
   constructor(client, config = {}, runtimeInfo = {}) {

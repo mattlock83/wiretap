@@ -54,34 +54,8 @@ function createJestSuite(config = {}, api = globalThis) {
 // callbacks; the environment owns each attempt and its final framework outcome.
 function captureJest(config = {}, api = globalThis) {
   const { app } = config;
-  if (!globalThis.__wiretapSDK) throw new Error('Use withWiretap in your Jest configuration before calling captureJest');
-  if (globalThis.__wiretapCaptureConfig) throw new Error('captureJest must be registered once per test file');
   if (app !== undefined && typeof app !== 'function') throw new TypeError('captureJest app must be a Node HTTP request handler, such as an Express app');
-  let server, address;
-  const descriptors = Object.getOwnPropertyDescriptors(config);
-  delete descriptors.app;
-  if (app) descriptors.sutBaseUrl = { enumerable: true, get: () => address || config.sutBaseUrl };
-  globalThis.__wiretapCaptureConfig = Object.defineProperties({}, descriptors);
-  if (app) {
-    const http = require('node:http');
-    api.beforeAll(async () => {
-      server = http.createServer(app);
-      await new Promise((resolve, reject) => {
-        server.once('error', reject);
-        server.listen(0, '127.0.0.1', resolve);
-      });
-      address = `http://127.0.0.1:${server.address().port}`;
-    });
-    // The environment closes the owned host after every user afterAll hook.
-    // A hook registered here would run before cleanup hooks in test files.
-    globalThis.__wiretapCleanupApp = async () => {
-      if (!server?.listening) return;
-      await new Promise((resolve, reject) => {
-        server.close(error => error ? reject(error) : resolve());
-        server.closeAllConnections();
-      });
-    };
-  }
+  require('./src/jest-app').registerCapture(config, api, app ? () => app : undefined);
 }
 
 module.exports = { createJestSuite, captureJest, withWiretap: require('./src/jest-config').withWiretap };

@@ -38,7 +38,7 @@ export interface TestOptions {
   drainTimeoutMs?: number;
   onSession?: (session: Session) => unknown | Promise<unknown>;
 }
-export interface Config extends TestOptions {
+export interface CaptureOptions extends TestOptions {
   outputs?: OutputOptions;
   baseUrl?: string;
   /** Control HTTP deadline: 30 seconds by default; default teardown allows its
@@ -48,9 +48,12 @@ export interface Config extends TestOptions {
   proxy?: true | { listenAddr?: string; targetUrl?: string };
   instrumentation?: boolean;
   tracerProvider?: TracerProvider;
+  testDefaults?: TestOptions;
+}
+/** Framework-neutral options remain compatible with existing callers. */
+export interface Config extends CaptureOptions {
   manageRuntime?: boolean;
   autoHooks?: boolean;
-  testDefaults?: TestOptions;
   testApi?: { test: Function; before: Function; after: Function };
 }
 export interface Session {

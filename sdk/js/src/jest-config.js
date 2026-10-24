@@ -11,7 +11,16 @@ function withWiretap(config = {}, options = {}) {
   if (config.testRunner && !['jest-circus/runner', require.resolve('jest-circus/runner')].includes(config.testRunner)) {
     throw new Error('withWiretap requires the Jest Circus runner');
   }
-  const { explicitSession = false, ...managed } = options;
+  const { explicitSession = false, app, capture = {}, ...managed } = options;
+  if (app !== undefined && (typeof app !== 'string' || !app.trim())) {
+    throw new TypeError('withWiretap app must be a module path, such as <rootDir>/app.js');
+  }
+  if (!capture || typeof capture !== 'object' || Array.isArray(capture)) {
+    throw new TypeError('withWiretap capture must be an options object');
+  }
+  if (capture.onSession !== undefined || capture.tracerProvider !== undefined || capture.testDefaults?.onSession !== undefined) {
+    throw new TypeError('Jest configuration serializes capture options; register callbacks or tracerProvider through captureJest in setupFilesAfterEnv');
+  }
   if ('signal' in managed) throw new Error('withWiretap manages cancellation through Jest; signal is only supported by startManagedRuntime');
   return {
     ...config,
@@ -19,12 +28,15 @@ function withWiretap(config = {}, options = {}) {
     testEnvironment: environment,
     globalSetup: require.resolve('./jest-global-setup'),
     globalTeardown: require.resolve('./jest-global-teardown'),
+    ...(app ? { setupFilesAfterEnv: [require.resolve('./jest-app-setup'), ...(config.setupFilesAfterEnv || [])] } : {}),
     testEnvironmentOptions: {
       ...config.testEnvironmentOptions,
       wiretap: {
         ...config.testEnvironmentOptions?.wiretap,
+        ...capture,
         autoCapture: true,
         explicitSession,
+        app,
         managed,
         globalSetup: config.globalSetup,
         globalTeardown: config.globalTeardown
