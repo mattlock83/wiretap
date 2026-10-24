@@ -10,13 +10,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/phrond/wiretap/internal/artifact"
-	"github.com/phrond/wiretap/internal/bundle"
-	"github.com/phrond/wiretap/internal/coverage"
-	"github.com/phrond/wiretap/internal/proxy"
-	"github.com/phrond/wiretap/internal/redact"
-	"github.com/phrond/wiretap/internal/runoutput"
-	"github.com/phrond/wiretap/internal/tracecontext"
+	"github.com/mattlock83/wiretap/internal/artifact"
+	"github.com/mattlock83/wiretap/internal/bundle"
+	"github.com/mattlock83/wiretap/internal/coverage"
+	"github.com/mattlock83/wiretap/internal/proxy"
+	"github.com/mattlock83/wiretap/internal/redact"
+	"github.com/mattlock83/wiretap/internal/runoutput"
+	"github.com/mattlock83/wiretap/internal/tracecontext"
+
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -176,7 +177,6 @@ func (a *App) handleSetupTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := payload.Identity.Validate(); err != nil {
-
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}

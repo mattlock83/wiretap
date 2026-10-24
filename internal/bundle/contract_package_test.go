@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/phrond/wiretap/internal/artifact"
+	"github.com/mattlock83/wiretap/internal/artifact"
 )
 
 func opaquePackageFixture(t *testing.T, kind string) (*Writer, []artifact.SchemaRef) {

@@ -12,6 +12,7 @@ JSON artifacts. JSON/YAML reports calculate operation and contract coverage.
 | [Capture existing tests](getting-started-existing-tests.md) | Configure boundaries, connect lifecycle hooks and run capture. |
 | [Runnable examples](../examples/README.md) | Try HTTP/gRPC capture, database fixtures or Microsvc Transactions. |
 | [Configuration and commands](configuration.md) | Configure `.wiretap.yaml`, ownership, specs and CLI commands. |
+| [Local installation and release preparation](local-release.md) | Build versioned binaries, pack the SDK and test installation in an external project. |
 | [JavaScript SDK](../sdk/js/README.md) | Use native hooks or the optional Node/Jest adapters. |
 | [Go SDK](../sdk/go/README.md) | Integrate `testing` and existing clients. |
 | [Runtime HTTP API](runtime-api.md) | Integrate another language or test framework directly. |

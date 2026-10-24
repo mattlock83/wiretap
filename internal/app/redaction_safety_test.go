@@ -11,12 +11,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/phrond/wiretap/internal/artifact"
-	"github.com/phrond/wiretap/internal/bundle"
-	"github.com/phrond/wiretap/internal/coverage"
-	"github.com/phrond/wiretap/internal/postman"
-	"github.com/phrond/wiretap/internal/project"
-	"github.com/phrond/wiretap/internal/proxy"
+	"github.com/mattlock83/wiretap/internal/artifact"
+	"github.com/mattlock83/wiretap/internal/bundle"
+	"github.com/mattlock83/wiretap/internal/coverage"
+	"github.com/mattlock83/wiretap/internal/postman"
+	"github.com/mattlock83/wiretap/internal/project"
+	"github.com/mattlock83/wiretap/internal/proxy"
 )
 
 func TestRedactedInvalidHTTPSecretAbsentFromArchiveAndExports(t *testing.T) {

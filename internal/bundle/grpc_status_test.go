@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/phrond/wiretap/internal/artifact"
-	"github.com/phrond/wiretap/internal/grpccontract"
-	"github.com/phrond/wiretap/internal/redact"
+	"github.com/mattlock83/wiretap/internal/artifact"
+	"github.com/mattlock83/wiretap/internal/grpccontract"
+	"github.com/mattlock83/wiretap/internal/redact"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"

@@ -1,7 +1,7 @@
 package app
 
 import (
-	"github.com/phrond/wiretap/internal/bundle"
+	"github.com/mattlock83/wiretap/internal/bundle"
 	"net/http"
 	"testing"
 )

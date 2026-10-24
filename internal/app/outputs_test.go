@@ -7,7 +7,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/phrond/wiretap/internal/runoutput"
+	"github.com/mattlock83/wiretap/internal/runoutput"
 )
 
 func TestFinishRunProducesOutputsAndPreservesFailedAttempts(t *testing.T) {

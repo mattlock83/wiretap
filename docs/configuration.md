@@ -156,6 +156,7 @@ through the [HTTP API](runtime-api.md), usually via an SDK.
 | Command | Purpose |
 | --- | --- |
 | `wiretap [--config path]` | Start the HTTP control service; wait for capture lifecycle calls. |
+| `wiretap version [--json]` | Show producer version and source commit; `--version` is an alias. |
 | `wiretap report --bundle <path>` | Print a JSON coverage report from verified raw artifacts; `--format yaml` and `--output <file>` are supported. |
 | `wiretap export --bundle <path> --format json` | Export a diagnostic coverage report to stdout; `--format yaml` and `--output <file>` are also supported. |
 | `wiretap export --bundle <path> --format postman --output-dir <directory>` | Export HTTP v2.1 and gRPC v3 JSON collections for the SUT and mocked dependencies, with test folders and saved interactions. |

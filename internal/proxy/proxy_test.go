@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	tlsmgr "github.com/phrond/wiretap/internal/tls"
+	tlsmgr "github.com/mattlock83/wiretap/internal/tls"
 )
 
 type recordingRecorder struct {

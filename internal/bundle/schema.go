@@ -16,9 +16,9 @@ import (
 	"time"
 
 	"github.com/getkin/kin-openapi/openapi3"
-	"github.com/phrond/wiretap/internal/artifact"
-	"github.com/phrond/wiretap/internal/grpccontract"
-	"github.com/phrond/wiretap/internal/schemajson"
+	"github.com/mattlock83/wiretap/internal/artifact"
+	"github.com/mattlock83/wiretap/internal/grpccontract"
+	"github.com/mattlock83/wiretap/internal/schemajson"
 )
 
 type schemaFile struct {

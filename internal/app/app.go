@@ -9,11 +9,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/phrond/wiretap/internal/artifact"
-	"github.com/phrond/wiretap/internal/bundle"
-	"github.com/phrond/wiretap/internal/core"
-	"github.com/phrond/wiretap/internal/grpccontract"
-	"github.com/phrond/wiretap/internal/project"
+	"github.com/mattlock83/wiretap/internal/artifact"
+	"github.com/mattlock83/wiretap/internal/bundle"
+	"github.com/mattlock83/wiretap/internal/core"
+	"github.com/mattlock83/wiretap/internal/grpccontract"
+	"github.com/mattlock83/wiretap/internal/project"
 	"golang.org/x/net/http2"
 )
 

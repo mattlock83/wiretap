@@ -11,7 +11,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/phrond/wiretap/internal/grpccontract"
+	"github.com/mattlock83/wiretap/internal/grpccontract"
 )
 
 func applyTargets(exports []Export, targets map[string]GRPCTarget, recordedBoundaries map[string]bool) error {

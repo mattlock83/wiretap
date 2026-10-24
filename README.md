@@ -18,7 +18,7 @@ or HTTP API from test lifecycle hooks.
 
 ## Try it
 
-From this checkout, with Go 1.24+, Node.js 20.12+, Bash and curl available:
+From this checkout, with Go 1.26+, Node.js 22+, Bash and curl available:
 
 ```bash
 npm ci --prefix sdk/js
@@ -49,6 +49,9 @@ Microsvc Transactions with authenticated tests, and
 Follow the [existing-tests guide](docs/getting-started-existing-tests.md), or the
 [JavaScript](sdk/js/README.md), [Go](sdk/go/README.md) and
 [HTTP API](docs/runtime-api.md) references.
+
+See [local installation and release preparation](docs/local-release.md) for
+binary archives, the packed SDK, clean-project smoke tests and the local container.
 
 HTTP requires an OpenAPI spec by default; individual APIs can explicitly opt out.
 gRPC requires a Protobuf contract: reflection is the default, with local `.proto`

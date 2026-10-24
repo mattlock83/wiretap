@@ -654,7 +654,7 @@ architecture. Wiretap should own contract translation, transport, fixture
 lifecycle, properties, coverage and raw JSON evidence. Hegel can supply search
 machinery. Its beta stability, packaging, supported platforms and structured
 result access need a bounded feasibility spike before adoption.
-Check the current Go binding's Go 1.26 requirement against Wiretap's Go 1.24
+Check the current Go binding's Go 1.26 requirement against Wiretap's Go 1.26
 baseline, native-library extraction/loading, and access to failures without
 parsing console output.
 See [Hegel architecture](https://hegel.dev/explanation/how-hegel-works),

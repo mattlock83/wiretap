@@ -1,6 +1,9 @@
-module github.com/phrond/wiretap
+module github.com/mattlock83/wiretap
 
 go 1.26.0
+
+toolchain go1.26.10
+
 
 require (
 	connectrpc.com/connect v1.17.0

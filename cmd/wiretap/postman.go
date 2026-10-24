@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/phrond/wiretap/internal/postman"
+	"github.com/mattlock83/wiretap/internal/postman"
 )
 
 func exportPostman(bundlePath, sutName, outputPath, outputDir string) error {

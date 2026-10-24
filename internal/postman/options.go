@@ -11,7 +11,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/phrond/wiretap/internal/artifact"
+	"github.com/mattlock83/wiretap/internal/artifact"
 )
 
 // Options affects only derived exports. Strict export is the default. Opting

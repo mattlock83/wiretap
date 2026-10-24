@@ -13,10 +13,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/phrond/wiretap/internal/artifact"
-	"github.com/phrond/wiretap/internal/bundle"
-	"github.com/phrond/wiretap/internal/redact"
-	"github.com/phrond/wiretap/internal/runoutput"
+	"github.com/mattlock83/wiretap/internal/artifact"
+	"github.com/mattlock83/wiretap/internal/bundle"
+	"github.com/mattlock83/wiretap/internal/redact"
+	"github.com/mattlock83/wiretap/internal/runoutput"
+
 	"gopkg.in/yaml.v3"
 )
 

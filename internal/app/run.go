@@ -5,8 +5,8 @@ import (
 	"errors"
 	"time"
 
-	"github.com/phrond/wiretap/internal/bundle"
-	"github.com/phrond/wiretap/internal/proxy"
+	"github.com/mattlock83/wiretap/internal/bundle"
+	"github.com/mattlock83/wiretap/internal/proxy"
 )
 
 func (a *App) startRun(ctx context.Context) error {

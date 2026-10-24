@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/phrond/wiretap/internal/core"
+	"github.com/mattlock83/wiretap/internal/core"
 )
 
 func TestEndToEndCapturesTestToSUTTraffic(t *testing.T) {

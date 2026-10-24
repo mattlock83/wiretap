@@ -9,9 +9,9 @@ import (
 	"strings"
 
 	"encoding/json"
-	"github.com/phrond/wiretap/internal/coverage"
-	"github.com/phrond/wiretap/internal/postman"
-	"github.com/phrond/wiretap/internal/runoutput"
+	"github.com/mattlock83/wiretap/internal/coverage"
+	"github.com/mattlock83/wiretap/internal/postman"
+	"github.com/mattlock83/wiretap/internal/runoutput"
 )
 
 var errUsage = errors.New("usage")

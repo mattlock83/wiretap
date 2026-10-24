@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/phrond/wiretap/internal/artifact"
-	"github.com/phrond/wiretap/internal/bundle"
-	"github.com/phrond/wiretap/internal/coverage"
-	"github.com/phrond/wiretap/internal/postman"
+	"github.com/mattlock83/wiretap/internal/artifact"
+	"github.com/mattlock83/wiretap/internal/bundle"
+	"github.com/mattlock83/wiretap/internal/coverage"
+	"github.com/mattlock83/wiretap/internal/postman"
 )
 
 func failedRun(t *testing.T, changes ...func(*artifact.Artifact)) string {

@@ -1,6 +1,6 @@
 # Go test integration
 
-Import `github.com/phrond/wiretap/sdk/go` as `wiretap`. The helper uses the root
+Import `github.com/mattlock83/wiretap/sdk/go` as `wiretap`. The helper uses the root
 Go module and standard OTel APIs. Put addresses and specs in `.wiretap.yaml` and
 start `wiretap` alongside the SUT and mocks using your existing harness. Run tests
 normally with `go test`. The SDK inherits runtime defaults over HTTP; it never

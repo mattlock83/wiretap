@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/phrond/wiretap/examples/grpc-streaming/fixture"
-	wiretap "github.com/phrond/wiretap/sdk/go"
+	"github.com/mattlock83/wiretap/examples/grpc-streaming/fixture"
+	wiretap "github.com/mattlock83/wiretap/sdk/go"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )

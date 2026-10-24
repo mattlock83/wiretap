@@ -6,11 +6,11 @@ and print their capture directory. Inspect `bundle.json`, the attempts in
 
 | Example | Demonstrates | Requirements |
 | --- | --- | --- |
-| [Basic REST](basic-rest/README.md) | Existing Node tests and an HTTP dependency mock; optional parallel Jest capture. | Go 1.24+, Node.js 20.12+, Bash and curl. |
-| [Microsvc Transactions](microsvc-transactions/README.md) | A real service image, an Accounts mock, disposable database state and authenticated tests. | Go 1.24+, Python 3.9+, Docker and the documented local images. |
-| [Native gRPC](grpc-boundaries/README.md) | Existing grpc-go test, gRPC SUT and gRPC mock, reflection/local contracts and JSON coverage. | Go 1.24+, Bash, Python 3 and curl. |
-| [Streaming gRPC](grpc-streaming/README.md) | All four RPC shapes, traced provider and dependency calls, per-message evidence and structural coverage. | Go 1.24+, Bash, Python 3 and curl. |
-| [Native Node gRPC](grpc-boundaries/node/README.md) | Ordinary Node clients/mocks, a Go provider, local contracts, traced parallel and mixed paths, TLS and offline coverage rebuilding. | Go 1.24+, Node.js 20.12+, Bash and OpenSSL. |
+| [Basic REST](basic-rest/README.md) | Existing Node tests and an HTTP dependency mock; optional parallel Jest capture. | Go 1.26+, Node.js 22+, Bash and curl. |
+| [Microsvc Transactions](microsvc-transactions/README.md) | A real service image, an Accounts mock, disposable database state and authenticated tests. | Go 1.26+, Python 3.9+, Docker and the documented local images. |
+| [Native gRPC](grpc-boundaries/README.md) | Existing grpc-go test, gRPC SUT and gRPC mock, reflection/local contracts and JSON coverage. | Go 1.26+, Bash, Python 3 and curl. |
+| [Streaming gRPC](grpc-streaming/README.md) | All four RPC shapes, traced provider and dependency calls, per-message evidence and structural coverage. | Go 1.26+, Bash, Python 3 and curl. |
+| [Native Node gRPC](grpc-boundaries/node/README.md) | Ordinary Node clients/mocks, a Go provider, local contracts, traced parallel and mixed paths, TLS and offline coverage rebuilding. | Go 1.26+, Node.js 22+, Bash and OpenSSL. |
 
 ## Basic REST
 

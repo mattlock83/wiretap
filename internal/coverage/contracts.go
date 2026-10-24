@@ -7,8 +7,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/phrond/wiretap/internal/artifact"
-	"github.com/phrond/wiretap/internal/bundle"
+	"github.com/mattlock83/wiretap/internal/artifact"
+	"github.com/mattlock83/wiretap/internal/bundle"
 )
 
 // ContractRulesVersion changes whenever target identity or measurement semantics change.

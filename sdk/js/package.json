@@ -4,9 +4,9 @@
   "description": "Test lifecycle and tracing SDK for Wiretap boundary capture",
   "main": "src/index.js",
   "type": "commonjs",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "engines": {
-    "node": "^18.19.0 || >=20.6.0"
+    "node": ">=22"
   },
   "scripts": {
     "test": "node --test test/*.test.js && jest --config jest.config.cjs"
@@ -32,5 +32,39 @@
       "optional": true
     }
   },
-  "types": "src/index.d.ts"
+  "types": "src/index.d.ts",
+  "files": [
+    "src/",
+    "tracing.js",
+    "tracing.d.ts",
+    "jest.js",
+    "jest.d.ts",
+    "jest-environment.js",
+    "LICENSE",
+    "README.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mattlock83/wiretap.git",
+    "directory": "sdk/js"
+  },
+  "exports": {
+    ".": {
+      "types": "./src/index.d.ts",
+      "require": "./src/index.js",
+      "default": "./src/index.js"
+    },
+    "./tracing": {
+      "types": "./tracing.d.ts",
+      "require": "./tracing.js",
+      "default": "./tracing.js"
+    },
+    "./jest": {
+      "types": "./jest.d.ts",
+      "require": "./jest.js",
+      "default": "./jest.js"
+    },
+    "./jest-environment": "./jest-environment.js",
+    "./package.json": "./package.json"
+  }
 }

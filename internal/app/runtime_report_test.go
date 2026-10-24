@@ -12,10 +12,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/phrond/wiretap/internal/artifact"
-	"github.com/phrond/wiretap/internal/bundle"
-	"github.com/phrond/wiretap/internal/core"
-	"github.com/phrond/wiretap/internal/coverage"
+	"github.com/mattlock83/wiretap/internal/artifact"
+	"github.com/mattlock83/wiretap/internal/bundle"
+	"github.com/mattlock83/wiretap/internal/core"
+	"github.com/mattlock83/wiretap/internal/coverage"
 )
 
 func TestRuntimeReportReturnsCoverageWithoutGeneratedViews(t *testing.T) {

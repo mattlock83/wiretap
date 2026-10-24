@@ -6,7 +6,7 @@ proxy; the test also calls the SUT through the same proxy. The test attempt
 named `hello world happy flow` therefore contains both the inbound test request
 and the correlated downstream inventory request.
 
-Run from the repository root with Go 1.24+, Node.js 20.12+, Bash and curl:
+Run from the repository root with Go 1.26+, Node.js 22+, Bash and curl:
 
 ```bash
 npm ci --prefix sdk/js

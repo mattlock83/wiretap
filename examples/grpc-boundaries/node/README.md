@@ -14,7 +14,7 @@ npm ci --prefix examples/grpc-boundaries/node
 ./examples/grpc-boundaries/run-node.sh
 ```
 
-Requires Go 1.24+, Node.js 20.12+, Bash and OpenSSL with `req -addext` support.
+Requires Go 1.26+, Node.js 22+, Bash and OpenSSL with `req -addext` support.
 Go builds the Wiretap binary and the existing Go provider used by the cross-language
 case. The other providers and mocks run in Node. The runner uses temporary local
 ports and creates a fresh one-day development TLS certificate. It stops processes

@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/phrond/wiretap/internal/tracecontext"
+	"github.com/mattlock83/wiretap/internal/tracecontext"
 	"go.opentelemetry.io/otel/trace"
 )
 

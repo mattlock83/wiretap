@@ -107,8 +107,7 @@ wiretap.test("creates an order", async () => {
 The SDK instruments Node `http`/`https` and native `fetch` through
 standard HTTP and Undici instrumentation. Keep existing calls and assertions.
 Other clients work when they use an instrumented stack; custom transports,
-ESM module hooks and in-process mock interception need separate verification. The SDK requires Node 18.19+ or 20.6+; its
-`node:test` adapter requires **Node 20.12+** for the runner's
+ESM module hooks and in-process mock interception need separate verification. The SDK and its `node:test` adapter require **Node 22+** for the runner's
 [final outcome API](https://nodejs.org/api/test.html#contextpassed).
 HTTP and native fetch are covered by SDK integration tests; HTTPS capture is
 also covered by the proxy's decrypted HTTPS tests.

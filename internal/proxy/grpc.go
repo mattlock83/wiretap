@@ -15,7 +15,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/phrond/wiretap/internal/capture"
+	"github.com/mattlock83/wiretap/internal/capture"
 	"golang.org/x/net/http2"
 )
 

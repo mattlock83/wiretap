@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/phrond/wiretap/internal/bundle"
+	"github.com/mattlock83/wiretap/internal/bundle"
 )
 
 func mockCollectionName(run *bundle.Run, id string) string {

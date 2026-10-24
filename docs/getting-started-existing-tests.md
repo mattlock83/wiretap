@@ -15,7 +15,7 @@ For a working example first, see [examples](../examples/README.md).
 
 ## 1. Build the runtime and choose an integration
 
-From the Wiretap repository, install the binary with Go 1.24+:
+From the Wiretap repository, install the binary with Go 1.26+:
 
 ```bash
 go install ./cmd/wiretap
@@ -33,6 +33,8 @@ from native Node test hooks.
 When working from this checkout, install its JavaScript dependencies with
 `npm ci --prefix sdk/js`. To use the checkout in another Node project, add it
 there with `npm install --save-dev /absolute/path/to/wiretap/sdk/js`.
+For a portable local SDK tarball, versioned binaries and a clean-project smoke
+check, see [local installation and release preparation](local-release.md).
 
 ## 2. Configure the boundaries
 

@@ -3,7 +3,7 @@
 The SDK is a library called from your existing test framework's lifecycle.
 It controls a separately running Wiretap service over HTTP and creates standard
 trace contexts for capture. It does not discover, schedule, or launch tests.
-TypeScript declarations are included. See [configuration](../../docs/configuration.md).
+TypeScript declarations are included. See [configuration](https://github.com/mattlock83/wiretap/blob/main/docs/configuration.md).
 
 ## Native test lifecycle
 
@@ -60,13 +60,13 @@ It closes capture; it does not cancel user callbacks or background work.
 
 For a runner with no executable callback hooks, use `setupTest`/`teardownTest`
 and standard OTel context binding, or call the language-independent
-[HTTP API](../../docs/runtime-api.md). Manual setup alone does not activate a
+[HTTP API](https://github.com/mattlock83/wiretap/blob/main/docs/runtime-api.md). Manual setup alone does not activate a
 span around unrelated callbacks. Use a new handle/root for every retry.
 
 ## Optional Node adapter
 
 `createNodeTestSuite` and `bindTest` provide runner-specific convenience when
-wanted. They require Node 20.12+ and account for callback, subtest, `t.after`, and
+wanted. They require Node 22+ and account for callback, subtest, `t.after`, and
 timeout outcomes. They delegate test registration to `node:test` and are not
 required by the core library. Existing hooks retain their ordering.
 
@@ -85,7 +85,7 @@ and `done` fixture hooks retain their ordering and runner outcomes. The optional
 `testDefaults.onSession` runs once before the first captured callback. Jest does
 not run per-test hooks for `.concurrent` tests; put their fixtures in the test
 callback with `try/finally`. Suite-wide `beforeAll`/`afterAll` work is outside
-individual attempts. See [tracing adoption](../../docs/otel-adoption.md).
+individual attempts. See [tracing adoption](https://github.com/mattlock83/wiretap/blob/main/docs/otel-adoption.md).
 
 ## Configuration and ownership
 
@@ -100,7 +100,7 @@ in worker integrations. Their `finishRun` calls check local cleanup but leave
 the shared capture running. One global suite owner calls `/v1/finishRun` after
 all workers have completed. The optional Jest adapter always uses this shared
 mode; configure Jest global teardown as shown in the
-[example](../../examples/basic-rest/jest-teardown.cjs).
+[example](https://github.com/mattlock83/wiretap/blob/main/examples/basic-rest/jest-teardown.cjs).
 
 `finishRun` finalizes the bundle and stops the capture proxy. It does not stop
 the HTTP control process. Your harness owns that process and the SUT/mocks.
@@ -136,12 +136,12 @@ generated gRPC clients. `sutProtocol: "grpc"` and a dependency's
 `protocol: "grpc"` pass through configured project boundaries; they cannot
 create or retarget a gRPC boundary per test. gRPC contracts cannot be disabled and this SDK
 does not instrument `@grpc/grpc-js` automatically; use standard OTel gRPC
-instrumentation for parallel test ownership. See the [gRPC guide](../../docs/grpc-user-guide.md).
+instrumentation for parallel test ownership. See the [gRPC guide](https://github.com/mattlock83/wiretap/blob/main/docs/grpc-user-guide.md).
 
-The [native Node gRPC example](../../examples/grpc-boundaries/node/README.md)
+The [native Node gRPC example](https://github.com/mattlock83/wiretap/blob/main/examples/grpc-boundaries/node/README.md)
 tests this with ordinary `@grpc/grpc-js` clients and mocks, local proto sources,
 parallel calls, an HTTP provider calling a gRPC mock, and TLS. Its
-[`tracing.cjs`](../../examples/grpc-boundaries/node/tracing.cjs) initializes
+[`tracing.cjs`](https://github.com/mattlock83/wiretap/blob/main/examples/grpc-boundaries/node/tracing.cjs) initializes
 application-owned standard gRPC/HTTP instrumentation before client modules are
 loaded; `startCapture({ instrumentation: false })` reuses that existing setup.
 The gRPC packages stay in the example, outside the SDK's dependencies. No

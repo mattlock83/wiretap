@@ -1,11 +1,11 @@
-name: Go and JavaScript SDK tests
+name: Runtime, SDK and local package tests
 
 on:
   pull_request:
-    paths: ['.github/workflows/tests.yml', 'go.mod', 'go.sum', 'cmd/**', 'internal/**', 'sdk/**', 'examples/**']
+    paths: ['.github/workflows/tests.yml', 'go.mod', 'go.sum', 'cmd/**', 'internal/**', 'sdk/**', 'examples/**', 'docs/**', 'scripts/**', 'tests/**', 'Dockerfile', '.dockerignore', 'LICENSE']
   push:
     branches: [main]
-    paths: ['.github/workflows/tests.yml', 'go.mod', 'go.sum', 'cmd/**', 'internal/**', 'sdk/**', 'examples/**']
+    paths: ['.github/workflows/tests.yml', 'go.mod', 'go.sum', 'cmd/**', 'internal/**', 'sdk/**', 'examples/**', 'docs/**', 'scripts/**', 'tests/**', 'Dockerfile', '.dockerignore', 'LICENSE']
   workflow_dispatch:
 
 permissions:
@@ -13,23 +13,61 @@ permissions:
 
 jobs:
   go:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version: '1.26.10'
       - run: go test ./...
-  javascript:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
+      - if: runner.os == 'Linux'
+        run: go test -race ./internal/proxy ./internal/app
+      - if: runner.os == 'Linux'
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
+  javascript-and-package:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        node: ['22', '24']
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.10'
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: ${{ matrix.node }}
           cache: npm
           cache-dependency-path: sdk/js/package-lock.json
       - run: npm ci --prefix sdk/js
       - run: npm test --prefix sdk/js
+      - run: npm audit --prefix sdk/js --audit-level=low
+      - run: node scripts/package-smoke.mjs
+  local-release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SOURCE_DATE_EPOCH: '1700000000'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.10'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: go run ./scripts/release --version v0.1.0-local --platforms host --out dist/first
+      - run: go run ./scripts/release --version v0.1.0-local --platforms host --out dist/second
+      - name: Verify reproducible archive checksums
+        run: node --input-type=module -e "import fs from 'node:fs'; import assert from 'node:assert/strict'; assert.equal(fs.readFileSync('dist/first/SHA256SUMS','utf8'),fs.readFileSync('dist/second/SHA256SUMS','utf8'))"
+      - name: Build local container without publishing
+        run: docker build --build-arg VERSION=v0.1.0-local --build-arg COMMIT=${{ github.sha }} --build-arg DIRTY=false -t wiretap:local .
+      - run: docker run --rm wiretap:local version --json

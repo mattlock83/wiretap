@@ -18,8 +18,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/phrond/wiretap/internal/capture"
-	tlsmgr "github.com/phrond/wiretap/internal/tls"
+	"github.com/mattlock83/wiretap/internal/capture"
+	tlsmgr "github.com/mattlock83/wiretap/internal/tls"
 )
 
 // Mode controls how HTTPS traffic is handled.

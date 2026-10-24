@@ -10,8 +10,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/phrond/wiretap/internal/artifact"
-	"github.com/phrond/wiretap/internal/bundle"
+	"github.com/mattlock83/wiretap/internal/artifact"
+	"github.com/mattlock83/wiretap/internal/bundle"
 )
 
 // GenerateAll adds v3 gRPC collections to the unchanged v2.1 HTTP exports.

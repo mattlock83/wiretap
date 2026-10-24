@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/phrond/wiretap/internal/artifact"
-	"github.com/phrond/wiretap/internal/bundle"
+	"github.com/mattlock83/wiretap/internal/artifact"
+	"github.com/mattlock83/wiretap/internal/bundle"
 )
 
 func TestTestLifecycleWritesRedactedBundle(t *testing.T) {
