@@ -43,6 +43,11 @@ sut:
   schema: openapi.yaml
 ```
 
+The main HTTP API requires that spec by default. HTTP dependencies and mocks
+need no spec or opt-out flag; add a dependency schema only to enable its
+validation and contract coverage. See [HTTP dependency schema options](javascript.md#http-dependency-schema-options)
+for strict `schemaRequired: true` overrides and provider-check assurance.
+
 Run your usual Jest command with `wiretap` on PATH, or set `WIRETAP_BINARY` to
 your local binary. Explicit paths are also supported:
 

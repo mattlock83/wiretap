@@ -8,6 +8,20 @@ text summary gives the first view of results. Offline assumption checks compare
 captured mocks with provider test examples. Use isolated tests with synthetic
 data and dummy secrets: retained traffic is unchanged.
 
+## Which specs do I need?
+
+| Boundary | Default | Where its contract comes from |
+| --- | --- | --- |
+| Main HTTP API under test | OpenAPI required | The SUT's own test project. |
+| Consumed HTTP API or mock | OpenAPI optional | Supply a dependency spec for capture-time validation and coverage, or use the provider's frozen spec during a later assumption check. |
+| Native gRPC, provided or consumed | Protobuf descriptors required | Server reflection, local `.proto` files or a descriptor set. |
+
+A consumer can capture HTTP mock assumptions without copying provider specs.
+The later check still needs matching complete passing provider tests; a spec
+alone cannot establish coverage. Supplying both HTTP contracts additionally
+checks their declared rules for drift. See [schema defaults](configuration.md#schema-defaults-by-boundary)
+and the [shared snapshot workflow](assumption-checks.md#share-provider-snapshots).
+
 ## Set up capture
 
 | Guide | Use it to |
@@ -32,6 +46,7 @@ data and dummy secrets: retained traffic is unchanged.
 | --- | --- |
 | [Capture artifacts and exports](artifacts.md) | Read raw artifacts, a text summary, JSON/YAML coverage and Postman collections. |
 | [Assumption checks](assumption-checks.md) | Verify consumer examples and exercised HTTP/Protobuf declarations against provider tests, or check whether provider tests still support consumers. |
+| [Share provider snapshots](assumption-checks.md#share-provider-snapshots) | Keep complete runs in a shared artifact store under stable application/API IDs and select the tested provider version. |
 | [Contract coverage rules](contract-coverage-rules.md) | Understand condition keys, counts, evidence quality and measurement limits. |
 | [Bundle format](bundle-evidence.md) | Parse API inventories, test recordings, contracts and payloads. |
 | [Machine-readable evidence and coverage](machine-interface.md) | Consume versioned reports, stable identities, provenance, provider mappings and payload availability. |

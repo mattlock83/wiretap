@@ -24,6 +24,13 @@ response. The harness starts and configures the SUT and dependency, then writes
 a text summary to `exports/coverage.txt`, JSON coverage to `exports/coverage.json`
 and Postman collections to `exports/postman/` from the captured traffic and supplied contracts.
 
+This fixture deliberately supplies the inventory mock's schema to opt into
+dependency validation and contract coverage. Your own HTTP dependencies need no
+spec or opt-out flag; the main HTTP API still requires its spec by default.
+Schema-free dependency capture retains calls and Postman examples with unknown
+contract coverage. See [schema defaults](../../docs/configuration.md#schema-defaults-by-boundary)
+and [provider assumption checks](../../docs/assumption-checks.md).
+
 ## Ordinary clients and parallel test traces
 
 Run the Jest variant with the same harness, which starts the demo application,

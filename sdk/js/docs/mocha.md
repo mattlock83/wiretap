@@ -36,6 +36,11 @@ The proxy URL is ready before Mocha loads test files. Continue using the same
 the executable comes from `WIRETAP_BINARY` or `wiretap` on your PATH. You can
 also set `binary`, `config` and `outputDir` in the wrapper options.
 
+The main HTTP API requires OpenAPI by default. HTTP dependencies and mocks need
+no spec or opt-out flag; add a dependency schema to enable validation and
+contract coverage. See [HTTP dependency schema options](javascript.md#http-dependency-schema-options)
+for strict `schemaRequired: true` overrides and provider-check assurance.
+
 If your existing suite already starts its server, omit `app` and configure its
 address in `.wiretap.yaml`. You can add capture without a configuration wrapper:
 

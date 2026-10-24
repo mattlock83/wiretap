@@ -58,6 +58,22 @@ validation and contract coverage. No opt-out flag is needed for schema-free
 dependency capture. Supplied specs always validate. gRPC still needs a Protobuf
 descriptor, discovered through reflection when no source file is supplied.
 
+For an HTTP inventory mock, add this alongside `sut` in the same file:
+
+```yaml
+dependencies:
+  inventory:
+    url: http://127.0.0.1:9090
+    kind: mock
+```
+
+Point the application's inventory client at the returned dependency capture URL
+so its calls are captured. The plain API exposes `capture.dependencyUrl("inventory")`;
+runner hooks/fixtures expose the session's dependency URLs. See
+[HTTP dependency schema options](docs/javascript.md#http-dependency-schema-options)
+to add a spec or require one. Without a spec, calls and Postman examples remain
+available, while that dependency's contract coverage is unknown.
+
 ## Jest
 
 ```js

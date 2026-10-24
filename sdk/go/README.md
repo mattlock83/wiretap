@@ -46,6 +46,20 @@ validation and contract coverage. No opt-out flag is needed for schema-free
 dependency capture. Supplied specs always validate. gRPC still needs a Protobuf
 descriptor, discovered through reflection when no source file is supplied.
 
+For an HTTP inventory mock, add this alongside `sut` in the same file:
+
+```yaml
+dependencies:
+  inventory:
+    url: http://127.0.0.1:9090
+    kind: mock
+```
+
+Point the application's inventory client at `session.Dependencies["inventory"]`
+so its calls are captured. See [HTTP dependency schema options](docs/advanced.md#http-dependency-schema-options)
+for typed overrides and requiring a spec. Without a spec, calls and Postman
+examples remain available, while that dependency's contract coverage is unknown.
+
 ## Connect your tests
 
 Add the suite hook to your existing test package:

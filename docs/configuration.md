@@ -137,6 +137,12 @@ runtime failures return `1`; those are independent of the test command's status.
 
 ## Schema defaults by boundary
 
+| Boundary | Without a schema setting | Opt in or enforce a schema |
+| --- | --- | --- |
+| Main HTTP SUT | Setup requires OpenAPI. | Supply `sut.schema`; the existing explicit `schema_required: false` exception remains available. |
+| Consumed HTTP API, including mocks | Capture works without a spec. | Supply the dependency's `schema` for validation and coverage; `schema_required: true` makes omission an error. |
+| Native gRPC SUT or dependency | Acquire descriptors through reflection. | Select local `.proto` files or a descriptor set when needed; descriptors remain required for decoding. |
+
 The main HTTP API under test (`sut`) requires an OpenAPI spec by default. Its
 existing explicit `schema_required: false` opt-out remains available when that
 spec is intentionally absent. Consumed HTTP dependencies, whether mocks,
@@ -166,7 +172,11 @@ unknown contract-coverage denominator. A later assumption check can validate
 those examples against the provider's own frozen OpenAPI contract, but it does
 not retroactively create consumer contract coverage. It still needs a matching
 complete passing provider test; a provider spec alone is insufficient. See
-[assumption checks](assumption-checks.md).
+[assumption checks](assumption-checks.md) and the
+[shared snapshot workflow](assumption-checks.md#share-provider-snapshots).
+Wiretap does not infer an OpenAPI file or allowed enum/length rules from a
+schema-free dependency capture. Supply a consumer dependency spec when you
+want those independent declarations compared with the provider's rules.
 
 For gRPC, `protocol: grpc` always requires a Protobuf descriptor. Omitting
 `schema` chooses server reflection, so a local file is optional when reflection

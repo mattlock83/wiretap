@@ -65,8 +65,11 @@ provider_mappings:
 Mapping keys identify configured local dependencies. `application_id` and `api_id`
 identify the intended external provider; optional version is a declared selection.
 These mappings are preserved in the raw run and coverage envelope. They do not
-prove the provider was executed or agreed with the consumer. Provider and consumer
-observations still require comparable requests, state, identities and versions.
+prove the provider was executed or agreed with the consumer. The checker compares
+the supplied provider archive's application/API IDs with the mapping and, when
+declared, its `sut_source.version` with the mapped `version`. The caller must
+choose comparable fixture state and tested builds. The checker does not verify
+hidden state or require matching test IDs.
 
 ## Payload availability and volatile data
 
@@ -87,8 +90,9 @@ execution data. Wiretap retains captured values unchanged. The offline
 set of transport/tracing headers in its comparison view; additional ignored
 headers require explicit flags. Concrete payload values remain significant.
 Test environments use synthetic data and dummy secrets. A field in a mock
-response does not establish that the consumer required it; missing provider
-evidence is unverified.
+response does not establish that the consumer required it. A concrete request
+without a qualifying provider example is `uncovered`; unavailable run, identity
+or retained evidence can make a result `unverified`.
 
 ## Assumption-check results
 
@@ -138,7 +142,7 @@ Each match's `contract_check` is one of:
 | Value | Assurance |
 | --- | --- |
 | `openapi_3_0_validation_rules` | Exercised HTTP request/response rules agree; each response and each request associated with a status below `400` validates against its own frozen schema. |
-| `openapi_3_0_provider_contract` | Consumer dependency schema is absent; both actual exchanges validate under the provider's frozen OpenAPI 3.0 contract, with the same negative-request exception. No independent consumer declarations are compared. |
+| `openapi_3_0_provider_contract` | Consumer dependency schema is absent or explicitly omitted; both actual exchanges validate under the provider's frozen OpenAPI 3.0 contract, with the same negative-request exception. No independent consumer declarations are compared. |
 | `protobuf_rules_and_observed_wire` | Selected gRPC input/output declarations agree, including full reachable enum sets, and observed values survive cross-decoding under the opposite descriptors. |
 | `unavailable` | Both HTTP schemas are absent or explicitly omitted, so this is an example-only match. |
 
@@ -154,6 +158,10 @@ therefore have unknown contract coverage while a later check successfully
 validates the examples under the provider's contract. That result neither
 changes the original coverage nor supplies missing provider test evidence:
 matching complete passing provider examples remain mandatory.
+Schema-free captures supply no inferred enum sets, length limits, requiredness
+or generated OpenAPI contract. This assurance cannot detect an independent
+consumer declaration changing while the captured examples stay valid. Both
+HTTP schemas are needed for declared-rule drift checks.
 
 ### Finding codes
 

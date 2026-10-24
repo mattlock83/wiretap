@@ -133,6 +133,11 @@ and [how to interpret failures](docs/assumption-checks.md#interpreting-results)
 before using it as a CI gate. Assertions about behavior and expected dependency
 calls remain part of your tests.
 
+Keep complete runs in your shared artifact store under stable application/API
+IDs, tested revisions and run IDs. The [shared snapshot workflow](docs/assumption-checks.md#share-provider-snapshots)
+shows provider and consumer configuration, a folder convention and the checks
+to run after downloading the selected archives.
+
 ## Product scope and documentation
 
 Wiretap captures existing tests, exports their evidence and verifies concrete

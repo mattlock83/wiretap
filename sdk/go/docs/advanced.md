@@ -134,6 +134,8 @@ origins for ordinary generated gRPC clients. Pass `Session.Context` into RPCs an
 use the application's existing OTel gRPC instrumentation for parallel ownership.
 See the [gRPC guide](../../../docs/grpc-user-guide.md).
 
+### HTTP dependency schema options
+
 For HTTP, `TestOptions.Schemas` and `TestOptions.Dependencies` accept typed
 `Schema` and `Dependency` overrides. `SchemaSource` supports file, URL and inline content. The
 returned `Dependencies` map contains capture URLs. Point the SUT's downstream
@@ -151,6 +153,45 @@ always validate. An omitted dependency spec leaves its contract coverage
 unknown while calls and Postman examples remain captured. gRPC boundaries
 always require their configured Protobuf contracts and cannot be created or retargeted per test. See
 [boundary configuration](../../../docs/configuration.md).
+
+With the main SUT's required OpenAPI spec configured in `.wiretap.yaml`, an
+existing test can opt into strict inventory schema validation like this:
+
+```go
+requireInventorySpec := true
+session := wiretap.StartTest(t, wiretap.TestOptions{
+    Dependencies: []wiretap.Dependency{{
+        AssetID:        "inventory",
+        UpstreamURL:    "http://127.0.0.1:9090",
+        UpstreamKind:   "mock",
+        SchemaRequired: &requireInventorySpec,
+        Schema: &wiretap.Schema{
+            ID:   "inventory",
+            Type: "openapi",
+            Source: wiretap.SchemaSource{
+                Type: "file",
+                Path: "/project/schemas/inventory.yaml",
+            },
+        },
+    }},
+})
+// Configure your existing inventory client with session.Dependencies["inventory"].
+```
+
+For ordinary schema-free dependency capture, omit `Schema` and `SchemaRequired`
+from that entry. The main API still inherits its required spec from the project.
+These per-test dependency entries replace the project dependency list; include
+every dependency that test should capture. API file paths resolve on the runtime
+host.
+
+A schema-free dependency retains calls and Postman examples with unknown
+contract coverage in the consumer archive. A later
+[assumption check](../../../docs/assumption-checks.md) can validate its examples
+under the provider's frozen contract, while leaving that original coverage
+unchanged. It still needs a matching complete passing provider test; the
+provider spec alone is insufficient.
+
+### gRPC harness ownership
 
 If your application must receive dynamic gRPC dependency listener URLs before
 it can start, let its existing outer harness own the runtime and bootstrap order.

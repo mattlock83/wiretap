@@ -177,6 +177,50 @@ const capture = await startCapture({
 });
 ```
 
+### HTTP dependency schema options
+
+The configuration above supplies the main HTTP API's required OpenAPI spec and
+captures the inventory mock without a dependency spec or opt-out flag. This
+default applies to consumed HTTP APIs of every target kind. Add `schema` or
+`schemas` to opt into dependency validation and contract coverage.
+
+With the main SUT settings in `.wiretap.yaml`, a strict dependency override is:
+
+```js
+const capture = await startCapture({
+  dependencies: {
+    inventory: {
+      upstreamUrl: "http://127.0.0.1:9090",
+      upstreamKind: "mock",
+      schemaRequired: true,
+      schema: {
+        id: "inventory",
+        type: "openapi",
+        source: { type: "file", path: "/project/schemas/inventory.yaml" }
+      }
+    }
+  }
+});
+```
+
+`schemaRequired: true` makes an absent dependency spec a setup error; an omitted
+flag uses the optional dependency default. Explicit true and false are both
+preserved by the SDK. Supplied specs always validate, including with
+`schemaRequired: false`. API-provided file paths resolve on the runtime host.
+The `dependencies` override replaces the project list; include every dependency
+that setup should capture.
+The main API's `schemaRequired: false` remains an explicit opt-out from its
+required default.
+
+Without a dependency spec, captured calls and Postman examples remain available
+and that consumer archive's contract coverage is unknown. A later
+[assumption check](https://github.com/mattlock83/wiretap/blob/main/docs/assumption-checks.md)
+can validate those examples under a provider's frozen contract without rewriting
+that coverage. It still requires a matching complete passing provider test;
+the spec alone does not establish provider test coverage.
+
+### Native gRPC
+
 For a gRPC project, `.wiretap.yaml` supplies `protocol: grpc`, service selection
 and reflection or local Protobuf sources. The SDK inherits those defaults and
 returns direct capture origins in `sutUrl` and `dependencyUrl`; use your existing
@@ -194,14 +238,6 @@ application-owned standard gRPC/HTTP instrumentation before client modules are
 loaded; `startCapture({ instrumentation: false })` reuses that existing setup.
 The gRPC packages stay in the example, outside the SDK's dependencies. No
 Wiretap-specific RPC client, collector or reflection service is required.
-
-API-provided file paths resolve on the runtime host. The main HTTP API requires
-OpenAPI by default; `schemaRequired: false` is its explicit opt-out. Consumed
-HTTP dependencies, including mocks, need no schema or opt-out flag. Add a
-dependency's `schema` or `schemas` to opt into validation and coverage, or set
-`schemaRequired: true` to require a spec. Supplied schemas always validate,
-including when `schemaRequired: false` is set. Omitted dependency schemas leave
-contract coverage unknown while calls and Postman examples remain available.
 
 ## Lower-level integration
 
@@ -223,7 +259,7 @@ the recorded JSON evidence. Capture drains accepted requests
 for five seconds by default; `drainTimeoutMs` selects 0–60000ms. Incomplete
 capture fails cleanup; schema mismatches are retained as validation evidence
 without changing the framework outcome. An original callback error
-is preserved if cleanup also fails. Explicitly omitted schemas show skipped or
+is preserved if cleanup also fails. Omitted schemas show skipped or
 partial validation without changing validation findings for supplied schemas.
 
 ### Generate suite outputs

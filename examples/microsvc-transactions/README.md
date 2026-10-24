@@ -98,6 +98,15 @@ capture path. Inspect `bundle.json` and `tests/` for captured exchanges and
   it does not claim a common error-body schema.
 - Each test attempt includes the downstream Accounts traffic actually observed.
 
+The Accounts schema is an intentional opt-in to HTTP dependency validation and
+contract coverage. Ordinary HTTP mock capture needs no dependency spec or
+opt-out flag; the Transactions API's own spec remains required by default.
+Without the Accounts schema, its calls and Postman examples would still be
+captured with unknown contract coverage. A separate
+[assumption check](../../docs/assumption-checks.md) needs Accounts provider test
+evidence to verify these mocks; this fixture's consumer subset spec alone does
+not establish provider agreement.
+
 Fraud gRPC and PostgreSQL traffic are outside Wiretap's HTTP coverage. The harness
 does not run Kafka: its best-effort publication failure is bounded and is not a
 tested guarantee. The internal network blocks Internet egress, so asynchronous

@@ -11,6 +11,13 @@ contracts and exports. Receipts give exact output paths. JavaScript managed runs
 write `last-run.json` beside their run directories; Go packages write it inside
 each run directory so concurrent packages cannot overwrite one another.
 
+The main HTTP API requires its OpenAPI spec by default. HTTP dependencies and
+mocks need only their URL and kind; examples that supply dependency specs opt
+into their validation and contract coverage. Without a dependency spec, calls
+and Postman examples remain available with unknown contract coverage. Native
+gRPC always needs descriptors, using reflection when no local file is supplied.
+See [schema defaults](../docs/configuration.md#schema-defaults-by-boundary).
+
 | Example | Demonstrates | Requirements |
 | --- | --- | --- |
 | [Existing Jest suite](existing-jest/README.md) | Pinned external Express API, 120 unchanged tests, automatic SDK setup and Postman parser checks. | Git, Go 1.26+, Node.js 22+. |
@@ -23,6 +30,11 @@ each run directory so concurrent packages cannot overwrite one another.
 | [Native gRPC](grpc-boundaries/README.md) | Advanced external runtime, generated grpc-go clients, reflection/local contracts and coverage. | Go 1.26+, Bash, Python 3 and curl. |
 | [Streaming gRPC](grpc-streaming/README.md) | Advanced external runtime, all four RPC shapes, provider/dependency calls and structural coverage. | Go 1.26+, Bash, Python 3 and curl. |
 | [Native Node gRPC](grpc-boundaries/node/README.md) | Ordinary Node clients/mocks, a Go provider, local contracts, traced parallel and mixed paths, TLS and offline coverage rebuilding. | Go 1.26+, Node.js 22+, Bash and OpenSSL. |
+
+To compare a consumer run with the provider's own test evidence, use the
+[assumption checker](../docs/assumption-checks.md). A provider contract can
+validate schema-free HTTP mock examples, but it does not create missing
+consumer contract coverage or replace a matching passing provider test.
 
 ## Basic REST
 

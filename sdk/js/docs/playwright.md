@@ -22,6 +22,11 @@ sut:
   schema: openapi.yaml
 ```
 
+The main HTTP API requires that spec by default. HTTP dependencies and mocks
+need no spec or opt-out flag; adding a dependency schema enables its validation
+and contract coverage. See [HTTP dependency schema options](javascript.md#http-dependency-schema-options)
+for strict `schemaRequired: true` overrides and provider-check assurance.
+
 Wrap your existing configuration:
 
 ```js

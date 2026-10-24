@@ -373,6 +373,12 @@ The full frozen document graph must still load reliably: invalid, unsupported
 or precision-unsafe rules outside the exercised selection can make the required
 contract unverified, even though those rules are not diffed.
 
+A schema-free consumer capture does not infer allowed enum sets, minimum or
+maximum lengths, required fields or a replacement OpenAPI file. A captured
+`status: "ready"` records that value; it does not declare that `"ready"` is the
+only allowed value. Supply a consumer dependency schema when independent
+consumer declarations must be compared with the provider's rules.
+
 Declared-rule comparison is conservative equality, not a proof of schema
 subtyping or semantic equivalence. Enum additions, relaxed limits and
 structurally different equivalent schema expressions can fail without proving
@@ -546,6 +552,55 @@ collections are invalid inputs.
 
 ## Share provider snapshots
 
+Each team's test suite records its own provided API and freezes that API's
+spec. Consumer teams can capture HTTP mocks without keeping another copy of
+the provider's OpenAPI file. Both sides still keep complete run archives and
+Postman exports.
+
+For example, the inventory provider's `.wiretap.yaml` owns its contract:
+
+```yaml
+version: 1
+application: {id: inventory-service, name: Inventory}
+sut_source:
+  version: '${INVENTORY_VERSION}'
+  revision: '${INVENTORY_REVISION}'
+outputs: {coverage: [json, text], postman: true}
+sut:
+  id: inventory-http
+  url: ${INVENTORY_SERVICE_URL}
+  kind: service
+  schema: schemas/inventory.openapi.yaml
+```
+
+The orders consumer supplies its own main API spec and maps its schema-free
+HTTP mock to that provider:
+
+```yaml
+version: 1
+application: {id: orders-service, name: Orders}
+outputs: {coverage: [json, text], postman: true}
+sut:
+  id: orders-http
+  url: ${ORDERS_SERVICE_URL}
+  kind: service
+  schema: schemas/orders.openapi.yaml
+dependencies:
+  inventory:
+    url: ${INVENTORY_MOCK_URL}
+    kind: mock
+provider_mappings:
+  inventory:
+    application_id: inventory-service
+    api_id: inventory-http
+    version: '${INVENTORY_VERSION}'
+```
+
+Set the environment variables to the intended tested builds before capture.
+The mapped provider `version` must equal the provider archive's recorded
+`sut_source.version`. The provider's Wiretap version is a separate recorder
+version and does not establish the SUT build.
+
 Keep each complete provider run under stable application/API identities and a
 known tested revision and run ID. For example, an existing CI artifact store
 could retain this directory layout:
@@ -564,15 +619,58 @@ api-evidence/
 ```
 
 Use your existing artifact upload/download tooling. Download the complete run
-before invoking `wiretap check`; the CLI accepts local archives and implements
-no remote store discovery or fetching. The layout is a convention for your
-pipeline, not a hosted Wiretap registry.
+before invoking `wiretap check`. For Artifactory or CI artifacts packaged as
+ZIP or TAR files, extract them first. The CLI accepts an extracted run directory
+or its `bundle.json`, with all referenced files retained alongside it.
+Preserve internal paths, filenames and contents; moving the whole run is
+supported, while flattening its files or copying only collections loses inputs.
+Keep `contracts/` and its imported files together with `tests/` and `payloads/`.
+The CLI implements no remote store discovery or fetching. The layout is a
+convention for your pipeline, not a hosted Wiretap registry.
 
 Pin the intended provider application/API, tested revision and run. Retain the
 manifest digest and use a declared provider mapping/version where appropriate.
 Display names and a moving `latest` directory do not establish the intended
 provider build. A capture's Wiretap producer commit identifies the recorder,
 not the SUT revision; use the recorded SUT source provenance for the latter.
+
+After downloading both selected runs, check the same inputs from either
+viewpoint:
+
+```bash
+wiretap check consumer \
+  --consumer ./evidence/orders-run \
+  --provider ./evidence/inventory-run \
+  --dependency inventory
+
+wiretap check provider \
+  --provider ./evidence/inventory-run \
+  --consumer ./evidence/orders-run \
+  --dependency inventory
+```
+
+Collections default to each run's `exports/postman/`. Save any check result
+outside both input archives. Create `check-results/`, then add
+`--format json --output ./check-results/inventory.json` to the command.
+
+| Inputs | What a passing HTTP match establishes |
+| --- | --- |
+| Consumer has no dependency spec; provider has frozen OpenAPI 3.0 | Both captured exchanges satisfy the provider contract and a passing provider test supports the concrete mock example. |
+| Both sides have frozen OpenAPI 3.0 | The concrete examples agree, relevant messages validate, and exercised declarations also agree under the strict drift policy. |
+| Neither side has a spec | Example agreement only, explicitly marked `contract_check: "unavailable"`. |
+
+The final row covers explicit HTTP schema opt-outs and older captures. The
+provider's main HTTP API still requires its spec by default during setup.
+
+Requests paired with HTTP status `400` or higher skip request-value validation
+to support negative tests; every response is validated when a contract is
+available. This exception applies to both contract-backed rows above.
+
+A schema-free mock capture retains unknown consumer contract coverage. Checking
+it against a provider snapshot does not change that original report. A spec
+without a qualifying passing provider example still leaves the scenario
+uncovered. See [result assurance markers](machine-interface.md#assumption-check-results)
+and [the CI gate](ci-example.md#gate-consumerprovider-assumptions-offline).
 
 ## Select the dependency and provider
 
