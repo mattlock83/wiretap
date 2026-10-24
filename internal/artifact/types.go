@@ -1,7 +1,9 @@
 package artifact
 
 import (
+	"errors"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -48,7 +50,26 @@ func (a *Artifact) Normalize() {
 }
 
 // TestCase metadata.
+// TestIdentity is stable across executions; ID is local to the application.
+// A nil AttemptOrdinal means the harness did not supply retry ordering.
+type TestIdentity struct {
+	ID             string `json:"id" yaml:"id"`
+	Variant        string `json:"variant,omitempty" yaml:"variant,omitempty"`
+	AttemptOrdinal *int   `json:"attempt_ordinal,omitempty" yaml:"attempt_ordinal,omitempty"`
+}
+
+func (identity *TestIdentity) Validate() error {
+	if identity == nil {
+		return nil
+	}
+	if strings.TrimSpace(identity.ID) == "" || len(identity.ID) > 256 || (identity.AttemptOrdinal != nil && *identity.AttemptOrdinal < 0) {
+		return errors.New("test_identity requires an id up to 256 bytes and nonnegative attempt_ordinal")
+	}
+	return nil
+}
+
 type TestCase struct {
+	Identity   *TestIdentity  `json:"identity,omitempty" yaml:"identity,omitempty"`
 	TraceID    string         `json:"trace_id,omitempty" yaml:"trace_id,omitempty"`
 	RootSpanID string         `json:"root_span_id,omitempty" yaml:"root_span_id,omitempty"`
 	ID         string         `json:"id" yaml:"id"`

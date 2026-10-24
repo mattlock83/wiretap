@@ -18,7 +18,9 @@ export interface Dependency {
   schemas?: Schema[];
   schemaRequired?: boolean;
 }
+export interface TestIdentity { id: string; variant?: string; attemptOrdinal?: number; }
 export interface TestOptions {
+  identity?: TestIdentity;
   application?: Application;
   name?: string;
   tags?: string[];

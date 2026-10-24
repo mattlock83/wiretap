@@ -42,3 +42,7 @@ declarations, source locking and consumer variants; its syntax is not implemente
 A run contains test attempts. Each attempt contains exchanges or RPC messages.
 A contract condition is a specified case, such as an enum value or an omitted
 optional field; several conditions can be covered by one message.
+
+[Machine-readable evidence and coverage](machine-interface.md) specifies report
+versions, producer/build provenance, logical retry identities, provider mappings
+and payload-availability metadata for external analysis tools.

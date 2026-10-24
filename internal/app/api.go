@@ -111,6 +111,7 @@ func (a *App) handleStartRun(w http.ResponseWriter, r *http.Request) {
 }
 
 type setupTestRequest struct {
+	Identity        *artifact.TestIdentity   `json:"test_identity,omitempty"`
 	Application     *bundle.Application      `json:"application,omitempty"`
 	SUTProtocol     string                   `json:"sut_protocol,omitempty"`
 	SchemaRequired  *bool                    `json:"schema_required,omitempty"`
@@ -171,6 +172,11 @@ func (a *App) handleSetupTest(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if err := redact.Validate(payload.Redactions); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	if err := payload.Identity.Validate(); err != nil {
+
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
@@ -330,6 +336,7 @@ func (a *App) handleSetupTest(w http.ResponseWriter, r *http.Request) {
 		store.AddRedaction(rule)
 	}
 	store.SetTraceContext(root)
+	store.SetTestIdentity(payload.Identity)
 	if err := store.RegisterActive(); err != nil {
 		store.AbortCase()
 		a.sessionsMu.Unlock()

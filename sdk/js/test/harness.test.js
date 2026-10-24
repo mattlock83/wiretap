@@ -322,3 +322,22 @@ test("suite owner selects outputs and receives exact generated paths", async () 
     assert.deepEqual(result.outputs, expected);
   } finally { await server.close(); }
 });
+
+test("logical identity is separate from retries and execution traces", async () => {
+  const setups = [];
+  const server = await controlServer((path, body) => {
+    if (path === "/v1/setupTest") { setups.push(body); return { session_id: `s-${setups.length}`, name: body.name }; }
+    return {};
+  });
+  try {
+    const runtime = await startCapture({ baseUrl: server.baseUrl, schemaRequired: false });
+    for (let ordinal = 0; ordinal < 2; ordinal++) {
+      await runtime.runTest("display label", () => {}, { identity: { id: "orders/create", variant: "invalid", attemptOrdinal: ordinal } });
+    }
+    assert.deepEqual(setups.map(call => call.test_identity), [
+      { id: "orders/create", variant: "invalid", attempt_ordinal: 0 },
+      { id: "orders/create", variant: "invalid", attempt_ordinal: 1 }
+    ]);
+    assert.notEqual(setups[0].trace_context.traceparent, setups[1].trace_context.traceparent);
+  } finally { await server.close(); }
+});

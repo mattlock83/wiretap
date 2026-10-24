@@ -190,3 +190,18 @@ outputs:
 		t.Fatalf("incorrect proto paths: %+v", target)
 	}
 }
+
+func TestBuildSourcesAndProviderMappings(t *testing.T) {
+	t.Setenv("APP_COMMIT", "commit-123")
+	cfg, err := Decode([]byte("version: 1\nsut: {schema_required: false}\ntest_source: {revision: '${APP_COMMIT}'}\nsut_source: {build_id: ci-12}\ndependencies:\n  stock: {url: http://stock.test, schema_required: false}\nprovider_mappings:\n  stock: {application_id: inventory, api_id: stock-http, version: v2}\n"), filepath.Join(t.TempDir(), ".wiretap.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.TestSource["revision"] != "commit-123" || cfg.SUTSource["build_id"] != "ci-12" || cfg.ProviderMappings["stock"].APIID != "stock-http" {
+		t.Fatalf("missing provenance: %+v", cfg)
+	}
+	if _, err := Decode([]byte("version: 1\nsut: {schema_required: false}\nprovider_mappings:\n  missing: {application_id: inventory, api_id: stock-http}\n"), filepath.Join(t.TempDir(), ".wiretap.yaml")); err == nil {
+		t.Fatal("unknown dependency mapping accepted")
+
+	}
+}

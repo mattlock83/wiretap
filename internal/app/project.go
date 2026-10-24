@@ -2,6 +2,7 @@ package app
 
 import (
 	"errors"
+	"maps"
 	"strings"
 
 	"github.com/phrond/wiretap/internal/artifact"
@@ -33,7 +34,8 @@ func (a *App) testDefaults() setupTestRequest {
 	if id == "" {
 		id = "sut"
 	}
-	out := setupTestRequest{APIID: id, SUTBaseURL: cfg.SUT.TargetURL(), SUTTargetKind: cfg.SUT.Kind, SUTProtocol: cfg.SUT.Protocol, Schemas: cfg.SUT.Schemas(id, "sut"), SchemaRequired: cfg.SUT.SchemaRequired, Redactions: redactions}
+	out := setupTestRequest{TestSource: maps.Clone(cfg.TestSource), SUTSource: maps.Clone(cfg.SUTSource), APIID: id, SUTBaseURL: cfg.SUT.TargetURL(), SUTTargetKind: cfg.SUT.Kind, SUTProtocol: cfg.SUT.Protocol, Schemas: cfg.SUT.Schemas(id, "sut"), SchemaRequired: cfg.SUT.SchemaRequired, Redactions: redactions}
+
 	if cfg.Application != nil {
 		application := *cfg.Application
 		out.Application = &application

@@ -21,6 +21,7 @@ import (
 
 	"github.com/phrond/wiretap/internal/artifact"
 	"github.com/phrond/wiretap/internal/grpccontract"
+	"github.com/phrond/wiretap/internal/version"
 )
 
 const EvidenceVersion = "3.1"
@@ -36,43 +37,61 @@ type AttemptRef struct {
 }
 
 type PendingAttempt struct {
-	AttemptID string         `json:"attempt_id"`
-	Name      string         `json:"name"`
-	StartedAt time.Time      `json:"started_at"`
-	Meta      map[string]any `json:"meta,omitempty"`
+	Identity  *artifact.TestIdentity `json:"identity,omitempty"`
+	AttemptID string                 `json:"attempt_id"`
+	Name      string                 `json:"name"`
+	StartedAt time.Time              `json:"started_at"`
+	Meta      map[string]any         `json:"meta,omitempty"`
+}
+
+// ProviderRef is declared routing knowledge, never proof of provider agreement.
+type ProviderRef struct {
+	ApplicationID string `json:"application_id" yaml:"application_id"`
+	APIID         string `json:"api_id" yaml:"api_id"`
+	Version       string `json:"version,omitempty" yaml:"version,omitempty"`
+}
+
+func (p ProviderRef) Validate() error {
+	if strings.TrimSpace(p.ApplicationID) == "" || strings.TrimSpace(p.APIID) == "" {
+		return errors.New("provider mapping requires application_id and api_id")
+	}
+	return nil
 }
 
 type Run struct {
-	Application          *Application         `json:"application,omitempty"`
-	RequiredCapabilities []string             `json:"required_capabilities"`
-	InventoryScope       string               `json:"inventory_scope"`
-	ProvidedAPIs         []API                `json:"provided_apis"`
-	Dependencies         []API                `json:"dependencies"`
-	Contracts            []ContractResolution `json:"contract_resolutions,omitempty"`
-	EvidenceVersion      string               `json:"format_version"`
-	RunID                string               `json:"run_id"`
-	Revision             uint64               `json:"revision"`
-	RunState             string               `json:"run_state"`
-	StartedAt            time.Time            `json:"started_at"`
-	UpdatedAt            time.Time            `json:"updated_at"`
-	FinishedAt           *time.Time           `json:"finished_at,omitempty"`
-	APIID                string               `json:"api_id,omitempty"`
-	SUTTargetKind        string               `json:"sut_target_kind,omitempty"`
-	DependencyKinds      map[string]string    `json:"dependency_kinds,omitempty"`
-	TestSource           map[string]any       `json:"test_source,omitempty"`
-	SUTSource            map[string]any       `json:"sut_source,omitempty"`
-	Schemas              []artifact.SchemaRef `json:"contracts,omitempty"`
-	Pending              []PendingAttempt     `json:"pending_tests,omitempty"`
-	Attempts             []AttemptRef         `json:"tests"`
+	ProviderMappings     map[string]ProviderRef `json:"provider_mappings,omitempty"`
+	Producer             *version.Producer      `json:"producer,omitempty"`
+	Application          *Application           `json:"application,omitempty"`
+	RequiredCapabilities []string               `json:"required_capabilities"`
+	InventoryScope       string                 `json:"inventory_scope"`
+	ProvidedAPIs         []API                  `json:"provided_apis"`
+	Dependencies         []API                  `json:"dependencies"`
+	Contracts            []ContractResolution   `json:"contract_resolutions,omitempty"`
+	EvidenceVersion      string                 `json:"format_version"`
+	RunID                string                 `json:"run_id"`
+	Revision             uint64                 `json:"revision"`
+	RunState             string                 `json:"run_state"`
+	StartedAt            time.Time              `json:"started_at"`
+	UpdatedAt            time.Time              `json:"updated_at"`
+	FinishedAt           *time.Time             `json:"finished_at,omitempty"`
+	APIID                string                 `json:"api_id,omitempty"`
+	SUTTargetKind        string                 `json:"sut_target_kind,omitempty"`
+	DependencyKinds      map[string]string      `json:"dependency_kinds,omitempty"`
+	TestSource           map[string]any         `json:"test_source,omitempty"`
+	SUTSource            map[string]any         `json:"sut_source,omitempty"`
+	Schemas              []artifact.SchemaRef   `json:"contracts,omitempty"`
+	Pending              []PendingAttempt       `json:"pending_tests,omitempty"`
+	Attempts             []AttemptRef           `json:"tests"`
 }
 
 type Identity struct {
-	Application     *Application
-	APIID           string
-	SUTTargetKind   string
-	DependencyKinds map[string]string
-	TestSource      map[string]any
-	SUTSource       map[string]any
+	ProviderMappings map[string]ProviderRef
+	Application      *Application
+	APIID            string
+	SUTTargetKind    string
+	DependencyKinds  map[string]string
+	TestSource       map[string]any
+	SUTSource        map[string]any
 }
 
 func (w *Writer) Configure(identity Identity) (err error) {
@@ -84,6 +103,25 @@ func (w *Writer) Configure(identity Identity) (err error) {
 			w.run = previous
 		}
 	}()
+	if len(identity.ProviderMappings) > 0 {
+		mappings := make(map[string]ProviderRef, len(w.run.ProviderMappings)+len(identity.ProviderMappings))
+		for id, provider := range w.run.ProviderMappings {
+			mappings[id] = provider
+		}
+		for id, provider := range identity.ProviderMappings {
+			if !safeID(id) {
+				return errors.New("invalid provider mapping dependency id")
+			}
+			if err := provider.Validate(); err != nil {
+				return err
+			}
+			if previous, ok := mappings[id]; ok && previous != provider {
+				return errors.New("provider mapping conflicts with this run")
+			}
+			mappings[id] = provider
+		}
+		w.run.ProviderMappings = mappings
+	}
 	if identity.Application != nil {
 		if err := validateApplication(identity.Application); err != nil {
 			return err
@@ -224,7 +262,8 @@ func newWriter(path string, child bool) (*Writer, error) {
 	if err := os.MkdirAll(filepath.Join(root, "tests"), 0o755); err != nil {
 		return nil, err
 	}
-	w := &Writer{root: root, run: Run{EvidenceVersion: EvidenceVersion, RunID: id, Revision: 1, RunState: "open", StartedAt: now, UpdatedAt: now}}
+	producer := version.Current()
+	w := &Writer{root: root, run: Run{Producer: &producer, EvidenceVersion: EvidenceVersion, RunID: id, Revision: 1, RunState: "open", StartedAt: now, UpdatedAt: now}}
 	if err := w.writeRun(); err != nil {
 		return nil, err
 	}
@@ -242,6 +281,9 @@ func (w *Writer) Snapshot() Run {
 // Register freezes schemas before traffic admission and records the pending test.
 // Its returned schema paths are suitable for live validation against the snapshot.
 func (w *Writer) Register(tc artifact.TestCase, schemas []artifact.SchemaRef) ([]artifact.SchemaRef, error) {
+	if err := tc.Identity.Validate(); err != nil {
+		return nil, err
+	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if w.run.RunState != "open" {
@@ -280,7 +322,7 @@ func (w *Writer) Register(tc artifact.TestCase, schemas []artifact.SchemaRef) ([
 		return nil, err
 	}
 	previous := w.run
-	w.run.Pending = append(w.run.Pending, PendingAttempt{AttemptID: tc.ID, Name: tc.Name, StartedAt: tc.StartedAt, Meta: meta})
+	w.run.Pending = append(w.run.Pending, PendingAttempt{Identity: tc.Identity, AttemptID: tc.ID, Name: tc.Name, StartedAt: tc.StartedAt, Meta: meta})
 	for _, ref := range frozen {
 		stored := ref
 		if stored.Source.Path != "" {
@@ -356,6 +398,9 @@ func (w *Writer) RegisterSchemas(schemas []artifact.SchemaRef) error {
 func (w *Writer) Commit(art *artifact.Artifact) (string, error) {
 	if art == nil {
 		return "", errors.New("capture is nil")
+	}
+	if err := art.TestCase.Identity.Validate(); err != nil {
+		return "", err
 	}
 	if err := artifact.ValidateInteractions(art); err != nil {
 		return "", err
@@ -720,6 +765,20 @@ func LoadWithLimits(root string, limits LoadLimits) (*Run, []*artifact.Artifact,
 	if err := reader.requireReads(len(run.Attempts)); err != nil {
 		return nil, nil, fmt.Errorf("run test inventory: %w", err)
 	}
+	for _, pending := range run.Pending {
+		if err := pending.Identity.Validate(); err != nil {
+			return nil, nil, err
+		}
+	}
+	for id, provider := range run.ProviderMappings {
+		if !safeID(id) {
+			return nil, nil, errors.New("invalid provider mapping dependency id")
+		}
+		if err := provider.Validate(); err != nil {
+			return nil, nil, err
+		}
+
+	}
 	// Preserve portable paths for inventory validation after captures are loaded.
 	storedInventory := run
 	storedInventory.Schemas = append([]artifact.SchemaRef(nil), run.Schemas...)
@@ -751,6 +810,9 @@ func LoadWithLimits(root string, limits LoadLimits) (*Run, []*artifact.Artifact,
 		}
 		if !supportedEvidenceVersion(attempt.EvidenceVersion) || attempt.RunID != run.RunID || attempt.AttemptID != ref.AttemptID || attempt.Capture.TestCase.ID != ref.AttemptID || attempt.Capture.Version < 1 {
 			return nil, nil, fmt.Errorf("attempt %q identity/version mismatch", ref.AttemptID)
+		}
+		if err := attempt.Capture.TestCase.Identity.Validate(); err != nil {
+			return nil, nil, err
 		}
 		if err := checkCapabilities(attempt.RequiredCapabilities); err != nil {
 			return nil, nil, err

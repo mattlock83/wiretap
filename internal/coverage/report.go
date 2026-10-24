@@ -3,6 +3,7 @@ package coverage
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -21,10 +22,29 @@ import (
 	"github.com/phrond/wiretap/internal/artifact"
 	"github.com/phrond/wiretap/internal/bundle"
 	"github.com/phrond/wiretap/internal/grpccontract"
+	"github.com/phrond/wiretap/internal/version"
 	"gopkg.in/yaml.v3"
 )
 
+const ReportVersion = "1.0"
+
+// Report envelopes and raw capture formats evolve independently. The recording
+// remains authoritative for every body preview and comparison observation.
+type CaptureSource struct {
+	ProviderMappings map[string]bundle.ProviderRef `json:"provider_mappings,omitempty" yaml:"provider_mappings,omitempty"`
+	FormatVersion    string                        `json:"format_version" yaml:"format_version"`
+	RunID            string                        `json:"run_id" yaml:"run_id"`
+	Revision         uint64                        `json:"revision" yaml:"revision"`
+	State            string                        `json:"state" yaml:"state"`
+	Producer         *version.Producer             `json:"producer,omitempty" yaml:"producer,omitempty"`
+	Application      *bundle.Application           `json:"application,omitempty" yaml:"application,omitempty"`
+	TestSource       map[string]any                `json:"test_source,omitempty" yaml:"test_source,omitempty"`
+	SUTSource        map[string]any                `json:"sut_source,omitempty" yaml:"sut_source,omitempty"`
+}
 type Report struct {
+	ReportVersion string                  `json:"report_version" yaml:"report_version"`
+	Producer      version.Producer        `json:"producer" yaml:"producer"`
+	Capture       *CaptureSource          `json:"capture" yaml:"capture"`
 	Unmeasured    []UnmeasuredInteraction `json:"unmeasured_interactions,omitempty" yaml:"unmeasured_interactions,omitempty"`
 	Contracts     *ContractCoverage       `json:"contract_coverage,omitempty" yaml:"contract_coverage,omitempty"`
 	GeneratedAt   time.Time               `json:"generated_at" yaml:"generated_at"`
@@ -104,16 +124,18 @@ type SpecOperationSamples struct {
 }
 
 type FlowSample struct {
-	GRPCEvents         []artifact.GrpcEvent  `json:"grpc_events,omitempty" yaml:"grpc_events,omitempty"`
-	Interaction        *artifact.Interaction `json:"interaction,omitempty" yaml:"interaction,omitempty"`
-	CaptureIncomplete  bool                  `json:"capture_incomplete,omitempty" yaml:"capture_incomplete,omitempty"`
-	RequestSpanID      string                `json:"request_span_id,omitempty" yaml:"request_span_id,omitempty"`
-	TraceContextSource string                `json:"trace_context_source,omitempty" yaml:"trace_context_source,omitempty"`
-	TestCorrelation    string                `json:"test_correlation,omitempty" yaml:"test_correlation,omitempty"`
-	ParentCorrelation  string                `json:"parent_correlation,omitempty" yaml:"parent_correlation,omitempty"`
-	TestCaseID         string                `json:"testcase_id,omitempty" yaml:"testcase_id,omitempty"`
-	TestTraceID        string                `json:"test_trace_id,omitempty" yaml:"test_trace_id,omitempty"`
-	RootSpanID         string                `json:"root_span_id,omitempty" yaml:"root_span_id,omitempty"`
+	TestIdentity       *artifact.TestIdentity `json:"test_identity,omitempty" yaml:"test_identity,omitempty"`
+	RedactionRules     []artifact.Redaction   `json:"redaction_rules,omitempty" yaml:"redaction_rules,omitempty"`
+	GRPCEvents         []artifact.GrpcEvent   `json:"grpc_events,omitempty" yaml:"grpc_events,omitempty"`
+	Interaction        *artifact.Interaction  `json:"interaction,omitempty" yaml:"interaction,omitempty"`
+	CaptureIncomplete  bool                   `json:"capture_incomplete,omitempty" yaml:"capture_incomplete,omitempty"`
+	RequestSpanID      string                 `json:"request_span_id,omitempty" yaml:"request_span_id,omitempty"`
+	TraceContextSource string                 `json:"trace_context_source,omitempty" yaml:"trace_context_source,omitempty"`
+	TestCorrelation    string                 `json:"test_correlation,omitempty" yaml:"test_correlation,omitempty"`
+	ParentCorrelation  string                 `json:"parent_correlation,omitempty" yaml:"parent_correlation,omitempty"`
+	TestCaseID         string                 `json:"testcase_id,omitempty" yaml:"testcase_id,omitempty"`
+	TestTraceID        string                 `json:"test_trace_id,omitempty" yaml:"test_trace_id,omitempty"`
+	RootSpanID         string                 `json:"root_span_id,omitempty" yaml:"root_span_id,omitempty"`
 
 	TestCase       string             `json:"testcase" yaml:"testcase"`
 	TestStatus     string             `json:"test_status,omitempty" yaml:"test_status,omitempty"`
@@ -129,7 +151,18 @@ type FlowSample struct {
 	Response       InteractionMessage `json:"response,omitempty" yaml:"response,omitempty"`
 }
 
+type BodyAvailability struct {
+	Present         bool   `json:"present" yaml:"present"`
+	Omitted         bool   `json:"omitted" yaml:"omitted"`
+	Redacted        bool   `json:"redacted" yaml:"redacted"`
+	Encoding        string `json:"encoding,omitempty" yaml:"encoding,omitempty"`
+	ContentEncoding string `json:"content_encoding,omitempty" yaml:"content_encoding,omitempty"`
+	RetainedBytes   int    `json:"retained_bytes" yaml:"retained_bytes"`
+	OriginalBytes   int64  `json:"original_bytes" yaml:"original_bytes"`
+	Truncated       bool   `json:"truncated" yaml:"truncated"`
+}
 type InteractionMessage struct {
+	BodyInfo      *BodyAvailability           `json:"body_info,omitempty" yaml:"body_info,omitempty"`
 	StreamKind    string                      `json:"stream_kind,omitempty" yaml:"stream_kind,omitempty"`
 	Observation   *artifact.GrpcObservation   `json:"observation,omitempty" yaml:"observation,omitempty"`
 	StatusDetails *artifact.GrpcStatusDetails `json:"status_details,omitempty" yaml:"status_details,omitempty"`
@@ -161,6 +194,7 @@ type openapiSpec struct {
 }
 
 type flowEntry struct {
+	RedactionRules    []artifact.Redaction
 	Case              artifact.TestCase
 	Flow              artifact.Flow
 	SchemaKeys        map[string]bool
@@ -235,6 +269,7 @@ func GenerateBundleSnapshot(bundlePath string, run *bundle.Run, captures []*arti
 	for i := range report.Artifacts {
 		report.Artifacts[i] = portable(report.Artifacts[i])
 	}
+	report.Capture = &CaptureSource{ProviderMappings: run.ProviderMappings, FormatVersion: run.EvidenceVersion, RunID: run.RunID, Revision: run.Revision, State: run.RunState, Producer: run.Producer, Application: run.Application, TestSource: run.TestSource, SUTSource: run.SUTSource}
 	report.Contracts = buildContractCoverage(run, captures)
 	report.Unmeasured = unmeasuredInteractions(captures)
 	for _, item := range report.Unmeasured {
@@ -251,7 +286,7 @@ func generateFromEntries(entries []artifactEntry, extraSchemas []artifact.Schema
 
 	provided, dependent, testcases, notes := buildCoverageWithSchemas(entries, extraSchemas)
 
-	report := &Report{
+	report := &Report{ReportVersion: ReportVersion, Producer: version.Current(),
 		GeneratedAt:     generatedAt,
 		SUTName:         sutName,
 		ArtifactCount:   len(entries),
@@ -330,7 +365,7 @@ func buildCoverageWithSchemas(entries []artifactEntry, extraSchemas []artifact.S
 			for _, schema := range entry.Doc.Schemas {
 				keys[schemaKey(schema)] = true
 			}
-			flowEntries = append(flowEntries, flowEntry{Case: entry.Doc.TestCase, Flow: flow, SchemaKeys: keys, TestCase: tcName, Status: entry.Doc.TestCase.Status, CaptureIncomplete: entry.Doc.CaptureIncomplete})
+			flowEntries = append(flowEntries, flowEntry{RedactionRules: entry.Doc.Redactions, Case: entry.Doc.TestCase, Flow: flow, SchemaKeys: keys, TestCase: tcName, Status: entry.Doc.TestCase.Status, CaptureIncomplete: entry.Doc.CaptureIncomplete})
 		}
 		schemas = append(schemas, entry.Doc.Schemas...)
 	}
@@ -750,7 +785,8 @@ func flowSampleFromFlow(entry flowEntry) FlowSample {
 		TraceContextSource: flow.TraceContextSource,
 		TestCorrelation:    flow.TestCorrelation,
 		ParentCorrelation:  flow.ParentCorrelation,
-		TestCaseID:         entry.Case.ID, TestTraceID: entry.Case.TraceID, RootSpanID: entry.Case.RootSpanID,
+		RedactionRules:     entry.RedactionRules, TestIdentity: entry.Case.Identity,
+		TestCaseID: entry.Case.ID, TestTraceID: entry.Case.TraceID, RootSpanID: entry.Case.RootSpanID,
 		ParentFlowID:   flow.ParentFlowID,
 		Fingerprint:    flow.Fingerprint,
 		TransportError: flow.TransportError,
@@ -824,6 +860,7 @@ func httpMessageSample(msg *artifact.HttpMessage) InteractionMessage {
 		Trailers:     msg.Trailers,
 		Body:         bodyPreview(msg.Body),
 		ArtifactBody: msg.Body,
+		BodyInfo:     bodyAvailability(msg.Body),
 	}
 }
 
@@ -1063,4 +1100,24 @@ func observedOperation(flow artifact.Flow) string {
 		path = "/"
 	}
 	return strings.ToUpper(req.Method) + " " + path
+}
+
+func bodyAvailability(body *artifact.Body) *BodyAvailability {
+	info := &BodyAvailability{}
+	if body != nil {
+		info.Present = true
+		info.Omitted = body.Omitted
+		info.Redacted = body.Redacted
+		info.Encoding = body.Encoding
+		info.ContentEncoding = body.ContentEncoding
+		info.RetainedBytes = len(body.Text)
+		if body.Bytes != "" {
+			if raw, err := base64.StdEncoding.DecodeString(body.Bytes); err == nil {
+				info.RetainedBytes = len(raw)
+			}
+		}
+		info.OriginalBytes = body.OriginalBytes
+		info.Truncated = body.Truncated
+	}
+	return info
 }

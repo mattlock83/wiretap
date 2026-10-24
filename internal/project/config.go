@@ -128,17 +128,20 @@ func (a API) Schemas(id, role string) []artifact.SchemaRef {
 }
 
 type Config struct {
-	Version      int                  `yaml:"version"`
-	Application  *bundle.Application  `yaml:"application,omitempty"`
-	HTTPListen   string               `yaml:"http_listen"`
-	ProxyListen  string               `yaml:"proxy_listen"`
-	OutputDir    string               `yaml:"output_dir"`
-	CADir        string               `yaml:"ca_dir"`
-	SUT          API                  `yaml:"sut"`
-	Dependencies map[string]API       `yaml:"dependencies"`
-	Path         string               `yaml:"-"`
-	Outputs      *runoutput.Config    `yaml:"outputs,omitempty"`
-	Redactions   []artifact.Redaction `yaml:"redactions,omitempty"`
+	ProviderMappings map[string]bundle.ProviderRef `yaml:"provider_mappings,omitempty"`
+	TestSource       map[string]any                `yaml:"test_source,omitempty"`
+	SUTSource        map[string]any                `yaml:"sut_source,omitempty"`
+	Version          int                           `yaml:"version"`
+	Application      *bundle.Application           `yaml:"application,omitempty"`
+	HTTPListen       string                        `yaml:"http_listen"`
+	ProxyListen      string                        `yaml:"proxy_listen"`
+	OutputDir        string                        `yaml:"output_dir"`
+	CADir            string                        `yaml:"ca_dir"`
+	SUT              API                           `yaml:"sut"`
+	Dependencies     map[string]API                `yaml:"dependencies"`
+	Path             string                        `yaml:"-"`
+	Outputs          *runoutput.Config             `yaml:"outputs,omitempty"`
+	Redactions       []artifact.Redaction          `yaml:"redactions,omitempty"`
 }
 
 // Load discovers .wiretap.yaml in the working directory or its ancestors.
@@ -204,6 +207,14 @@ func Decode(raw []byte, path string) (*Config, error) {
 	if cfg.Application != nil && strings.TrimSpace(cfg.Application.Name) == "" && strings.TrimSpace(cfg.Application.ID) == "" {
 		return nil, fmt.Errorf("%s: application requires a name or ID", path)
 	}
+	for id, provider := range cfg.ProviderMappings {
+		if _, ok := cfg.Dependencies[id]; !ok {
+			return nil, fmt.Errorf("provider mapping %q is not a configured dependency", id)
+		}
+		if err := provider.Validate(); err != nil {
+			return nil, err
+		}
+	}
 	cfg.Path = path
 	base := filepath.Dir(path)
 	expand := func(value string) (string, error) {
@@ -219,6 +230,17 @@ func Decode(raw []byte, path string) (*Config, error) {
 			return "", fmt.Errorf("%s: environment variable %s is not set", path, missing)
 		}
 		return result, nil
+	}
+	for _, source := range []map[string]any{cfg.TestSource, cfg.SUTSource} {
+		for key, value := range source {
+			if text, ok := value.(string); ok {
+				expanded, err := expand(text)
+				if err != nil {
+					return nil, err
+				}
+				source[key] = expanded
+			}
+		}
 	}
 	resolve := func(value string) (string, error) {
 		v, err := expand(value)

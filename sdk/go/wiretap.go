@@ -85,7 +85,13 @@ func (r *Runtime) FinishRunWithOutputs(ctx context.Context, options *OutputOptio
 	return result, err
 }
 
+type TestIdentity struct {
+	ID             string `json:"id"`
+	Variant        string `json:"variant,omitempty"`
+	AttemptOrdinal *int   `json:"attempt_ordinal,omitempty"`
+}
 type TestOptions struct {
+	Identity        *TestIdentity  `json:"test_identity,omitempty"`
 	Application     *Application   `json:"application,omitempty"`
 	SchemaRequired  *bool          `json:"schema_required,omitempty"`
 	Redactions      []Redaction    `json:"redactions,omitempty"`
@@ -144,6 +150,9 @@ func (r *Runtime) StartTest(t testing.TB, options TestOptions) *Session {
 		}
 		provider = fallbackProvider
 		ctx, span = fallbackProvider.Tracer("wiretap.tests").Start(context.Background(), t.Name(), trace.WithNewRoot())
+	}
+	if options.Identity == nil && len(t.Name()) <= 256 {
+		options.Identity = &TestIdentity{ID: t.Name()}
 	}
 	carrier := propagation.MapCarrier{}
 	propagation.TraceContext{}.Inject(ctx, carrier)

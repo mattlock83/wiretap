@@ -184,7 +184,7 @@ class Runtime {
   // settlement. Keep this handle per attempt so fixtures and retries are isolated.
   createTestAttempt(name, options = {}) {
     const scope = { session: null, closed: false };
-    const ready = this.sessions.run(scope, () => this.setupTest({ ...options, name }));
+    const ready = this.sessions.run(scope, () => this.setupTest({ ...options, name, identity: options.identity || (typeof name === "string" && name.trim() && Buffer.byteLength(name) <= 256 ? { id: name } : undefined) }));
     // A runner may execute hooks before invoking run/finish. Observe setup
     // rejection immediately while preserving it for those awaited paths.
     ready.catch(() => {});
@@ -257,6 +257,7 @@ class Runtime {
       : normalizeDependencies(options.dependencies);
     const payload = {
       application: options.application ?? this.application,
+      test_identity: options.identity ? { id: options.identity.id, variant: options.identity.variant, attempt_ordinal: options.identity.attemptOrdinal } : undefined,
       name: pickFirstString(options.name) || undefined,
       tags: options.tags,
       meta: options.meta,
