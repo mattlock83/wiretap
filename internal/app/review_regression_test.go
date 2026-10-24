@@ -86,16 +86,30 @@ func TestDrainDoesNotBlockOtherTestsOrLoseResponse(t *testing.T) {
 	cfg := core.DefaultConfig()
 	cfg.Proxy.ListenAddr = "127.0.0.1:0"
 	cfg.Artifact.OutputDir = t.TempDir()
-	cfg.HTTP.WriteTimeout = 40 * time.Millisecond
 	app, err := New(Deps{Config: cfg})
 	if err != nil {
 		t.Fatal(err)
 	}
-	control := httptest.NewUnstartedServer(app.server.Handler)
+	const shortWriteTimeout = 40 * time.Millisecond
+	control := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Exercise the real connection deadline only on the path under test.
+		// Setup includes filesystem work and need not finish within 40ms.
+		if r.URL.Path == "/v1/teardownTest" {
+			if err := http.NewResponseController(w).SetWriteDeadline(time.Now().Add(shortWriteTimeout)); err != nil {
+				t.Errorf("set teardown write deadline: %v", err)
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+		}
+		app.server.Handler.ServeHTTP(w, r)
+	}))
 	control.Config.WriteTimeout = app.server.WriteTimeout
 	control.Start()
 	defer control.Close()
 	defer app.proxyComponent.Stop(t.Context())
+	var releaseOnce sync.Once
+	releaseSUT := func() { releaseOnce.Do(func() { close(release) }) }
+	defer releaseSUT() // Unblock requests before deferred proxy/server shutdown.
 	setup := func(n int) map[string]any {
 		return postDependencyJSON(t, control.URL, "/v1/setupTest", map[string]any{
 			"name": "parallel", "schema_required": false, "sut_base_url": sut.URL,
@@ -135,8 +149,8 @@ func TestDrainDoesNotBlockOtherTestsOrLoseResponse(t *testing.T) {
 	apiStatus(t, control.URL, "/v1/teardownTest", map[string]any{"session_id": first["session_id"]}, http.StatusConflict)
 	next := setup(102)
 	postDependencyJSON(t, control.URL, "/v1/teardownTest", map[string]any{"session_id": next["session_id"]})
-	time.Sleep(80 * time.Millisecond) // Exceed the actual server's normal write deadline.
-	close(release)
+	time.Sleep(2 * shortWriteTimeout) // Exceed the injected connection deadline.
+	releaseSUT()
 	<-completed
 	if err := <-teardownDone; err != nil {
 		t.Fatalf("drain response lost: %v", err)
