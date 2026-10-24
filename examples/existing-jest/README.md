@@ -3,7 +3,9 @@
 This demo clones [Ziad Al-Moqamar's property-management API](https://github.com/ZiadAlMoqamar/Property-Management-API-Testing-Using-Jest)
 at commit `77d7d017b948c3456889f199ab7d05070b33bd4d`. It has an Express API,
 Jest 29, Supertest, an in-memory mock datastore and 120 tests in ten files. The
-upstream repository retains its own MIT license and attribution.
+upstream repository retains its own MIT license and attribution. It does not
+include an API specification; this overlay supplies an OpenAPI contract derived
+from its routes and existing test expectations.
 
 From the Wiretap checkout, with Git, Go 1.26+ and Node 22+:
 
