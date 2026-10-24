@@ -1,4 +1,11 @@
-# Native gRPC capture example
+# Native gRPC with an external runtime
+
+This advanced fixture keeps the shell as the sole runtime owner. It starts
+capture first so the SUT can use the dynamically allocated gRPC dependency
+listener. The Go test therefore uses `Runtime.StartTest`; the shell finalizes
+after the test command, including normal test failures. Do not add `wiretap.Run`
+to this fixture. For the usual standard-testing integration, use
+[`Run` and `StartTest`](../../sdk/go/README.md).
 
 For native Node clients and mocks, traced parallel tests, mixed HTTP/gRPC paths
 and TLS, use the [Node companion example](node/README.md). The Go example below
@@ -9,7 +16,11 @@ Requires Go 1.26+, Bash, Python 3 and curl.
 Run `./examples/grpc-boundaries/run.sh` from the repository root. It builds
 Wiretap and two small grpc-go servers, runs an existing Go test through the
 capture listeners, finalizes the run, and prints the raw capture directory and
-`coverage.json` path.
+`exports/coverage.json` path. JSON and text coverage are selected in the generated
+project configuration and written during finalization.
+`last-run.json` inside the archive records the exact output paths. Set
+`WIRETAP_EXAMPLE_FAIL=1` to exercise a failing user cleanup: the command returns
+nonzero and still writes the completed archive and coverage.
 
 The test keeps its generated `HealthClient`; the SUT keeps its generated client
 for the mock. Both servers advertise reflection, so the Wiretap configuration
@@ -53,4 +64,5 @@ WIRETAP_GRPC_CONTRACT_SOURCE=mixed ./examples/grpc-boundaries/run.sh
 
 All modes allocate dynamic capture ports at `startRun`, then use the returned
 dependency origin to start the SUT. First-test setup resolves both upstreams
-after they are ready.
+after they are ready. This startup order is the reason for the explicit external
+runtime ownership. Ordinary generated clients and assertions are unchanged.

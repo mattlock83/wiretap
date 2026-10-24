@@ -15,7 +15,12 @@ func TestExistingGRPCClient(t *testing.T) {
 	if !strings.EqualFold(os.Getenv("WIRETAP_GRPC_EXAMPLE"), "1") {
 		t.Skip("run examples/grpc-boundaries/run.sh to start Wiretap and the example servers")
 	}
+	// run.sh owns the external runtime so it can configure the SUT's dynamic
+	// dependency listener before this test. The shell also finalizes the run.
 	session := (&wiretap.Runtime{}).StartTest(t, wiretap.TestOptions{})
+	if os.Getenv("WIRETAP_EXAMPLE_FAIL") == "1" {
+		t.Cleanup(func() { t.Error("intentional user cleanup failure") })
+	}
 	conn, err := grpc.NewClient(strings.TrimPrefix(session.SUTURL, "http://"), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		t.Fatal(err)

@@ -4,13 +4,15 @@ Run the real [Speedscale Microsvc Transactions service](https://github.com/speed
 from a local Docker image, capture its HTTP boundary with an ordinary Accounts
 mock. No Microsvc
 source changes are needed. Python `unittest` owns execution and reporting; its
-lifecycle calls Wiretap's HTTP API directly.
+lifecycle calls Wiretap's HTTP API directly. This is an advanced external-runtime
+example for Docker and Python. For standard Go or JavaScript suites, start with
+the [managed SDK examples](../README.md).
 
 ```bash
 ./examples/run-microsvc-transactions.sh
 ```
 
-Requirements: Docker running, Go, Python 3.9+, and these local images:
+Requirements: Docker running, Go 1.26+, Python 3.9+, and these local images:
 
 - `microsvc_transactions-service:latest`
 - `microsvc_fraud-service:latest`
@@ -69,8 +71,8 @@ test support from the image.
 service's effects. The suite verifies authentication before starting capture.
 Each test uses a fresh user ID; its normal setup and teardown own fixture state.
 Authentication uses disposable signing keys and synthetic test credentials.
-Captured Authorization headers and payloads are retained unchanged; there is no
-built-in redaction. The harness discards its database after the run.
+Captured Authorization headers and payloads are retained unchanged. The harness
+discards its database after the run.
 
 Failing tests and incomplete capture make the command fail and leave evidence
 for inspection. Contract mismatches are recorded separately from the framework

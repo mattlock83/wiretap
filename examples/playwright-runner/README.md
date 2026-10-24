@@ -3,6 +3,7 @@
 This runnable example uses Playwright's `request` fixture with a local Todo API.
 No browser installation is needed. The existing global setup starts the API;
 Wiretap owns its capture process, per-test sessions and exports.
+Use Playwright Test 1.64.1 or later within 1.x and Node.js 22 or later.
 
 From the repository root, install the SDK development dependencies and build the
 local binary once:

@@ -1,4 +1,9 @@
-# Basic REST capture
+# Basic REST with an external runtime
+
+This advanced example keeps an existing shell harness as the runtime owner. For
+ordinary onboarding use the managed [Jest](../existing-jest/README.md),
+[Mocha](../mocha-runner/README.md), [Playwright](../playwright-runner/README.md) or
+[plain Node](../node-suite/README.md) integration.
 
 The runner starts the demo SUT and an external inventory dependency separately.
 The SUT is configured to reach that dependency through Wiretap's existing capture
@@ -37,6 +42,9 @@ demo services. Native Node suite hooks or Jest global teardown finalize capture
 over HTTP; Jest workers only own their test attempts. Raw artifacts are written
 automatically. Finalization generates the selected exports and returns their exact paths to the harness.
 The default Node variant uses sequential capture.
+The Jest file deliberately uses the selective `createJestSuite` helper against
+this existing process. Do not also add `withWiretap` here: the shell already owns
+the runtime, and Jest global teardown is the one place that finalizes its run.
 
 For an uninstrumented SUT with serial capture:
 

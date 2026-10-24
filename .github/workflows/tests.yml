@@ -30,6 +30,11 @@ jobs:
           node-version: '22'
       - name: Verify Go SDK adoption in an external test suite
         run: node scripts/go-sdk-smoke.mjs
+      - name: Verify advanced Go gRPC examples
+        if: runner.os == 'Linux'
+        run: |
+          ./examples/grpc-boundaries/run.sh
+          ./examples/grpc-streaming/run.sh
       - if: runner.os == 'Linux'
         run: go test -race ./internal/proxy ./internal/app ./sdk/go
       - if: runner.os == 'Linux'
@@ -70,6 +75,11 @@ jobs:
           WIRETAP_PLAYWRIGHT_BROWSER: chromium
           WIRETAP_PLAYWRIGHT_PARALLEL: '1'
         run: node sdk/js/node_modules/@playwright/test/cli.js test --config examples/playwright-runner/playwright.config.cjs
+      - name: Verify the documented Mocha example
+        if: runner.os == 'Linux' && matrix.node == '22'
+        env:
+          WIRETAP_BINARY: ${{ github.workspace }}/dist/wiretap
+        run: node sdk/js/node_modules/mocha/bin/mocha.js --config examples/mocha-runner/.mocharc.cjs
       - uses: actions/upload-artifact@v4
         if: always() && runner.os == 'Linux' && matrix.node == '22'
         with:

@@ -1,22 +1,34 @@
 # Examples
 
-Run these commands from the repository root. Examples capture existing tests
-and print their capture directory. Inspect `bundle.json`, the attempts in
-`tests/`, and `exports/coverage.json` for JSON coverage.
+Start with the example for your test runner. Each managed integration owns
+startup, test capture, exports and shutdown while retaining your assertions and
+mocks. The [SDK guide](../sdk/js/README.md) covers Jest, Mocha, Playwright and
+plain JavaScript; the [Go guide](../sdk/go/README.md) uses standard `testing`.
+
+Run these commands from the repository root. Each example prints its capture
+directory. Keep the whole archive: `bundle.json`, `tests/`, captured payloads,
+contracts and exports. Receipts give exact output paths. JavaScript managed runs
+write `last-run.json` beside their run directories; Go packages write it inside
+each run directory so concurrent packages cannot overwrite one another.
 
 | Example | Demonstrates | Requirements |
 | --- | --- | --- |
 | [Existing Jest suite](existing-jest/README.md) | Pinned external Express API, 120 unchanged tests, automatic SDK setup and Postman parser checks. | Git, Go 1.26+, Node.js 22+. |
-| [Playwright Test](playwright-runner/README.md) | Copyable Todo API suite with managed capture, ordinary request fixtures and coverage exports. | Go 1.26+, Node.js 22+, Playwright Test 1.64+. |
+| [Mocha](mocha-runner/README.md) | Config wrapper, ordinary tests/hooks and an existing shared client; automatic coverage and Postman exports. | Go 1.26+, Node.js 22.12+. |
+| [Playwright Test](playwright-runner/README.md) | Copyable Todo API suite with managed capture, ordinary request fixtures and coverage exports. | Go 1.26+, Node.js 22+, Playwright Test 1.64.1+ within 1.x. |
 | [Go test suite](go-suite/README.md) | Two lifecycle hooks, an existing HTTP handler/client, final test outcomes and automatic exports. | Go 1.26+. |
-| [Complete Node suite](node-suite/README.md) | Copyable two-file harness, startup/readiness, negative tests, framework outcomes and finalization after failures. | Go 1.26+, Node.js 22+. |
-| [Basic REST](basic-rest/README.md) | Existing Node tests and an HTTP dependency mock; optional parallel Jest capture. | Go 1.26+, Node.js 22+, Bash and curl. |
-| [Microsvc Transactions](microsvc-transactions/README.md) | A real service image, an Accounts mock, disposable database state and authenticated tests. | Go 1.26+, Python 3.9+, Docker and the documented local images. |
-| [Native gRPC](grpc-boundaries/README.md) | Existing grpc-go test, gRPC SUT and gRPC mock, reflection/local contracts and JSON coverage. | Go 1.26+, Bash, Python 3 and curl. |
-| [Streaming gRPC](grpc-streaming/README.md) | All four RPC shapes, traced provider and dependency calls, per-message evidence and structural coverage. | Go 1.26+, Bash, Python 3 and curl. |
+| [Plain JavaScript / Node test](node-suite/README.md) | Two test files sharing one managed runtime, negative tests and finalization after failures. | Go 1.26+, Node.js 22+. |
+| [Basic REST](basic-rest/README.md) | Advanced external runtime, HTTP dependency mock and optional parallel Jest capture. | Go 1.26+, Node.js 22+, Bash and curl. |
+| [Microsvc Transactions](microsvc-transactions/README.md) | Advanced Docker harness, real service image, Accounts mock, disposable database and Python HTTP lifecycle. | Go 1.26+, Python 3.9+, Docker and the documented local images. |
+| [Native gRPC](grpc-boundaries/README.md) | Advanced external runtime, generated grpc-go clients, reflection/local contracts and coverage. | Go 1.26+, Bash, Python 3 and curl. |
+| [Streaming gRPC](grpc-streaming/README.md) | Advanced external runtime, all four RPC shapes, provider/dependency calls and structural coverage. | Go 1.26+, Bash, Python 3 and curl. |
 | [Native Node gRPC](grpc-boundaries/node/README.md) | Ordinary Node clients/mocks, a Go provider, local contracts, traced parallel and mixed paths, TLS and offline coverage rebuilding. | Go 1.26+, Node.js 22+, Bash and OpenSSL. |
 
 ## Basic REST
+
+These advanced examples retain an outer harness because it must configure
+application and mock processes around capture listeners. Keep that harness as
+the sole runtime owner; do not add a second managed runner integration to them.
 
 ```bash
 npm ci --prefix sdk/js

@@ -1,8 +1,10 @@
-# A complete Node suite integration
+# Plain JavaScript with Node's test runner
 
 Copy this directory into an existing test project to get a working starting
-point. It uses Node 22's outcome-aware test adapter, two test files and one
-parent harness. All traffic is synthetic; Wiretap stores payloads and dummy
+point. It uses the plain JavaScript SDK's Node test adapter, two test files and
+one parent harness. Prefer the [Jest](../existing-jest/README.md),
+[Mocha](../mocha-runner/README.md) or [Playwright](../playwright-runner/README.md)
+adapter when your suite uses that runner. All traffic is synthetic; Wiretap stores payloads and dummy
 credentials unchanged.
 
 From the Wiretap checkout with Go 1.26+ and Node 22+:
@@ -23,7 +25,7 @@ path, so `npm test` runs the harness without extra arguments.
 
 | File | Adapt it for your project |
 | --- | --- |
-| [run-tests.mjs](run-tests.mjs) | Start services, wait for readiness, run all workers, finalize once, save paths and shut down. |
+| [run-tests.mjs](run-tests.mjs) | Start your service, call `startManagedRuntime`, run all workers, then call `owner.close()`. |
 | [service.mjs](service.mjs) | Replace the synthetic service with existing application/mock startup. |
 | [.wiretap.yaml](.wiretap.yaml) | Declare API identities, URLs, contracts and desired outputs. |
 | [orders.openapi.yaml](orders.openapi.yaml) | Replace with your real test contract. |
@@ -32,6 +34,10 @@ path, so `npm test` runs the harness without extra arguments.
 
 Each file uses `manageRuntime: false`. Worker cleanup closes its own attempts;
 only `run-tests.mjs` finalizes the shared run after the test process exits.
+`startManagedRuntime` chooses available control and proxy ports, waits for
+readiness, and starts capture. Its `close()` method finalizes configured exports,
+saves `last-run.json` and `wiretap.log`, and stops the owned runtime even when an
+export fails. The harness keeps its application alive until that completes.
 Sequential file execution works with an uninstrumented SUT. Parallel workers
 need [W3C context propagation or isolated services](../../docs/otel-adoption.md).
 
@@ -39,6 +45,8 @@ The finalization receipt is `artifacts/last-run.json`, and the complete run is
 `artifacts/<run-id>/`. The receipt contains exact raw, coverage and Postman paths;
 `exports/result.json` inside the run also records any export failures.
 `WIRETAP_OUTPUT_DIR` selects an absolute artifact root for CI.
+See the [plain JavaScript guide](../../sdk/js/docs/javascript.md) for custom
+test frameworks and an already-running Wiretap process.
 
 Set `WIRETAP_EXAMPLE_FAIL=1` to make the positive test's `t.after` cleanup fail.
 The adapter records that failure, the other test still runs, the parent writes

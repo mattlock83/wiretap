@@ -11,11 +11,16 @@ go build -o dist/wiretap ./cmd/wiretap
 WIRETAP_BINARY="$PWD/dist/wiretap" go -C examples/go-suite test -count=1 ./...
 ```
 
-On PowerShell, set `$env:WIRETAP_BINARY` to the absolute path of the built
-`wiretap.exe` before running `go -C examples/go-suite test -count=1 ./...`.
+On PowerShell:
 
-For an existing project, copy the pattern in [main_test.go](main_test.go), set
-the handler and API schema in [.wiretap.yaml](.wiretap.yaml), and add
+```powershell
+go build -o dist/wiretap.exe ./cmd/wiretap
+$env:WIRETAP_BINARY = (Resolve-Path .\dist\wiretap.exe).Path
+go -C examples/go-suite test -count=1 ./...
+```
+
+For an existing project, copy the pattern in [main_test.go](main_test.go), pass
+your handler to `Run`, point [.wiretap.yaml](.wiretap.yaml) at your API schema, and add
 `wiretap.StartTest(t)` to each test or shared test setup helper. Use the returned
 session's URL and client wrapper for existing requests. Register user cleanup
 after `StartTest` so its requests and final failures are captured.

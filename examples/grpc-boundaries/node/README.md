@@ -6,6 +6,12 @@ no generated-client build step, reflection service or collector requirement.
 The mock and provider have ordinary gRPC implementations and do not import
 Wiretap. Local `.proto` files supply both contracts.
 
+This is an advanced protocol fixture: each group controls its own external
+runtime so it can test TLS, mixed protocols, cancellation and offline rebuilding.
+For ordinary Node suites use the [managed Node example](../../node-suite/README.md)
+or your [runner's adapter](../../../sdk/js/README.md). Do not add another runtime
+owner to this fixture.
+
 From the repository root:
 
 ```bash
@@ -52,7 +58,10 @@ can associate one active test with its dependency calls; overlapping tests need
 propagation through the application or separate test environments.
 
 The tests retain `node:test`, their normal clients, assertions and lifecycle.
-`runtime.runTest` activates the test context and closes its capture; the harness
-owns starting Wiretap, the application and mocks. No Wiretap-specific RPC client
+`runtime.runTest` activates a callback's test context and closes its capture;
+the harness owns starting Wiretap, the application and mocks. No Wiretap-specific RPC client
 or test framework is involved. The dedicated `grpc-node` CI workflow repeats
 this command.
+These protocol callbacks explicitly describe their capture outcomes. Use the
+runner adapters for ordinary tests so failures in runner cleanup hooks are also
+reflected in the final test outcome.

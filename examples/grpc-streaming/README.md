@@ -1,4 +1,9 @@
-# Native gRPC streaming
+# Native gRPC streaming with an external runtime
+
+This advanced fixture keeps one shell harness as the runtime owner so it can
+obtain the dynamic dependency listener before starting the provider. Tests use
+`Runtime.StartTest`; the shell finalizes once after them. For a normal Go test
+package, start with the managed [`Run` / `StartTest` guide](../../sdk/go/README.md).
 
 Run from the repository root:
 
@@ -6,9 +11,11 @@ Run from the repository root:
 ./examples/grpc-streaming/run.sh
 ```
 
-Requires Go, Python 3 and curl. The script builds and starts Wiretap, a provider
+Requires Go 1.26+, Bash, Python 3 and curl. The script builds and starts Wiretap, a provider
 and its existing mock dependency, runs ordinary Go tests, finishes the bundle,
-and stops the processes. No protoc, reflection or collector is required.
+and stops the processes. Normal assertion failures still finalize coverage and
+retain the Go test command's failure status. No protoc, reflection or collector
+is required.
 
 The checked-in `fixture/stream.proto` declares all four native gRPC shapes:
 
@@ -27,11 +34,16 @@ SDK only handles test lifecycle; traffic uses ordinary grpc-go clients.
 Raw captures are written to `artifacts/grpc-streaming/run-*/`. Inspect
 `bundle.json` and `tests/*.json` for messages, raw `.bin` payload references,
 readable Protobuf JSON, message timing, half-close and terminal metadata.
-`coverage.json` contains the exported JSON coverage. Override the destination with:
+`exports/coverage.json` contains the exported JSON coverage and
+`exports/coverage.txt` contains its text summary. Override the destination with:
 
 ```sh
 WIRETAP_GRPC_STREAMING_ARTIFACT_DIR=/tmp/wiretap-streaming ./examples/grpc-streaming/run.sh
 ```
+
+`last-run.json` inside each archive records its exact paths. Set
+`WIRETAP_EXAMPLE_FAIL=1` to make the unary test's user cleanup fail and verify
+that the command returns nonzero while retaining finalized evidence and coverage.
 
 Complete passing streams can cover methods and the structural Protobuf field
 conditions they actually carry. An empty stream covers its method but contributes

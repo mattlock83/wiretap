@@ -1,11 +1,10 @@
-// One harness owns service startup, all workers, finalization and shutdown.
+// The parent owns application startup and the shared runtime; workers own attempts.
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import fs from 'node:fs/promises';
-import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { startCapture } from '@wiretap/sdk';
+import { startManagedRuntime } from '@wiretap/sdk/managed-runtime';
 import { createService } from './service.mjs';
 
 const project = path.dirname(fileURLToPath(import.meta.url));
@@ -15,29 +14,8 @@ if (args.length && (args.length !== 2 || args[0] !== '--binary')) {
 }
 const binary = args[1] ? path.resolve(args[1]) : process.env.WIRETAP_BINARY || 'wiretap';
 const artifacts = path.resolve(process.env.WIRETAP_OUTPUT_DIR || path.join(project, 'artifacts'));
-await fs.mkdir(artifacts, { recursive: true });
-let service, runtime, owner, tests, spawnError, testExitCode = 0, runtimeLog = '';
-
-async function freePort() {
-  const server = net.createServer();
-  server.listen(0, '127.0.0.1');
-  await once(server, 'listening');
-  const port = server.address().port;
-  await new Promise(resolve => server.close(resolve));
-  return port;
-}
-
-async function waitForHealth(url) {
-  for (let attempt = 0; attempt < 100; attempt++) {
-    if (spawnError) throw spawnError;
-    if (runtime?.exitCode !== null && runtime?.exitCode !== undefined) {
-      throw new Error(`Wiretap exited before readiness: ${runtimeLog}`);
-    }
-    try { if ((await fetch(url, { signal: AbortSignal.timeout(250) })).ok) return; } catch {}
-    await new Promise(resolve => setTimeout(resolve, 100));
-  }
-  throw new Error(`Service was not ready: ${url}\n${runtimeLog}`);
-}
+const previousSUT = process.env.SUT_BASE_URL;
+let service, owner, tests, testExitCode = 0;
 
 async function stop(child) {
   if (!child?.pid || child.exitCode !== null || child.signalCode !== null) return;
@@ -59,23 +37,11 @@ try {
   service = createService();
   service.listen(0, '127.0.0.1');
   await once(service, 'listening');
-  const serviceUrl = `http://127.0.0.1:${service.address().port}`;
-  await waitForHealth(`${serviceUrl}/healthz`);
-  const controlAddress = `127.0.0.1:${await freePort()}`;
-  const baseUrl = `http://${controlAddress}`;
-  runtime = spawn(binary, ['--config', '.wiretap.yaml'], {
-    cwd: project, stdio: ['ignore', 'ignore', 'pipe'],
-    env: { ...process.env, WIRETAP_HTTP_LISTEN: controlAddress,
-      WIRETAP_PROXY_LISTEN: '127.0.0.1:0', SUT_BASE_URL: serviceUrl, WIRETAP_OUTPUT_DIR: artifacts }
-  });
-  // Observe spawn errors before polling readiness, and keep startup diagnostics.
-  runtime.on('error', error => { spawnError = error; runtimeLog += error.message; });
-  runtime.stderr.on('data', chunk => { runtimeLog = (runtimeLog + chunk).slice(-65536); });
-  await waitForHealth(`${baseUrl}/healthz`);
-  owner = await startCapture({ baseUrl, instrumentation: false });
+  process.env.SUT_BASE_URL = `http://127.0.0.1:${service.address().port}`;
+  owner = await startManagedRuntime({ binary, cwd: project, outputDir: artifacts });
   tests = spawn(process.execPath, ['--require', '@wiretap/sdk/tracing', '--test', '--test-concurrency=1',
     'test/orders.test.cjs', 'test/invalid-order.test.cjs'], {
-    cwd: project, stdio: 'inherit', env: { ...process.env, WIRETAP_BASE_URL: baseUrl }
+    cwd: project, stdio: 'inherit', env: { ...process.env, WIRETAP_BASE_URL: owner.baseUrl }
   });
   const [code, signal] = await once(tests, 'close');
   testExitCode = code ?? (signal === 'SIGINT' ? 130 : 1);
@@ -83,40 +49,21 @@ try {
   console.error(error);
   if (!testExitCode) testExitCode = 1;
 } finally {
-  // A failed test still produces exports. A cleanup failure never replaces the
-  // test process's original nonzero exit code.
-  let receipt;
-  if (owner) {
-    try { receipt = await owner.finishRun(); }
-    catch (error) {
-      receipt = error.body;
-      console.error('Wiretap finalization failed:', error.message);
-      if (!testExitCode) testExitCode = 1;
-    }
-  }
-  try {
-    if (receipt) {
-      await fs.writeFile(path.join(artifacts, 'last-run.json'), JSON.stringify(receipt, null, 2) + '\n');
-      if (receipt.bundle_path) console.log(`Raw capture: ${receipt.bundle_path}`);
-      if (receipt.outputs?.coverage?.text) console.log(`Text summary: ${receipt.outputs.coverage.text}`);
-      if (receipt.outputs?.coverage?.json) console.log(`JSON coverage: ${receipt.outputs.coverage.json}`);
-      for (const collection of receipt.outputs?.postman || []) console.log(`Postman collection: ${collection}`);
-      if (receipt.bundle_path) {
-        const summary = spawn(binary, ['report', '--bundle', receipt.bundle_path, '--format', 'text'], { stdio: 'inherit' });
-        const [code] = await once(summary, 'close');
-        if (code !== 0 && !testExitCode) testExitCode = 1;
-      }
-    }
-  } catch (error) {
-    console.error('Saving Wiretap results failed:', error);
-    if (!testExitCode) testExitCode = 1;
-  }
+  // Keep application fixtures alive until every attempt and export is finished.
+  // A cleanup failure must not replace the test process's original nonzero code.
   await cleanup('Stopping test workers failed', () => stop(tests));
-  await cleanup('Stopping Wiretap failed', () => stop(runtime));
-  await cleanup('Saving runtime log failed', () => fs.writeFile(path.join(artifacts, 'runtime.log'), runtimeLog));
+  if (owner) await cleanup('Wiretap finalization failed', async () => {
+    const receipt = await owner.close();
+    console.log(`Receipt: ${path.join(artifacts, 'last-run.json')}`);
+    console.log(`Raw capture: ${receipt.bundle_path}`);
+    for (const collection of receipt.outputs?.postman || []) console.log(`Postman collection: ${collection}`);
+    if (receipt.outputs?.coverage?.text) console.log(await fs.readFile(receipt.outputs.coverage.text, 'utf8'));
+  });
   if (service) await cleanup('Stopping the service failed', async () => {
     service.closeAllConnections();
     await new Promise(resolve => service.close(resolve));
   });
+  if (previousSUT === undefined) delete process.env.SUT_BASE_URL;
+  else process.env.SUT_BASE_URL = previousSUT;
 }
 process.exitCode = testExitCode;

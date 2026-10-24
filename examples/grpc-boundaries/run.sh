@@ -6,6 +6,7 @@ WORK="$(mktemp -d)"
 OUTPUT="${WIRETAP_GRPC_ARTIFACT_DIR:-${ROOT}/artifacts/grpc-boundaries}"
 CONTRACT_SOURCE="${WIRETAP_GRPC_CONTRACT_SOURCE:-reflection}"
 mkdir -p "$OUTPUT"
+OUTPUT="$(cd "$OUTPUT" && pwd)"
 
 port() { python3 -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));print(s.getsockname()[1]);s.close()'; }
 CONTROL_PORT="$(port)"
@@ -50,6 +51,8 @@ version: 1
 http_listen: 127.0.0.1:${CONTROL_PORT}
 proxy_listen: 127.0.0.1:0
 output_dir: ${OUTPUT}
+outputs:
+  coverage: [json, text]
 sut:
   id: example-sut
   protocol: grpc
@@ -86,9 +89,18 @@ for target in "$MOCK_PORT" "$SUT_PORT"; do
   done
 done
 
-WIRETAP_GRPC_EXAMPLE=1 WIRETAP_BASE_URL="http://127.0.0.1:${CONTROL_PORT}" go test -count=1 ./examples/grpc-boundaries
-curl --fail-with-body -sS "http://127.0.0.1:${CONTROL_PORT}/v1/finishRun" -H 'Content-Type: application/json' -d '{}' >"$WORK/finish.json"
+TEST_STATUS=0
+WIRETAP_GRPC_EXAMPLE=1 WIRETAP_BASE_URL="http://127.0.0.1:${CONTROL_PORT}" go test -count=1 ./examples/grpc-boundaries || TEST_STATUS=$?
+FINISH_STATUS=0
+curl --fail-with-body -sS "http://127.0.0.1:${CONTROL_PORT}/v1/finishRun" -H 'Content-Type: application/json' -d '{}' >"$WORK/finish.json" || FINISH_STATUS=$?
+if [[ "$FINISH_STATUS" != 0 ]]; then
+  cat "$WORK/finish.json" >&2
+  if [[ "$TEST_STATUS" != 0 ]]; then exit "$TEST_STATUS"; fi
+  exit "$FINISH_STATUS"
+fi
 CAPTURE_DIR="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["bundle_path"])' "$WORK/finish.json")"
-"$WORK/wiretap" report --bundle "$CAPTURE_DIR" --format json --output "$CAPTURE_DIR/coverage.json"
+cp "$WORK/finish.json" "$CAPTURE_DIR/last-run.json"
+cp "$WORK/wiretap.log" "$CAPTURE_DIR/wiretap.log"
 echo "Raw capture: $CAPTURE_DIR"
-echo "JSON coverage: $CAPTURE_DIR/coverage.json"
+echo "JSON coverage: $CAPTURE_DIR/exports/coverage.json"
+exit "$TEST_STATUS"

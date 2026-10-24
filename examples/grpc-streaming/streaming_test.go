@@ -34,8 +34,12 @@ func TestNativeStreamingShapes(t *testing.T) {
 		{"empty bidirectional stream", "Chat", 0, false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			// The SDK wraps only the normal test lifecycle. RPC traffic uses grpc-go.
+			// run.sh owns the runtime and finalization because it starts the
+			// provider with the dynamic dependency listener. RPCs use grpc-go.
 			session := (&wiretap.Runtime{}).StartTest(t, wiretap.TestOptions{})
+			if os.Getenv("WIRETAP_EXAMPLE_FAIL") == "1" && test.method == "Echo" {
+				t.Cleanup(func() { t.Error("intentional user cleanup failure") })
+			}
 			conn, err := grpc.NewClient(strings.TrimPrefix(session.SUTURL, "http://"), grpc.WithTransportCredentials(insecure.NewCredentials()))
 			if err != nil {
 				t.Fatal(err)
