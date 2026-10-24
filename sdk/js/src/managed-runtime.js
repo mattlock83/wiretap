@@ -82,7 +82,10 @@ async function startManagedRuntime(options = {}) {
     return closing;
   }
   try {
-    child = childProcess.spawn(binary, args, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
+    // Windows otherwise kills all non-detached children immediately when Node
+    // exits. Let the stdin lifeline trigger archive finalization instead.
+    child = childProcess.spawn(binary, args, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'],
+      windowsHide: true, detached: process.platform === 'win32' });
     // A child that exits early can close its end first; its exit reports the failure.
     child.stdin.on('error', () => {});
     child.stdout.on('data', appendLog);
