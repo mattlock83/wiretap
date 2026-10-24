@@ -210,7 +210,12 @@ try {
   const require = createRequire(path.join(consumer, 'package.json'));
   const installation = await fs.realpath(path.join(consumer, 'node_modules'));
   for (const module of ['@wiretap/sdk', '@wiretap/sdk/jest', '@wiretap/sdk/mocha', '@wiretap/sdk/playwright', 'jest', 'mocha', '@playwright/test']) {
-    assert.ok(require.resolve(module).startsWith(installation + path.sep), `${module} escaped the clean installation`);
+    // Resolve junctions and compare path components; Windows paths can differ
+    // in drive-letter or directory casing while identifying the same install.
+    const resolved = await fs.realpath(require.resolve(module));
+    const relative = path.relative(installation, resolved);
+    assert.ok(relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative),
+      `${module} escaped the clean installation: ${resolved}`);
   }
   await mustRun(process.execPath, ['-e', `
     const assert = require('node:assert/strict');
