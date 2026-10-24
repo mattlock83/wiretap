@@ -28,11 +28,12 @@ func (a *App) testDefaults() setupTestRequest {
 		return setupTestRequest{}
 	}
 	cfg := a.project
+	redactions := append([]artifact.Redaction(nil), cfg.Redactions...)
 	id := cfg.SUT.ID
 	if id == "" {
 		id = "sut"
 	}
-	out := setupTestRequest{APIID: id, SUTBaseURL: cfg.SUT.TargetURL(), SUTTargetKind: cfg.SUT.Kind, SUTProtocol: cfg.SUT.Protocol, Schemas: cfg.SUT.Schemas(id, "sut"), SchemaRequired: cfg.SUT.SchemaRequired}
+	out := setupTestRequest{APIID: id, SUTBaseURL: cfg.SUT.TargetURL(), SUTTargetKind: cfg.SUT.Kind, SUTProtocol: cfg.SUT.Protocol, Schemas: cfg.SUT.Schemas(id, "sut"), SchemaRequired: cfg.SUT.SchemaRequired, Redactions: redactions}
 	if cfg.Application != nil {
 		application := *cfg.Application
 		out.Application = &application

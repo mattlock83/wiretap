@@ -199,6 +199,9 @@ func (s *TestCaseStore) FinishCase(status string, env *artifact.Environment) (*a
 			return nil, "", err
 		}
 	}
+	for i := range art.Traffic {
+		art.Traffic[i].Fingerprint = flowFingerprint(art.Traffic[i])
+	}
 
 	path, err := s.sink.Commit(art)
 	if err != nil {

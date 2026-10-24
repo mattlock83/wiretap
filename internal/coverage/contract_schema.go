@@ -80,10 +80,10 @@ func (b *contractBuilder) node(ref *openapi3.SchemaRef, loc string, stack map[*o
 	}
 	if s.Min != nil || s.Max != nil {
 		min, max := floatRat(s.Min), floatRat(s.Max)
-		if min != nil && !s.ExclusiveMin {
+		if min != nil && !s.ExclusiveMin.IsTrue() {
 			add("number", "equal:"+min.RatString(), func(v any, p bool) bool { x := numberRat(v); return p && x != nil && x.Cmp(min) == 0 })
 		}
-		if max != nil && !s.ExclusiveMax {
+		if max != nil && !s.ExclusiveMax.IsTrue() {
 			add("number", "equal:"+max.RatString(), func(v any, p bool) bool { x := numberRat(v); return p && x != nil && x.Cmp(max) == 0 })
 		}
 		t := add("number", "interior", func(v any, p bool) bool {
@@ -368,16 +368,16 @@ func localDomainImpossible(s *openapi3.Schema) bool {
 		return false
 	}
 	min, max := floatRat(s.Min), floatRat(s.Max)
-	if cmp := min.Cmp(max); cmp > 0 || cmp == 0 && (s.ExclusiveMin || s.ExclusiveMax) {
+	if cmp := min.Cmp(max); cmp > 0 || cmp == 0 && (s.ExclusiveMin.IsTrue() || s.ExclusiveMax.IsTrue()) {
 		return true
 	}
 	if s.Type.Is("integer") {
 		lowest := new(big.Int).Div(min.Num(), min.Denom())
-		if !min.IsInt() || s.ExclusiveMin {
+		if !min.IsInt() || s.ExclusiveMin.IsTrue() {
 			lowest.Add(lowest, big.NewInt(1))
 		}
 		cmp := new(big.Rat).SetInt(lowest).Cmp(max)
-		return cmp > 0 || cmp == 0 && s.ExclusiveMax
+		return cmp > 0 || cmp == 0 && s.ExclusiveMax.IsTrue()
 	}
 	return false
 }

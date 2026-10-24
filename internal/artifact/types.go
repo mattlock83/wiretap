@@ -213,6 +213,10 @@ type Body struct {
 	Encoding string `json:"encoding,omitempty"`
 	Text     string `json:"text,omitempty"`
 	Bytes    string `json:"bytes,omitempty"`
+	// Omitted means no retained representation is available, independently of
+	// whether capture was truncated. Redacted identifies a changed representation.
+	Omitted  bool `json:"omitted,omitempty"`
+	Redacted bool `json:"redacted,omitempty"`
 	// Truncated is true when only a bounded prefix was retained.
 	Truncated bool `json:"truncated,omitempty"`
 	// OriginalBytes is the complete observed size before capture truncation.

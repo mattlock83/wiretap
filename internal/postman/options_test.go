@@ -257,3 +257,16 @@ func TestReadPostmanOptionsRejectsOversizedDocument(t *testing.T) {
 		t.Fatal("null options are not an object")
 	}
 }
+
+func TestStrictPostmanRefusesOmittedBodyEvenWithoutTruncation(t *testing.T) {
+	flow := httpFlow("omitted", "http://sut/", 200, grpcTime())
+	flow.Request.HTTP.Body = &artifact.Body{Encoding: "utf8", Omitted: true, Redacted: true, OriginalBytes: 200}
+	root := configuredBundle(t, bundle.Identity{}, capture("attempt", "omitted", flow.StartedAt, []artifact.Flow{flow}))
+	if _, err := GenerateAll(root, ""); err == nil {
+		t.Fatal("replayed an omitted body as empty")
+	}
+	result, err := GenerateAllWithOptions(root, "", Options{OmitIncomplete: true})
+	if err != nil || len(result.Diagnostics) != 1 {
+		t.Fatalf("missing omission: %+v %v", result, err)
+	}
+}

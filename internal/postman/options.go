@@ -151,8 +151,8 @@ func httpCompleteness(flow artifact.Flow) error {
 		return fmt.Errorf("HTTP transport error: %s", flow.TransportError)
 	}
 	for _, message := range []*artifact.HttpMessage{flow.Request.HTTP, flow.Response.HTTP} {
-		if message.Body != nil && message.Body.Truncated {
-			return errors.New("HTTP body was truncated during capture")
+		if message.Body != nil && (message.Body.Truncated || message.Body.Omitted) {
+			return errors.New("HTTP body was truncated or omitted during capture")
 		}
 	}
 	return nil

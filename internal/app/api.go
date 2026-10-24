@@ -14,6 +14,7 @@ import (
 	"github.com/phrond/wiretap/internal/bundle"
 	"github.com/phrond/wiretap/internal/coverage"
 	"github.com/phrond/wiretap/internal/proxy"
+	"github.com/phrond/wiretap/internal/redact"
 	"github.com/phrond/wiretap/internal/runoutput"
 	"github.com/phrond/wiretap/internal/tracecontext"
 	"go.opentelemetry.io/otel/trace"
@@ -152,6 +153,27 @@ func (a *App) handleSetupTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	payload.Application = application
+	// Project rules are a minimum policy, even when a caller supplies its own
+	// rules or an empty list. Per-test rules can only add redactions.
+	if a.project != nil {
+		// Apply the minimum policy last so a per-test replacement cannot restore
+		// a value masked by a project rule for the same field.
+		rules := append(append([]artifact.Redaction(nil), payload.Redactions...), a.project.Redactions...)
+		last := map[artifact.Redaction]int{}
+		for i, rule := range rules {
+			last[rule] = i
+		}
+		payload.Redactions = nil
+		for i, rule := range rules {
+			if last[rule] == i {
+				payload.Redactions = append(payload.Redactions, rule)
+			}
+		}
+	}
+	if err := redact.Validate(payload.Redactions); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
 	var root trace.SpanContext
 	if payload.TraceContext != nil {
 		var err error

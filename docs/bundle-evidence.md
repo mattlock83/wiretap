@@ -112,7 +112,7 @@ flows, validation, diagnostics, redactions, and tracing/correlation evidence.
 `bodies` connects a flow and phase to a retained body attachment. Nonempty
 captured text or base64 body bytes are moved to `payloads/<sha256>.bin`; the
 reader verifies the hash and restores the original representation. Redaction
-occurs before attachment hashing. Absent, present but empty, truncated, and
+occurs before attachment hashing. Body objects expose optional `redacted` and `omitted` flags: a changed representation is redacted; an omitted representation has no retained bytes. These are independent of capture `truncated` state. Absent, present but empty, truncated, and
 unavailable bodies remain distinct. Attachment paths and schema paths are
 bundle-root-relative in JSON. A copied bundle needs no source workspace or
 network access.
