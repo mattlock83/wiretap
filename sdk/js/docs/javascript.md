@@ -2,13 +2,15 @@
 
 Use the framework-neutral API when your harness owns startup and cleanup.
 The [Jest](jest.md), [Playwright Test](playwright.md) and [Mocha](mocha.md) adapters
-automate that lifecycle for their runners. The core API remains available unchanged.
+automate that lifecycle for their runners. The core API remains available for
+custom harnesses. [Install the local SDK and runtime](../README.md#install-and-configure-once)
+before adding either integration below.
 
 ## Node test runner
 
 Use the outcome-aware adapter with Node 22+. It observes callback, subtest,
 `t.after` and timeout results while retaining the framework's test tree.
-For a single test file that owns its runtime:
+For a single test file that owns run finalization:
 
 ```js
 const assert = require("node:assert/strict");
@@ -41,7 +43,7 @@ and native fetch. Custom transports need appropriate standard OTel instrumentati
 There is no SDK request/response client.
 
 Use synthetic data and dummy credentials. Wiretap retains captured traffic as
-sent and has no built-in redaction. Deliberate invalid requests can pass their
+sent. Deliberate invalid requests can pass their
 framework assertions while retaining separate contract-validation violations.
 
 For a callback-only integration, `runtime.runTest` records that callback's
@@ -98,8 +100,45 @@ SDK connects through HTTP at `WIRETAP_BASE_URL` or `http://127.0.0.1:18000`.
 The lower-level `startCapture` client never launches processes. `.wiretap.yaml`
 supplies shared defaults; SDK options can override them. For managed local
 ownership in a custom harness, `startManagedRuntime` from `@wiretap/sdk/managed-runtime`
-returns `{ baseUrl, sutUrl, runtimeInfo, close }`; await `close()` in a `finally`
-block. It owns only Wiretap, leaving the application and test runner to your harness.
+returns `{ baseUrl, sutUrl, runtimeInfo, close }`. It owns only Wiretap, leaving
+the application and test runner to your harness. Connect the core to that owner
+with `manageRuntime: false`, then let `owner.close()` finalize once:
+
+```js
+const { startCapture } = require('@wiretap/sdk');
+const { startManagedRuntime } = require('@wiretap/sdk/managed-runtime');
+
+async function runSuite() {
+  const owner = await startManagedRuntime();
+  let failure;
+  try {
+    const capture = await startCapture({
+      baseUrl: owner.baseUrl,
+      manageRuntime: false,
+    });
+    await capture.runTest('lists todos', async ({ sutUrl }) => {
+      // Use the existing client and assertions against sutUrl.
+    });
+  } catch (error) {
+    failure = error;
+  } finally {
+    try {
+      await owner.close();
+    } catch (cleanupError) {
+      failure = failure
+        ? new AggregateError([failure, cleanupError], 'Test and capture failed')
+        : cleanupError;
+    }
+  }
+  if (failure) throw failure;
+}
+```
+
+Call `runSuite()` from the harness and surface its rejection. The managed owner
+reads `.wiretap.yaml`, resolves relative `config` and `outputDir` from `cwd`, and
+selects available local ports. Its `close()` is idempotent and saves the latest
+`last-run.json` and `wiretap.log` in the output directory beside the run archives.
+Use a distinct `outputDir` for independent concurrent harnesses.
 
 A single suite can call `startCapture` in suite setup and `finishRun` in suite
 cleanup. When multiple suites/workers share a run, set `manageRuntime: false`
@@ -119,7 +158,10 @@ deadline expands to the requested drain plus ten seconds when necessary.
 `timeoutMs` overrides every control deadline; set `timeoutMs: 0` to opt out.
 Choose a larger positive value for slow contract discovery or finalization.
 Timeouts reject with `code: "WIRETAP_CONTROL_TIMEOUT"` and identify the control
-operation; surface these errors through your test or suite cleanup.
+operation; surface these errors through your test or suite cleanup. The managed
+owner requires positive deadlines: `startupTimeoutMs` and `timeoutMs` default to
+30 seconds, and `shutdownTimeoutMs` defaults to five seconds. Its `signal` option
+supports cancellation; runner adapters own their cancellation themselves.
 
 SDK configuration can override project defaults, or supply the full setup when
 there is no `.wiretap.yaml`:

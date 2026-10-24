@@ -2,7 +2,7 @@
 
 Wiretap runs beside your existing test suite and produces raw evidence, Postman
 collections and API coverage. Use isolated services, synthetic data and dummy
-secrets: captured traffic is retained as sent, with no built-in redaction.
+secrets: captured traffic is retained as sent.
 
 Choose the integration for your test runner:
 
@@ -11,7 +11,7 @@ Choose the integration for your test runner:
 | [Jest](../sdk/js/docs/jest.md) | Wrap the config and point your shared client at `WIRETAP_SUT_URL`. |
 | [Playwright Test](../sdk/js/docs/playwright.md) | Wrap the config and import the supplied `test` fixture. |
 | [Mocha](../sdk/js/docs/mocha.md) | Wrap the config and point your shared client at `WIRETAP_SUT_URL`. |
-| [Plain JavaScript / Node](../sdk/js/docs/javascript.md) | Connect the lifecycle API to your existing harness. |
+| [Plain JavaScript / Node](../sdk/js/docs/javascript.md) | Use `startManagedRuntime` in the parent harness and the lifecycle API in tests. |
 | [Go `testing`](../sdk/go/README.md) | Add `wiretap.Run(m)` in `TestMain` and `wiretap.StartTest(t)` in your shared test setup. |
 
 The runner adapters start Wiretap, record final test outcomes and finalize exports
@@ -19,6 +19,8 @@ around your usual command. The [external Express/Jest demo](../examples/existing
 checks 120 unchanged tests; the [Playwright Todo example](../examples/playwright-runner/README.md)
 provides a small API suite you can copy. The [Go example](../examples/go-suite/README.md)
 uses an ordinary HTTP handler and client, with one managed capture per package.
+The [Mocha example](../examples/mocha-runner/README.md) keeps ordinary tests and
+fixtures with one configuration wrapper.
 
 The Node integration below shows a project-owned alternative with two test files
 and one parent harness. For native gRPC, use the [gRPC guide](grpc-user-guide.md).
@@ -79,16 +81,20 @@ is deliberately absent. Such an API has unknown contract coverage. A supplied
 invalid spec fails setup. Omit `dependencies` for inbound-only capture.
 Use stable API IDs for later comparison across repositories.
 
-Start `wiretap --config .wiretap.yaml` from your harness, wait for `/healthz`,
-then call `startCapture`. The default control API is
-`http://127.0.0.1:18000`; the capture proxy listens on `18080`.
-`WIRETAP_BASE_URL` selects another control address. The complete example chooses
-free ports and passes addresses explicitly.
+The managed runner adapters and Go's `Run` discover this configuration and
+choose available local ports. The plain Node example uses
+`startManagedRuntime({ binary, cwd: project, outputDir: artifacts })` for the
+same startup/readiness/finalization behavior. Its parent starts the application,
+passes the returned control address to workers as `WIRETAP_BASE_URL`, and calls
+`owner.close()` after the test process exits. Keep the application and mocks
+alive until that cleanup finishes.
 
-Configure the application's inventory URL as
-`http://127.0.0.1:18080/__wiretap/dep/inventory`. Wiretap forwards it to the
-configured mock. Tests call the session's `sutUrl`. Your mock tooling still
-owns its stubs and verification. See [configuration](configuration.md).
+Configure the application's inventory URL with the returned dependency capture
+address: JavaScript exposes `capture.dependencyUrl("inventory")`, and Go exposes
+`session.Dependencies["inventory"]`. Wiretap forwards it to the configured mock.
+Tests call `session.sutUrl` in JavaScript or `session.SUTURL` in Go. Your mock
+tooling owns its stubs and verification. For an externally managed process,
+see [configuration](configuration.md).
 
 ## 3. Wrap each test with the outcome-aware adapter
 
@@ -114,7 +120,7 @@ node --require @wiretap/sdk/tracing --test --test-concurrency=1 test/orders.test
 ```
 
 Use this command inside the parent harness: it starts a run before launching
-workers and calls `finishRun()` after the test process exits, including after
+workers and calls `owner.close()` after the test process exits, including after
 failure. Workers finish their own attempts; only the parent finalizes the run.
 The [complete harness](../examples/node-suite/run-tests.mjs) preserves the test
 process's original nonzero exit code if finalization also fails.
@@ -122,7 +128,7 @@ process's original nonzero exit code if finalization also fails.
 The adapter observes callbacks, subtests, `t.after` and timeouts. Put per-test
 capture fixtures inside the adapter callback or its `t.after` callbacks;
 separate suite-wide hooks are outside individual attempts. For another
-framework, use [lifecycle handles or the Jest adapter](../sdk/js/README.md).
+framework, choose its [runner adapter or lifecycle handles](../sdk/js/README.md).
 Await requests and expected dependency work before finishing each attempt.
 
 For parallel tests sharing an application, propagate W3C `traceparent` from its
@@ -136,7 +142,11 @@ order: test outcomes, operations exercised, condition gaps, unknown evidence,
 then validation diagnostics. A passing negative test can have request validation
 violations and valid error-response evidence; these are separate facts.
 
-`artifacts/last-run.json` records the finalization response. Each run has:
+The Node example and managed JavaScript runners write `last-run.json` and
+`wiretap.log` in their configured output directory. Go's managed integration
+keeps those files inside each package's unique run archive. Retain the entire
+output directory; use a separate root for independent concurrent JavaScript
+suites. Each completed run has:
 
 ```text
 artifacts/<run-id>/

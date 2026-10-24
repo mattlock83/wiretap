@@ -1,6 +1,8 @@
 # Mocha
 
-Use Mocha 11 or 12 with Node.js 22.12 or later. Keep your existing `describe`,
+Use Mocha 11 (11.7.5+) or 12 with Node.js 22.12+. First
+[install the local SDK and runtime](../README.md#install-and-configure-once).
+Keep your existing `describe`,
 `it`, assertions, hooks and reporter. Wiretap manages its runtime and captures
 each executed test, including setup and cleanup requests.
 
@@ -60,8 +62,11 @@ the owned server and Wiretap runtime. On Linux and macOS, SIGINT and SIGTERM
 finalize active capture and use the normal interrupted exit codes. Forced
 process termination cannot run asynchronous cleanup.
 
-The runtime writes `last-run.json` and `wiretap.log` to the output directory.
-The receipt gives the artifact, coverage report and Postman export paths. User
+The managed adapter writes the latest `last-run.json` and `wiretap.log` beside
+the unique run archive directories in the output directory. The receipt gives
+the exact archive, coverage report and Postman export paths. Keep the complete
+output directory in CI and use a different `outputDir` for each independent
+concurrent run. User
 `after` hooks and global teardown fixtures complete before Wiretap shuts down
 the owned server and finalizes the run, including when a fixture fails.
 

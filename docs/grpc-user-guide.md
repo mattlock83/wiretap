@@ -2,7 +2,7 @@
 
 Keep your generated clients, test framework and mock servers. Point their network
 connections through Wiretap and use the existing test lifecycle integration.
-Wiretap captures the RPCs, associates them with named tests, and produces an
+Wiretap captures the RPCs, associates them with named tests, and produces a
 JSON artifact describing your provided APIs and dependency observations.
 
 Every gRPC boundary needs a Protobuf contract. For standalone development and
@@ -100,7 +100,12 @@ runtime settings and are excluded from bundle contents and diagnostics.
 
 ## Run through your existing test lifecycle
 
-Your harness owns all processes. The startup order is:
+Managed Go, Jest, Mocha and Playwright integrations own their Wiretap process and
+finalize after per-test cleanup. Keep your existing SUT and mock setup, or use
+the SDK's HTTP handler hosting where applicable. See the
+[SDK integration guide](getting-started-existing-tests.md) for runner setup.
+
+For a project-owned Wiretap process, the startup order is:
 
 1. Start Wiretap with `wiretap --config .wiretap.yaml`.
 2. Call `POST /v1/startRun`. It binds capture listeners, returns the SUT and
@@ -152,8 +157,7 @@ curl --fail-with-body -sS http://127.0.0.1:18000/v1/finishRun \
   -H 'Content-Type: application/json' -d '{}'
 ```
 
-An SDK can perform these calls from your test framework's suite and test hooks.
-The existing [runtime API](runtime-api.md) and [SDK integration guide](getting-started-existing-tests.md)
+SDK lifecycle calls perform the same control requests. The [runtime API](runtime-api.md) and [SDK integration guide](getting-started-existing-tests.md)
 describe lifecycle ownership. The [runnable example](../examples/grpc-boundaries/README.md)
 shows native Go clients, reflection and an existing mock.
 
@@ -258,8 +262,7 @@ upstream_tls:
 client's normal trust settings accordingly. `upstream_tls` configures Wiretap's
 connection to the real SUT or mock, including reflection. Paths are relative to
 the configuration file. Both capture certificate and key are required together;
-certificate checks are not disabled automatically. mTLS is outside the initial
-release. Certificate/key files and discovery credentials do not enter bundles.
+certificate checks are not disabled automatically. mTLS is not supported. Certificate/key files and discovery credentials do not enter bundles.
 
 For parallel tests sharing one SUT, standard W3C trace context must travel from
 the test through the SUT to its dependency calls. Reflection discovers contracts;
@@ -318,8 +321,7 @@ client. Error details describe observed behaviour; they are not new coverage
 targets or proof that a mocked error matches a real provider.
 
 Use synthetic error details and dummy credentials. Wiretap retains messages,
-metadata, trailers and status details unchanged within its capture limits;
-there is no built-in redaction.
+metadata, trailers and status details unchanged within its capture limits.
 
 Status-detail retention shares the response's 64 KiB metadata budget, with at
 most 256 details and a recursion depth of 100. Details outside those limits are
@@ -350,8 +352,9 @@ Unavailable capture or decoding produces **partial** validation with explicit
 reasons. It does not turn an otherwise passing test into a schema failure.
 Malformed wire data and contract violations still fail validation, independently
 of the framework outcome. A deliberate rejection test can pass its assertions.
-Truncated, legacy-redacted or otherwise incomplete evidence never gains
-assurance by being merely readable.
+Truncated or otherwise incomplete evidence never gains assurance by being
+merely readable. Compatibility handling for legacy-redacted archives preserves
+the same limit.
 
 Contract coverage uses `wiretap-protobuf-2`: methods, explicit field presence,
 oneof choices, declared enum values, booleans, collection emptiness and supported
@@ -370,7 +373,7 @@ annotations are not part of passive condition measurement; recursive/dynamic
 
 Try the [streaming example](../examples/grpc-streaming/README.md) or the
 [native Node example](../examples/grpc-boundaries/node/README.md). Connect's own
-wire protocol, gRPC-Web and mTLS remain separate features. Existing clients,
+wire protocol, gRPC-Web and mTLS are not supported. Existing clients,
 mocks and test framework hooks remain the integration model.
 
 ## If setup fails

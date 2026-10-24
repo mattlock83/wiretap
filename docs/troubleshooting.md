@@ -2,26 +2,37 @@
 
 ## Runtime or routing problems
 
+### The SDK cannot find the Wiretap binary
+
+Build the local runtime as described in [installation](local-release.md), then
+put it on `PATH` or set `WIRETAP_BINARY` to its absolute path. The adapters do not
+download or build executables. An external runtime instead uses
+`WIRETAP_BASE_URL`; use that mode only when your harness owns its lifecycle.
+
 ### The control service or proxy will not start
 
-Check port conflicts and `WIRETAP_HTTP_LISTEN` / `WIRETAP_PROXY_LISTEN`. The
+Managed SDKs choose available local ports. For an external runtime, check port
+conflicts and `WIRETAP_HTTP_LISTEN` / `WIRETAP_PROXY_LISTEN`. The
 process must be allowed to bind local ports. A healthy control API at `/healthz`
 does not mean capture has started; test setup or `startRun` starts the proxy.
 
 ### No traffic is captured
 
-Send test calls to the session's `sutUrl` (HTTP API: `sut_url`), with the real
-application address configured as `sut.url` or `sutBaseUrl`. Calls directly to
+Send test calls to the session's `sutUrl` (Go: `SUTURL`; HTTP API: `sut_url`), with the real
+application address configured as `sut.url` or a per-test target override. Calls directly to
 the application bypass Wiretap. Use ordinary HTTP clients within `runTest`, an
 attempt's `run` callback, or the appropriate test adapter's trace context.
 
 ### Downstream dependency traffic is missing
 
-Declare the dependency and configure the application's dependency base URL as
-`http://<wiretap-proxy>/__wiretap/dep/<asset-id>`. Calls directly to the mock
-bypass capture. The JavaScript SDK's `dependencyUrl(assetId)` returns its gateway.
+Declare the dependency and configure the application's client with its returned
+capture address: JavaScript uses `dependencyUrl(assetId)` and Go uses
+`session.Dependencies[assetID]`. HTTP dependencies use a gateway path such as
+`http://<wiretap-proxy>/__wiretap/dep/<asset-id>`; native gRPC uses a direct origin
+without that path. Calls directly to the mock bypass capture. Managed runtimes
+choose ports dynamically, so read the returned address.
 
-Traced parallel sessions share this route and require inbound-to-outbound W3C
+Traced parallel sessions share their capture address and require inbound-to-outbound W3C
 propagation through the application. Untraced explicit sessions need isolated,
 session-scoped routes. In-process mocks that never send traffic to the proxy
 cannot be captured. See [tracing](otel-adoption.md#choosing-a-supported-setup).
@@ -69,12 +80,27 @@ Wiretap keeps the test grouping and leaves ambiguous parents unset.
 
 ### Jest requests have no trace context
 
-Use `createJestSuite` with `testEnvironment: "@wiretap/sdk/jest-environment"`.
-The environment bridges Jest's VM and native clients. The adapter activates
-context around test callbacks, including `.each`/`.concurrent`, and ordinary
-`beforeEach`/`afterEach` fixtures. Jest skips per-test hooks for `.concurrent`;
+Wrap the Jest configuration with `withWiretap` from `@wiretap/sdk/jest`.
+It installs the environment and tracing around ordinary Jest tests and fixtures.
+For selective capture in a custom integration, use `createJestSuite` with
+`testEnvironment: "@wiretap/sdk/jest-environment"`. Do not combine both modes in
+the same test. Jest skips per-test hooks for `.concurrent`;
 put concurrent fixtures inside the callback. Suite-wide hooks do not belong to
-an individual attempt. See the [Jest guide](otel-adoption.md#optional-jest-adapter).
+an individual attempt. See the [Jest guide](../sdk/js/docs/jest.md).
+
+### Go tests passed but no new archive appeared
+
+Use `go test -count=1 ./...` to produce fresh evidence instead of reusing Go's
+test cache. Add `wiretap.Run(m)` in `TestMain` and call `wiretap.StartTest(t)` in
+each test or shared setup helper. For parallel tests call `StartTest` after
+`t.Parallel()` and enable explicit sessions. See the [Go guide](../sdk/go/README.md).
+
+### Capture ended during a panic or timeout
+
+Ordinary assertion failures still finalize exports. A hard process abort can
+leave an interrupted archive without completed exports or `last-run.json`.
+Retain the full output directory and inspect the runtime log and archive state.
+The managed Go runtime stops when its parent test process disappears.
 
 ### Teardown reports incomplete capture or `finishRun` returns 409
 

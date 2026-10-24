@@ -1,7 +1,10 @@
 # Wiretap architecture
 
 Wiretap captures HTTP and native gRPC exchanges during existing tests. The test
-harness owns application/mock processes, execution, fixtures and assertions.
+framework owns execution, outcomes, fixtures and assertions. Managed SDK
+integrations own their Wiretap process; project-owned harnesses can use the
+control API directly. Existing SUT/mock processes stay with the harness unless
+an SDK adapter is configured to host an HTTP handler.
 Wiretap owns forwarding, correlation, contract validation and raw capture storage.
 Framework outcomes remain independent of validation findings. Configuration and
 incomplete-capture errors still fail integration setup or cleanup.
@@ -11,7 +14,7 @@ incomplete-capture errors still fail integration setup or cleanup.
 | Component | Responsibility |
 | --- | --- |
 | `cmd/wiretap` | Host the control service; offline coverage/Postman exports and CA utilities. |
-| `sdk/js`, `sdk/go` | Test lifecycle helpers, standard trace context and artifact locations. |
+| `sdk/js`, `sdk/go` | Runner integration, owned or external runtime lifecycle, standard trace context and artifact locations. |
 | `internal/app` | Run/test sessions, dependency routes, draining and schema validation. |
 | `internal/proxy`, `internal/capture` | Forward traffic and retain bounded evidence. |
 | `internal/tracecontext` | W3C context parsing and propagation. |
@@ -30,14 +33,16 @@ without replacing their HTTP/gRPC clients.
 
 ## A run
 
-1. The harness starts Wiretap, the SUT and mocks/dependencies. Suite hooks start
-   capture and route test/application calls through Wiretap.
+1. The managed SDK adapter or project harness starts Wiretap. The harness keeps
+   its SUT/mock startup, or an SDK hosts the supplied HTTP handler. Capture
+   listeners provide the addresses used by test and application clients.
 2. Test setup registers a named attempt, contracts and a fresh trace context.
 3. Proxies forward requests and responses while retaining bounded evidence.
 4. Teardown stops admission, drains accepted exchanges, validates messages and
    commits the immutable attempt JSON with its outcome and capture diagnostics.
-5. After all attempts finish, the suite owner finalizes the run. Interrupted and
-   pending work remains distinguishable from completed capture.
+5. After all attempts and their cleanup finish, one suite owner finalizes the run
+   and configured exports. A managed owner then stops its process. Interrupted
+   and pending work remains distinguishable from completed capture.
 
 The default drain timeout is five seconds. HTTP request/response delivery streams
 through the proxy; the default retained prefix is 4 MiB per body. gRPC observation
@@ -69,7 +74,8 @@ Readers verify these inputs before calculating coverage or exporting Postman
 collections. Copy the complete directory to preserve the evidence graph.
 
 `wiretap report` and `wiretap export` default to JSON coverage and support YAML
-and Postman output; `--format text` gives a compact coverage summary. They run offline without the original workspace or servers.
+and Postman output; `--format text` gives a compact coverage summary. They run
+offline without the original workspace or servers.
 `POST /v1/report` exposes JSON coverage through the control API. See the
 [format reference](bundle-evidence.md) and [artifact/export guide](artifacts.md).
 
@@ -87,10 +93,12 @@ unsupported semantics remain visible. See [coverage rules](contract-coverage-rul
 
 Dependency records retain mock/service provenance. They show what the target
 returned during a test, without proving provider agreement or identifying which
-fields the SUT consumed. Cross-repository comparison belongs in a separate future tool.
+fields the SUT consumed. Provider mappings retain the intended cross-project
+identity without claiming agreement. A cross-repository comparator is not
+implemented.
 Wiretap does not execute or generate tests.
 
 HTTP and native gRPC support capture, validation and coverage, including all four
 RPC shapes. Connect wire format, gRPC-Web, messaging and GraphQL capture adapters
-remain future work. See the [gRPC support record](grpc-support-plan.md) and
+are not supported. See the [gRPC support record](grpc-support-plan.md) and
 [HTTPS trust guide](https-trust.md).

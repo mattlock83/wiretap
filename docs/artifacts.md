@@ -4,9 +4,16 @@ Wiretap writes one portable directory per run under `./artifacts` by default.
 Set `output_dir` in `.wiretap.yaml` or `WIRETAP_OUTPUT_DIR` to choose another
 parent directory. SDK/API responses return the exact `bundle_path`.
 
-Each test teardown commits an immutable JSON recording. Suite cleanup finalizes
-the run through `/v1/finishRun`. Keep the complete directory when sharing it or
-uploading it to CI so its contracts and payload references remain valid.
+Each test teardown commits an immutable JSON recording. Managed SDK adapters
+finalize the run and configured exports after test cleanup, then stop their
+Wiretap process. With a project-owned runtime, one suite owner calls
+`/v1/finishRun` after every worker finishes. Keep the complete directory when sharing it or
+uploading it to CI so its contracts and payload references remain valid. Managed
+runs also write `last-run.json` with exact archive/export paths and a bounded
+`wiretap.log`. Go keeps those files inside each package's run directory.
+JavaScript keeps the latest receipt and log in the output parent beside its
+run directories; independent concurrent JavaScript suites need separate output
+parents. Preserve the full configured output directory in either case.
 
 ```text
 artifacts/<run-id>/
@@ -80,7 +87,7 @@ not exhaustive coverage of every possible combination.
 | --- | --- |
 | Covered | A complete passing attempt supplied valid evidence for the condition. |
 | Gap | No qualifying observation covers the condition. |
-| Uncertain | Evidence or evaluation is inconclusive. |
+| Unknown | Evidence or evaluation is inconclusive. |
 | Unsupported | The measurement rules cannot evaluate this condition. |
 | Excluded | The target is outside applicable scope or has been shown infeasible. |
 
@@ -88,8 +95,9 @@ A documented, valid error response can earn response-condition coverage.
 Framework test outcomes remain independent of contract-validation findings, so
 a deliberate invalid request and asserted `400` can be a passing test.
 Invalid requests do not earn valid-request coverage. An observed error status
-alone does not establish that the test asserted rejection. Incomplete, redacted,
-truncated or undecodable messages cannot earn successful payload coverage.
+alone does not establish that the test asserted rejection. Incomplete, truncated
+or undecodable messages cannot earn successful payload coverage. The same limit
+applies to legacy-redacted evidence.
 See [contract coverage rules](contract-coverage-rules.md) for exact semantics.
 
 A dependency response records what the declared `mock`, `service` or `unknown`
@@ -100,7 +108,7 @@ additional cases.
 
 Capture retains up to 4 MiB per HTTP body by default. Retained payloads can still
 be truncated; older archives may also contain redaction metadata. Current
-capture has no redaction feature and expects synthetic data and dummy secrets.
+capture retains synthetic data and dummy secrets unchanged.
 Exporting a report cannot restore omitted bytes. See
 [troubleshooting](troubleshooting.md) for capture limits and integrity errors.
 
@@ -154,9 +162,10 @@ the folder retains capture order and notes that limit. A recorded response is
 saved as an example, with a basic Postman test that checks its HTTP status code.
 Requests without a recorded response status have a skipped status check.
 Request and response bodies use the retained capture and its capture limits.
-Legacy redacted interactions cannot be replayed reliably; export rejects them
-or omits them with an explicit diagnostic when that policy is selected. Binary request bodies are embedded as base64 file content
-that Postman decodes when sending. Binary response examples are labeled and
+For compatibility, exports also inspect older archives for redacted evidence.
+They reject affected interactions or omit them with an explicit diagnostic when
+that policy is selected. Binary request bodies are embedded as base64 file
+content that Postman decodes when sending. Binary response examples are labeled and
 saved as base64.
 Postman's cookie jar, automatic URL encoding and optional generated headers are
 disabled so replay uses the captured URL and application headers. Postman still
@@ -184,8 +193,9 @@ message bytes; those are not added as invented messages. Timing is excluded.
 
 The CLI and automatic Postman export are strict by default: incomplete captures,
 truncated bodies, transport failures, undecoded gRPC messages, missing terminal
-status, legacy redaction and request trailers that v3 cannot represent fail the export before
-replacing any collection. A complete negative API response remains exportable.
+status, and request trailers that v3 cannot represent fail the export before
+replacing any collection. Compatibility checks also reject legacy-redacted
+evidence. A complete negative API response remains exportable.
 
 To retain healthy exchanges from a mixed run, use:
 

@@ -5,15 +5,15 @@ identify the running test and its outcome. Wiretap captures HTTP/native gRPC API
 boundaries, validates traffic against supplied contracts, and writes portable
 JSON artifacts. JSON/YAML reports calculate operation and contract coverage; a
 text summary gives the first view of results. Use isolated tests with synthetic
-data and dummy secrets: retained traffic is unchanged and there is no built-in
-redaction.
+data and dummy secrets: retained traffic is unchanged.
 
 ## Set up capture
 
 | Guide | Use it to |
 | --- | --- |
 | [Capture existing tests](getting-started-existing-tests.md) | Configure boundaries, connect lifecycle hooks and run capture. |
-| [Complete Node suite harness](../examples/node-suite/README.md) | Copy a two-file suite with one run owner, failure finalization and exact output paths. |
+| [Go suite](../examples/go-suite/README.md) | Add `Run` and `StartTest` to an ordinary HTTP test suite. |
+| [Plain Node suite](../examples/node-suite/README.md) | Use the managed runtime helper with two test files and one suite owner. |
 | [Runnable examples](../examples/README.md) | Try HTTP/gRPC capture, database fixtures or Microsvc Transactions. |
 | [Configuration and commands](configuration.md) | Configure `.wiretap.yaml`, ownership, specs and CLI commands. |
 | [Local installation and release preparation](local-release.md) | Build versioned binaries, pack the SDK and test installation in an external project. |
@@ -35,7 +35,7 @@ redaction.
 | [Machine-readable evidence and coverage](machine-interface.md) | Consume versioned reports, stable identities, provenance, provider mappings and payload availability. |
 | [Architecture](architecture.md) | Understand runtime, SDK, proxy, storage and reporting responsibilities. |
 | [gRPC user guide](grpc-user-guide.md) | Use reflection/local contracts and existing clients for unary and streaming capture. |
-| [gRPC support record](grpc-support-plan.md) | Review verified scope and protocol follow-ups. |
+| [gRPC support](grpc-support-plan.md) | Review supported scope, verification and protocol limits. |
 
 ## Product scope
 

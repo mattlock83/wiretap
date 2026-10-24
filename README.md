@@ -7,7 +7,7 @@ against your OpenAPI or Protobuf contracts.
 
 Wiretap is for **isolated test environments using synthetic data and dummy
 secrets**. It retains the traffic you send through it, including credentials and
-payloads. There is no built-in redaction.
+payloads, unchanged.
 
 ```text
 Existing tests → Wiretap → Your application → Wiretap → Existing mocks or services
@@ -18,22 +18,25 @@ Existing tests → Wiretap → Your application → Wiretap → Existing mocks o
 
 ## Try it
 
-From this checkout, with Go 1.26+, Node.js 22+, Bash and curl available:
+From this checkout, with Go 1.26+:
 
-```bash
-npm ci --prefix sdk/js
-./examples/run-basic-rest-e2e.sh
+```sh
+go build -o dist/wiretap ./cmd/wiretap
+WIRETAP_BINARY="$PWD/dist/wiretap" go -C examples/go-suite test -count=1 ./...
 ```
 
-The example starts its services, runs a test, finalizes the capture and generates
-JSON coverage and Postman collections automatically. It prints a short coverage
-summary and exact output paths. Everything stays under `artifacts/<run-id>/`.
+The example hosts an ordinary HTTP handler and captures its standard Go tests
+using `Run` and `StartTest`. It finalizes JSON/text coverage and Postman collections
+automatically under `examples/go-suite/artifacts/<run-id>/`. See the
+[Go example](examples/go-suite/README.md) for Windows commands and the two hooks.
 
 For existing JavaScript tests, choose the [Jest, Playwright Test or Mocha adapter](sdk/js/README.md).
 Each manages Wiretap startup and exports around your normal test command. The
 [plain JavaScript API and Node harness](sdk/js/docs/javascript.md) remain available
 for custom setups. [More examples](examples/README.md) cover existing external
-tests, native gRPC, streaming, real clients and mocks.
+tests, native gRPC, streaming, real clients and mocks. The
+[Mocha suite](examples/mocha-runner/README.md) is a small JavaScript example with
+ordinary fixture hooks and automatic exports.
 
 ## Add it to your suite
 
@@ -49,7 +52,7 @@ shows a complete suite with an existing HTTP handler and client.
 For a custom harness:
 
 1. Put application/dependency URLs and contracts in `.wiretap.yaml`.
-2. Start Wiretap alongside your application and mocks in your existing harness.
+2. Let the SDK manage Wiretap, or connect to a runtime your harness already owns.
 3. Route test requests and application dependency calls through Wiretap.
 4. Use an SDK adapter to record each test's final outcome.
 5. Finalize once after all workers finish and retain the complete run directory.
@@ -84,12 +87,12 @@ need to understand a gap. One test can exercise many conditions; an unknown
 measurement is not a pass. A declared API with no captured tests still appears
 as untested when its contract is available.
 
-The demo builds a temporary binary. To inspect its archive later from this
-checkout, use `go run`, or [build a persistent binary](docs/local-release.md):
+To inspect the Go example's archive later from this checkout, use the built
+binary and the exact run directory returned by the SDK:
 
 ```bash
-go run ./cmd/wiretap report --bundle ./artifacts/<run-id> --format text
-go run ./cmd/wiretap export --bundle ./artifacts/<run-id> --format all
+./dist/wiretap report --bundle ./examples/go-suite/artifacts/<run-id> --format text
+./dist/wiretap export --bundle ./examples/go-suite/artifacts/<run-id> --format all
 ```
 
 Exports work offline from the complete run archive. HTTP collections use Postman

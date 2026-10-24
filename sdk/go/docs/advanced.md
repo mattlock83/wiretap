@@ -134,16 +134,25 @@ origins for ordinary generated gRPC clients. Pass `Session.Context` into RPCs an
 use the application's existing OTel gRPC instrumentation for parallel ownership.
 See the [gRPC guide](../../../docs/grpc-user-guide.md).
 
-`TestOptions.Schemas` and `TestOptions.Dependencies` accept typed `Schema` and
-`Dependency` overrides. `SchemaSource` supports file, URL and inline content. The
+For HTTP, `TestOptions.Schemas` and `TestOptions.Dependencies` accept typed
+`Schema` and `Dependency` overrides. `SchemaSource` supports file, URL and inline content. The
 returned `Dependencies` map contains capture URLs. Point the SUT's downstream
 clients at those URLs in your shared test setup; declaring a dependency does not
 reroute an application's existing clients. Managed runtimes choose available
-ports, so read the returned URLs instead of assuming a fixed proxy port. The
-`/__wiretap/dep/<asset-id>` routes remain stable for traced sessions in that run.
-Each API requires its spec unless its `SchemaRequired` pointer is explicitly
-false; supplied specs always validate. See
+ports, so read the returned URLs instead of assuming a fixed proxy port. HTTP's
+`/__wiretap/dep/<asset-id>` routes remain stable for traced sessions in that run;
+native gRPC uses the returned direct origin without a gateway path. Each HTTP
+API requires its spec unless its `SchemaRequired` pointer is explicitly false;
+supplied specs always validate. gRPC boundaries always require their configured
+Protobuf contracts and cannot be created or retargeted per test. See
 [boundary configuration](../../../docs/configuration.md).
+
+If your application must receive dynamic gRPC dependency listener URLs before
+it can start, let its existing outer harness own the runtime and bootstrap order.
+The [native gRPC](../../../examples/grpc-boundaries/README.md) and
+[streaming gRPC](../../../examples/grpc-streaming/README.md) examples demonstrate
+that arrangement. Their shell harnesses finalize once; their test packages use
+`Runtime.StartTest` and do not also call managed `Run`.
 
 ## Externally managed runtimes
 

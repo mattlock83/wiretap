@@ -6,9 +6,7 @@ The runtime loads it once, and SDKs inherit its defaults through the HTTP API.
 Test integrations can then focus on names, outcomes, and trace context.
 
 Use isolated services with synthetic data and dummy secrets. Traffic is retained
-as sent. Redaction settings are unsupported; remove obsolete `redactions`
-configuration when upgrading. Readers can still inspect older redacted archives
-with their original uncertainty preserved.
+as sent, including payloads and credentials.
 
 ```yaml
 version: 1
@@ -19,8 +17,6 @@ output_dir: artifacts
 outputs:
   coverage: [json, text]
   postman: true
-http_listen: 127.0.0.1:18000
-proxy_listen: 127.0.0.1:18080
 sut:
   id: orders
   url: ${SUT_BASE_URL}
@@ -65,12 +61,18 @@ the inventory mock above exports as `Inventory Service - inventory`.
 
 ## Start the runtime
 
-Build and start Wiretap alongside the SUT and mocks using your existing service
-harness, container setup, or a separate terminal:
+Use the managed [Jest, Playwright Test or Mocha adapter](../sdk/js/README.md),
+Go's [`wiretap.Run(m)`](../sdk/go/README.md), or the JavaScript
+[`startManagedRuntime` helper](../sdk/js/docs/javascript.md). They start Wiretap
+on available local ports, discover the configuration, finalize outputs and stop
+their owned runtime. Put the local binary on `PATH` or set `WIRETAP_BINARY`.
+
+For a runtime owned by your existing service harness or container setup, build
+and start it explicitly:
 
 ```bash
-go build -o /tmp/wiretap ./cmd/wiretap
-/tmp/wiretap --config ./test/.wiretap.yaml
+go build -o dist/wiretap ./cmd/wiretap
+./dist/wiretap --config .wiretap.yaml
 ```
 
 Without `--config`, the runtime discovers `.wiretap.yaml`. It hosts the HTTP
@@ -79,10 +81,6 @@ launch test processes or choose their framework, ordering, concurrency, or exit
 status. Use your usual test command separately, such as `npm test` or `go test`.
 Wiretap has one reverse SUT target per runtime.
 
-The Jest, Playwright Test and Mocha adapters and Go's `wiretap.Run(m)` can own
-runtime startup and shutdown, using available local ports. See the
-[JavaScript](../sdk/js/README.md) and [Go](../sdk/go/README.md) guides.
-
 For an externally managed runtime, set `WIRETAP_BASE_URL` in the test process
 when the control API is not at its default `http://127.0.0.1:18000`. The plain
 JavaScript API and Go's `Runtime` connect to that process and read configuration
@@ -90,6 +88,9 @@ defaults over HTTP. Startup/session responses give the actual
 `sut_url` and dependency capture addresses. A proxy listener ending in `:0`
 allocates a free port; your harness must pass its returned addresses to the
 relevant clients. Use a known control listener address so SDKs can connect.
+Optional `http_listen` and `proxy_listen` configuration fields select fixed
+listeners; defaults are `127.0.0.1:18000` and `127.0.0.1:18080`. Managed SDKs
+override these with available local ports, so use their returned addresses.
 
 ## Connect the framework's lifecycle
 

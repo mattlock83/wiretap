@@ -3,6 +3,8 @@
 Coverage reporting and Postman export load the immutable capture archive through
 `internal/bundle.Load`. Loading verifies hashes, schema inventories and gRPC
 projections, and restores retained payloads before calculating either output.
+Run finalization verifies the same raw archive. A loading-budget or integrity
+error prevents a successful finalization result; retained evidence stays on disk.
 
 The loader uses finite defaults:
 

@@ -28,7 +28,7 @@ limits are documented in the [gRPC guide](grpc-user-guide.md) and
 
 ## Boundaries
 
-Captures retain data as sent; there is no built-in redaction. Contract mismatches
+Captures retain synthetic test data as sent. Contract mismatches
 are recorded without replacing the framework's outcome. Capture failures and
 invalid configuration still fail integration cleanup or setup.
 
@@ -38,7 +38,7 @@ simulation, hosted registries and managed test execution are outside Wiretap's
 scope. A mock's response is evidence of an assumption, not verified provider
 agreement.
 
-The earlier [broader product roadmap](design/archive/roadmap.md) and
-[contract-package proposal](design/archive/contract-package-plan.md) are retained
-only as historical design notes. Their proposed features and configuration are
-not part of the supported product.
+Supported integrations are Jest, Playwright Test, Mocha, plain JavaScript and
+Go's standard `testing` package. Other runners and languages can use the
+[runtime HTTP API](runtime-api.md). Each integration keeps the framework's own
+assertions and final result while recording capture and export failures.

@@ -1,6 +1,8 @@
 # Jest
 
-For Jest 29.7 or 30 on Node 22+, wrap your existing Node-environment configuration:
+For Jest 29.7 or 30 on Node 22+, first
+[install the local SDK and runtime](../README.md#install-and-configure-once), then
+wrap your existing Node-environment configuration:
 
 ```js
 // jest.config.cjs
@@ -56,6 +58,8 @@ withWiretap(existingConfig, {
 The adapter selects available ports, starts Wiretap, records each executed test,
 finalizes the run even when assertions fail, and stops its process. The SDK
 downloads and publishes nothing. Install the SDK and Wiretap binary first.
+Relative `config` and `outputDir` paths resolve from Jest's `rootDir`; the `app`
+module also supports Jest's `<rootDir>` token.
 
 ## An already running API
 
@@ -68,22 +72,27 @@ module.exports = withWiretap(existingConfig);
 
 ## Results and lifecycle
 
-The output directory contains `last-run.json` with exact artifact paths, the
-capture archive, coverage reports, Postman collections and a bounded
-`wiretap.log`. Keep the complete directory in CI, including failed runs.
+The output directory contains the latest `last-run.json` receipt, a bounded
+`wiretap.log` and unique run archive directories. The receipt gives the exact
+archive, coverage report and Postman collection paths. Keep the complete
+directory in CI, including failed runs; give independent concurrent runs
+different `outputDir` values.
 Framework results and API contract violations are reported separately.
 
 Capture includes ordinary `beforeEach`/`afterEach` work. Sync, async, `done`,
 generator, parameterized and retry callbacks retain their Jest outcomes.
 Suite-wide `beforeAll`/`afterAll` work is outside individual capture attempts.
-On interruption, Wiretap stops its process and preserves a receipt; an active
-unfinished attempt leaves an interrupted archive without complete exports.
+On a handled interruption, Wiretap attempts to finalize, preserves the available
+receipt and stops its process. An active unfinished attempt leaves an interrupted
+archive without complete exports. Forced process termination cannot run cleanup.
 
 Files run with one worker by default. Parallel workers require
 `withWiretap(existingConfig, { explicitSession: true })` and W3C trace-context
 propagation through every relevant SUT boundary. Jest `.concurrent` tests also
 require that propagation. Custom environments, watch mode and a shared
 multi-project run need a project-owned lifecycle integration.
+Existing global setup runs before Wiretap starts; existing global teardown runs
+after Wiretap finalizes. Use per-test hooks for requests that should be captured.
 
 ## Dynamic fixtures and selective capture
 

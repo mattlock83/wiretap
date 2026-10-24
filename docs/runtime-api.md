@@ -1,9 +1,14 @@
 # Runtime API
 
 The SDK calls this HTTP API from your existing test framework's lifecycle.
-Start the control process with `wiretap [--config path]`; suite hooks own capture
-startup/finalization, and test hooks own attempts. Your harness owns the Wiretap,
-SUT, mock, and test processes. Any language can use this API directly.
+The [JavaScript runner adapters](../sdk/js/README.md) and
+[Go `Run`/`StartTest` hooks](../sdk/go/README.md) manage the lifecycle for ordinary
+suites. Use this reference for another language or an externally managed runtime.
+
+For direct integration, start the control process with
+`wiretap [--config path]`. Suite hooks own capture startup/finalization, test
+hooks own attempts, and your harness owns the processes. Choose one suite owner
+for each runtime.
 
 Schema validation checks message conformance; the provider validates credentials.
 Declaring OpenAPI security does not require an authentication backend inside
@@ -112,8 +117,7 @@ supplied spec always fails. gRPC boundaries require a Protobuf contract,
 configured with `protocol: grpc` and normally discovered through reflection.
 The `sut_protocol` and dependency `protocol` fields can be carried through
 the setup payload when inheriting project defaults. Capture uses synthetic data
-and dummy secrets; retained traffic is unchanged and redaction settings are not
-supported.
+and dummy secrets; retained traffic is unchanged.
 
 ```json
 {

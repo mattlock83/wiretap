@@ -20,8 +20,10 @@ request/response combinations and exact attempt/flow evidence references.
 `wiretap export` supports the same coverage formats. These reports are derived
 outputs, not authoritative capture artifacts.
 
-For cross-repository comparison, use the same provided `api_id` and dependency
-`asset_id`, supplied contract, and `rules_version`. Keys use full SHA-256 digests;
+For cross-repository comparison, first resolve a local dependency to its provider
+using explicit `provider_mappings` or an external mapping. Comparable condition
+keys require the same API identity, supplied contract and `rules_version`; local
+`api_id`/`asset_id` labels alone do not establish provider identity. Keys use full SHA-256 digests;
 the catalogue retains readable operation, phase, location and condition fields.
 `contract_revision` hashes a canonical frozen document graph independently of
 repository paths. Equivalent YAML/JSON representations and relocated copies
@@ -61,7 +63,7 @@ fingerprint, without a Cartesian-product denominator.
 Custom validation options are preserved but not evaluated by passive structural
 coverage. Affected targets
 remain unknown and unsupported scope stays visible. Unknown wire fields,
-truncated, redacted or undecodable messages cannot earn payload assurance.
+truncated, legacy-redacted or undecodable messages cannot earn payload assurance.
 A complete passing RPC with structurally valid messages and a terminal
 gRPC status can cover a method, including a legitimate non-OK outcome. An error
 without a result does not cover the success response fields. RPC codes are
@@ -75,8 +77,8 @@ no omitted messages, valid terminal status and complete structurally valid
 payloads. Field observations and combination fingerprints identify the exact
 message index. A valid empty streaming direction has no payload conditions;
 it can still belong to an exercised method. A non-OK result cannot excuse extra
-messages on a non-streaming side. Incomplete, omitted, redacted or undecodable
-streams remain observations without successful credit. Capture limitations yield
+messages on a non-streaming side. Incomplete, omitted, legacy-redacted or
+undecodable streams remain observations without successful credit. Capture limitations yield
 partial schema validation, distinct from an actual contract mismatch.
 
 There is no denominator for stream lengths or cross-message business rules.
@@ -454,7 +456,7 @@ validation must never count as successful body-condition coverage.
 Older redacted archives may have changed field presence, type, length, enum
 membership or pattern matches. Readers preserve those limits: affected messages
 remain unknown and placeholders never count as original observations. Current
-capture has no redaction feature and retains synthetic test data unchanged.
+capture retains synthetic test data unchanged.
 
 The coverage model is protocol neutral; extraction is protocol specific:
 
@@ -466,7 +468,8 @@ The coverage model is protocol neutral; extraction is protocol specific:
 - Streaming uses ordered message observations and explicit direction completion;
   per-message conditions do not imply business sequence coverage.
 
-These are adapter requirements, not claims of current transport support.
+These are the current HTTP and native gRPC measurement boundaries. Generic
+event recordings for other protocols remain explicitly unmeasured.
 
 ## Measurement guarantees
 
@@ -476,7 +479,7 @@ These are adapter requirements, not claims of current transport support.
   remain visible.
 - Equivalent evidence produces deterministic descriptors and fingerprints;
   meaningful differences remain explainable from source observations.
-- Failed, incomplete, redacted, unsupported, and ambiguous cases cannot silently
+- Failed, incomplete, legacy-redacted, unsupported, and ambiguous cases cannot silently
   become successful coverage or shrink the reported scope.
 - Mock observations, provider observations and supplied contracts remain
   distinguishable. Mock coverage never establishes provider agreement.

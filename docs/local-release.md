@@ -61,7 +61,7 @@ The package has a source-file allowlist and public exports for `@wiretap/sdk`,
 of the MIT license. Test fixtures, test dependencies and the lockfile are
 excluded from the package.
 
-The cross-platform smoke script builds the local binary and packs the SDK,
+The cross-platform `package-smoke.mjs` builds the local binary and packs the SDK,
 installs the tarball into a temporary project outside this checkout, starts an
 ordinary HTTP application and runs existing Node tests through Wiretap. It
 checks the exact returned archive/output paths, coverage JSON, Postman collection
@@ -77,6 +77,7 @@ It also type-checks CommonJS and ESM consumers with strict TypeScript settings.
 Playwright API tests do not need a browser installation. The Linux CI lane
 additionally runs the [browser example](../examples/playwright-runner/README.md)
 with Chromium and parallel API tests.
+That lane also runs the [Mocha example](../examples/mocha-runner/README.md).
 
 The Go SDK smoke uses a clean external Go module with a local replacement for
 this checkout. It runs standard test packages concurrently, verifies coverage

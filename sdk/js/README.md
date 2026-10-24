@@ -11,15 +11,17 @@ Keep your assertions, mocks and HTTP clients.
 | [Mocha](docs/mocha.md) | Wrap the config and change your shared client's URL. Existing test imports stay unchanged. |
 | [Plain JavaScript / Node test runner](docs/javascript.md) | Use the existing lifecycle API or `createNodeTestSuite` with a project-owned harness. |
 
-The runner adapters start Wiretap on available ports, capture test attempts,
-finalize exports after test cleanup, and stop the process. Your runner owns
+The Jest, Playwright and Mocha adapters start Wiretap on available ports, capture
+test attempts, finalize exports after test cleanup, and stop the process. Your runner owns
 execution and outcomes. Failed assertions, timeouts and cleanup failures remain
 visible; API contract violations are separate evidence.
 
 ## Install and configure once
 
-Use Node.js 22+ (Mocha 12 requires 22.12+). Install the local SDK tarball alongside
-your existing runner and put the Wiretap executable on `PATH`, or set
+The SDK requires Node.js 22+; CI covers Node 22 and 24. Mocha 12 requires 22.12+.
+Supported adapters are Jest 29.7 or 30, Playwright Test 1.64.1+ within 1.x, and
+Mocha 11 (11.7.5+) or 12. Install the local SDK tarball alongside your existing
+runner and put the Wiretap executable on `PATH`, or set
 `WIRETAP_BINARY` to its absolute path:
 
 ```sh
@@ -30,7 +32,8 @@ See [local installation](https://github.com/mattlock83/wiretap/blob/main/docs/lo
 for building the binary and tarball. The SDK does not download binaries or install
 optional test runners. TypeScript declarations are included.
 
-Put `.wiretap.yaml` in the test project:
+Put `.wiretap.yaml` and your API contract in the test project. The runtime also
+discovers this configuration in parent directories:
 
 ```yaml
 version: 1
@@ -114,10 +117,22 @@ outcomes independently of callback settlement.
 
 ## Keep the outputs
 
-Retain the complete output directory in CI on success and failure. Managed runs
-write `last-run.json` with exact archive and export paths, plus a bounded
-`wiretap.log`. The archive contains raw traffic, contracts and per-attempt
-outcomes; exports contain API coverage and Postman collections.
+Retain the complete output directory in CI on success and failure. Managed
+JavaScript runs put the latest `last-run.json` receipt and bounded `wiretap.log`
+beside the unique run archive directories:
+
+```text
+artifacts/wiretap/
+  last-run.json
+  wiretap.log
+  run-.../
+```
+
+The receipt's `bundle_path`, `outputs.coverage` and `outputs.postman` identify the
+exact archive and export paths. Each archive contains raw traffic, contracts and
+per-attempt outcomes. Use different `outputDir` values for independent runs that
+execute concurrently so their latest receipt and log do not overwrite each other.
+The plain lifecycle API returns receipts; its harness chooses where to save them.
 
 Jest and Playwright default to one worker. Parallel capture requires explicit
 sessions and W3C trace propagation through captured application dependencies.

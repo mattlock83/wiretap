@@ -2,10 +2,11 @@
 
 Add Wiretap with one configuration wrapper and one test import change. Existing
 API assertions, hooks, reporters, browser options and custom fixtures remain in
-place. Use Node.js 22 or newer and Playwright Test 1.64 or newer.
+place. Use Node.js 22+ and Playwright Test 1.64.1+ within 1.x.
 
-Install `@wiretap/sdk` alongside your existing `@playwright/test`, and make the
-Wiretap executable available on `PATH` or set `WIRETAP_BINARY` to its path.
+[Install the local SDK tarball](../README.md#install-and-configure-once) alongside
+your existing `@playwright/test`, and make the Wiretap executable available on
+`PATH` or set `WIRETAP_BINARY` to its absolute path.
 Keep your API contract and output settings in `.wiretap.yaml`:
 
 ```yaml
@@ -91,7 +92,9 @@ module.exports = withWiretap(existingConfig, {
 });
 ```
 
-`capture` supplies serializable shared-core settings. Use Playwright fixtures for
+Paths resolve from the Playwright configuration directory, or from `cwd` when
+you set it in the wrapper options. `capture` supplies serializable shared-core
+settings. Use Playwright fixtures for
 session setup callbacks; custom tracing providers remain available through the
 plain JavaScript SDK. Per-test or per-file settings
 use `wiretapOptions`, including a target override or additional headers:
@@ -129,10 +132,17 @@ Parallel projects and per-test overrides must use the same SUT origin. The SDK
 rejects target changes across origins in a parallel run; use separate runs or
 one worker for different servers.
 
-Ctrl+C and SIGTERM use Playwright's cancellation and cleanup path, preserving
-the interrupted test outcome and final exports before the owned process stops.
+Ctrl+C and SIGTERM use Playwright's cancellation and cleanup path. Completed
+cleanup records the interrupted test outcome and finalizes exports before the
+owned process stops; forced process termination cannot complete that cleanup.
+
+Managed JavaScript runs write the latest `last-run.json` receipt and
+`wiretap.log` beside their unique run archive directories. The receipt contains
+the exact archive, coverage and Postman paths. Keep the complete output directory
+in CI, including failed runs, and give independent concurrent runs different
+`outputDir` values.
 
 Only isolated synthetic test data and dummy secrets belong in these captures.
 The SDK stores the captured traffic unchanged.
 
-See the [runnable Todo example](../../../examples/playwright-runner/README.md).
+See the [runnable Todo example](https://github.com/mattlock83/wiretap/tree/main/examples/playwright-runner).

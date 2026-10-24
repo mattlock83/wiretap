@@ -1,6 +1,6 @@
 # Machine-readable evidence and coverage
 
-The raw capture is the authoritative input for future comparison tools.
+The raw capture is the authoritative input for external analysis and comparison.
 Postman collections are executable/example projections. Coverage reports are
 versioned measurements of that evidence, not replacement recordings.
 
@@ -25,13 +25,22 @@ report version. Exact-byte hashes establish integrity, not compatibility.
 Use SDK `identity: {id, variant?, attemptOrdinal?}` (Go `Identity`, HTTP
 `test_identity: {id, variant?, attempt_ordinal?}`) for a stable logical test.
 IDs are local to the application; variants distinguish parameterized cases.
-Supply a zero-based retry ordinal when the runner exposes it. Omission means ordering was not
-supplied, never a guessed successful/last attempt. Names remain display labels;
-random capture IDs still identify each execution. Identity is retained in pending
-attempts, completed test records and coverage samples. SDK test wrappers default the logical ID to the full test name when it fits the
-256-byte limit. Supply explicit IDs/variants for duplicate or changing labels.
-Direct HTTP callers and older captures can omit identity; comparison then has
-only their supplied labels and execution evidence.
+Supply a nonnegative attempt ordinal when the runner exposes retry ordering.
+Omission means ordering was not supplied, never a guessed successful or last
+attempt. Managed Go, Mocha and Playwright integrations number the first attempt
+as `1`; automatic Jest capture keeps retry identity but does not supply an
+ordinal. Custom HTTP/SDK integrations may use any consistent nonnegative
+sequence. Names remain display labels; random capture IDs identify executions.
+Identity is retained in pending attempts, completed test records and coverage
+samples.
+
+Managed adapters derive identities from their runner's test identity, including
+file/package and variant information where available. The lower-level
+`runTest`/`createTestAttempt` wrappers and `Runtime.StartTest` default to the full
+test name when it fits the 256-byte limit. Supply explicit IDs/variants for
+labels that change or repeat outside those adapters. Direct HTTP callers and
+older captures can omit identity; comparison then has only their supplied labels
+and execution evidence.
 
 ## Build provenance and provider mappings
 
@@ -60,18 +69,19 @@ observations still require comparable requests, state, identities and versions.
 
 ## Payload availability and volatile data
 
-HTTP coverage previews now include `body_info` with explicit presence, encoding,
+HTTP coverage previews include `body_info` with explicit presence, encoding,
 retained byte count, observed original byte count, content encoding, truncation,
 and explicit `omitted`/`redacted` flags.
 An absent body differs from a present empty body. Zero original bytes in older
-captures may mean that size was not recorded. Older captures may carry
-`redaction_rules` and per-message redaction flags; these remain readable as
-legacy evidence limits. New captures have no redaction feature. gRPC messages
-also retain omission and decode diagnostics.
+captures may mean that size was not recorded. Older raw captures may carry
+`redactions`; coverage samples expose those legacy rules as `redaction_rules`.
+Per-message redaction flags also remain readable as legacy evidence limits. Current capture retains values unchanged. The `redacted`
+field is read-only compatibility metadata, not a capture option. gRPC messages also retain omission
+and decode diagnostics.
 Follow raw evidence references for exact retained data and validation limitations.
 
 Run/attempt IDs, timestamps, trace IDs, ports, request IDs and durations are
-execution data. A later diff tool should normalize only explicitly declared
-volatile fields in its derived comparison view. New captured values remain intact; test environments use synthetic data and
-dummy secrets. A field in a mock response does not
+execution data. Comparison requires an explicit policy for volatile fields in
+a derived view; Wiretap does not normalize captured values. Test environments
+use synthetic data and dummy secrets. A field in a mock response does not
 establish that the consumer required it; missing provider evidence is unverified.

@@ -86,8 +86,9 @@ go test -count=1 ./...
 
 `Run` preserves the test result and returns a failure code if startup, capture
 finalization or shutdown fails. `StartTest` records failed assertions, `t.Fatal`,
-skips and failing cleanup hooks. Register it before your own `t.Cleanup` calls so
-Wiretap observes their outcomes. API contract violations are separate evidence:
+skips after capture begins, and failing cleanup hooks. Filtered tests and tests
+skipped before `StartTest` do not create attempts. Register it before your own
+`t.Cleanup` calls so Wiretap observes their outcomes. API contract violations are separate evidence:
 deliberate invalid requests can still pass their test assertions.
 
 ## Let Wiretap host an HTTP handler

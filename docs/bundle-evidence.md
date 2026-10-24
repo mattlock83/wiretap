@@ -54,7 +54,7 @@ dependency list means none were configured or observed in this run. It does not
 prove the application has no other dependencies. An observed mock response is a
 consumer assumption, not proof of the real provider's behavior. Local dependency
 IDs also do not establish a global provider identity across repositories; that
-mapping must be supplied explicitly. Recorded source/build metadata helps assess
+mapping must be supplied explicitly through `provider_mappings`. Recorded source/build metadata helps assess
 which implementation was tested.
 
 The reader verifies that the inventory agrees with the registered contracts,
@@ -84,10 +84,10 @@ still bounded by `inventory_scope`; it does not prove the absence of unconfigure
 or uncaptured dependencies. Missing contract data for a boundary that does exist
 means unknown coverage, not an absent side or 100% coverage.
 
-These are bundle-format guarantees. The current capture setup remains centred
-on a configured SUT. First-class browser routing and consumer-only configuration
-are separate runtime work; browser traffic must actually pass through a capture
-adapter to appear in a bundle.
+These are bundle-format guarantees. Runtime configuration still requires a SUT
+boundary. The Playwright adapter routes its request/browser fixtures through that
+boundary; it does not add a dependency-only application configuration. Browser
+traffic appears only when it actually passes through a capture listener.
 
 ## Authoritative records
 
@@ -98,10 +98,13 @@ the reader also enforces identity, hash, duplicate-key, version, path, and
 attachment checks that JSON Schema cannot express.
 
 The run inventory contains `format_version`, `run_id`, a monotonic `revision`,
-`run_state` (`open`, `complete`, `interrupted`), times, optional application/API identity and
-source provenance, frozen schema references under `contracts`, pending attempts
+`run_state` (`open`, `complete`, `interrupted`), times, optional application/API
+identity and source provenance, optional capture `producer` and
+`provider_mappings`, frozen schema references under `contracts`, pending attempts
 under `pending_tests`, and committed `{attempt_id, path, sha256}` records under
-`tests`. gRPC acquisition states are in `contract_resolutions`.
+`tests`. Test identities distinguish stable logical tests from individual
+attempt IDs. See the [machine interface](machine-interface.md) for identity and
+provenance fields. gRPC acquisition states are in `contract_resolutions`.
 The inventory is replaced atomically.
 A committed attempt refers to one immutable JSON file. Only listed attempts
 are read. Staging files and orphaned attempt files are ignored by ordinary
@@ -123,8 +126,9 @@ network access.
 
 Configured OpenAPI schemas and their transitive external references are frozen
 at configured run startup, or before admission for per-test overrides. This
-keeps declared operations visible even if the suite has no tests. Each `contracts/<hash>/manifest.json` records the
-set hash, root document, and all local document hashes. The reader checks the
+keeps declared operations visible even if the suite has no tests. Each
+`contracts/<hash>/manifest.json` records the set hash, root document, and all local
+document hashes. The reader checks the
 manifest identity and every file.
 
 For gRPC, the run inventory freezes each selected boundary's binary
@@ -151,8 +155,8 @@ where the `google.rpc.Status` envelope arrived, its code/message, decoding state
 and ordered `Any` details. The terminal `grpc_status` stays authoritative;
 contradictory envelope codes are labelled `inconsistent`. A missing object means
 no retained status-detail metadata was observed; an empty envelope, malformed
-metadata, truncated evidence and redaction have distinct representations. Missing
-metadata in an incomplete capture is not proof that the server sent none.
+metadata and truncated evidence have distinct representations. Legacy records
+can also identify redacted evidence. Missing metadata in an incomplete capture is not proof that the server sent none.
 
 Custom detail types use the frozen boundary descriptors. Standard `google.rpc`
 error types absent from that boundary use a separately hashed auxiliary
@@ -183,9 +187,9 @@ original detail or envelope bytes. Those limitations remain explicit and do not
 support original-byte verification or replay. Current capture retains synthetic
 test data without redaction.
 
-Writers produce `3.1`, and readers accept `3.x`. This is a breaking layout and
-manifest revision; earlier bundles should be regenerated using the current
-Wiretap version. `required_capabilities` declares structural features a reader
+Writers produce `3.1`. Readers accept supported `3.x` records subject to their
+structure and required capabilities. Older captures retain only the guarantees
+they recorded; reading them does not infer newer observation fields. `required_capabilities` declares structural features a reader
 must understand. Readers reject unknown required capabilities and recordings
 that omit the capabilities their structure requires; they must not silently
 discard an event interaction and interpret the remaining traffic as complete.
@@ -254,8 +258,8 @@ each direction. They do not establish global ordering across Kafka partitions,
 independent connections or systems. Retries and duplicate deliveries remain
 distinct events even if they reference the same payload hash.
 
-For a bidirectional gRPC call, events preserve client and server message
-interleaving, initial metadata, a client half-close and final trailers/status.
+The generic event form can describe a bidirectional RPC by preserving client
+and server message interleaving, initial metadata, a client half-close and final trailers/status.
 For example, a provided API may observe `received message`, `sent message`,
 `received message`, `received half_close`, `sent message`, then `sent trailers`.
 The half-close ends only one sending direction. Cancellation, transport errors
@@ -270,8 +274,9 @@ Events carry named `payloads` so a Kafka key, value and binary header or an
 encoded message and decoded projection can coexist. Each payload records:
 
 - `name`, `encoding` and optional `media_type`/`message_type`.
-- `availability`: `present`, `empty`, `null`, `redacted`, `truncated` or
-  `unavailable`. A Kafka tombstone (`null`) is different from a zero-byte value.
+- `availability`: `present`, `empty`, `null`, `truncated` or `unavailable`. The
+  compatibility value `redacted` is retained for legacy evidence only. A Kafka
+  tombstone (`null`) differs from a zero-byte value.
 - Optional `writer_schema` and `reader_schema` references containing contract ID
   and the frozen root file's `sha256`. They must resolve unambiguously to a schema
   on the same boundary in this attempt. Its package path/manifest pins imports;
@@ -288,8 +293,9 @@ Payload `encoding` describes the message format, such as `avro`, `protobuf` or
 `json`. The body's `encoding` describes its storage representation; binary bodies
 use base64 before attachment extraction. An `empty` payload still has a zero-byte
 attachment. `null`, `redacted` and `unavailable` payloads have no retained body.
-Redacting a representation must also remove retained source bytes that could
-reveal it; a redacted source cannot retain an available decoded projection.
+For compatibility with older records, a redacted representation cannot retain
+source bytes or an available decoded projection that would reveal the original
+value. These checks validate legacy evidence; they are not a capture feature.
 
 Frozen GraphQL SDL, Avro schemas and AsyncAPI documents can be stored as opaque
 contract packages with their supplied imports. Package manifests record the
@@ -353,17 +359,17 @@ indices, monotonic timing and sequence uniqueness, as well as the existing hashe
 Protobuf bytes and JSON projections. A drain snapshot is immutable: subsequent
 traffic cannot update the committed attempt or migrate into the next test.
 
-## External execution
+## External analysis and replay
 
-The bundle is a build artifact, not a test runner. An independent future
-executor can read `tests/<attempt-id>.json`, frozen contracts and ordinary payload
-files. Sequence, stream events and correlation remain available without a second
-scenario representation. Captured responses are observations, not exact-match
-assertions or permission to execute code.
+The bundle is a build artifact. External tools can read
+`tests/<attempt-id>.json`, frozen contracts and ordinary payload files. Sequence, stream events and correlation remain available without a second
+scenario representation. Wiretap exports Postman projections for supported HTTP
+and native gRPC exchanges; it does not execute those collections. Captured
+responses are observations, not exact-match assertions or permission to execute code.
 
 Authentication, fixture setup, substitutions and cleanup belong to project-owned
-code outside the bundle. There are no embedded hooks or scripts. A future executor must preserve original evidence and distinguish
-new execution results from the captured run.
+code outside the bundle. There are no embedded fixture hooks or scripts. Replay
+results must remain distinguishable from the captured run.
 
 ## Derived contract coverage
 
