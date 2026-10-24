@@ -317,28 +317,9 @@ fetch type URLs, change the service contract or change errors delivered to your
 client. Error details describe observed behaviour; they are not new coverage
 targets or proof that a mocked error matches a real provider.
 
-Redact sensitive detail fields through your normal test setup:
-
-```json
-{
-  "name": "reject invalid customer details",
-  "redactions": [
-    {
-      "field": "response.status_details[*].body.field_violations[*].description",
-      "rule": "remove"
-    }
-  ]
-}
-```
-
-Use `status_details[0]` to select one zero-based detail index. Paths use proto
-field names and support nested, repeated and map values. Wiretap removes the
-selected raw detail, containing envelope and binary metadata copies before
-writing the bundle. It keeps a redacted readable projection where possible;
-unknown selected details are omitted safely. Redacting the `grpc-message`
-header/trailer also removes its envelope copy. A whole-value
-`response.trailers.grpc-status-details-bin` rule removes every representation
-of those details. Redaction affects captured evidence, never the live response.
+Use synthetic error details and dummy credentials. Wiretap retains messages,
+metadata, trailers and status details unchanged within its capture limits;
+there is no built-in redaction.
 
 Status-detail retention shares the response's 64 KiB metadata budget, with at
 most 256 details and a recursion depth of 100. Details outside those limits are
@@ -367,8 +348,10 @@ stream contains none. Expected non-OK outcomes remain valid test observations.
 
 Unavailable capture or decoding produces **partial** validation with explicit
 reasons. It does not turn an otherwise passing test into a schema failure.
-Malformed wire data and contract violations still fail validation. Redacted, truncated or otherwise incomplete evidence never gains assurance
-by being merely readable.
+Malformed wire data and contract violations still fail validation, independently
+of the framework outcome. A deliberate rejection test can pass its assertions.
+Truncated, legacy-redacted or otherwise incomplete evidence never gains
+assurance by being merely readable.
 
 Contract coverage uses `wiretap-protobuf-2`: methods, explicit field presence,
 oneof choices, declared enum values, booleans, collection emptiness and supported

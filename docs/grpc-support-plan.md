@@ -25,7 +25,7 @@ and ordinary generated clients.
   and shutdown produce immutable partial evidence without late attribution.
 - Rich `google.rpc.Status` errors retain a verified envelope and ordered typed or
   opaque details. Contract-local descriptors and frozen standard error types
-  resolve offline. Redaction removes containing wire/envelope copies. Decode,
+  resolve offline. Decode,
   retention and recursion budgets yield explicit unavailable evidence.
 - Payload attachments are hashed `.bin` files. Readers verify message bytes,
   projections, descriptors and references before coverage or export.
@@ -42,7 +42,7 @@ conditions in every complete retained message, including streams: explicit
 presence, oneofs, enums, booleans, collections and nested message conditions.
 Descriptor normalization remains `wiretap-protobuf-1`.
 
-Incomplete, omitted, redacted or undecodable evidence earns no successful payload
+Incomplete, omitted, legacy-redacted or undecodable evidence earns no successful payload
 coverage. Empty streams do not invent payload conditions. Protobuf does not
 declare permitted status codes, stream lengths or cross-message business rules;
 these do not become artificial denominators. Recursive scopes, dynamic `Any`
@@ -54,7 +54,7 @@ See [coverage rules](contract-coverage-rules.md).
 The Go suite covers all four RPC shapes across provider/dependency/mixed
 boundaries, TLS, reflection/local contracts, fragmentation, empty messages, gzip,
 limits, early errors, cancellation, drain/shutdown, parallel ownership, rich
-errors, redaction, integrity and offline reporting. Native clients see the same
+errors, legacy-artifact integrity and offline reporting. Native clients see the same
 application results directly and through Wiretap.
 
 The [Node companion](../examples/grpc-boundaries/node/README.md) covers serial and
@@ -66,7 +66,9 @@ exercises all streaming shapes and bounded capture.
 Use `go test ./...` and the JavaScript SDK suite for regressions. Shared
 transport/session/capture changes also warrant `go test -race ./...` and the
 relevant native-client examples. Export checks cover native gRPC Postman v3 JSON;
-a real Postman desktop import/export round trip remains to be verified.
+actual desktop import and imported-collection invocation remain unverified. The
+available Postman 12.30 scratchpad blocked collection import pending sign-in, so
+compatibility remains automated SDK/schema validation and round-trip checks. See [Postman compatibility](../tests/postman-compat/README.md).
 
 ## Follow-ups
 
@@ -76,9 +78,6 @@ a real Postman desktop import/export round trip remains to be verified.
    tests. Connect's native gRPC client mode already works.
 3. mTLS and optional remote schema convenience, such as pinned BSR imports. Keep
    credentials outside artifacts and retain complete offline descriptor snapshots.
-4. Future provider verification, dependency variation and generated checks through
-   a separately designed Hub runner. Execution hooks, fixtures and credentials
-   stay outside the capture runtime, SDK and artifact.
 
 See the [gRPC user guide](grpc-user-guide.md) for current setup and the
 [roadmap](roadmap.md) for product priorities.

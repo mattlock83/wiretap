@@ -13,7 +13,7 @@ artifacts/<run-id>/
   bundle.json             run identity, API/dependency inventory and test references
   contracts/              frozen contracts, imports and integrity manifests
   tests/                  immutable JSON recording per test attempt
-  payloads/               retained, redacted body bytes
+  payloads/               retained body bytes
 ```
 
 Read `bundle.json` for `provided_apis`, `dependencies`, `tests`, pending attempts,
@@ -32,10 +32,11 @@ scope; they do not prove that no other APIs or dependencies exist.
 
 `report` and `export` read and verify captured evidence, frozen contracts and
 retained payloads. They work offline without the original workspace or servers.
-Both default to JSON coverage; use YAML when useful for another tool:
+Both default to JSON coverage. Start with the compact text summary, and use
+JSON/YAML for machine processing:
 
 ```bash
-wiretap report --bundle ./artifacts/<run-id>
+wiretap report --bundle ./artifacts/<run-id> --format text
 wiretap report --bundle ./artifacts/<run-id> --output coverage.json
 wiretap export --bundle ./artifacts/<run-id> --format yaml --output coverage.yaml
 ```
@@ -44,6 +45,26 @@ Omit `--output` to write to stdout. The report includes operation coverage,
 validation diagnostics and detailed condition results under `contract_coverage`.
 These reports are derived from the raw artifact and never become evidence inputs.
 `POST /v1/report` exposes the same JSON coverage calculation through the runtime.
+
+The text summary keeps operation counts and condition families separate. For
+example, this illustrative excerpt makes an untested operation visible without
+reading a full JSON report:
+
+```text
+Attempts: 2 (2 passed, 0 failed, 0 skipped)
+
+Provided APIs
+  orders: 1/2 operations exercised
+    Untested: POST /orders
+
+Contract conditions (covered / gaps / unknown / unsupported / excluded)
+  orders (provided, service)
+    enum: 1 / 1 / 0 / 0 / 0
+```
+
+The JSON report retains all details behind those counts. A condition gap means
+no qualifying observation was found; an unknown means the evidence could not
+support a decision. The summary does not collapse them into one percentage.
 
 Offline loading uses finite [archive loading budgets](archive-loading.md),
 including limits on individual files, cumulative bytes and file reads.
@@ -64,6 +85,8 @@ not exhaustive coverage of every possible combination.
 | Excluded | The target is outside applicable scope or has been shown infeasible. |
 
 A documented, valid error response can earn response-condition coverage.
+Framework test outcomes remain independent of contract-validation findings, so
+a deliberate invalid request and asserted `400` can be a passing test.
 Invalid requests do not earn valid-request coverage. An observed error status
 alone does not establish that the test asserted rejection. Incomplete, redacted,
 truncated or undecodable messages cannot earn successful payload coverage.
@@ -76,7 +99,9 @@ Wiretap captures and reports existing tests; it does not generate or execute
 additional cases.
 
 Capture retains up to 4 MiB per HTTP body by default. Retained payloads can still
-be redacted or truncated; exporting a report cannot restore omitted bytes. See
+be truncated; older archives may also contain redaction metadata. Current
+capture has no redaction feature and expects synthetic data and dummy secrets.
+Exporting a report cannot restore omitted bytes. See
 [troubleshooting](troubleshooting.md) for capture limits and integrity errors.
 
 ## Postman collections
@@ -128,8 +153,9 @@ Requests are ordered by request start time. If a request lacks a start time,
 the folder retains capture order and notes that limit. A recorded response is
 saved as an example, with a basic Postman test that checks its HTTP status code.
 Requests without a recorded response status have a skipped status check.
-Request and response bodies use the retained capture, including its redactions
-and capture limits. Binary request bodies are embedded as base64 file content
+Request and response bodies use the retained capture and its capture limits.
+Legacy redacted interactions cannot be replayed reliably; export rejects them
+or omits them with an explicit diagnostic when that policy is selected. Binary request bodies are embedded as base64 file content
 that Postman decodes when sending. Binary response examples are labeled and
 saved as base64.
 Postman's cookie jar, automatic URL encoding and optional generated headers are
@@ -158,7 +184,7 @@ message bytes; those are not added as invented messages. Timing is excluded.
 
 The CLI and automatic Postman export are strict by default: incomplete captures,
 truncated bodies, transport failures, undecoded gRPC messages, missing terminal
-status, and request trailers that v3 cannot represent fail the export before
+status, legacy redaction and request trailers that v3 cannot represent fail the export before
 replacing any collection. A complete negative API response remains exportable.
 
 To retain healthy exchanges from a mixed run, use:
@@ -220,7 +246,7 @@ The same options work in `.wiretap.yaml` for suite-finalization exports:
 
 ```yaml
 outputs:
-  coverage: [json]
+  coverage: [json, text]
   postman: true
   postman_options:
     omit_incomplete: true
@@ -235,6 +261,8 @@ Here `proto_root` is relative to `.wiretap.yaml`. The automatic output receipt
 `exports/result.json` includes `postman` collection paths, `postman_files` copied
 source paths, and `postman_omissions` with exact attempt/flow identities. Export
 errors remain under `errors`; coverage can succeed when Postman export fails.
+`coverage: [json, text]` writes both `coverage.json` and the compact `coverage.txt`.
+`--format all` defaults to those two formats plus Postman collections.
 `--format all` also accepts `--postman-config` and `--postman-omit-incomplete` for
 explicit regeneration with these settings.
 
@@ -247,4 +275,7 @@ against the [official JSON schema](https://schema.postman.com/collection/json/v3
 and a lossless JSON round trip because the published SDK supports v2.1 only.
 The [compatibility harness](../tests/postman-compat/README.md) covers RPC shapes,
 binary data, rich errors and retries using actual exporter output. It does not
-claim desktop import/export or server invocation has been automated.
+claim desktop import/export or server invocation has been verified. The available
+Postman 12.30 desktop scratchpad blocked collection import pending sign-in on
+24 October 2026, so imported-collection invocation was not verified. Automated
+compatibility checks are the acceptance path.

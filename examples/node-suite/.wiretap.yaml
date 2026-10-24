@@ -1,0 +1,15 @@
+version: 1
+application:
+  id: example-orders
+  name: Example Orders
+output_dir: artifacts
+outputs:
+  coverage: [json, text]
+  postman: true
+http_listen: ${WIRETAP_HTTP_LISTEN}
+proxy_listen: 127.0.0.1:0
+sut:
+  id: orders
+  url: ${SUT_BASE_URL}
+  kind: service
+  schema: orders.openapi.yaml

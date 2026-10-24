@@ -64,13 +64,14 @@ HTTP coverage previews now include `body_info` with explicit presence, encoding,
 retained byte count, observed original byte count, content encoding, truncation,
 and explicit `omitted`/`redacted` flags.
 An absent body differs from a present empty body. Zero original bytes in older
-captures may mean that size was not recorded. Samples carry the applicable
-`redaction_rules`; these describe policy, not proof that a particular path existed.
-gRPC messages retain their per-message omission/redaction and decode diagnostics.
+captures may mean that size was not recorded. Older captures may carry
+`redaction_rules` and per-message redaction flags; these remain readable as
+legacy evidence limits. New captures have no redaction feature. gRPC messages
+also retain omission and decode diagnostics.
 Follow raw evidence references for exact retained data and validation limitations.
 
 Run/attempt IDs, timestamps, trace IDs, ports, request IDs and durations are
 execution data. A later diff tool should normalize only explicitly declared
-volatile fields in its derived comparison view. Captured values remain intact
-subject to the project's redaction policy. A field in a mock response does not
+volatile fields in its derived comparison view. New captured values remain intact; test environments use synthetic data and
+dummy secrets. A field in a mock response does not
 establish that the consumer required it; missing provider evidence is unverified.

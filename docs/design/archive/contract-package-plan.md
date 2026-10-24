@@ -1,5 +1,7 @@
 # Application contracts, package identity and spec variants
 
+> Archived design exploration, superseded by the current [Wiretap product scope](../../roadmap.md). This document preserves earlier ideas and is not an implementation plan or supported configuration reference.
+
 **Status:** proposed design, 2 October 2026. This supports Phase 1 and registry
 increment R1 of the [roadmap](roadmap.md). Field names below are illustrative;
 the current configuration accepts version 1 and does not implement this model.

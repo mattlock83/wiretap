@@ -3,6 +3,8 @@
 Wiretap captures HTTP and native gRPC exchanges during existing tests. The test
 harness owns application/mock processes, execution, fixtures and assertions.
 Wiretap owns forwarding, correlation, contract validation and raw capture storage.
+Framework outcomes remain independent of validation findings. Configuration and
+incomplete-capture errors still fail integration setup or cleanup.
 
 ## Components
 
@@ -13,7 +15,6 @@ Wiretap owns forwarding, correlation, contract validation and raw capture storag
 | `internal/app` | Run/test sessions, dependency routes, draining and schema validation. |
 | `internal/proxy`, `internal/capture` | Forward traffic and retain bounded evidence. |
 | `internal/tracecontext` | W3C context parsing and propagation. |
-| `internal/redact` | Apply configured redaction before persistence. |
 | `internal/artifact` | Shared in-memory capture model. |
 | `internal/bundle` | Run inventory, immutable attempt JSON, frozen contracts, payloads and integrity checks. |
 | `internal/coverage` | Operation/contract-condition coverage from verified evidence. |
@@ -40,7 +41,8 @@ without replacing their HTTP/gRPC clients.
 
 The default drain timeout is five seconds. HTTP request/response delivery streams
 through the proxy; the default retained prefix is 4 MiB per body. gRPC observation
-is incremental with byte/message limits. Payloads are redacted before persistence.
+is incremental with byte/message limits. Retained payloads are unchanged; the
+runtime is for isolated tests with synthetic data and dummy secrets.
 These are evidence limits rather than limits on delivered traffic.
 
 ## Correlation and adoption
@@ -67,7 +69,7 @@ Readers verify these inputs before calculating coverage or exporting Postman
 collections. Copy the complete directory to preserve the evidence graph.
 
 `wiretap report` and `wiretap export` default to JSON coverage and support YAML
-and Postman output. They run offline without the original workspace or servers.
+and Postman output; `--format text` gives a compact coverage summary. They run offline without the original workspace or servers.
 `POST /v1/report` exposes JSON coverage through the control API. See the
 [format reference](bundle-evidence.md) and [artifact/export guide](artifacts.md).
 
@@ -85,7 +87,7 @@ unsupported semantics remain visible. See [coverage rules](contract-coverage-rul
 
 Dependency records retain mock/service provenance. They show what the target
 returned during a test, without proving provider agreement or identifying which
-fields the SUT consumed. Cross-repository comparison remains future work.
+fields the SUT consumed. Cross-repository comparison belongs in a separate future tool.
 Wiretap does not execute or generate tests.
 
 HTTP and native gRPC support capture, validation and coverage, including all four

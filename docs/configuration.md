@@ -5,6 +5,11 @@ working directory or the nearest ancestor; `--config path` selects another file.
 The runtime loads it once, and SDKs inherit its defaults through the HTTP API.
 Test integrations can then focus on names, outcomes, and trace context.
 
+Use isolated services with synthetic data and dummy secrets. Traffic is retained
+as sent. Redaction settings are unsupported; remove obsolete `redactions`
+configuration when upgrading. Readers can still inspect older redacted archives
+with their original uncertainty preserved.
+
 ```yaml
 version: 1
 application:
@@ -12,7 +17,7 @@ application:
   id: orders-app
 output_dir: artifacts
 outputs:
-  coverage: [json]
+  coverage: [json, text]
   postman: true
 http_listen: 127.0.0.1:18000
 proxy_listen: 127.0.0.1:18080
@@ -131,8 +136,10 @@ APIs remain strict. A supplied schema is always loaded and validated, even with
 The HTTP API spelling is also `schema_required`; JavaScript uses
 `schemaRequired` and Go uses `SchemaRequired *bool`. An attempt's validation
 status is `partial` when some APIs have specs and others explicitly omit them, `skipped` when all omit
-them, and `fail` if any enforced schema fails. `skipped` lists the omitted API
-schema IDs. These exceptions never turn a validation failure into a pass.
+them, and `fail` if any supplied schema fails. `skipped` lists the omitted API
+schema IDs. Validation status is independent of the framework outcome: contract
+violations stay visible while a deliberate negative test can pass its assertions.
+Setup and incomplete-capture failures still fail the integration.
 
 ## Capture and proxy settings
 
@@ -162,13 +169,14 @@ through the [HTTP API](runtime-api.md), usually via an SDK.
 | `wiretap export --bundle <path> --format postman --output-dir <directory>` | Export HTTP v2.1 and gRPC v3 JSON collections for the SUT and mocked dependencies, with test folders and saved interactions. |
 | `wiretap ca [--config path]` | Print the public proxy CA certificate, creating the local CA if needed. |
 
-`report` and `export` support `json`, `yaml` and `postman`; JSON is the default.
+`report` and `export` support `json`, `yaml`, `text`, `postman` and `all`;
+JSON is the default. `--format text` prints the compact coverage summary.
 They work offline from complete capture directories and do not execute tests.
 See [capture artifacts and exports](artifacts.md) for examples.
 
 ## Suite outputs
 
-Select `outputs: {coverage: [json, yaml], postman: true}` to generate exports when
+Select `outputs: {coverage: [json, text], postman: true}` to generate exports when
 suite ownership calls `/v1/finishRun`. This is opt-in; without it capture continues
 to write only the raw archive. SDK options can select outputs for that finalization.
 The result returns `bundle_path`, `run_id`, and `outputs` containing exact coverage
@@ -180,5 +188,5 @@ coverage and the raw failed/passing attempts available, while finalization repor
 an error. Preserve that cleanup error and any original test failure. Finalize
 only once in the outer harness after all workers have torn down their attempts.
 `wiretap export --bundle <exact-path> --format all` generates the standard JSON
-coverage and Postman outputs offline, for example to retry exports after fixing
+coverage, text summary and Postman outputs offline, for example to retry exports after fixing
 configuration. Avoid selecting a run by timestamp or scanning for the newest file.

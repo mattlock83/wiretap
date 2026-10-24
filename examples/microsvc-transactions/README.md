@@ -68,11 +68,13 @@ test support from the image.
 `fixtures.py` prepares Accounts state, signs fresh JWTs and checks the captured
 service's effects. The suite verifies authentication before starting capture.
 Each test uses a fresh user ID; its normal setup and teardown own fixture state.
-Signing keys and credentials stay outside the bundle, and Authorization headers
-are redacted. The harness discards its database after the run.
+Authentication uses disposable signing keys and synthetic test credentials.
+Captured Authorization headers and payloads are retained unchanged; there is no
+built-in redaction. The harness discards its database after the run.
 
-Any failing test or contract validation makes the command fail and leaves
-evidence for inspection.
+Failing tests and incomplete capture make the command fail and leave evidence
+for inspection. Contract mismatches are recorded separately from the framework
+outcome so deliberate rejection tests can pass.
 
 ## Bundles and contract scope
 

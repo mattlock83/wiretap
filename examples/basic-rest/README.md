@@ -16,7 +16,8 @@ npm ci --prefix sdk/js
 The capture writes raw artifacts under `artifacts/<run-id>/`. Inspect
 `bundle.json` and `tests/` for the exact captured attempts, including the inventory
 response. The harness starts and configures the SUT and dependency, then writes
-JSON coverage to `exports/coverage.json` and Postman collections to `exports/postman/` from the captured traffic and supplied contracts.
+a text summary to `exports/coverage.txt`, JSON coverage to `exports/coverage.json`
+and Postman collections to `exports/postman/` from the captured traffic and supplied contracts.
 
 ## Ordinary clients and parallel test traces
 

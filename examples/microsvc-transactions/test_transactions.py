@@ -36,7 +36,6 @@ class Transactions(unittest.TestCase):
         traceparent = "00-" + secrets.token_hex(16) + "-" + secrets.token_hex(8) + "-01"
         session = control("setupTest", {
             "name": name, "trace_context": {"traceparent": traceparent},
-            "redactions": [{"field": "request.headers.Authorization", "rule": "remove"}],
             "meta": {"example": "speedscale/microsvc", "image": os.environ["TRANSACTIONS_IMAGE"],
                      "image_id": os.environ["TRANSACTIONS_IMAGE_ID"]},
         })

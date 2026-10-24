@@ -115,7 +115,7 @@ Explicit limitations:
   repeated scalar parameters/headers, or numbers beyond the validator's reliable precision produce unknown measurements. Frozen
   schemas preserve exact numeric literals; examples, metadata and unused schemas
   do not make an otherwise measurable operation unsupported.
-- Any redaction rule on a message conservatively makes that message unknown;
+- Legacy captures with redaction rules conservatively make that message unknown;
   original values cannot be recovered. Truncation does the same. No placeholder
   or retained prefix can earn body coverage. Unaffected opposite-phase messages
   can still be measured.
@@ -436,8 +436,8 @@ Canonicalisation must retain meaningful distinctions: missing versus null,
 number versus string, array ordering, repeated parameters, and protocol-specific
 presence/default semantics. Never assume every ID, timestamp, or header can be
 ignored. Any normalisation rule that discards values must be explicit and
-versioned. Hash inputs come from permitted retained evidence, not secret values
-removed by redaction.
+versioned. Hash inputs come from retained evidence; missing bytes in legacy
+redacted captures cannot be recovered.
 
 Equal fingerprints mean equal observations under those rules. Different
 fingerprints invite an explainable diff. Neither result alone proves
@@ -451,12 +451,10 @@ body. Individual facts independently supported by retained evidence may be
 reported as observations, but missing facts stay unknown. A skipped body
 validation must never count as successful body-condition coverage.
 
-Redaction can change field presence, type, length, enum membership, or pattern
-matches. Affected conditions remain unknown unless a supported measurement was
-safely computed before redaction and retained with explicit provenance. Such
-pre-redaction summaries are a separate privacy-sensitive design choice, not
-assumed available in existing bundles. Never count a redaction placeholder as
-an original observed value.
+Older redacted archives may have changed field presence, type, length, enum
+membership or pattern matches. Readers preserve those limits: affected messages
+remain unknown and placeholders never count as original observations. Current
+capture has no redaction feature and retains synthetic test data unchanged.
 
 The coverage model is protocol neutral; extraction is protocol specific:
 

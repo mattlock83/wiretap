@@ -69,12 +69,16 @@ func writeTextReport(w io.Writer, report *Report) error {
 			}
 			families := make([]string, 0, len(spec.Counts))
 			for family := range spec.Counts {
+				if strings.HasPrefix(family, "phase:") {
+					continue // These overlap the same targets already counted by family.
+				}
 				families = append(families, family)
 			}
 			sort.Strings(families)
 			for _, family := range families {
 				count := spec.Counts[family]
-				fmt.Fprintf(&out, "    %s: %d / %d / %d / %d / %d\n", textLabel(family), count.Covered, count.NotCovered, count.Unknown, count.Unsupported, count.Excluded)
+				label := strings.ReplaceAll(strings.TrimPrefix(family, "family:"), "_", " ")
+				fmt.Fprintf(&out, "    %s: %d / %d / %d / %d / %d\n", textLabel(label), count.Covered, count.NotCovered, count.Unknown, count.Unsupported, count.Excluded)
 			}
 			shown := 0
 			for _, target := range spec.Targets {
@@ -87,9 +91,20 @@ func writeTextReport(w io.Writer, report *Report) error {
 				}
 				location := target.FieldPath
 				if location == "" {
-					location = target.Location
+					// Prefer the property name over an implementation-shaped schema
+					// pointer. Full pointers and target identities remain in JSON.
+					if _, property, found := strings.Cut(target.Location, "/properties/"); found {
+						location = strings.Split(property, "/")[0]
+						location = strings.ReplaceAll(strings.ReplaceAll(location, "~1", "/"), "~0", "~")
+					} else {
+						location = strings.ReplaceAll(target.Family, "_", " ")
+					}
 				}
-				fmt.Fprintf(&out, "    %s: %s %s %s (%s)\n", target.State, textLabel(target.Operation), textLabel(target.Phase), textLabel(target.Condition), textLabel(location))
+				state := "Gap"
+				if target.State == "unknown" {
+					state = "Unknown"
+				}
+				fmt.Fprintf(&out, "    %s: %s %s %s (%s)\n", state, textLabel(target.Operation), textLabel(target.Phase), textLabel(target.Condition), textLabel(location))
 				shown++
 			}
 			if len(spec.Violations) > 0 {

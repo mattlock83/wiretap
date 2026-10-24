@@ -34,12 +34,12 @@
       <div class="hero-copy">
         <p class="eyebrow product-eyebrow"><svg class="wiretap-icon product-symbol" viewBox="0 0 64 48" fill="none" aria-hidden="true" focusable="false"><use href="./wiretap-icon.svg#mark"/></svg> Wiretap</p>
         <h1 id="hero-title">Know what your<br class="wide-break"> tests <span>really cover.</span></h1>
-        <p class="hero-description">Catch API mismatches earlier. Wiretap captures the calls behind your existing tests, makes mock assumptions visible, and shows what still needs testing.</p>
+        <p class="hero-description">Turn existing HTTP and gRPC tests into portable evidence, Postman collections and API coverage. See captured calls, mock assumptions and untested contract conditions.</p>
         <div class="hero-actions">
           <a class="button button-primary" href="#get-started">Try Wiretap</a>
           <a class="text-link" href="#how-it-works">See how it works</a>
         </div>
-        <p class="hero-note">Your test framework. Your HTTP or gRPC client. Your mocks.</p>
+        <p class="hero-note">Your framework, clients and mocks. Isolated tests, synthetic data and dummy secrets.</p>
       </div>
 
       <div class="evidence-demo" aria-label="Interactive example of Wiretap evidence">
@@ -155,7 +155,7 @@ note:     { type: string } # optional</code></pre><div class="case-heading"><spa
           <div><code>tests/</code><span>Test attempts and captured exchanges</span></div>
           <div><code>contracts/</code><span>Frozen OpenAPI and Protobuf specs</span></div>
           <div><code>payloads/</code><span>Captured request and response bodies</span></div>
-          <div><code>coverage.json</code><span>Exported contract coverage</span></div>
+          <div><code>exports/coverage.json</code><span>Exported contract coverage</span></div>
         </div>
       </div>
     </section>
@@ -164,10 +164,11 @@ note:     { type: string } # optional</code></pre><div class="case-heading"><spa
       <details><summary>Do I need to change my test framework?</summary><p>No. Call Wiretap from the setup and cleanup hooks your framework already provides. JavaScript and Go SDKs help with the plumbing; other languages can use the HTTP API. Your framework still owns the tests and assertions.</p></details>
       <details><summary>Does my application need Wiretap-specific code?</summary><p>Configure your test environment's URLs so traffic passes through Wiretap. For parallel tests sharing one application, reuse working OpenTelemetry/W3C trace propagation. Without it, run sequentially or isolate workers. There is no Wiretap-specific ID to propagate through the application.</p></details>
       <details><summary>Do I need a spec?</summary><p>HTTP APIs use OpenAPI; an individual HTTP API can explicitly opt out with unknown contract coverage. Native gRPC requires Protobuf descriptors, obtained by reflection or supplied locally. Native gRPC coverage includes methods and supported field cases such as enums, presence and collections across unary and streaming calls. Unevaluated validation annotations remain visible as measurement limits.</p></details>
-      <details><summary>Does it prove my mocks match the real provider?</summary><p>Wiretap makes the assumptions visible and preserves the evidence needed to investigate them. A passing consumer test alone cannot prove provider agreement. Automatic comparison between provider and consumer repositories is not yet included.</p></details>
+      <details><summary>Does it prove my mocks match the real provider?</summary><p>Wiretap makes the assumptions visible and preserves the evidence needed to investigate them. A passing consumer test alone cannot prove provider agreement. Comparison belongs in a separate future tool that consumes the exported evidence.</p></details>
+      <details><summary>What data should I use?</summary><p>Use isolated test environments with synthetic data and dummy secrets. Wiretap retains the traffic you send, including payloads and credentials. There is no built-in redaction.</p></details>
     </div></section>
 
-    <section class="get-started-section" id="get-started" aria-labelledby="start-title"><div class="container start-layout"><div><p class="eyebrow">Put your existing tests to work</p><h2 id="start-title">Same tests.<br>A lot more insight.</h2><p>Run the example, inspect the captured traffic, and export coverage for your API.</p><a class="button button-primary" href="https://github.com/mattlock83/wiretap/blob/main/docs/getting-started-existing-tests.md">Read the quickstart</a></div><div class="quickstart"><div class="quickstart-heading"><strong>Try the complete example</strong><button class="copy-button" type="button" data-copy="quickstart-code" hidden>Copy commands</button></div><pre><code id="quickstart-code">git clone https://github.com/mattlock83/wiretap.git
+    <section class="get-started-section" id="get-started" aria-labelledby="start-title"><div class="container start-layout"><div><p class="eyebrow">Put your existing tests to work</p><h2 id="start-title">Same tests.<br>A lot more insight.</h2><p>Run the example to generate raw evidence, Postman exports and a coverage summary automatically.</p><a class="button button-primary" href="https://github.com/mattlock83/wiretap/blob/main/docs/getting-started-existing-tests.md">Read the quickstart</a></div><div class="quickstart"><div class="quickstart-heading"><strong>Try the complete example</strong><button class="copy-button" type="button" data-copy="quickstart-code" hidden>Copy commands</button></div><pre><code id="quickstart-code">git clone https://github.com/mattlock83/wiretap.git
 cd wiretap
 npm ci --prefix sdk/js
 ./examples/run-basic-rest-e2e.sh</code></pre><p>Requires Go 1.26+, Node.js 22+, Bash and curl.</p><span class="copy-status" role="status" aria-live="polite"></span></div></div></section>

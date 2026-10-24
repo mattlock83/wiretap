@@ -148,12 +148,16 @@ fi
 # Suite finalization returns the exact archive and all selected export paths.
 node -e 'const fs = require("node:fs"); const run = JSON.parse(fs.readFileSync(process.argv[1])); if (run.run_state !== "complete") throw new Error("test hooks did not finalize capture")' "${BUNDLE_DIR}/bundle.json"
 
+SUMMARY_STATUS=0
+"${BUILD_DIR}/wiretap-runtime" report --bundle "${BUNDLE_DIR}" --format text || SUMMARY_STATUS=$?
 echo "Raw capture: ${BUNDLE_DIR}"
 echo "JSON coverage: ${BUNDLE_DIR}/exports/coverage.json"
 echo "Postman collections: ${BUNDLE_DIR}/exports/postman"
 if [[ "${TEST_STATUS}" -ne 0 ]]; then
   exit "${TEST_STATUS}"
 fi
-
+if [[ "${SUMMARY_STATUS}" -ne 0 ]]; then
+  exit "${SUMMARY_STATUS}"
+fi
 
 popd >/dev/null

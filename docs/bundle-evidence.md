@@ -108,17 +108,22 @@ are read. Staging files and orphaned attempt files are ignored by ordinary
 readers. A run left `open` after a hard kill remains unfinalized.
 
 Each attempt records the original capture as `capture`, with test metadata,
-flows, validation, diagnostics, redactions, and tracing/correlation evidence.
+flows, validation, diagnostics and tracing/correlation evidence. Older captures
+may also contain redaction metadata, which remains a read-only evidence limit.
 `bodies` connects a flow and phase to a retained body attachment. Nonempty
 captured text or base64 body bytes are moved to `payloads/<sha256>.bin`; the
-reader verifies the hash and restores the original representation. Redaction
-occurs before attachment hashing. Body objects expose optional `redacted` and `omitted` flags: a changed representation is redacted; an omitted representation has no retained bytes. These are independent of capture `truncated` state. Absent, present but empty, truncated, and
+reader verifies the hash and restores the retained representation. Body objects
+expose optional `redacted` and `omitted` flags for compatibility with older
+archives. A legacy changed representation is redacted; an omitted representation
+has no retained bytes. New captures do not redact traffic. These flags are
+independent of capture `truncated` state. Absent, present but empty, truncated, and
 unavailable bodies remain distinct. Attachment paths and schema paths are
 bundle-root-relative in JSON. A copied bundle needs no source workspace or
 network access.
 
 Configured OpenAPI schemas and their transitive external references are frozen
-before the attempt is admitted. Each `contracts/<hash>/manifest.json` records the
+at configured run startup, or before admission for per-test overrides. This
+keeps declared operations visible even if the suite has no tests. Each `contracts/<hash>/manifest.json` records the
 set hash, root document, and all local document hashes. The reader checks the
 manifest identity and every file.
 
@@ -130,7 +135,7 @@ response messages with procedure, metadata, ordered Protobuf messages, trailers,
 HTTP/2 status and a separate gRPC application status. Decoded JSON and raw
 Protobuf message bytes are separate, hash-checked attachments with a message
 index. An application error can have HTTP 200 and a nonzero `grpc_status`.
-Redacted payloads do not retain raw wire bytes.
+Legacy redacted payloads do not retain raw wire bytes.
 Run-level `contract_resolutions` retain each declared gRPC boundary while acquisition is
 `pending`, `resolved`, or `failed`. Unresolved boundaries have an unknown
 coverage denominator and explicit acquisition diagnostics. A complete
@@ -141,12 +146,6 @@ from a missing or incomplete message. Readers verify the projection against the
 frozen descriptor and wire message, and reject inconsistent protocol tags,
 schema references, ordered message indices, and duplicate attachment references.
 
-gRPC redaction accepts `request.messages[*].body.<proto_field>` and its
-`request.body.<proto_field>` shorthand (likewise for responses). Repeated values
-and map values support `[*]`, while numeric indices and named map keys target
-individual values. Paths use proto field names in the ProtoJSON projection.
-For decoded `Any` values, select fields in that projection; if decoding fails,
-a configured body rule removes the wire payload and records the limitation.
 Rich RPC errors have a separate response `status_details` object. It records
 where the `google.rpc.Status` envelope arrived, its code/message, decoding state
 and ordered `Any` details. The terminal `grpc_status` stays authoritative;
@@ -167,7 +166,7 @@ Status attachments use `kind: status-envelope`, `status-descriptors`,
 `status_detail_index`. These indices are independent of application message
 indices. The binary metadata envelope moves into its attachment instead of
 also being retained in headers/trailers. Readers verify detail bytes against
-that envelope, descriptor hashes and ProtoJSON projections. Redacted
+that envelope, descriptor hashes and ProtoJSON projections. Legacy redacted
 projections explicitly cannot make that original-byte verification claim.
 
 Raw envelope bytes, retained detail bytes, readable projections and captured
@@ -179,14 +178,10 @@ limit the bytes forwarded to the client. Error details are observations, not
 additional response messages or coverage conditions: a service declaration does
 not enumerate its allowed rich errors.
 
-Use `response.status_details[*].body.<proto_field>` for all details or
-`response.status_details[0].body.<proto_field>` for one. Repeated/map field
-selectors work as for message bodies. A selected field rule removes the raw
-selected detail, containing status envelope and binary metadata copies; it
-retains only the redacted projection when decoding is possible. Unknown or
-undecodable selected details are omitted. Redacting `grpc-message` also removes
-its envelope copy and redacts the status summary. Whole-value header/trailer
-redaction of `grpc-status-details-bin` removes all detail representations.
+Older redacted error records may contain only a modified projection, without
+original detail or envelope bytes. Those limitations remain explicit and do not
+support original-byte verification or replay. Current capture retains synthetic
+test data without redaction.
 
 Writers produce `3.1`, and readers accept `3.x`. This is a breaking layout and
 manifest revision; earlier bundles should be regenerated using the current
@@ -360,7 +355,7 @@ traffic cannot update the committed attempt or migrate into the next test.
 
 ## External execution
 
-The bundle is a build artifact, not a test runner. A future Hub or independent
+The bundle is a build artifact, not a test runner. An independent future
 executor can read `tests/<attempt-id>.json`, frozen contracts and ordinary payload
 files. Sequence, stream events and correlation remain available without a second
 scenario representation. Captured responses are observations, not exact-match

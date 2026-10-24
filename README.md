@@ -1,20 +1,20 @@
 # Wiretap
 
-Wiretap captures existing HTTP and native gRPC API tests, checks traffic against
-OpenAPI or Protobuf contracts, and writes portable JSON artifacts with frozen
-contracts and retained payloads. Coverage reports show which declared operations
-and supported contract conditions your tests exercised.
+Turn existing HTTP and native gRPC API tests into **portable evidence, Postman
+collections and API coverage**. Keep your test framework, clients, assertions and
+mocks. Wiretap captures traffic at the application boundary and measures it
+against your OpenAPI or Protobuf contracts.
+
+Wiretap is for **isolated test environments using synthetic data and dummy
+secrets**. It retains the traffic you send through it, including credentials and
+payloads. There is no built-in redaction.
 
 ```text
 Existing tests → Wiretap → Your application → Wiretap → Existing mocks or services
                    └──────────────┬──────────────┘
-                            Capture artifacts
-                     JSON · contracts · payloads
+                        One portable run archive
+                   Raw evidence · Postman · API coverage
 ```
-
-Keep your test framework, clients, assertions and mocks. Start Wiretap alongside
-your application, route traffic through it, and call its JavaScript SDK, Go SDK
-or HTTP API from test lifecycle hooks.
 
 ## Try it
 
@@ -25,75 +25,75 @@ npm ci --prefix sdk/js
 ./examples/run-basic-rest-e2e.sh
 ```
 
-The example prints its artifact directory. Read `bundle.json` and the referenced
-JSON test recordings. Enable `outputs: {coverage: [json], postman: true}` in your
-configuration to produce coverage and Postman collections during suite finalization.
-To export an existing archive offline:
+The example starts its services, runs a test, finalizes the capture and generates
+JSON coverage and Postman collections automatically. It prints a short coverage
+summary and exact output paths. Everything stays under `artifacts/<run-id>/`.
 
-```bash
-wiretap export --bundle ./artifacts/<run-id> --format all
-```
+For the recommended **copyable two-file Node test suite**, including startup,
+readiness checks, failure handling and one finalization owner, follow
+[the existing-tests guide](docs/getting-started-existing-tests.md) and
+[the complete harness](examples/node-suite/README.md).
+[More examples](examples/README.md) cover parallel Jest, native gRPC, streaming,
+real clients and existing mocks.
 
-[More examples](examples/README.md) cover parallel Jest tests, database fixtures,
-Microsvc Transactions with authenticated tests, and
-[native gRPC with a mock dependency](examples/grpc-boundaries/README.md).
+## Add it to your suite
 
-## Add Wiretap to your tests
+1. Put application/dependency URLs and contracts in `.wiretap.yaml`.
+2. Start Wiretap alongside your application and mocks in your existing harness.
+3. Route test requests and application dependency calls through Wiretap.
+4. Use an SDK adapter to record each test's final outcome.
+5. Finalize once after all workers finish and retain the complete run directory.
 
-1. Put application/dependency URLs and OpenAPI or Protobuf contracts in `.wiretap.yaml`.
-2. Start Wiretap alongside your application and mocks using your existing harness.
-3. Point test requests and the application's dependency endpoints at Wiretap.
-4. Connect suite/test setup and cleanup through an SDK or the HTTP API.
-5. Run your tests normally and keep the complete artifact directory.
+Use the [JavaScript](sdk/js/README.md), [Go](sdk/go/README.md), or
+[HTTP API](docs/runtime-api.md) integration. Your framework owns pass/fail.
+Contract mismatches are recorded separately, so a test deliberately sending an
+invalid request can assert its rejection and pass. Setup and capture failures
+still surface through cleanup.
 
-Follow the [existing-tests guide](docs/getting-started-existing-tests.md), or the
-[JavaScript](sdk/js/README.md), [Go](sdk/go/README.md) and
-[HTTP API](docs/runtime-api.md) references.
+HTTP requires an OpenAPI spec by default; individual APIs can explicitly opt
+out. gRPC requires Protobuf contracts from reflection, `.proto` files or a
+descriptor set. Unary and all three streaming shapes are supported. See the
+[gRPC guide](docs/grpc-user-guide.md).
 
-See [local installation and release preparation](docs/local-release.md) for
-binary archives, the packed SDK, clean-project smoke tests and the local container.
+For parallel tests sharing one application, propagate W3C trace context through
+its server and outbound clients. Otherwise run sequentially or isolate workers.
+See [tracing and concurrency](docs/otel-adoption.md).
 
-HTTP requires an OpenAPI spec by default; individual APIs can explicitly opt out.
-gRPC requires a Protobuf contract: reflection is the default, with local `.proto`
-files or descriptor sets as alternatives. Unary, server-streaming,
-client-streaming and bidirectional calls support capture and structural coverage.
-See the [gRPC guide](docs/grpc-user-guide.md).
+## Understand the result
 
-Parallel tests sharing one application need W3C trace propagation from its server
-to its outbound clients. Otherwise run sequentially or isolate workers. See
-[configuration](docs/configuration.md) and [tracing](docs/otel-adoption.md).
-
-## Read and export results
-
-| Artifact or report | Contents |
+| Output | What it tells you |
 | --- | --- |
-| `bundle.json` | Run identity, configured/observed APIs and dependencies, frozen contracts and test references. |
-| `tests/*.json` | Per-attempt requests/responses, test outcomes, validation and capture diagnostics. |
-| `contracts/`, `payloads/` | Frozen contracts and retained, redacted payload bytes with integrity hashes. |
-| JSON/YAML coverage | Operation coverage, supported contract conditions, observations, combinations and explicit gaps/limits. |
-| Postman collections | Captured HTTP and gRPC interactions grouped by test, for the SUT and mocked dependencies. |
+| `bundle.json`, `tests/`, `contracts/`, `payloads/` | What each test sent and received, its outcome, validation diagnostics and frozen contracts. |
+| `exports/coverage.txt` | A compact first view of outcomes, exercised operations, condition gaps and unknowns. |
+| `exports/coverage.json` | Which declared operations and supported contract conditions were exercised, with gaps and unknowns. |
+| `exports/postman/` | Captured HTTP and gRPC interactions grouped by test, for the application and mocked dependencies. |
+| `exports/result.json` | Exact export paths and any export errors. |
 
-One test can cover many contract conditions. A mock response records a test
-assumption; it does not prove real-provider agreement. Missing, unsupported or
-incomplete evidence remains visible. Cross-repository comparison is not yet
-implemented. Wiretap does not generate or execute additional tests.
+Start with the summary, then follow the JSON report's test references when you
+need to understand a gap. One test can exercise many conditions; an unknown
+measurement is not a pass. A declared API with no captured tests still appears
+as untested when its contract is available.
+
+The demo builds a temporary binary. To inspect its archive later from this
+checkout, use `go run`, or [build a persistent binary](docs/local-release.md):
 
 ```bash
-wiretap export --bundle ./artifacts/<run-id> --format yaml --output coverage.yaml
-wiretap export --bundle ./artifacts/<run-id> --format postman --output-dir postman
+go run ./cmd/wiretap report --bundle ./artifacts/<run-id> --format text
+go run ./cmd/wiretap export --bundle ./artifacts/<run-id> --format all
 ```
 
-Postman HTTP collections use v2.1 JSON; native gRPC collections use v3 JSON with
-saved unary/streaming conversations, metadata, trailers and RPC status. Real
-dependencies are skipped. See the [artifact and export guide](docs/artifacts.md).
+Exports work offline from the complete run archive. HTTP collections use Postman
+v2.1; native gRPC uses v3. See [exports and compatibility](docs/artifacts.md).
+For tools consuming the results, use the versioned
+[machine interface](docs/machine-interface.md).
 
-The [format reference](docs/bundle-evidence.md) documents the raw capture format,
-including generic event storage for future transports. Live capture, validation
-and coverage currently support HTTP and native gRPC. Runtime configuration
-remains centred on a SUT.
+## Product scope and documentation
 
-## Documentation
+Wiretap's job ends at capture and export. Mock responses record consumer
+assumptions; comparing them against provider evidence belongs in a separate
+future diffing tool. Wiretap does not generate or execute additional tests.
 
-Start with the [documentation index](docs/README.md) for setup, SDKs, commands,
-formats, CI and troubleshooting. The [landing page guide](site/README.md) covers
-the website preview and GitHub Pages setup.
+Start with the [documentation index](docs/README.md) for setup, CI, formats and
+troubleshooting. The [product scope](docs/roadmap.md) describes the completion
+criteria. [Local packages](docs/local-release.md) can be built and installed
+without publishing anything externally.

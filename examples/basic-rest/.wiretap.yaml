@@ -1,6 +1,6 @@
 version: 1
 outputs:
-  coverage: [json]
+  coverage: [json, text]
   postman: true
 sut:
   id: basic-rest

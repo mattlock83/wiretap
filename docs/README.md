@@ -3,13 +3,17 @@
 Your test framework owns execution and assertions. SDK or HTTP lifecycle calls
 identify the running test and its outcome. Wiretap captures HTTP/native gRPC API
 boundaries, validates traffic against supplied contracts, and writes portable
-JSON artifacts. JSON/YAML reports calculate operation and contract coverage.
+JSON artifacts. JSON/YAML reports calculate operation and contract coverage; a
+text summary gives the first view of results. Use isolated tests with synthetic
+data and dummy secrets: retained traffic is unchanged and there is no built-in
+redaction.
 
 ## Set up capture
 
 | Guide | Use it to |
 | --- | --- |
 | [Capture existing tests](getting-started-existing-tests.md) | Configure boundaries, connect lifecycle hooks and run capture. |
+| [Complete Node suite harness](../examples/node-suite/README.md) | Copy a two-file suite with one run owner, failure finalization and exact output paths. |
 | [Runnable examples](../examples/README.md) | Try HTTP/gRPC capture, database fixtures or Microsvc Transactions. |
 | [Configuration and commands](configuration.md) | Configure `.wiretap.yaml`, ownership, specs and CLI commands. |
 | [Local installation and release preparation](local-release.md) | Build versioned binaries, pack the SDK and test installation in an external project. |
@@ -25,25 +29,20 @@ JSON artifacts. JSON/YAML reports calculate operation and contract coverage.
 
 | Guide | Use it to |
 | --- | --- |
-| [Capture artifacts and exports](artifacts.md) | Read raw artifacts, generate JSON/YAML coverage and export Postman collections. |
+| [Capture artifacts and exports](artifacts.md) | Read raw artifacts, a text summary, JSON/YAML coverage and Postman collections. |
 | [Contract coverage rules](contract-coverage-rules.md) | Understand condition keys, counts, evidence quality and measurement limits. |
 | [Bundle format](bundle-evidence.md) | Parse API inventories, test recordings, contracts and payloads. |
+| [Machine-readable evidence and coverage](machine-interface.md) | Consume versioned reports, stable identities, provenance, provider mappings and payload availability. |
 | [Architecture](architecture.md) | Understand runtime, SDK, proxy, storage and reporting responsibilities. |
 | [gRPC user guide](grpc-user-guide.md) | Use reflection/local contracts and existing clients for unary and streaming capture. |
 | [gRPC support record](grpc-support-plan.md) | Review verified scope and protocol follow-ups. |
 
-## Product direction
+## Product scope
 
-The [roadmap](roadmap.md) describes future cross-repository comparison, assumption
-verification and Hub registry/execution services. Local Wiretap focuses on
-proxies, raw capture artifacts and spec coverage. The
-[contract package plan](contract-package-plan.md) proposes richer application/API
-declarations, source locking and consumer variants; its syntax is not implemented.
+Wiretap captures and exports evidence from existing tests. A separate future
+comparison tool can consume the raw artifacts, coverage and Postman projections.
+See the [product scope and completion criteria](roadmap.md).
 
 A run contains test attempts. Each attempt contains exchanges or RPC messages.
 A contract condition is a specified case, such as an enum value or an omitted
 optional field; several conditions can be covered by one message.
-
-[Machine-readable evidence and coverage](machine-interface.md) specifies report
-versions, producer/build provenance, logical retry identities, provider mappings
-and payload-availability metadata for external analysis tools.

@@ -2,10 +2,11 @@
 
 Run these commands from the repository root. Examples capture existing tests
 and print their capture directory. Inspect `bundle.json`, the attempts in
-`tests/`, and `coverage.json` for JSON coverage.
+`tests/`, and `exports/coverage.json` for JSON coverage.
 
 | Example | Demonstrates | Requirements |
 | --- | --- | --- |
+| [Complete Node suite](node-suite/README.md) | Copyable two-file harness, startup/readiness, negative tests, framework outcomes and finalization after failures. | Go 1.26+, Node.js 22+. |
 | [Basic REST](basic-rest/README.md) | Existing Node tests and an HTTP dependency mock; optional parallel Jest capture. | Go 1.26+, Node.js 22+, Bash and curl. |
 | [Microsvc Transactions](microsvc-transactions/README.md) | A real service image, an Accounts mock, disposable database state and authenticated tests. | Go 1.26+, Python 3.9+, Docker and the documented local images. |
 | [Native gRPC](grpc-boundaries/README.md) | Existing grpc-go test, gRPC SUT and gRPC mock, reflection/local contracts and JSON coverage. | Go 1.26+, Bash, Python 3 and curl. |

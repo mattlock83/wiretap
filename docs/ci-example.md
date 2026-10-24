@@ -1,80 +1,65 @@
-# CI example
+# Keep test evidence in CI
 
-This is a minimal GitHub Actions workflow that runs Go tests, JS SDK tests,
-and the capture example in this repository, then uploads the bundles.
-For another project, substitute its existing harness and test command while
-keeping complete bundle directories as CI artifacts.
+Run the same harness locally and in CI. It owns startup, readiness, all test
+workers, one finalization and shutdown. Each worker owns only its attempts.
+Use synthetic data and dummy secrets because captured traffic is retained
+unchanged, with no built-in redaction.
+
+This workflow runs the [complete two-file Node example](../examples/node-suite/README.md)
+from a Wiretap checkout. In your project, install your locally built binary and
+packed SDK, then run your copy of the same harness.
 
 ```yaml
-name: ci
-
-on:
-  push:
-    branches: [ main ]
-  pull_request:
-
+name: API tests
+on: [push, pull_request]
 jobs:
-  test:
+  api-tests:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Go
-        uses: actions/setup-go@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
         with:
           go-version: '1.26.10'
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: "22"
-
-      - name: Go tests
-        run: go test ./...
-
-      - name: JS SDK tests
-        working-directory: sdk/js
-        run: npm ci && npm test
-
-      - name: Capture the example
-        run: ./examples/run-basic-rest-e2e.sh
-
-      - name: Upload artifacts
+          node-version: '22'
+      - name: Build Wiretap and install its SDK
+        run: |
+          mkdir -p dist
+          go build -o dist/wiretap ./cmd/wiretap
+          npm ci --prefix sdk/js
+          cd examples/node-suite
+          npm install --no-save ../../sdk/js
+      - name: Run API tests and generate exports
+        env:
+          WIRETAP_OUTPUT_DIR: ${{ github.workspace }}/artifacts
+        run: node examples/node-suite/run-tests.mjs --binary dist/wiretap
+      - name: Preserve evidence, including failed tests
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: test-artifacts
+          name: api-test-evidence
           path: artifacts/
+          if-no-files-found: error
 ```
 
-Notes:
+The harness writes `artifacts/last-run.json` with exact `bundle_path` and `outputs`
+paths. Each `artifacts/<run-id>/` contains raw recordings, contracts, payloads,
+coverage, Postman collections and `exports/result.json`. Keep the whole directory
+so another tool can verify and export it offline. Do not select the newest
+folder by timestamp when the finalization response already identifies the run.
 
-- The service writes a bundle to `./artifacts/<run-id>/` by default. Override
-  the output root with `WIRETAP_OUTPUT_DIR` in CI. Upload the whole bundle so
-  `bundle.json`, `tests/`, `contracts/` and `payloads/` remain together.
-- Body capture defaults to 4 MiB per request or response. Set
-  `WIRETAP_MAX_CAPTURE_BYTES` to another non-negative byte count when CI
-  artifact size requires a different bound; `0` means unlimited.
-- Upload after failures as well as successes: failed attempts are useful evidence.
-  This example uses `if: always()` for the upload step.
+The harness always attempts finalization after the test process exits. An
+original nonzero test exit code is retained if cleanup also fails; cleanup or
+export errors fail a suite that otherwise passed. Upload runs unconditionally,
+so failure evidence remains available.
 
-- If HTTPS MITM is used in CI, add the proxy CA to the trust store (see [HTTPS trust](https-trust.md)).
+Set a unique output root per concurrent CI job. Body retention defaults to
+4 MiB per HTTP request/response. `WIRETAP_MAX_CAPTURE_BYTES` chooses another
+non-negative byte count (`0` is unlimited); truncated evidence stays explicit.
+For HTTPS interception, configure the [proxy CA](https-trust.md).
 
-Generate a JSON or YAML coverage report from a completed artifact with
-`wiretap report --bundle <run> --output coverage.json`. Keep the complete raw run
-as a CI artifact, including failed attempts, so another process can verify and
-export it offline.
-
-For a suite that should always export both formats, configure:
-
-```yaml
-outputs:
-  coverage: [json]
-  postman: true
-```
-
-The suite owner finalizes once after all workers finish. Save the returned
-`bundle_path` and `outputs` paths directly; `exports/result.json` records successes
-and export errors inside that run. Upload this archive after test failures too.
-An original test failure must retain its exit code even if finalization also fails.
+The repository's [package smoke](../scripts/package-smoke.mjs) verifies this
+harness from a fresh external installation with passing tests, deliberate
+negative requests, and a failing framework cleanup hook. No package publishing
+is needed to run it.

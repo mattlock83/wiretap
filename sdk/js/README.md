@@ -5,39 +5,50 @@ It controls a separately running Wiretap service over HTTP and creates standard
 trace contexts for capture. It does not discover, schedule, or launch tests.
 TypeScript declarations are included. See [configuration](https://github.com/mattlock83/wiretap/blob/main/docs/configuration.md).
 
-## Native test lifecycle
+## Recommended Node integration
 
-For a simple Node suite, retain the standard test function and hooks:
+Use the outcome-aware adapter with Node 22+. It observes callback, subtest,
+`t.after` and timeout results while retaining the framework's test tree.
+For a single test file that owns its runtime:
 
 ```js
-const { test, before, after } = require("node:test");
 const assert = require("node:assert/strict");
-const { startCapture } = require("@wiretap/sdk");
-let capture;
-before(async () => { capture = await startCapture(); });
-after(async () => { if (capture) await capture.finishRun(); });
+const { createNodeTestSuite } = require("@wiretap/sdk");
+const suite = createNodeTestSuite();
 
-test("gets an order", () => capture.runTest("gets an order", async session => {
+suite.test("gets an order", async (t, session) => {
   const response = await fetch(`${session.sutUrl}/orders/123`);
   assert.equal(response.status, 200);
-}));
+  // Keep assertions and per-test fixtures here; t.after cleanup is observed.
+});
 ```
 
-Start `wiretap` separately, then run the existing test command with tracing loaded
-before client modules:
+Start Wiretap separately, then load tracing before client modules:
 
 ```bash
 node --require @wiretap/sdk/tracing --test test/orders.test.js
 ```
 
-Retain your existing HTTP client, serialization, response parsing, status handling,
+For multiple files/workers, use `createNodeTestSuite({ manageRuntime: false })`
+in each worker and let a parent harness finalize once. Copy the
+[complete two-file suite](https://github.com/mattlock83/wiretap/tree/main/examples/node-suite)
+for startup, readiness, test execution, finalization on failure and CI paths.
+Per-test fixtures belong in the captured callback or its `t.after` callbacks;
+suite-wide hooks run outside individual attempts. Existing hook order is retained.
+
+Retain your existing HTTP client, serialization, response parsing, status handling
 and timeouts. Point it at the session's `sutUrl`. Wiretap instruments Node HTTP/HTTPS
 and native fetch. Custom transports need appropriate standard OTel instrumentation.
 There is no SDK request/response client.
 
-`runTest` observes only the supplied callback's outcome and guarantees teardown
-when it settles. It cannot observe unrelated hooks, assertion-count checks, or a
-runner timeout whose callback never settles.
+Use synthetic data and dummy credentials. Wiretap retains captured traffic as
+sent and has no built-in redaction. Deliberate invalid requests can pass their
+framework assertions while retaining separate contract-validation violations.
+
+For a callback-only integration, `runtime.runTest` records that callback's
+outcome and guarantees teardown when it settles. It cannot observe unrelated
+hooks, assertion-count checks, or runner timeouts whose callbacks never settle;
+prefer the adapter when those are part of your framework lifecycle.
 
 ## Integrating another framework
 
@@ -55,20 +66,14 @@ Keep each handle with its framework test attempt; do not use a shared mutable
 current-test variable for concurrent tests. `run` can activate the same attempt's
 context around separate fixture callbacks. `finish` is idempotent and can run
 even if a timed-out callback has not settled. Await it, pass the framework's
-actual result, and surface capture/validation errors as test or suite failures.
+actual result, and surface capture errors as test or suite failures. Contract-validation results
+remain separate from the framework outcome.
 It closes capture; it does not cancel user callbacks or background work.
 
 For a runner with no executable callback hooks, use `setupTest`/`teardownTest`
 and standard OTel context binding, or call the language-independent
 [HTTP API](https://github.com/mattlock83/wiretap/blob/main/docs/runtime-api.md). Manual setup alone does not activate a
 span around unrelated callbacks. Use a new handle/root for every retry.
-
-## Optional Node adapter
-
-`createNodeTestSuite` and `bindTest` provide runner-specific convenience when
-wanted. They require Node 22+ and account for callback, subtest, `t.after`, and
-timeout outcomes. They delegate test registration to `node:test` and are not
-required by the core library. Existing hooks retain their ordering.
 
 ## Optional Jest adapter and concurrency
 
@@ -170,13 +175,14 @@ per-API requirement.
 Sessions expose `runId` and `bundlePath`. Teardown returns `attempt_path` for
 the recorded JSON evidence. Capture drains accepted requests
 for five seconds by default; `drainTimeoutMs` selects 0–60000ms. Incomplete
-capture and enforced schema failures fail cleanup. An original callback error
+capture fails cleanup; schema mismatches are retained as validation evidence
+without changing the framework outcome. An original callback error
 is preserved if cleanup also fails. Explicitly omitted schemas show skipped or
-partial validation without turning unrelated schema failures into success.
+partial validation without changing validation findings for supplied schemas.
 
 ### Generate suite outputs
 
-Configure `outputs: {coverage: ["json"], postman: true}` in `startCapture`, or the
+Configure `outputs: {coverage: ["json", "text"], postman: true}` in `startCapture`, or the
 matching `outputs` block in `.wiretap.yaml`. `await capture.finishRun()` returns
 `outputs.coverage` and `outputs.postman` with exact server-side paths. Shared
 workers leave this to the global run owner. Cleanup errors retain `error.body`

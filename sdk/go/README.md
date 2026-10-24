@@ -46,7 +46,9 @@ are still active. Use a bounded context and propagate finalization errors.
 `StartTest` creates a fresh root and registers cleanup. Call it after
 `t.Parallel()` and before registering user cleanups so capture teardown runs
 last. Cleanup records the final test result, handles `t.Fatal`/skip, drains
-accepted traffic, and fails the test if capture/schema validation fails.
+accepted traffic, and fails the test if capture is incomplete. Contract
+violations remain recorded separately and do not change the framework outcome,
+so deliberate invalid requests can be tested normally.
 It uses an independent cleanup context so a cancelled request context does not
 prevent teardown. Setup defaults to a 30-second deadline; set
 `TestOptions.SetupTimeout` to allow a larger first-test contract discovery budget,
@@ -91,8 +93,8 @@ Wiretap, and dependency routes. See [adoption notes](../../docs/otel-adoption.md
 
 ### Generate suite outputs
 
-Set `outputs: {coverage: [json], postman: true}` in `.wiretap.yaml` and retain the
+Set `outputs: {coverage: [json, text], postman: true}` in `.wiretap.yaml` and retain the
 normal `FinishRun` cleanup. For explicit selection and returned paths, use
-`FinishRunWithOutputs(ctx, &wiretap.OutputOptions{Coverage: []string{"json"}, Postman: true})`.
+`FinishRunWithOutputs(ctx, &wiretap.OutputOptions{Coverage: []string{"json", "text"}, Postman: true})`.
 It returns the archive and available export paths even when another export fails;
 check its error and preserve the existing test exit status in the owning harness.

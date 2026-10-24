@@ -13,7 +13,7 @@ Wiretap and does not itself establish that authentication was tested.
 | --- | --- | --- |
 | GET | `/healthz` | Check that the control service is available. |
 | POST | `/v1/startRun` | Start capture and create/reuse the run bundle. |
-| POST | `/v1/setupTest` | Register a test attempt, trace, schemas, and redactions. |
+| POST | `/v1/setupTest` | Register a test attempt, trace and schemas. |
 | POST | `/v1/teardownTest` | Drain, validate, and commit an attempt. |
 | POST | `/v1/finishRun` | Finalize the bundle and stop capture. |
 | POST | `/v1/report` | Calculate JSON coverage from the current or selected run artifact. |
@@ -42,7 +42,10 @@ For gRPC projects, `sut_url` and `dependencies` contain direct listener origins
 with no path prefix. `startRun` allocates them before the SUT and mocks start;
 it reports contract inventory as unresolved. The first `setupTest` resolves
 all Protobuf contracts before traffic admission. See the [gRPC guide](grpc-user-guide.md).
-Repeated startup calls without new boundary definitions reuse the active run.
+Configured HTTP contracts freeze during startup, even when no attempts run, so
+coverage retains the declared operations as untested. SDK-only schema overrides
+are registered at test setup; declare contracts in `.wiretap.yaml` for empty-run
+coverage. Repeated startup calls without new boundary definitions reuse the active run.
 
 Optional `application: {name, id, description?}` identifies the SUT independently
 of its API boundaries. It inherits `.wiretap.yaml` when omitted, and at least a
@@ -108,8 +111,9 @@ explicitly allow an absent spec with `schema_required: false`. An invalid
 supplied spec always fails. gRPC boundaries require a Protobuf contract,
 configured with `protocol: grpc` and normally discovered through reflection.
 The `sut_protocol` and dependency `protocol` fields can be carried through
-the setup payload when inheriting project defaults. `redactions` can register
-per-attempt redaction rules.
+the setup payload when inheriting project defaults. Capture uses synthetic data
+and dummy secrets; retained traffic is unchanged and redaction settings are not
+supported.
 
 ```json
 {
@@ -214,8 +218,10 @@ context into an untraced dependency request. Ambiguous unlabeled traffic returns
 The response contains `capture`, the completed test capture including
 `schema_validation`, plus `attempt_path` (canonical JSON) and `bundle_path`. These paths
 are on the Wiretap server's filesystem; a remote SDK cannot open them locally
-without copying or mounting that directory. OpenAPI
-violations change an otherwise passing artifact to `fail`. Teardown stops new
+without copying or mounting that directory. The framework-supplied test outcome
+is independent of `schema_validation`: a deliberate invalid request can fail
+contract validation while its rejection test passes. Setup and capture failures
+still surface as errors. Teardown stops new
 admission and waits for accepted exchanges, up to `drain_timeout_ms` (default
 5000, range 0–60000). Timeout/cancellation writes `capture_incomplete: true`,
 `capture_diagnostics`, and failed status. Completion after finalization cannot
@@ -242,10 +248,11 @@ can also export YAML and Postman collections; see [capture artifacts and exports
 `GET /v1/proxy/ca` returns the public CA certificate used by the capture proxy.
 Set proxy mode through runtime configuration before capture starts.
 
-Supply schemas and redactions at test setup so they are registered with the
+Supply schemas at test setup so they are registered with the
 attempt before traffic is captured. The dependency gateway forwards traffic on
 the capture listener; your mock server owns response configuration and verification.
 
 With explicitly omitted schemas, `capture.schema_validation.status` is `partial` if
 other APIs were validated or `skipped` if all omitted their schemas. `skipped`
-lists the omitted schema IDs. Enforced validation failures still produce `fail`.
+lists the omitted schema IDs. Contract violations produce validation status
+`fail` without overwriting the recorded framework outcome.

@@ -1,49 +1,52 @@
 # Capture existing tests
 
-This walkthrough uses HTTP. For native gRPC with existing generated clients and
-reflection or local Protobuf contracts, follow the [gRPC guide](grpc-user-guide.md).
+Wiretap runs beside your existing test suite and produces raw evidence, Postman
+collections and API coverage. Use isolated services, synthetic data and dummy
+secrets: captured traffic is retained as sent, with no built-in redaction.
 
-Keep your application, test framework, HTTP client, assertions and mock server.
-Wiretap captures the HTTP traffic you route through its proxy and groups it by
-test attempt.
+The recommended Node integration below uses the outcome-aware adapter, two test
+files and one parent harness. The framework keeps ownership of test execution
+and outcomes, including cleanup-hook failures. For Go, use the
+[Go SDK](../sdk/go/README.md); for native gRPC, use the
+[gRPC guide](grpc-user-guide.md).
 
-```text
-tests → Wiretap → application → Wiretap → existing mock or dependency
-```
+## 1. Run the complete adoption example
 
-For a working example first, see [examples](../examples/README.md).
-
-## 1. Build the runtime and choose an integration
-
-From the Wiretap repository, install the binary with Go 1.26+:
+From the Wiretap checkout, with Go 1.26+ and Node.js 22+:
 
 ```bash
-go install ./cmd/wiretap
+mkdir -p dist
+go build -o dist/wiretap ./cmd/wiretap
+npm ci --prefix sdk/js
+cd examples/node-suite
+npm install --no-save ../../sdk/js
+node run-tests.mjs --binary ../../dist/wiretap
 ```
 
-The commands below assume Go's install directory is on `PATH`. You can also
-build a local binary with `go build -o /tmp/wiretap ./cmd/wiretap` and use that
-path directly.
+On Windows, build `dist/wiretap.exe` and pass `../../dist/wiretap.exe`.
+No package publication is needed. For a portable SDK tarball and versioned
+binaries, see [local installation](local-release.md).
 
-Choose the [JavaScript SDK](../sdk/js/README.md), [Go SDK](../sdk/go/README.md),
-or [HTTP API](runtime-api.md). The SDKs call the runtime over HTTP; they do not
-start it or launch your tests. The example below uses the JavaScript library
-from native Node test hooks.
+The [complete example](../examples/node-suite/README.md) starts a synthetic
+Orders service and Wiretap, checks readiness, runs **two separate test files**,
+then finalizes once and stops both services. One test gets an order; the other
+checks that an invalid ID is rejected with `400`. Both pass, while the invalid
+request remains visible in validation evidence.
 
-When working from this checkout, install its JavaScript dependencies with
-`npm ci --prefix sdk/js`. To use the checkout in another Node project, add it
-there with `npm install --save-dev /absolute/path/to/wiretap/sdk/js`.
-For a portable local SDK tarball, versioned binaries and a clean-project smoke
-check, see [local installation and release preparation](local-release.md).
+Copy `examples/node-suite/` into your test project, install the local SDK there,
+and adapt `service.mjs`, `.wiretap.yaml` and the test command in `run-tests.mjs`
+to your existing services and tests. `run-tests.mjs` is ordinary project-owned
+orchestration, not a new test runner.
 
 ## 2. Configure the boundaries
 
-Put `.wiretap.yaml` at your test project's root:
+Put `.wiretap.yaml` in the test project:
 
 ```yaml
 version: 1
+application: {id: orders-app, name: Orders}
 outputs:
-  coverage: [json]
+  coverage: [json, text]
   postman: true
 sut:
   id: orders
@@ -57,90 +60,90 @@ dependencies:
     schema: schemas/inventory.openapi.yaml
 ```
 
-Here, `sut` is the system under test. Schema paths resolve relative to this
-file. OpenAPI specs are required for the SUT and each dependency. If an API has
-no spec, explicitly set `schema_required: false` on that API; its validation and
-coverage will show the omission. A supplied invalid spec still fails setup.
+The SUT is the system under test. Schema paths resolve relative to this file.
+OpenAPI is required per HTTP API; set `schema_required: false` only where a spec
+is deliberately absent. Such an API has unknown contract coverage. A supplied
+invalid spec fails setup. Omit `dependencies` for inbound-only capture.
+Use stable API IDs for later comparison across repositories.
 
-Omit `dependencies` when capturing inbound traffic only. Use stable API IDs
-when bundles from different repositories will describe the same API. See
-[configuration](configuration.md) for environment variables and overrides.
+Start `wiretap --config .wiretap.yaml` from your harness, wait for `/healthz`,
+then call `startCapture`. The default control API is
+`http://127.0.0.1:18000`; the capture proxy listens on `18080`.
+`WIRETAP_BASE_URL` selects another control address. The complete example chooses
+free ports and passes addresses explicitly.
 
-## 3. Start the services and route their traffic
+Configure the application's inventory URL as
+`http://127.0.0.1:18080/__wiretap/dep/inventory`. Wiretap forwards it to the
+configured mock. Tests call the session's `sutUrl`. Your mock tooling still
+owns its stubs and verification. See [configuration](configuration.md).
 
-Use your existing harness to start Wiretap, the application and its mocks:
+## 3. Wrap each test with the outcome-aware adapter
 
-```bash
-wiretap --config .wiretap.yaml
-```
-
-Configure the application's inventory base URL as
-`http://127.0.0.1:18080/__wiretap/dep/inventory`. Wiretap forwards that route to
-`http://127.0.0.1:9090`. Your mock tooling still owns stubs and verification.
-
-The default control API is `http://127.0.0.1:18000`; the capture proxy listens
-on port `18080`. Set `WIRETAP_BASE_URL` in the test process if the control API
-uses a different address. The application and mock must be running before
-requests are sent through the proxy.
-
-## 4. Connect the test lifecycle
-
-Call the library from your existing framework and use the session's `sutUrl`
-as your HTTP client's base URL:
+Each test file in a shared run uses `manageRuntime: false`:
 
 ```js
-const { test, before, after } = require("node:test");
 const assert = require("node:assert/strict");
-const { startCapture } = require("@wiretap/sdk");
-let capture;
+const { createNodeTestSuite } = require("@wiretap/sdk");
+const suite = createNodeTestSuite({ manageRuntime: false });
 
-before(async () => { capture = await startCapture(); });
-after(async () => {
-  if (capture) {
-    const result = await capture.finishRun();
-    console.log(result.outputs);
-  }
-});
-
-test("gets an order", () => capture.runTest("gets an order", async session => {
-  // Keep existing fixture setup and mock configuration here.
-  const response = await fetch(`${session.sutUrl}/orders/order-123`);
+suite.test("gets an order", async (t, session) => {
+  const response = await fetch(`${session.sutUrl}/orders/123`);
   assert.equal(response.status, 200);
-  // Keep existing assertions and mock verification here.
-}));
+  // Keep existing fixtures, assertions and mock verification here.
+  // t.after callbacks contribute to the final recorded test outcome.
+});
 ```
 
-Load tracing before HTTP client modules, then run the tests:
+Load tracing before HTTP clients, and initially run files sequentially:
 
 ```bash
-node --require @wiretap/sdk/tracing --test test/orders.test.js
+node --require @wiretap/sdk/tracing --test --test-concurrency=1 test/orders.test.cjs test/invalid-order.test.cjs
 ```
 
-The final result names the exact raw archive, coverage and Postman paths. Use
-these paths when saving CI artifacts or passing evidence to another tool.
+Use this command inside the parent harness: it starts a run before launching
+workers and calls `finishRun()` after the test process exits, including after
+failure. Workers finish their own attempts; only the parent finalizes the run.
+The [complete harness](../examples/node-suite/run-tests.mjs) preserves the test
+process's original nonzero exit code if finalization also fails.
 
-`runTest` records the supplied callback's outcome. To include separate framework
-hooks or runner timeouts, use `createTestAttempt` or an optional Node/Jest adapter;
-see the [JavaScript guide](../sdk/js/README.md). Go's `StartTest` uses `t.Cleanup`
-to observe the final result.
+The adapter observes callbacks, subtests, `t.after` and timeouts. Put per-test
+capture fixtures inside the adapter callback or its `t.after` callbacks;
+separate suite-wide hooks are outside individual attempts. For another
+framework, use [lifecycle handles or the Jest adapter](../sdk/js/README.md).
+Await requests and expected dependency work before finishing each attempt.
 
-One suite owner finalizes capture after every worker finishes. Workers finish
-their own attempts; they must not stop a shared run early. Await captured HTTP
-calls and expected dependency work before finishing an attempt.
+For parallel tests sharing an application, propagate W3C `traceparent` from its
+server to outbound clients. Otherwise keep the suite sequential or isolate each
+worker's service and Wiretap runtime. See [tracing](otel-adoption.md).
 
-## 5. Choose concurrency and inspect the artifacts
+## 4. Read and keep the results
 
-A shared application must propagate W3C `traceparent` from its server to its
-outbound clients for parallel test correlation. The mock needs no instrumentation.
-Without application propagation, run tests and requests sequentially or give
-each worker its own application and Wiretap runtime. See
-[tracing and concurrency](otel-adoption.md).
+The harness prints exact paths and a compact coverage summary. Read it in this
+order: test outcomes, operations exercised, condition gaps, unknown evidence,
+then validation diagnostics. A passing negative test can have request validation
+violations and valid error-response evidence; these are separate facts.
 
-SDK/API responses give the exact `bundle_path`. Read `bundle.json` and its
-referenced `tests/*.json` recordings to inspect requests, responses and outcomes.
-Keep the complete directory for CI or external analysis.
+`artifacts/last-run.json` records the finalization response. Each run has:
 
-Generate coverage with `wiretap report --bundle <path> --output coverage.json`.
-A mock reply records a test assumption, not proof of real provider behaviour.
-See the [artifact guide](artifacts.md) for exports and the
-[coverage rules](contract-coverage-rules.md) for supported cases and limits.
+```text
+artifacts/<run-id>/
+  bundle.json
+  tests/                  test outcomes and captured traffic
+  contracts/, payloads/   frozen specs and retained bytes
+  exports/coverage.txt    compact first-result summary
+  exports/coverage.json   machine-readable API coverage
+  exports/postman/        Postman collections
+  exports/result.json     exact output paths and export errors
+```
+
+Upload the complete directory on success **and failure**. The
+[CI recipe](ci-example.md) uses the same runnable harness and unconditional
+artifact upload. Rebuild the summary offline with:
+
+```bash
+wiretap report --bundle artifacts/<run-id> --format text
+```
+
+A mock response is a recorded assumption, not proof of provider agreement. Keep
+the raw archive for a later diff tool; the [machine interface](machine-interface.md)
+explains identities, versions, provenance and evidence limits.

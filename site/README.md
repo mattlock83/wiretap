@@ -1,7 +1,7 @@
 # Wiretap landing page
 
 Wiretap leads the header, page title and product content. Phrond appears only as
-the footer attribution. Repository URLs retain the existing GitHub organisation.
+the footer attribution. Repository URLs point to `mattlock83/wiretap`.
 
 This is plain HTML, CSS and a small script. There is no build step, package
 installation, external font, analytics or service dependency. All assets use
@@ -51,7 +51,7 @@ them automatically.
 2. In the repository's **Settings → Pages**, select **GitHub Actions** as the source.
 3. In **Actions → Deploy Wiretap landing page**, choose **Run workflow** on `main`.
 4. Open the URL reported by the deployment. Without a custom domain or an inherited
-   organisation domain, the project URL is `https://phrond.github.io/wiretap/`.
+   organisation domain, the project URL is `https://mattlock83.github.io/wiretap/`.
 
 Repeat step 3 to publish updates. The workflow uploads only `site/`; it does not
 publish captured bundles, test payloads or other repository content.
