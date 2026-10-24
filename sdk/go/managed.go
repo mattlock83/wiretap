@@ -11,9 +11,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -237,7 +239,10 @@ func (owner *managedRuntime) waitReady(ctx context.Context, path string) (string
 			}
 			return strings.TrimRight(ready.ControlURL, "/"), nil
 		}
-		if !errors.Is(err, os.ErrNotExist) {
+		// Windows can expose the renamed file before releasing its DELETE-access
+		// handle. Retry that sharing violation within the startup deadline.
+		sharingViolation := runtime.GOOS == "windows" && errors.Is(err, syscall.Errno(32))
+		if !errors.Is(err, os.ErrNotExist) && !sharingViolation {
 			return "", fmt.Errorf("read Wiretap readiness: %w", err)
 		}
 		select {
