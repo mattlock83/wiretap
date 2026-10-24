@@ -120,10 +120,17 @@ control process stays available for another run. The harness stops that process
 when it is no longer needed. Stopping it with unfinished capture preserves an
 interrupted bundle and pending attempts. SDK cleanup failures should fail the
 owning test or suite; the test framework controls the test process exit code.
-Go-managed processes use an open stdin pipe as a parent lifeline. The internal
-`WIRETAP_EXIT_ON_STDIN_EOF=1` switch lets the runtime stop if its test process
-crashes or times out; normal CLI invocations leave this switch unset. Hard
-aborts can preserve interrupted evidence without completed exports or receipts.
+Managed Go and JavaScript SDKs keep an open stdin pipe as a parent lifeline.
+They set the internal `WIRETAP_EXIT_ON_STDIN_EOF=1` switch so EOF requests graceful
+shutdown when the owning test process crashes, times out or is killed. This
+preserves an interrupted raw archive and pending attempts when shutdown can
+complete. Normal CLI invocations leave the switch unset. SDK shutdown has a
+bounded wait and force-kills an unresponsive child.
+
+Abrupt owner death cannot run normal suite finalization or save the owner's
+completion receipt. Exports may be incomplete, and `last-run.json` may be absent
+or left from an earlier run. Killing Wiretap itself before graceful shutdown
+finishes can leave the archive open rather than interrupted.
 
 Without a configuration file, supply schemas, addresses, and dependencies
 through the SDK or API. Wiretap process usage/configuration errors return `2` and

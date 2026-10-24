@@ -19,19 +19,29 @@ async function fixture(t, behavior = {}) {
   const receipt = { status: 'complete', run_id: 'run-1', bundle_path: path.join(outputDir, 'run-1'), outputs: { coverage: { json: path.join(outputDir, 'run-1', 'coverage.json') }, errors: [] } };
   t.mock.method(childProcess, 'spawn', (binary, args, options) => {
     const child = new EventEmitter();
+    let exited = false;
     child.pid = 10101;
+    child.stdin = new PassThrough();
     child.stdout = new PassThrough();
     child.stderr = new PassThrough();
+    child.once('exit', () => { exited = true; });
+    child.once('error', () => { exited = true; });
+    child.stdin.once('close', () => {
+      if (!exited && !behavior.ignoreEOF) child.emit('exit', 0, null);
+    });
     child.kill = signal => {
       signals.push(signal);
-      if (signal === 'SIGTERM' && behavior.ignoreTerm) return true;
       queueMicrotask(() => child.emit('exit', null, signal));
       return true;
     };
     spawned = { binary, args, options, child };
     queueMicrotask(async () => {
       if (behavior.startError) return child.emit('error', new Error('executable missing'));
-      if (behavior.exitEarly) { child.stderr.write('invalid project configuration'); return child.emit('exit', 1, null); }
+      if (behavior.exitEarly) {
+        child.stderr.write('invalid project configuration');
+        child.stdin.emit('error', Object.assign(new Error('broken pipe'), { code: 'EPIPE' }));
+        return child.emit('exit', 1, null);
+      }
       if (behavior.neverReady) return;
       await fs.writeFile(options.env.WIRETAP_READY_FILE, JSON.stringify({ control_url: 'http://127.0.0.1:12345', pid: child.pid }));
     });
@@ -58,25 +68,30 @@ test('managed runtime uses owned ephemeral listeners and returns the exact once-
   assert.deepEqual(f.spawned.args, ['--config', path.join(f.outputDir, '.wiretap.yaml')]);
   assert.equal(f.spawned.options.env.WIRETAP_HTTP_LISTEN, '127.0.0.1:0');
   assert.equal(f.spawned.options.env.WIRETAP_PROXY_LISTEN, '127.0.0.1:0');
+  assert.equal(f.spawned.options.env.WIRETAP_EXIT_ON_STDIN_EOF, '1');
+  assert.deepEqual(f.spawned.options.stdio, ['pipe', 'pipe', 'pipe']);
+  assert.equal(f.spawned.child.stdin.destroyed, false);
   const first = runtime.close();
   assert.equal(runtime.close(), first);
   assert.deepEqual(await first, f.receipt);
   assert.deepEqual(f.calls.map(c => c.path), ['/v1/startRun', '/v1/finishRun']);
   assert.deepEqual(f.calls.at(-1).body.outputs, outputs);
-  assert.deepEqual(f.signals, ['SIGTERM']);
+  assert.equal(f.spawned.child.stdin.destroyed, true);
+  assert.deepEqual(f.signals, []);
   assert.deepEqual(JSON.parse(await fs.readFile(path.join(f.outputDir, 'last-run.json'))), f.receipt);
   await assert.rejects(fs.stat(f.spawned.options.env.WIRETAP_READY_FILE), { code: 'ENOENT' });
 });
 
-test('export failure preserves partial receipt and still terminates the owned process', async t => {
-  const f = await fixture(t, { finishError: true, ignoreTerm: true });
+test('export failure preserves partial receipt and force kills a child that ignores EOF', async t => {
+  const f = await fixture(t, { finishError: true, ignoreEOF: true });
   const runtime = await startManagedRuntime({ outputDir: f.outputDir, shutdownTimeoutMs: 5 });
   await assert.rejects(runtime.close(), error => {
     assert.equal(error.body.error, 'export failed');
     assert.equal(error.body.bundle_path, f.receipt.bundle_path);
     return true;
   });
-  assert.deepEqual(f.signals, ['SIGTERM', 'SIGKILL']);
+  assert.equal(f.spawned.child.stdin.destroyed, true);
+  assert.deepEqual(f.signals, ['SIGKILL']);
   assert.equal(JSON.parse(await fs.readFile(path.join(f.outputDir, 'last-run.json'))).error, 'export failed');
 });
 
@@ -90,7 +105,8 @@ for (const [name, behavior, expected] of [
     await assert.rejects(startManagedRuntime({ outputDir: f.outputDir, startupTimeoutMs: 10, shutdownTimeoutMs: 10 }), expected);
     assert.deepEqual(f.calls, []);
     await assert.rejects(fs.stat(path.dirname(f.spawned.options.env.WIRETAP_READY_FILE)), { code: 'ENOENT' });
-    if (behavior.neverReady) assert.deepEqual(f.signals, ['SIGTERM']);
+    assert.equal(f.spawned.child.stdin.destroyed, true);
+    assert.deepEqual(f.signals, []);
   });
 }
 
@@ -100,7 +116,8 @@ test('aborting startup stops the child and preserves the cancellation error', as
   const pending = startManagedRuntime({ signal: controller.signal, outputDir: f.outputDir });
   setTimeout(() => controller.abort(new Error('suite cancelled')), 10);
   await assert.rejects(pending, /suite cancelled/);
-  assert.deepEqual(f.signals, ['SIGTERM']);
+  assert.equal(f.spawned.child.stdin.destroyed, true);
+  assert.deepEqual(f.signals, []);
 });
 
 test('aborting an active owner finalizes once and stops the child', async t => {
@@ -110,7 +127,8 @@ test('aborting an active owner finalizes once and stops the child', async t => {
   controller.abort();
   await runtime.close();
   assert.deepEqual(f.calls.map(c => c.path), ['/v1/startRun', '/v1/finishRun']);
-  assert.deepEqual(f.signals, ['SIGTERM']);
+  assert.equal(f.spawned.child.stdin.destroyed, true);
+  assert.deepEqual(f.signals, []);
 });
 
 test('withWiretap preserves the existing runner configuration and guards unsafe modes', () => {
@@ -148,7 +166,8 @@ test('Jest composes existing hooks, restores environment and stops Wiretap after
     return true;
   });
   assert.deepEqual(globalThis.__wiretapHookOrder, [['setup', 'preserved', f.outputDir], ['teardown']]);
-  assert.deepEqual(f.signals, ['SIGTERM']);
+  assert.equal(f.spawned.child.stdin.destroyed, true);
+  assert.deepEqual(f.signals, []);
   assert.equal(process.env.WIRETAP_BASE_URL, originalBase);
   assert.equal(process.listenerCount('SIGTERM'), sigtermListeners);
   await teardown({}, config);
@@ -202,5 +221,6 @@ test('composed Jest hooks retain the project transformer while awaiting setup an
   await transformer.requireAndTranspileModule(config.globalSetup, hook => hook(globalConfig, projectConfig));
   await transformer.requireAndTranspileModule(config.globalTeardown, hook => hook(globalConfig, projectConfig));
   assert.deepEqual(globalThis.__wiretapHookOrder, ['setup', 'teardown']);
-  assert.deepEqual(f.signals, ['SIGTERM']);
+  assert.equal(f.spawned.child.stdin.destroyed, true);
+  assert.deepEqual(f.signals, []);
 });

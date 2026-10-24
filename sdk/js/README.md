@@ -134,6 +134,13 @@ per-attempt outcomes. Use different `outputDir` values for independent runs that
 execute concurrently so their latest receipt and log do not overwrite each other.
 The plain lifecycle API returns receipts; its harness chooses where to save them.
 
+Managed JavaScript runs keep a stdin lifeline to Wiretap, as the Go SDK does.
+If the owning runner process dies, EOF asks Wiretap to stop and preserve an
+interrupted raw archive. Abrupt termination cannot complete normal exports or
+save the owner's receipt: `last-run.json` may be absent or refer to an earlier
+run. Killing Wiretap itself can leave an open archive if shutdown cannot finish.
+Normal managed shutdown force-kills a child that exceeds its shutdown timeout.
+
 Jest and Playwright default to one worker. Parallel capture requires explicit
 sessions and W3C trace propagation through captured application dependencies.
 Mocha capture currently supports serial runs. The runner guides document fixture

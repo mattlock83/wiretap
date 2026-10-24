@@ -30,6 +30,7 @@ async function startManagedRuntime(options = {}) {
   const outputDir = options.outputDir && path.resolve(cwd, options.outputDir);
   const args = options.config ? ['--config', path.resolve(cwd, options.config)] : [];
   const env = { ...process.env, WIRETAP_READY_FILE: readyFile,
+    WIRETAP_EXIT_ON_STDIN_EOF: '1',
     WIRETAP_HTTP_LISTEN: '127.0.0.1:0', WIRETAP_PROXY_LISTEN: '127.0.0.1:0',
     ...(outputDir ? { WIRETAP_OUTPUT_DIR: outputDir } : {}) };
   let child, exited = false, exitDescription, logs = '', baseUrl, runtimeInfo, closing, client;
@@ -37,7 +38,8 @@ async function startManagedRuntime(options = {}) {
   const exit = new Promise(resolve => { resolveExit = resolve; });
   // Keep useful startup diagnostics bounded even if a failing process is noisy.
   const appendLog = data => { logs = (logs + data.toString()).slice(-65536); };
-  const onExit = () => { if (!exited) child?.kill('SIGTERM'); };
+  // The OS also closes this pipe if the owner is killed without running exit hooks.
+  const onExit = () => { child?.stdin.destroy(); };
   const onAbort = () => { void close().catch(() => {}); };
   const wait = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
   async function waitForExit() {
@@ -46,8 +48,8 @@ async function startManagedRuntime(options = {}) {
     finally { clearTimeout(timer); }
   }
   async function stop() {
+    onExit();
     if (!child || exited) return;
-    child.kill('SIGTERM');
     await waitForExit();
     if (!exited) {
       child.kill('SIGKILL');
@@ -80,7 +82,9 @@ async function startManagedRuntime(options = {}) {
     return closing;
   }
   try {
-    child = childProcess.spawn(binary, args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+    child = childProcess.spawn(binary, args, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
+    // A child that exits early can close its end first; its exit reports the failure.
+    child.stdin.on('error', () => {});
     child.stdout.on('data', appendLog);
     child.stderr.on('data', appendLog);
     child.once('error', error => { exited = true; exitDescription = error.message; resolveExit(); });

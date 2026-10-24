@@ -2,9 +2,11 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
+import { readFileSync } from 'node:fs';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -35,6 +37,140 @@ async function mustRun(command, args, options) {
   const result = await execute(command, args, options);
   assert.equal(result.code, 0, `${command} ${args.join(' ')} failed (${result.signal || result.code}):\n${result.stderr}\n${result.stdout}`);
   return result;
+}
+
+function processExists(pid) {
+  if (!Number.isSafeInteger(pid) || pid < 1) return false;
+  try {
+    process.kill(pid, 0);
+    if (process.platform === 'linux') {
+      // An orphan can be exited but briefly remain as an unreaped zombie.
+      // Treat it as stopped; PID existence alone would falsely report a leak.
+      try {
+        const status = readFileSync(`/proc/${pid}/stat`, 'utf8');
+        if (['Z', 'X'].includes(status[status.lastIndexOf(')') + 2])) return false;
+      } catch (error) {
+        if (error.code === 'ENOENT') return false;
+        throw error;
+      }
+    }
+    return true;
+  }
+  catch (error) {
+    if (error.code === 'ESRCH') return false;
+    if (error.code === 'EPERM') return true;
+    throw error;
+  }
+}
+
+async function verifyParentDeath(consumer, binary) {
+  const parentFile = path.join(consumer, 'managed-parent.cjs');
+  await fs.writeFile(path.join(consumer, 'parent-death.yaml'), `version: 1
+output_dir: artifacts-parent-death
+sut:
+  id: orders
+  kind: service
+  schema: orders.openapi.yaml
+`);
+  await fs.writeFile(parentFile, `
+const childProcess = require('node:child_process');
+const path = require('node:path');
+const originalSpawn = childProcess.spawn;
+// Observe the real owned process without changing how the SDK launches it.
+childProcess.spawn = function (...args) {
+  const child = Reflect.apply(originalSpawn, this, args);
+  if (args[0] === process.env.WIRETAP_SMOKE_BINARY) {
+    process.send({ kind: 'spawned', pid: child.pid,
+      readyDirectory: path.dirname(args[2].env.WIRETAP_READY_FILE) });
+  }
+  return child;
+};
+const { startManagedRuntime } = require('@wiretap/sdk/managed-runtime');
+startManagedRuntime({ binary: process.env.WIRETAP_SMOKE_BINARY,
+  config: 'parent-death.yaml', outputDir: path.resolve('artifacts-parent-death'),
+  startupTimeoutMs: 20000 }).then(owner => {
+  process.send({ kind: 'ready', bundlePath: owner.runtimeInfo.bundle_path });
+  setInterval(() => {}, 1000);
+}).catch(error => { console.error(error); process.exitCode = 1; });
+`);
+
+  let parent, ownedPID, readyDirectory, diagnostic = '', interrupted, readyTimer;
+  let rejectReady;
+  const killOwned = () => {
+    if (parent && parent.exitCode === null && parent.signalCode === null) parent.kill('SIGKILL');
+    if (processExists(ownedPID)) {
+      try { process.kill(ownedPID, 'SIGKILL'); }
+      catch (error) { if (error.code !== 'ESRCH') throw error; }
+    }
+  };
+  const onInterrupt = signal => {
+    interrupted = new Error(`Parent-death check interrupted by ${signal}`);
+    killOwned();
+    rejectReady?.(interrupted);
+  };
+  const onSIGINT = () => onInterrupt('SIGINT');
+  const onSIGTERM = () => onInterrupt('SIGTERM');
+  process.once('SIGINT', onSIGINT);
+  process.once('SIGTERM', onSIGTERM);
+  let closed;
+  try {
+    parent = spawn(process.execPath, [parentFile], { cwd: consumer,
+      env: { ...process.env, WIRETAP_SMOKE_BINARY: binary },
+      stdio: ['ignore', 'pipe', 'pipe', 'ipc'], windowsHide: true });
+    closed = once(parent, 'close').catch(() => [null, 'spawn-error']);
+    parent.stdout.on('data', chunk => { diagnostic = (diagnostic + chunk).slice(-65536); });
+    parent.stderr.on('data', chunk => { diagnostic = (diagnostic + chunk).slice(-65536); });
+    const ready = new Promise((resolve, reject) => {
+      rejectReady = reject;
+      readyTimer = setTimeout(() => reject(new Error(`Managed parent did not become ready:\n${diagnostic}`)), 30000);
+      parent.once('error', reject);
+      parent.once('exit', (code, signal) => reject(new Error(`Managed parent exited before readiness (${signal || code}):\n${diagnostic}`)));
+      parent.on('message', message => {
+        if (message.kind === 'spawned') {
+          ownedPID = message.pid;
+          readyDirectory = message.readyDirectory;
+        } else if (message.kind === 'ready') resolve(message);
+      });
+    });
+    const { bundlePath } = await ready;
+    clearTimeout(readyTimer);
+    assert.ok(processExists(ownedPID), 'managed runtime must be alive before parent termination');
+    const manifestPath = path.join(bundlePath, 'bundle.json');
+    assert.equal(JSON.parse(await fs.readFile(manifestPath, 'utf8')).run_state, 'open');
+
+    // Terminate only the JavaScript owner. Group/tree killing would hide a
+    // missing runtime lifeline. Do not probe HTTP: a request can trigger SIGPIPE
+    // in an orphan whose parent previously consumed its stdout/stderr pipes.
+    parent.kill('SIGKILL');
+    let parentTimer;
+    try {
+      await Promise.race([closed, new Promise((_resolve, reject) => {
+        parentTimer = setTimeout(() => reject(new Error('Managed parent did not exit after SIGKILL')), 5000);
+      })]);
+    } finally { clearTimeout(parentTimer); }
+
+    const deadline = Date.now() + 15000;
+    let state, running;
+    while (Date.now() < deadline) {
+      if (interrupted) throw interrupted;
+      state = JSON.parse(await fs.readFile(manifestPath, 'utf8')).run_state;
+      running = processExists(ownedPID);
+      if (!running && state === 'interrupted') break;
+      await delay(100);
+    }
+    assert.equal(running, false, `Wiretap survived its JavaScript parent (pid ${ownedPID}, archive ${state})`);
+    assert.equal(state, 'interrupted', 'parent death must retain an interrupted archive');
+    console.log('Packed SDK: killing only the JavaScript parent stops its runtime and preserves an interrupted archive.');
+  } finally {
+    clearTimeout(readyTimer);
+    killOwned();
+    if (closed) await Promise.race([closed, delay(5000, undefined, { ref: false })]);
+    const cleanupDeadline = Date.now() + 5000;
+    while (processExists(ownedPID) && Date.now() < cleanupDeadline) await delay(50);
+    process.removeListener('SIGINT', onSIGINT);
+    process.removeListener('SIGTERM', onSIGTERM);
+    if (readyDirectory) await fs.rm(readyDirectory, { recursive: true, force: true });
+  }
 }
 
 try {
@@ -100,6 +236,7 @@ try {
     const collection = JSON.parse(await fs.readFile(receipt.outputs.postman[0], 'utf8'));
     assert.equal(collection.info.schema, 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json');
   }
+  await verifyParentDeath(consumer, binary);
   console.log(`Packed SDK and ${producer.name} ${producer.version}: external two-file suite, negative test, cleanup failure, coverage and Postman smoke passed`);
 } finally {
   await fs.rm(scratch, { recursive: true, force: true });

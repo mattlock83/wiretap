@@ -97,10 +97,17 @@ each test or shared setup helper. For parallel tests call `StartTest` after
 
 ### Capture ended during a panic or timeout
 
-Ordinary assertion failures still finalize exports. A hard process abort can
-leave an interrupted archive without completed exports or `last-run.json`.
-Retain the full output directory and inspect the runtime log and archive state.
-The managed Go runtime stops when its parent test process disappears.
+Ordinary assertion failures still finalize exports. Managed Go and JavaScript
+SDKs hold a stdin lifeline to their child runtime. If the owning test process
+disappears, EOF requests graceful shutdown so the runtime stops and preserves
+an interrupted raw archive with pending attempts.
+
+Abrupt termination cannot finish normal exports or save the owner's completion
+receipt. `last-run.json` can be absent or left from an earlier run; inspect
+`bundle.json` instead of treating that receipt as proof of current completion.
+Retain the full output directory and runtime log. If Wiretap itself is killed
+before graceful shutdown finishes, its archive can remain open. Normal managed
+shutdown waits for the child only up to its shutdown timeout, then force-kills it.
 
 ### Teardown reports incomplete capture or `finishRun` returns 409
 

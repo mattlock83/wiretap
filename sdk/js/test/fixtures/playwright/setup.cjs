@@ -29,6 +29,8 @@ module.exports = async function setup() {
     if (binary !== 'wiretap-test-runtime') return original.apply(this, arguments);
     const child = new EventEmitter();
     child.pid = process.pid;
+    child.stdin = new PassThrough();
+    child.stdin.once('close', () => child.emit('exit', 0, null));
     child.stdout = new PassThrough(); child.stderr = new PassThrough();
     child.kill = signal => { queueMicrotask(() => child.emit('exit', null, signal)); return true; };
     void fs.writeFile(options.env.WIRETAP_READY_FILE, JSON.stringify({ control_url: url, pid: child.pid }));
