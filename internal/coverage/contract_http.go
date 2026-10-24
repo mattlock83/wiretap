@@ -244,8 +244,15 @@ func (b *contractBuilder) measureHTTP(spec *openapiSpec, plans map[string]*contr
 		if msg == nil {
 			unknown = "HTTP message is missing"
 		}
-		if msg != nil && msg.Body != nil && msg.Body.Truncated {
-			unknown = "Message body was truncated"
+		if msg != nil && msg.Body != nil {
+			switch {
+			case msg.Body.Omitted:
+				unknown = "Message body was omitted; original conditions cannot be reconstructed"
+			case msg.Body.Redacted:
+				unknown = "Message body was redacted; original conditions cannot be reconstructed"
+			case msg.Body.Truncated:
+				unknown = "Message body was truncated"
+			}
 		}
 		mediaKnown := true
 		for _, r := range a.Redactions {

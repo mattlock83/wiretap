@@ -94,6 +94,51 @@ func TestContractUnknownEvidenceDoesNotSelectOtherResponses(t *testing.T) {
 	}
 }
 
+func TestHTTPBodyAvailabilityFlagsPreventCoverageWithoutPolicyRules(t *testing.T) {
+	for _, phase := range []string{"request", "response"} {
+		for _, flag := range []string{"omitted", "redacted"} {
+			t.Run(phase+"/"+flag, func(t *testing.T) {
+				run, capture := contractFixture(conditionsSpec, `{"status":"pending","items":[],"reference":"ORD-123"}`)
+				baseline := buildContractCoverage(run, []*artifact.Artifact{capture}).Specs[0]
+				requireTargetState(t, baseline, "request", "/properties/name", "presence", "present", "covered")
+				requireTargetState(t, baseline, "response", "/properties/status", "enum", `"pending"`, "covered")
+				body := capture.Traffic[0].Request.HTTP.Body
+				if phase == "response" {
+					body = capture.Traffic[0].Response.HTTP.Body
+				}
+				if flag == "omitted" {
+					body.Omitted, body.Text = true, ""
+				} else {
+					body.Redacted = true
+				}
+				if body.Truncated || len(capture.Redactions) != 0 {
+					t.Fatal("fixture must rely on availability flags alone")
+				}
+				spec := buildContractCoverage(run, []*artifact.Artifact{capture}).Specs[0]
+				var target *ContractTarget
+				if phase == "request" {
+					target = requireTargetState(t, spec, "request", "/properties/name", "presence", "present", "unknown")
+					requireTargetState(t, spec, "response", "/properties/status", "enum", `"pending"`, "covered")
+				} else {
+					target = requireTargetState(t, spec, "response", "/properties/status", "enum", `"pending"`, "unknown")
+					requireTargetState(t, spec, "request", "/properties/name", "presence", "present", "covered")
+				}
+				if len(target.Evidence) != 1 || target.Evidence[0].Validation != "unknown" || !strings.Contains(target.Evidence[0].Reason, flag) {
+					t.Fatalf("availability limit lost from evidence: %+v", target.Evidence)
+				}
+				if len(spec.Violations) != 0 {
+					t.Fatalf("unavailable body treated as a contract mismatch: %+v", spec.Violations)
+				}
+				for _, target := range spec.Targets {
+					if target.Phase == phase && target.State == "covered" {
+						t.Fatalf("unavailable message earned original-condition coverage: %+v", target)
+					}
+				}
+			})
+		}
+	}
+}
+
 func TestContractScalarMeasurementMatchesValidatorDecoding(t *testing.T) {
 	for _, tc := range []struct{ schema, raw, condition string }{
 		{`{type: integer, enum: [8]}`, "010", "8"},

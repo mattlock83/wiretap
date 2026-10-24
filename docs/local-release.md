@@ -48,6 +48,7 @@ files in the output directory are not included in `SHA256SUMS`.
 
 ```sh
 npm ci --prefix sdk/js
+mkdir -p dist
 npm pack ./sdk/js --pack-destination ./dist
 node scripts/package-smoke.mjs
 ```

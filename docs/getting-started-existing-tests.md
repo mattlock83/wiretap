@@ -42,6 +42,9 @@ Put `.wiretap.yaml` at your test project's root:
 
 ```yaml
 version: 1
+outputs:
+  coverage: [json]
+  postman: true
 sut:
   id: orders
   url: http://127.0.0.1:8080
@@ -92,7 +95,12 @@ const { startCapture } = require("@wiretap/sdk");
 let capture;
 
 before(async () => { capture = await startCapture(); });
-after(async () => { if (capture) await capture.finishRun(); });
+after(async () => {
+  if (capture) {
+    const result = await capture.finishRun();
+    console.log(result.outputs);
+  }
+});
 
 test("gets an order", () => capture.runTest("gets an order", async session => {
   // Keep existing fixture setup and mock configuration here.
@@ -107,6 +115,9 @@ Load tracing before HTTP client modules, then run the tests:
 ```bash
 node --require @wiretap/sdk/tracing --test test/orders.test.js
 ```
+
+The final result names the exact raw archive, coverage and Postman paths. Use
+these paths when saving CI artifacts or passing evidence to another tool.
 
 `runTest` records the supplied callback's outcome. To include separate framework
 hooks or runner timeouts, use `createTestAttempt` or an optional Node/Jest adapter;

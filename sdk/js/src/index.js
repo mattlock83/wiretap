@@ -123,7 +123,6 @@ class CoreClient {
         deadlineError.code = "WIRETAP_CONTROL_TIMEOUT";
         controller.abort(deadlineError);
       }, timeoutMs);
-      timeout.unref?.();
     }
     try {
       const res = await tracing.withoutTracing(() => fetch(new URL(path, this.baseUrl), options));
