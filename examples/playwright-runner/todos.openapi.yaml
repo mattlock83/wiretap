@@ -1,0 +1,52 @@
+openapi: 3.0.3
+info:
+  title: Todos
+  version: 1.0.0
+paths:
+  /todos:
+    get:
+      operationId: listTodos
+      responses:
+        '200':
+          description: Saved todos
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Todo'
+    post:
+      operationId: createTodo
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title]
+              properties:
+                title: { type: string, minLength: 1 }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Todo'
+        '400':
+          description: Invalid title
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [error]
+                properties:
+                  error: { type: string }
+components:
+  schemas:
+    Todo:
+      type: object
+      required: [id, title]
+      properties:
+        id: { type: integer }
+        title: { type: string, minLength: 1 }

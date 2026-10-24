@@ -1,0 +1,13 @@
+version: 1
+application:
+  id: playwright-todos
+  name: Playwright Todos
+output_dir: artifacts
+outputs:
+  coverage: [json, text]
+  postman: true
+sut:
+  id: todos
+  kind: service
+  url: ${PLAYWRIGHT_SUT_URL}
+  schema: todos.openapi.yaml

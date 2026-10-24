@@ -59,7 +59,7 @@ async function startManagedRuntime(options = {}) {
     if (!closing) closing = (async () => {
       let receipt, failure;
       try {
-        if (runtimeInfo) receipt = await client.finishRun();
+        if (runtimeInfo) receipt = await client.finishRun({ outputs: options.outputs });
       } catch (error) { failure = error; receipt = error.body; }
       try { await stop(); } catch (error) { failure ??= error; }
       process.removeListener('exit', onExit);

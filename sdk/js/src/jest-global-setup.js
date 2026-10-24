@@ -37,7 +37,7 @@ module.exports = async function wiretapGlobalSetup(globalConfig, projectConfig) 
   process.once('SIGINT', entry.onInterrupt);
   process.once('SIGTERM', entry.onTerminate);
   try {
-    entry.starting = startManagedRuntime({ ...options.managed, cwd: projectConfig.rootDir, signal: abort.signal });
+    entry.starting = startManagedRuntime({ ...options.managed, outputs: options.managed.outputs ?? options.outputs, cwd: projectConfig.rootDir, signal: abort.signal });
     entry.runtime = await entry.starting;
     process.env.WIRETAP_BASE_URL = entry.runtime.baseUrl;
     process.env.WIRETAP_SUT_URL = entry.runtime.sutUrl;

@@ -50,7 +50,8 @@ async function fixture(t, behavior = {}) {
 
 test('managed runtime uses owned ephemeral listeners and returns the exact once-only receipt', async t => {
   const f = await fixture(t);
-  const runtime = await startManagedRuntime({ binary: '/custom/wiretap', config: '.wiretap.yaml', cwd: f.outputDir, outputDir: f.outputDir });
+  const outputs = { coverage: ['text'], postman: true };
+  const runtime = await startManagedRuntime({ binary: '/custom/wiretap', config: '.wiretap.yaml', cwd: f.outputDir, outputDir: f.outputDir, outputs });
   assert.equal(runtime.baseUrl, 'http://127.0.0.1:12345/');
   assert.equal(runtime.sutUrl, 'http://127.0.0.1:23456');
   assert.equal(f.spawned.binary, '/custom/wiretap');
@@ -61,6 +62,7 @@ test('managed runtime uses owned ephemeral listeners and returns the exact once-
   assert.equal(runtime.close(), first);
   assert.deepEqual(await first, f.receipt);
   assert.deepEqual(f.calls.map(c => c.path), ['/v1/startRun', '/v1/finishRun']);
+  assert.deepEqual(f.calls.at(-1).body.outputs, outputs);
   assert.deepEqual(f.signals, ['SIGTERM']);
   assert.deepEqual(JSON.parse(await fs.readFile(path.join(f.outputDir, 'last-run.json'))), f.receipt);
   await assert.rejects(fs.stat(f.spawned.options.env.WIRETAP_READY_FILE), { code: 'ENOENT' });

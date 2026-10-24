@@ -1,4 +1,4 @@
-import type { CaptureResponse } from './index';
+import type { CaptureResponse, OutputOptions } from './index';
 
 export interface ManagedRuntimeOptions {
   /** Executable path or command; defaults to WIRETAP_BINARY or wiretap on PATH. */
@@ -7,6 +7,8 @@ export interface ManagedRuntimeOptions {
   config?: string;
   cwd?: string;
   outputDir?: string;
+  /** Override project export policy when the owned run finalizes. */
+  outputs?: OutputOptions;
   startupTimeoutMs?: number;
   timeoutMs?: number;
   shutdownTimeoutMs?: number;
