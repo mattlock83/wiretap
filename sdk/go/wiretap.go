@@ -268,9 +268,21 @@ func (r *Runtime) call(ctx context.Context, path string, payload, output any) er
 	}
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(io.LimitReader(res.Body, 8192))
+		// Preserve complete partial-export receipts; only the displayed error is
+		// abbreviated. Bound memory independently of the diagnostic length.
+		const receiptLimit = 32 << 20
+		body, err := io.ReadAll(io.LimitReader(res.Body, receiptLimit+1))
+		if err != nil {
+			return fmt.Errorf("Wiretap %s: HTTP %d: read response: %w", path, res.StatusCode, err)
+		}
+		if len(body) > receiptLimit {
+			return fmt.Errorf("Wiretap %s: HTTP %d: response exceeds 32 MiB", path, res.StatusCode)
+		}
 		if output != nil {
 			_ = json.Unmarshal(body, output)
+		}
+		if len(body) > 8192 {
+			body = append(body[:8192], []byte("... (diagnostic truncated)")...)
 		}
 		return fmt.Errorf("Wiretap %s: HTTP %d: %s", path, res.StatusCode, body)
 	}

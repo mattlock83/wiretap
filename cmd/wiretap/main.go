@@ -17,6 +17,12 @@ import (
 func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
+	if os.Getenv("WIRETAP_EXIT_ON_STDIN_EOF") == "1" {
+		// The parent's diagnostic pipes disappear on a crash too. A shutdown
+		// log must not kill us before the interrupted archive is finalized.
+		signal.Ignore(syscall.SIGPIPE)
+		go watchParent(os.Stdin, cancel)
+	}
 	os.Exit(execute(ctx, os.Args[1:]))
 }
 
