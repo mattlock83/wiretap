@@ -10,9 +10,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/phrond/wiretap/internal/artifact"
-	"github.com/phrond/wiretap/internal/proxy"
-	"github.com/phrond/wiretap/internal/tracecontext"
+	"github.com/mattlock83/wiretap/internal/artifact"
+	"github.com/mattlock83/wiretap/internal/proxy"
+	"github.com/mattlock83/wiretap/internal/tracecontext"
 	"go.opentelemetry.io/otel/trace"
 )
 

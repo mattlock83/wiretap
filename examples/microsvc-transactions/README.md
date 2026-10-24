@@ -77,8 +77,9 @@ evidence for inspection.
 ## Bundles and contract scope
 
 Output defaults to `artifacts/microsvc-transactions/`. The command prints the
-bundle path. Open `docs/viewer.html` or
-`index.md` to inspect captured exchanges and spec-derived case coverage. Logs are kept in a sibling `logs-<run>` directory.
+capture path. Inspect `bundle.json` and `tests/` for captured exchanges and
+`coverage.json` for spec-derived case coverage. Logs are kept in a sibling
+`logs-<run>` directory.
 
 - `schemas/transactions.yaml` is an example-maintained contract aligned with
   [Microsvc revision 1433243](https://github.com/speedscale/microsvc/tree/1433243aa37dc27f391f81d7c27e40ce7c757e95).

@@ -3,7 +3,7 @@ package bundle
 import (
 	"testing"
 
-	"github.com/phrond/wiretap/internal/artifact"
+	"github.com/mattlock83/wiretap/internal/artifact"
 )
 
 func grpcObservedBundleFixture(t *testing.T) (string, Attempt, Run) {

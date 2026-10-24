@@ -11,7 +11,11 @@ if (!RUN_E2E) {
   before(async () => {
     wiretap = await startCapture();
   });
-  after(async () => { if (wiretap) await wiretap.finishRun(); });
+  after(async () => {
+    if (!wiretap) return;
+    const result = await wiretap.finishRun();
+    if (process.env.WIRETAP_RESULT_FILE) require("node:fs").writeFileSync(process.env.WIRETAP_RESULT_FILE, JSON.stringify(result));
+  });
 
   test("hello world happy flow", () => wiretap.runTest("hello world happy flow", async () => {
     const status = await fetch(`${wiretap.sutUrl}/status`);

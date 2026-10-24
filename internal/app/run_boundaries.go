@@ -9,10 +9,9 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/phrond/wiretap/internal/artifact"
-	"github.com/phrond/wiretap/internal/bundle"
-	"github.com/phrond/wiretap/internal/bundlereport"
-	"github.com/phrond/wiretap/internal/project"
+	"github.com/mattlock83/wiretap/internal/artifact"
+	"github.com/mattlock83/wiretap/internal/bundle"
+	"github.com/mattlock83/wiretap/internal/project"
 )
 
 const registeredBoundaries = ".wiretap-startRun.json"
@@ -148,8 +147,7 @@ func (a *App) initializeRunContracts() error {
 	if err := w.SetContracts(states); err != nil {
 		return err
 	}
-	_, err := bundlereport.Refresh(w.Path())
-	return err
+	return nil
 }
 
 func (a *App) recordGRPCResolution(state string, refs ...artifact.SchemaRef) error {
@@ -174,10 +172,6 @@ func (a *App) recordGRPCResolution(state string, refs ...artifact.SchemaRef) err
 		}
 	}
 	if err := w.SetContracts(states); err != nil {
-		return err
-	}
-	if state == "failed" {
-		_, err := bundlereport.Refresh(w.Path())
 		return err
 	}
 	return nil

@@ -3,7 +3,7 @@
 Keep your generated clients, test framework and mock servers. Point their network
 connections through Wiretap and use the existing test lifecycle integration.
 Wiretap captures the RPCs, associates them with named tests, and produces an
-OKF bundle describing your provided APIs and dependency assumptions.
+JSON artifact describing your provided APIs and dependency observations.
 
 Every gRPC boundary needs a Protobuf contract. For standalone development and
 test instances, Wiretap uses server reflection by default. If reflection is
@@ -284,11 +284,11 @@ RPCs and background work before teardown.
 
 ## Read the result and its limits
 
-The OKF bundle contains the frozen contract, selected service/method
-inventory, captured calls and payloads, test links, dependency assumptions and
-coverage. Its static viewer is a view of that evidence. A copied bundle can be
-read or rebuilt without running servers, reflection, source proto files or a
-schema registry.
+The raw artifact contains the frozen contract, selected service/method inventory,
+captured calls and payloads, test references and dependency observations. Generate
+JSON/YAML coverage or Postman collections with `wiretap report` or `export`. A
+copied artifact works without running servers, reflection, source proto files or
+a schema registry. See [capture artifacts and exports](artifacts.md).
 
 Contract comparison uses the `wiretap-protobuf-1` normalization profile: the
 complete descriptor set and selected services, with file ordering and source
@@ -309,8 +309,8 @@ descriptor set for the dependency. Keep the dependency marked `kind: mock`:
 conformance to a contract still is not evidence that the provider actually
 implements those behaviours.
 
-Rich RPC errors such as `google.rpc.BadRequest` appear beneath the outcome in
-the viewer and test pages. Custom `Any` types use the boundary's frozen protos;
+Rich RPC errors such as `google.rpc.BadRequest` appear in response
+`status_details` within the JSON recording. Custom `Any` types use the boundary's frozen protos;
 standard error types absent from those protos use a separately frozen helper
 descriptor set. Unknown types remain opaque with a reason. Wiretap does not
 fetch type URLs, change the service contract or change errors delivered to your
@@ -351,8 +351,8 @@ observes frames incrementally. Each invocation stays one exchange and belongs to
 one test, including when send and receive overlap on a shared channel.
 
 Messages carry their original wire index and monotonic start/completion offsets.
-The viewer shows cross-direction observation order, metadata, half-close and
-terminal status; observation order does not prove business causality. Direction
+The JSON evidence retains cross-direction observation order, metadata, half-close
+and terminal status; observation order does not prove business causality. Direction
 summaries show frames observed, retained and omitted, observed bytes, EOF,
 partial frames and whether counts are known. Byte and 1,024-message retention
 limits bound each direction; later frames are counted without being retained.

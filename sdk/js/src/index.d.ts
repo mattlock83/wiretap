@@ -18,10 +18,10 @@ export interface Dependency {
   schemas?: Schema[];
   schemaRequired?: boolean;
 }
+export interface TestIdentity { id: string; variant?: string; attemptOrdinal?: number; }
 export interface TestOptions {
+  identity?: TestIdentity;
   application?: Application;
-  /** Stable logical identity; retry ordinals are assigned by the test harness. */
-  knowledge?: { testId: string; key?: string; executionGroup?: string; attemptOrdinal?: number };
   name?: string;
   tags?: string[];
   meta?: Record<string, unknown>;
@@ -40,7 +40,11 @@ export interface TestOptions {
   onSession?: (session: Session) => unknown | Promise<unknown>;
 }
 export interface Config extends TestOptions {
+  outputs?: OutputOptions;
   baseUrl?: string;
+  /** Control HTTP deadline: 30 seconds by default; default teardown allows its
+   * requested drain plus 10 seconds. Set 0 to disable or a positive integer to
+   * override every control request, including cleanup. */
   timeoutMs?: number;
   proxy?: true | { listenAddr?: string; targetUrl?: string };
   instrumentation?: boolean;
@@ -58,17 +62,13 @@ export interface Session {
   dependencyUrls: Record<string, string>;
   runId: string;
   bundlePath: string;
-  indexPath: string;
-  viewerPath: string;
   traceContext: { traceparent: string; tracestate?: string };
 }
 export interface CaptureResponse {
+  outputs?: OutputResult;
   run_id?: string;
   bundle_path?: string;
-  index_path?: string;
-  viewer_path?: string;
   attempt_path?: string;
-  attempt_page_path?: string;
   [key: string]: unknown;
 }
 export interface Runtime {
@@ -80,7 +80,16 @@ export interface Runtime {
   runTest<T>(name: string, callback: (session: Session) => T | Promise<T>, options?: TestOptions): Promise<T>;
   dependencyUrl(assetId: string): string;
   report(options?: { bundlePath?: string }): Promise<CaptureResponse>;
-  finishRun(): Promise<CaptureResponse>;
+  finishRun(options?: { outputs?: OutputOptions }): Promise<CaptureResponse>;
+}
+export interface OutputOptions { coverage?: ('json' | 'yaml')[]; postman?: boolean; postman_options?: { omit_incomplete?: boolean; grpc?: Record<string, { url?: string; proto_root?: string; proto_file?: string }> }; }
+export interface OutputResult {
+  bundle_path: string;
+  coverage: Record<string, string>;
+  postman: string[];
+  postman_files?: string[];
+  postman_omissions?: { attempt_id: string; flow_id: string; protocol: string; message: string }[];
+  errors: { format: string; message: string }[];
 }
 export interface TestAttempt {
   /** Run test or fixture work inside this attempt's trace context. */

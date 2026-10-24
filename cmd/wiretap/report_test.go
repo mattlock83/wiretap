@@ -9,10 +9,45 @@ import (
 	"testing"
 	"time"
 
-	"github.com/phrond/wiretap/internal/artifact"
-	"github.com/phrond/wiretap/internal/bundle"
-	"github.com/phrond/wiretap/internal/postman"
+	"github.com/mattlock83/wiretap/internal/artifact"
+	"github.com/mattlock83/wiretap/internal/bundle"
+	"github.com/mattlock83/wiretap/internal/coverage"
+	"github.com/mattlock83/wiretap/internal/postman"
+	"gopkg.in/yaml.v3"
 )
+
+func TestCLICoverageReportsUseRawArchive(t *testing.T) {
+	bundlePath := postmanBundleFixture(t)
+	for _, command := range []string{"report", "export"} {
+		for _, format := range []string{"", "yaml"} {
+			t.Run(command+"/"+format, func(t *testing.T) {
+				args := []string{command, "--bundle", bundlePath}
+				if format != "" {
+					args = append(args, "--format", format)
+				}
+				code, data := executeCapturingStdout(t, args)
+				if code != 0 {
+					t.Fatalf("coverage report exit = %d", code)
+				}
+				var report coverage.Report
+				var err error
+				if format == "yaml" {
+					err = yaml.Unmarshal(data, &report)
+				} else {
+					err = json.Unmarshal(data, &report)
+				}
+				if err != nil || report.ArtifactCount != 2 || len(report.TestCases) != 2 {
+					t.Fatalf("invalid coverage report: %+v, %v", report, err)
+				}
+			})
+		}
+	}
+	for _, name := range []string{"index.md", "docs", "publication.json"} {
+		if _, err := os.Stat(filepath.Join(bundlePath, name)); !os.IsNotExist(err) {
+			t.Fatalf("report created generated publication path %q: %v", name, err)
+		}
+	}
+}
 
 func TestCLIPostmanExport(t *testing.T) {
 	bundlePath := postmanBundleFixture(t)

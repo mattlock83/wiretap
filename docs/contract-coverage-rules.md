@@ -3,7 +3,7 @@
 Wiretap measures contract conditions for HTTP/OpenAPI 3.0 and native gRPC messages under the scope
 below. The numbered rules define the measurement contract, including how to
 report unsupported features and evidence limits. For a guide to reading the
-results, start with [bundles and reports](okf-bundles.md).
+results, start with [capture artifacts and exports](artifacts.md).
 
 ## Using contract coverage
 
@@ -13,16 +13,12 @@ for this measurement. Ordinary trace propagation/serial capture requirements
 still apply. Register specs even for APIs whose operations were not exercised;
 Wiretap cannot discover APIs you never register.
 
-Every bundle contains:
-
-- `docs/contract-coverage.json`: per-spec catalogue, keys, counts, violations,
-  request/response combinations, and exact attempt/flow evidence references.
-- `docs/contract-coverage.md`: the readable catalogue and evidence links.
-- `docs/viewer.html`: a searchable **Contract coverage** tab over the same results.
-
-`wiretap report --bundle <path>` rebuilds these files from verified evidence.
-Optional JSON/YAML exports contain the same data under `contract_coverage`.
-These are disposable views, not new authoritative capture artifacts.
+`wiretap report --bundle <path>` calculates a JSON report from verified evidence.
+Use `--format yaml` for YAML and `--output <file>` to save it. The report
+contains a per-spec catalogue under `contract_coverage`: keys, counts, violations,
+request/response combinations and exact attempt/flow evidence references.
+`wiretap export` supports the same coverage formats. These reports are derived
+outputs, not authoritative capture artifacts.
 
 For cross-repository comparison, use the same provided `api_id` and dependency
 `asset_id`, supplied contract, and `rules_version`. Keys use full SHA-256 digests;
@@ -130,7 +126,7 @@ Explicit limitations:
 - Combination fingerprints describe condition keys and exact instance locations,
   not arbitrary payload equality. No value-normalisation or payload hashing is
   performed. Unsupported combinations are not invented.
-- No inferred mock draft enters a denominator. Cross-revision target mapping and
+- Only supplied contracts define denominators. Cross-revision target mapping and
   explicit expected-negative annotations remain future work.
 
 ## Purpose
@@ -169,9 +165,7 @@ IDs must identify the same API before comparing their operations. Capture
 direction is provenance, not part of the shared operation identity.
 
 A missing or explicitly omitted spec means contract coverage is **unknown**.
-Inferred mock OpenAPI drafts describe observations and never supply the coverage
-denominator. Otherwise a draft inferred from a single exchange could misleadingly
-report complete coverage of itself.
+Observed mock payloads never supply their own coverage denominator.
 
 ## 2. Evaluate each exchange against all applicable conditions
 
@@ -486,11 +480,11 @@ These are adapter requirements, not claims of current transport support.
   meaningful differences remain explainable from source observations.
 - Failed, incomplete, redacted, unsupported, and ambiguous cases cannot silently
   become successful coverage or shrink the reported scope.
-- Mock observations, provider observations, supplied contracts, and inferred
-  drafts remain distinguishable. Mock coverage never establishes provider agreement.
+- Mock observations, provider observations and supplied contracts remain
+  distinguishable. Mock coverage never establishes provider agreement.
 - Reports link claims to test names and exact exchange evidence. Rebuilding a
   report cannot alter captured evidence or test outcomes.
 - No new test runner, mock framework, or scenario-labelling system is required.
 
-Related: [bundle evidence](bundle-evidence.md), [capture bundles](okf-bundles.md),
+Related: [bundle evidence](bundle-evidence.md), [capture artifacts](artifacts.md),
 [architecture](architecture.md).

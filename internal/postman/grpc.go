@@ -10,17 +10,22 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/phrond/wiretap/internal/artifact"
+	"github.com/mattlock83/wiretap/internal/artifact"
+	"github.com/mattlock83/wiretap/internal/bundle"
 )
 
 // GenerateAll adds v3 gRPC collections to the unchanged v2.1 HTTP exports.
 // A single verified snapshot supplies every output. The first export is the
 // SUT HTTP collection when present, or the SUT gRPC collection otherwise.
 func GenerateAll(bundlePath, sutName string) ([]Export, error) {
-	run, captures, err := loadRun(bundlePath)
+	result, err := GenerateAllWithOptions(bundlePath, sutName, Options{})
 	if err != nil {
 		return nil, err
 	}
+	return result.Exports, nil
+}
+
+func generateAllRun(run *bundle.Run, captures []*artifact.Artifact, sutName string) ([]Export, error) {
 	exports, err := generateHTTP(run, captures, sutName)
 	if err != nil {
 		return nil, err
@@ -76,7 +81,7 @@ func GenerateAll(bundlePath, sutName string) ([]Export, error) {
 			filename = fmt.Sprintf("%s-%d.postman_collection.json", stem, n)
 		}
 		used[strings.ToLower(filename)] = true
-		export := Export{Filename: filename, GRPC: collection}
+		export := Export{Filename: filename, GRPC: collection, BoundaryID: id}
 		if id == "" && !hasSUTHTTP {
 			exports = append([]Export{export}, exports...)
 		} else {
@@ -110,6 +115,7 @@ func WriteExport(w io.Writer, export Export) error {
 
 func generateGRPC(captures []*artifact.Artifact, name, channel, assetID string) (*GRPCCollection, error) {
 	collection := &GRPCCollection{Kind: "collection", Name: name + " (gRPC)", Description: "Captured gRPC interaction examples. Contracts are supplied separately. Binary metadata uses base64. Message order is the order Wiretap observed complete messages; lifecycle events and execution results are excluded.", Items: []GRPCFolder{}}
+	labels := attemptFolderNames(captures)
 	seen := map[string]bool{}
 	for _, capture := range captures {
 		flows := []artifact.Flow{}
@@ -124,21 +130,18 @@ func generateGRPC(captures []*artifact.Artifact, name, channel, assetID string) 
 		if len(flows) == 0 {
 			continue
 		}
-		name := capture.TestCase.Name
-		if strings.TrimSpace(name) == "" {
-			return nil, fmt.Errorf("export gRPC Postman collection: test %q needs a stable test name", capture.TestCase.ID)
+		name := labels[capture.TestCase.ID]
+		if seen[capture.TestCase.ID] {
+			return nil, fmt.Errorf("duplicate test attempt %q", capture.TestCase.ID)
 		}
-		if seen[name] {
-			return nil, fmt.Errorf("export gRPC Postman collection: duplicate test name %q; select one attempt per scenario", name)
-		}
-		seen[name] = true
+		seen[capture.TestCase.ID] = true
 		if capture.CaptureIncomplete {
 			return nil, fmt.Errorf("export gRPC Postman test %q: capture is incomplete", name)
 		}
 		if chronological {
 			sort.SliceStable(flows, func(i, j int) bool { return flows[i].StartedAt.Before(flows[j].StartedAt) })
 		}
-		folder := GRPCFolder{Kind: "collection", Name: name, Items: []GRPCRequest{}}
+		folder := GRPCFolder{Kind: "collection", ID: capture.TestCase.ID, Name: name, Items: []GRPCRequest{}}
 		for i, flow := range flows {
 			request, err := exportGRPCFlow(flow, i+1)
 			if err != nil {

@@ -71,9 +71,10 @@ Wiretap keeps the test grouping and leaves ambiguous parents unset.
 
 Use `createJestSuite` with `testEnvironment: "@wiretap/sdk/jest-environment"`.
 The environment bridges Jest's VM and native clients. The adapter activates
-context around async test callbacks, including `.each`/`.concurrent`, and
-`testDefaults.onSession`. Separate `beforeEach`/`afterEach` requests are outside
-that trace. See the [Jest guide](otel-adoption.md#optional-jest-adapter).
+context around test callbacks, including `.each`/`.concurrent`, and ordinary
+`beforeEach`/`afterEach` fixtures. Jest skips per-test hooks for `.concurrent`;
+put concurrent fixtures inside the callback. Suite-wide hooks do not belong to
+an individual attempt. See the [Jest guide](otel-adoption.md#optional-jest-adapter).
 
 ### Teardown reports incomplete capture or `finishRun` returns 409
 
@@ -97,26 +98,25 @@ configure local `.proto` files or a descriptor set as shown in the
 
 Set `schema` in `.wiretap.yaml`, or supply the schema through the SDK/API.
 For an API with no spec, explicitly set `schema_required: false` on that API.
-Supplied specs still validate, even with this setting. Inferred mock drafts
-document observations and cannot replace a supplied contract.
+Supplied specs still validate, even with this setting. Omitted schemas leave
+coverage unknown.
 
 ### Bodies are truncated in a bundle
 
 Delivery still streams through the proxy. Capture retains 4 MiB per body by
 default and records `truncated` plus `original_bytes` when that limit is reached.
 Set `WIRETAP_MAX_CAPTURE_BYTES` to another non-negative byte count; `0` is
-unlimited. Viewer previews have a separate 4 KiB display limit: open the linked
-attachment to inspect all retained bytes.
+unlimited. Inspect the referenced payload attachment for the retained bytes.
 
-### A bundle page is missing or has a broken link
+### A report cannot read a capture artifact
 
-Rebuild the generated views:
+Verify the artifact by generating a coverage report:
 
 ```bash
 wiretap report --bundle ./artifacts/<run-id>
 ```
 
 `bundle.json`, JSON under `tests/` and referenced schema/payload files are the source of
-truth. If rebuilding reports an integrity error, restore the missing or corrupt
-evidence from the original bundle. Regeneration cannot recover uncaptured or
-lost evidence. Keep the whole bundle when copying it.
+truth. If reporting finds an integrity error, restore the missing or corrupt
+evidence from the original capture. Exporting cannot recover uncaptured or lost
+evidence. Keep the whole directory when copying it.

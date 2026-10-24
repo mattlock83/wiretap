@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 
-	"github.com/phrond/wiretap/internal/artifact"
+	"github.com/mattlock83/wiretap/internal/artifact"
 )
 
 // Removing a field projection also removes every raw representation containing
@@ -41,6 +41,9 @@ func redactStatusDetails(msg *artifact.GrpcMessage, selector, path string, rule 
 				continue
 			}
 			applyBodyRule(&artifact.HttpMessage{Body: detail.Body}, path, rule)
+			if detail.Body.Omitted {
+				detail.Body = nil
+			}
 		default:
 			detail.Body = nil
 		}

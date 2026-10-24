@@ -17,10 +17,10 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
-	"github.com/phrond/wiretap/internal/bundle"
-	"github.com/phrond/wiretap/internal/core"
-	"github.com/phrond/wiretap/internal/coverage"
-	"github.com/phrond/wiretap/internal/project"
+	"github.com/mattlock83/wiretap/internal/bundle"
+	"github.com/mattlock83/wiretap/internal/core"
+	"github.com/mattlock83/wiretap/internal/coverage"
+	"github.com/mattlock83/wiretap/internal/project"
 	"golang.org/x/net/http2"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -406,10 +406,11 @@ func runGRPCTestCase(t *testing.T, controlURL string, start map[string]any, mode
 		t.Fatalf("missing gRPC coverage: %#v", group)
 	}
 	postDependencyJSON(t, controlURL, "/v1/finishRun", map[string]any{})
-	knowledge, err := os.ReadFile(filepath.Join(root, "docs/knowledge.json"))
-	if err != nil || !strings.Contains(string(knowledge), `"grpc"`) {
-		t.Fatalf("knowledge view does not describe gRPC: %v", err)
+	finalRun, finalCaptures, err := bundle.Load(root)
+	if err != nil || finalRun.RunState != "complete" || len(finalCaptures) == 0 {
+		t.Fatalf("finalized archive lost gRPC evidence: %v", err)
 	}
+
 	_ = start
 }
 

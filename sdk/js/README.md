@@ -3,13 +3,7 @@
 The SDK is a library called from your existing test framework's lifecycle.
 It controls a separately running Wiretap service over HTTP and creates standard
 trace contexts for capture. It does not discover, schedule, or launch tests.
-TypeScript declarations are included. See [configuration](../../docs/configuration.md).
-
-For a [maintained repository bundle](../../docs/repository-bundles.md), pass
-`knowledge: {testId, key?, executionGroup?, attemptOrdinal?}` to `setupTest` or the
-existing adapter options. Variants use distinct logical IDs; retry ordinals are
-assigned by the harness, starting at zero. Capture sessions and traces still
-receive fresh execution identities.
+TypeScript declarations are included. See [configuration](https://github.com/mattlock83/wiretap/blob/main/docs/configuration.md).
 
 ## Native test lifecycle
 
@@ -66,13 +60,13 @@ It closes capture; it does not cancel user callbacks or background work.
 
 For a runner with no executable callback hooks, use `setupTest`/`teardownTest`
 and standard OTel context binding, or call the language-independent
-[HTTP API](../../docs/runtime-api.md). Manual setup alone does not activate a
+[HTTP API](https://github.com/mattlock83/wiretap/blob/main/docs/runtime-api.md). Manual setup alone does not activate a
 span around unrelated callbacks. Use a new handle/root for every retry.
 
 ## Optional Node adapter
 
 `createNodeTestSuite` and `bindTest` provide runner-specific convenience when
-wanted. They require Node 20.12+ and account for callback, subtest, `t.after`, and
+wanted. They require Node 22+ and account for callback, subtest, `t.after`, and
 timeout outcomes. They delegate test registration to `node:test` and are not
 required by the core library. Existing hooks retain their ordering.
 
@@ -85,10 +79,13 @@ Ordinary tests default to serial capture. Use `--runInBand` for an uninstrumente
 shared SUT. Concurrent tests use explicit sessions; set `explicitSession: true`
 for multiple workers sharing a SUT that propagates W3C context.
 
-The wrapper activates context for the callback and optional
-`testDefaults.onSession`. Separate Jest `beforeEach`/`afterEach` requests are
-outside that trace; put captured setup/cleanup within the callback. See
-[tracing adoption](../../docs/otel-adoption.md) for examples and limitations.
+The environment activates the same attempt context for the test and ordinary
+Jest `beforeEach`/`afterEach` hooks, including nested suites. Sync, promise/async,
+and `done` fixture hooks retain their ordering and runner outcomes. The optional
+`testDefaults.onSession` runs once before the first captured callback. Jest does
+not run per-test hooks for `.concurrent` tests; put their fixtures in the test
+callback with `try/finally`. Suite-wide `beforeAll`/`afterAll` work is outside
+individual attempts. See [tracing adoption](https://github.com/mattlock83/wiretap/blob/main/docs/otel-adoption.md).
 
 ## Configuration and ownership
 
@@ -103,11 +100,18 @@ in worker integrations. Their `finishRun` calls check local cleanup but leave
 the shared capture running. One global suite owner calls `/v1/finishRun` after
 all workers have completed. The optional Jest adapter always uses this shared
 mode; configure Jest global teardown as shown in the
-[example](../../examples/basic-rest/jest-teardown.cjs).
+[example](https://github.com/mattlock83/wiretap/blob/main/examples/basic-rest/jest-teardown.cjs).
 
 `finishRun` finalizes the bundle and stops the capture proxy. It does not stop
 the HTTP control process. Your harness owns that process and the SUT/mocks.
 No environment flag changes run ownership implicitly.
+
+Control API requests have a 30-second deadline by default. A default teardown
+deadline expands to the requested drain plus ten seconds when necessary.
+`timeoutMs` overrides every control deadline; set `timeoutMs: 0` to opt out.
+Choose a larger positive value for slow contract discovery or finalization.
+Timeouts reject with `code: "WIRETAP_CONTROL_TIMEOUT"` and identify the control
+operation; surface these errors through your test or suite cleanup.
 
 SDK configuration can override project defaults, or supply the full setup when
 there is no `.wiretap.yaml`:
@@ -132,12 +136,12 @@ generated gRPC clients. `sutProtocol: "grpc"` and a dependency's
 `protocol: "grpc"` pass through configured project boundaries; they cannot
 create or retarget a gRPC boundary per test. gRPC contracts cannot be disabled and this SDK
 does not instrument `@grpc/grpc-js` automatically; use standard OTel gRPC
-instrumentation for parallel test ownership. See the [gRPC guide](../../docs/grpc-user-guide.md).
+instrumentation for parallel test ownership. See the [gRPC guide](https://github.com/mattlock83/wiretap/blob/main/docs/grpc-user-guide.md).
 
-The [native Node gRPC example](../../examples/grpc-boundaries/node/README.md)
+The [native Node gRPC example](https://github.com/mattlock83/wiretap/blob/main/examples/grpc-boundaries/node/README.md)
 tests this with ordinary `@grpc/grpc-js` clients and mocks, local proto sources,
 parallel calls, an HTTP provider calling a gRPC mock, and TLS. Its
-[`tracing.cjs`](../../examples/grpc-boundaries/node/tracing.cjs) initializes
+[`tracing.cjs`](https://github.com/mattlock83/wiretap/blob/main/examples/grpc-boundaries/node/tracing.cjs) initializes
 application-owned standard gRPC/HTTP instrumentation before client modules are
 loaded; `startCapture({ instrumentation: false })` reuses that existing setup.
 The gRPC packages stay in the example, outside the SDK's dependencies. No
@@ -146,10 +150,7 @@ Wiretap-specific RPC client, collector or reflection service is required.
 API-provided file paths resolve on the runtime host. HTTP schemas are required by
 default. Set `schemaRequired: false` only on an API whose spec is intentionally
 absent; supplied specs still validate strictly. Dependencies retain this same
-per-API requirement. Dependencies marked `upstreamKind: "mock"` automatically get
-a separate inferred OpenAPI draft in the bundle, even with a supplied spec.
-The draft documents observations and never changes validation. Follow the
-Dependencies links in the bundle to inspect it.
+per-API requirement.
 
 ## Lower-level integration
 
@@ -162,13 +163,21 @@ Dependencies links in the bundle to inspect it.
   custom fixtures. Manual setup registers a span but does not activate it around
   arbitrary requests; use `runTest` or standard OTel context binding.
 - `runtime.dependencyUrl(assetId)` returns the configured dependency capture URL.
-- `runtime.report({ bundlePath })` refreshes bundle views.
+- `runtime.report({ bundlePath })` returns a JSON coverage report for the archive.
 - `runtime.finishRun()` finalizes capture when `manageRuntime` is enabled.
   It never terminates the control process.
 
-Sessions expose `runId`, `bundlePath`, `indexPath`, and `viewerPath`. Teardown
-returns `attempt_path` and `attempt_page_path`. Capture drains accepted requests
+Sessions expose `runId` and `bundlePath`. Teardown returns `attempt_path` for
+the recorded JSON evidence. Capture drains accepted requests
 for five seconds by default; `drainTimeoutMs` selects 0–60000ms. Incomplete
 capture and enforced schema failures fail cleanup. An original callback error
 is preserved if cleanup also fails. Explicitly omitted schemas show skipped or
 partial validation without turning unrelated schema failures into success.
+
+### Generate suite outputs
+
+Configure `outputs: {coverage: ["json"], postman: true}` in `startCapture`, or the
+matching `outputs` block in `.wiretap.yaml`. `await capture.finishRun()` returns
+`outputs.coverage` and `outputs.postman` with exact server-side paths. Shared
+workers leave this to the global run owner. Cleanup errors retain `error.body`
+with available outputs and archive path; preserve an original test error as well.

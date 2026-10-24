@@ -45,9 +45,9 @@ sys.exit('Service did not become ready: ' + sys.argv[1])
 
 def inspect_bundle(path):
     run = json.loads((path / "bundle.json").read_text())
-    if run["run_state"] != "complete" or not (path / "docs/viewer.html").exists():
+    if run["run_state"] != "complete":
         raise RuntimeError(f"Incomplete bundle: {path}")
-    coverage = json.loads((path / "docs/contract-coverage.json").read_text())
+    coverage = json.loads((path / "coverage.json").read_text())["contract_coverage"]
     if not any(s["api_id"] == "accounts" and s["target_kind"] == "mock" for s in coverage["specs"]):
         raise RuntimeError("Bundle is missing the Accounts mock contract")
     downstream = 0
@@ -168,7 +168,10 @@ def run(args):
                                     "-e", "CAPTURE_PATH_FILE=/capture.txt", runtime, "python3", "test_transactions.py"])
             source_result = subprocess.run(["docker", "exec", runtime, "cat", "/capture.txt"], text=True, capture_output=True)
             if source_result.returncode == 0:
-                bundles.append(("Combined", source_result.stdout.strip()))
+                capture_path = source_result.stdout.strip()
+                bundles.append(("Combined", capture_path))
+                docker("exec", runtime, "wiretap", "report", "--bundle", capture_path,
+                       "--format", "json", "--output", capture_path + "/coverage.json")
             if tests.returncode:
                 raise RuntimeError("Tests failed; inspect the bundle and SUT logs")
 
@@ -181,8 +184,8 @@ def run(args):
                                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
             if copied:
                 for label, path in bundles:
-                    print(f"{label} OKF bundle: {output / Path(path).name / 'index.md'}")
-                    print(f"{label} HTML dashboard: {output / Path(path).name / 'docs/viewer.html'}")
+                    print(f"{label} raw capture: {output / Path(path).name}")
+                    print(f"{label} JSON coverage: {output / Path(path).name / 'coverage.json'}")
             for name in reversed(containers):
                 logs(name)
                 subprocess.run(["docker", "rm", "-f", name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

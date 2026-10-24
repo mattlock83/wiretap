@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/phrond/wiretap/internal/artifact"
-	"github.com/phrond/wiretap/internal/bundle"
+	"github.com/mattlock83/wiretap/internal/artifact"
+	"github.com/mattlock83/wiretap/internal/bundle"
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protodesc"

@@ -16,11 +16,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/phrond/wiretap/internal/artifact"
-	"github.com/phrond/wiretap/internal/grpccontract"
-	"github.com/phrond/wiretap/internal/project"
-	"github.com/phrond/wiretap/internal/proxy"
-	"github.com/phrond/wiretap/internal/tracecontext"
+	"github.com/mattlock83/wiretap/internal/artifact"
+	"github.com/mattlock83/wiretap/internal/grpccontract"
+	"github.com/mattlock83/wiretap/internal/project"
+	"github.com/mattlock83/wiretap/internal/proxy"
+	"github.com/mattlock83/wiretap/internal/tracecontext"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 )

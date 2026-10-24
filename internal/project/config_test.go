@@ -7,19 +7,6 @@ import (
 	"testing"
 )
 
-func TestPublicationConfigurationResolvesRepositoryPaths(t *testing.T) {
-	root := t.TempDir()
-	p := filepath.Join(root, ".wiretap.yaml")
-	os.WriteFile(p, []byte("version: 1\nsut: {schema: api.yaml}\npublication: {config: knowledge-publication.json}\n"), 0644)
-	c, err := Load(p)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if c.Publication.Config != filepath.Join(root, "knowledge-publication.json") || c.Publication.Output != filepath.Join(root, "docs/knowledge") {
-		t.Fatalf("%+v", c.Publication)
-	}
-}
-
 func TestLoadResolvesPathsAndEnvironmentFromProject(t *testing.T) {
 	root := t.TempDir()
 	child := filepath.Join(root, "tests")
@@ -36,12 +23,26 @@ func TestLoadResolvesPathsAndEnvironmentFromProject(t *testing.T) {
 		t.Fatalf("wrong configuration: %#v", cfg)
 	}
 }
+
+func TestProjectRedactionPolicy(t *testing.T) {
+	base := "version: 1\nsut: {schema_required: false}\nredactions:\n"
+	cfg, err := Decode([]byte(base+"  - {field: request.query.token, rule: remove}\n  - {field: response.body.password, rule: mask}\n"), filepath.Join(t.TempDir(), ".wiretap.yaml"))
+	if err != nil || len(cfg.Redactions) != 2 || cfg.Redactions[0].Field != "request.query.token" {
+		t.Fatalf("central policy lost: %+v %v", cfg, err)
+	}
+	for _, value := range []string{"{field: request.qurey.token, rule: remove}", "{field: request.body.token, rule: misspelled}", "{field: request.url.nonexistent, rule: mask}"} {
+		if _, err := Decode([]byte(base+"  - "+value+"\n"), filepath.Join(t.TempDir(), ".wiretap.yaml")); err == nil {
+			t.Fatalf("invalid policy accepted: %s", value)
+		}
+	}
+}
 func TestLoadRejectsMistakesAndKeepsSpecsRequired(t *testing.T) {
 	for _, tc := range []struct{ name, body, want string }{
 		{"missing schema", "version: 1\nsut: {}", "schema is required"},
-		{"misspelled option", "version: 1\nsut: {schema: api.yaml}\noutputs: bad", "field outputs"},
+		{"misspelled option", "version: 1\nsut: {schema: api.yaml}\noutputz: bad", "field outputz"},
 		{"missing variable", "version: 1\nsut: {schema: '${WIRETAP_TEST_MISSING_VARIABLE}'}", "is not set"},
 		{"extra document", "version: 1\nsut: {schema: api.yaml}\n---\nversion: 1", "one YAML document"},
+		{"publication removed", "version: 1\nsut: {schema: api.yaml}\npublication: {config: publication.json}", "field publication"},
 		{"SUT generation", "version: 1\nsut: {generate_schema: true}", "field generate_schema"},
 		{"dependency generation", "version: 1\nsut: {schema: api.yaml}\ndependencies:\n  dep: {generate_schema: true}", "field generate_schema"},
 	} {
@@ -169,5 +170,38 @@ func TestGRPCConfigRejectsMissingContractsAndInvalidSources(t *testing.T) {
 				t.Fatalf("got %v, want %q", err, tc.want)
 			}
 		})
+	}
+}
+
+func TestAutomaticPostmanProtoRootsResolveFromProject(t *testing.T) {
+	config, err := Decode([]byte(`version: 1
+sut: {url: http://localhost:8080, schema_required: false}
+outputs:
+  postman: true
+  postman_options:
+    grpc:
+      sut: {url: grpc://localhost:50051, proto_root: proto, proto_file: api.proto}
+`), filepath.Join(t.TempDir(), ".wiretap.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := config.Outputs.PostmanOptions.GRPC["sut"]
+	if target.ProtoRoot != filepath.Join(filepath.Dir(config.Path), "proto") || target.ProtoFile != "api.proto" {
+		t.Fatalf("incorrect proto paths: %+v", target)
+	}
+}
+
+func TestBuildSourcesAndProviderMappings(t *testing.T) {
+	t.Setenv("APP_COMMIT", "commit-123")
+	cfg, err := Decode([]byte("version: 1\nsut: {schema_required: false}\ntest_source: {revision: '${APP_COMMIT}'}\nsut_source: {build_id: ci-12}\ndependencies:\n  stock: {url: http://stock.test, schema_required: false}\nprovider_mappings:\n  stock: {application_id: inventory, api_id: stock-http, version: v2}\n"), filepath.Join(t.TempDir(), ".wiretap.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.TestSource["revision"] != "commit-123" || cfg.SUTSource["build_id"] != "ci-12" || cfg.ProviderMappings["stock"].APIID != "stock-http" {
+		t.Fatalf("missing provenance: %+v", cfg)
+	}
+	if _, err := Decode([]byte("version: 1\nsut: {schema_required: false}\nprovider_mappings:\n  missing: {application_id: inventory, api_id: stock-http}\n"), filepath.Join(t.TempDir(), ".wiretap.yaml")); err == nil {
+		t.Fatal("unknown dependency mapping accepted")
+
 	}
 }

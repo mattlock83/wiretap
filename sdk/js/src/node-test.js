@@ -2,7 +2,7 @@
 // actual test tree intact: an extra wrapper subtest would run inherited hooks
 // twice and change the user's test names.
 async function runNodeTest(runtime, t, name, fn, defaults) {
-  if (typeof t.passed !== 'boolean') throw new Error('The Wiretap node:test adapter requires Node 20.12 or newer');
+  if (typeof t.passed !== 'boolean') throw new Error('The Wiretap node:test adapter requires Node 22 or newer');
   await Promise.all(runtime.pendingCleanup);
   if (t.signal.aborted) throw t.signal.reason || new Error('test already completed');
   const attempt = runtime.createTestAttempt(t.fullName || name, defaults);

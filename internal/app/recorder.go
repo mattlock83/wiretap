@@ -21,11 +21,11 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/phrond/wiretap/internal/artifact"
-	"github.com/phrond/wiretap/internal/capture"
-	"github.com/phrond/wiretap/internal/grpccontract"
-	"github.com/phrond/wiretap/internal/proxy"
-	"github.com/phrond/wiretap/internal/redact"
+	"github.com/mattlock83/wiretap/internal/artifact"
+	"github.com/mattlock83/wiretap/internal/capture"
+	"github.com/mattlock83/wiretap/internal/grpccontract"
+	"github.com/mattlock83/wiretap/internal/proxy"
+	"github.com/mattlock83/wiretap/internal/redact"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -52,7 +52,7 @@ func (s *TestCaseStore) RegisterActive() error {
 	if s.active == nil {
 		return errors.New("no active test case")
 	}
-	tc := artifact.TestCase{ID: s.active.id, Name: s.active.name, StartedAt: s.active.startedAt, Tags: s.active.tags, Meta: s.active.meta}
+	tc := artifact.TestCase{Identity: s.active.identity, ID: s.active.id, Name: s.active.name, StartedAt: s.active.startedAt, Tags: s.active.tags, Meta: s.active.meta}
 	frozen, err := s.sink.Register(tc, s.active.schemas)
 	if err != nil {
 		return err
@@ -68,6 +68,7 @@ func (s *TestCaseStore) AbortCase() {
 }
 
 type testCaseState struct {
+	identity           *artifact.TestIdentity
 	root               trace.SpanContext
 	captureIncomplete  bool
 	captureDiagnostics []string
@@ -180,7 +181,7 @@ func (s *TestCaseStore) FinishCase(status string, env *artifact.Environment) (*a
 	art := &artifact.Artifact{
 		Version:           2,
 		CaptureIncomplete: state.captureIncomplete, CaptureDiagnostics: state.captureDiagnostics,
-		TestCase:   artifact.TestCase{ID: state.id, Name: state.name, StartedAt: state.startedAt, FinishedAt: finishedAt, Status: status, Tags: state.tags, Meta: state.meta},
+		TestCase:   artifact.TestCase{Identity: state.identity, ID: state.id, Name: state.name, StartedAt: state.startedAt, FinishedAt: finishedAt, Status: status, Tags: state.tags, Meta: state.meta},
 		Env:        env,
 		Schemas:    append([]artifact.SchemaRef{}, state.schemas...),
 		Traffic:    flows,
@@ -198,6 +199,9 @@ func (s *TestCaseStore) FinishCase(status string, env *artifact.Environment) (*a
 		if err := redact.Apply(art, art.Redactions); err != nil {
 			return nil, "", err
 		}
+	}
+	for i := range art.Traffic {
+		art.Traffic[i].Fingerprint = flowFingerprint(art.Traffic[i])
 	}
 
 	path, err := s.sink.Commit(art)
@@ -608,4 +612,19 @@ func readAllLimited(r io.Reader, maxBodyBytes int64) (capture.Body, bool) {
 		return capture.Body{}, false
 	}
 	return out, true
+}
+
+// SetTestIdentity binds a harness-owned logical identity before registration.
+func (s *TestCaseStore) SetTestIdentity(identity *artifact.TestIdentity) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.active == nil || identity == nil {
+		return
+	}
+	copy := *identity
+	if identity.AttemptOrdinal != nil {
+		ordinal := *identity.AttemptOrdinal
+		copy.AttemptOrdinal = &ordinal
+	}
+	s.active.identity = &copy
 }

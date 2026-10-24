@@ -1,0 +1,484 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "coverage-report.schema.json",
+  "title": "Wiretap coverage report 1.0",
+  "type": "object",
+  "properties": {
+    "report_version": {
+      "const": "1.0"
+    },
+    "producer": {
+      "$ref": "#/$defs/producer"
+    },
+    "capture": {
+      "$ref": "#/$defs/capture"
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "sut_name": {
+      "type": "string"
+    },
+    "artifact_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "provided": {
+      "type": "object",
+      "properties": {
+        "specs": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/spec"
+          }
+        }
+      },
+      "required": [
+        "specs"
+      ]
+    },
+    "dependent": {
+      "type": "object",
+      "properties": {
+        "specs": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/spec"
+          }
+        }
+      },
+      "required": [
+        "specs"
+      ]
+    },
+    "testcases": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "attempts": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "object"
+            }
+          },
+          "traffic": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/$defs/flow"
+            }
+          }
+        },
+        "required": [
+          "name"
+        ]
+      }
+    },
+    "contract_coverage": {
+      "type": "object",
+      "properties": {
+        "rules_version": {
+          "type": "string"
+        },
+        "run_id": {
+          "type": "string"
+        },
+        "run_state": {
+          "type": "string"
+        },
+        "snapshot_revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "complete": {
+          "type": "boolean"
+        },
+        "scope": {
+          "type": "string"
+        },
+        "specs": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "object"
+          }
+        }
+      },
+      "required": [
+        "rules_version",
+        "run_id",
+        "run_state",
+        "complete",
+        "specs"
+      ]
+    },
+    "notes": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "report_version",
+    "producer",
+    "capture",
+    "generated_at",
+    "sut_name",
+    "artifact_count",
+    "provided",
+    "dependent",
+    "contract_coverage"
+  ],
+  "$defs": {
+    "producer": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "const": "wiretap"
+        },
+        "version": {
+          "type": "string"
+        },
+        "commit": {
+          "type": "string"
+        },
+        "dirty": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name",
+        "version"
+      ]
+    },
+    "testIdentity": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "variant": {
+          "type": "string"
+        },
+        "attempt_ordinal": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "id"
+      ]
+    },
+    "bodyInfo": {
+      "type": "object",
+      "properties": {
+        "omitted": {"type": "boolean"},
+        "redacted": {"type": "boolean"},
+        "present": {
+          "type": "boolean"
+        },
+        "encoding": {
+          "type": "string"
+        },
+        "content_encoding": {
+          "type": "string"
+        },
+        "retained_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "original_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "present",
+        "retained_bytes",
+        "original_bytes",
+        "truncated"
+      ]
+    },
+    "message": {
+      "type": "object",
+      "properties": {
+        "body_info": {
+          "$ref": "#/$defs/bodyInfo"
+        },
+        "method": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        },
+        "status": {
+          "type": "integer"
+        },
+        "body": {
+          "type": "string"
+        },
+        "headers": {
+          "type": "object"
+        },
+        "trailers": {
+          "type": "object"
+        },
+        "procedure": {
+          "type": "string"
+        },
+        "grpc_status": {
+          "description": "Observed terminal gRPC status, or -1 when no terminal status was observed.",
+          "type": "integer",
+          "minimum": -1
+        },
+        "http_status": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "messages": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "object"
+          }
+        },
+        "stream_kind": {
+          "type": "string"
+        },
+        "observation": {
+          "type": "object"
+        },
+        "status_details": {
+          "type": "object"
+        }
+      },
+      "required": []
+    },
+    "flow": {
+      "type": "object",
+      "properties": {
+        "test_identity": {
+          "$ref": "#/$defs/testIdentity"
+        },
+        "testcase": {
+          "type": "string"
+        },
+        "test_status": {
+          "type": "string"
+        },
+        "flow_id": {
+          "type": "string"
+        },
+        "protocol": {
+          "type": "string"
+        },
+        "channel": {
+          "type": "string"
+        },
+        "asset_id": {
+          "type": "string"
+        },
+        "testcase_id": {
+          "type": "string"
+        },
+        "request": {
+          "$ref": "#/$defs/message"
+        },
+        "response": {
+          "$ref": "#/$defs/message"
+        },
+        "capture_incomplete": {
+          "type": "boolean"
+        },
+        "fingerprint": {
+          "type": "string"
+        },
+        "parent_flow_id": {
+          "type": "string"
+        },
+        "redaction_rules": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "object"
+          }
+        }
+      },
+      "required": [
+        "testcase",
+        "flow_id"
+      ]
+    },
+    "operation": {
+      "type": "object",
+      "properties": {
+        "operation": {
+          "type": "string"
+        },
+        "samples": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/flow"
+          }
+        }
+      },
+      "required": [
+        "operation"
+      ]
+    },
+    "spec": {
+      "type": "object",
+      "properties": {
+        "schema_id": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string"
+        },
+        "asset_id": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "protocol": {
+          "type": "string"
+        },
+        "denominator_known": {
+          "type": "boolean"
+        },
+        "exercised": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/operation"
+          }
+        },
+        "not_covered": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/operation"
+          }
+        }
+      },
+      "required": [
+        "schema_id",
+        "role",
+        "type",
+        "source",
+        "denominator_known"
+      ]
+    },
+    "capture": {
+      "type": "object",
+      "properties": {
+        "format_version": {
+          "type": "string"
+        },
+        "run_id": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "state": {
+          "enum": [
+            "open",
+            "complete",
+            "interrupted"
+          ]
+        },
+        "producer": {
+          "$ref": "#/$defs/producer"
+        },
+        "application": {
+          "type": "object"
+        },
+        "test_source": {
+          "type": "object"
+        },
+        "sut_source": {
+          "type": "object"
+        },
+        "provider_mappings": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/providerRef"
+          }
+        }
+      },
+      "required": [
+        "format_version",
+        "run_id",
+        "revision",
+        "state"
+      ]
+    },
+    "providerRef": {
+      "type": "object",
+      "required": [
+        "application_id",
+        "api_id"
+      ],
+      "properties": {
+        "application_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "api_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

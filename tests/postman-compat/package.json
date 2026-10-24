@@ -1,0 +1,9 @@
+{
+  "name": "wiretap-postman-compat",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Offline compatibility tests for collections emitted by Wiretap's Go exporter",
+  "scripts": {"test": "node --test compatibility.test.cjs"},
+  "devDependencies": {"postman-collection": "5.3.1", "ajv": "8.20.0"},
+  "engines": {"node": ">=22"}
+}

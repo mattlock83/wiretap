@@ -10,11 +10,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/phrond/wiretap/internal/artifact"
-	"github.com/phrond/wiretap/internal/bundle"
-	"github.com/phrond/wiretap/internal/bundlereport"
-	"github.com/phrond/wiretap/internal/proxy"
-	"github.com/phrond/wiretap/internal/tracecontext"
+	"github.com/mattlock83/wiretap/internal/artifact"
+	"github.com/mattlock83/wiretap/internal/bundle"
+	"github.com/mattlock83/wiretap/internal/coverage"
+	"github.com/mattlock83/wiretap/internal/proxy"
+	"github.com/mattlock83/wiretap/internal/redact"
+	"github.com/mattlock83/wiretap/internal/runoutput"
+	"github.com/mattlock83/wiretap/internal/tracecontext"
+
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -84,10 +87,6 @@ func (a *App) handleStartRun(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}
-		if _, err := bundlereport.Refresh(a.currentBundle().Path()); err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
-			return
-		}
 	}
 	if err := a.initializeRunContracts(); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
@@ -113,8 +112,8 @@ func (a *App) handleStartRun(w http.ResponseWriter, r *http.Request) {
 }
 
 type setupTestRequest struct {
+	Identity        *artifact.TestIdentity   `json:"test_identity,omitempty"`
 	Application     *bundle.Application      `json:"application,omitempty"`
-	Knowledge       *testKnowledgeIdentity   `json:"application_knowledge,omitempty"`
 	SUTProtocol     string                   `json:"sut_protocol,omitempty"`
 	SchemaRequired  *bool                    `json:"schema_required,omitempty"`
 	Redactions      []artifact.Redaction     `json:"redactions,omitempty"`
@@ -130,13 +129,6 @@ type setupTestRequest struct {
 	Dependencies    []dependencyRegistration `json:"dependencies,omitempty"`
 	ExplicitSession bool                     `json:"explicit_session,omitempty"`
 	TraceContext    *tracecontext.Context    `json:"trace_context,omitempty"`
-}
-
-type testKnowledgeIdentity struct {
-	TestID         string `json:"test_id"`
-	Key            string `json:"key,omitempty"`
-	ExecutionGroup string `json:"execution_group,omitempty"`
-	AttemptOrdinal *int   `json:"attempt_ordinal,omitempty"`
 }
 
 func (a *App) handleSetupTest(w http.ResponseWriter, r *http.Request) {
@@ -163,29 +155,30 @@ func (a *App) handleSetupTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	payload.Application = application
-	if identity := payload.Knowledge; identity != nil {
-		if identity.TestID == "" || strings.ContainsAny(identity.TestID, " \t\r\n") || (identity.AttemptOrdinal != nil && *identity.AttemptOrdinal < 0) {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "application_knowledge requires a stable test_id and nonnegative attempt_ordinal"})
-			return
+	// Project rules are a minimum policy, even when a caller supplies its own
+	// rules or an empty list. Per-test rules can only add redactions.
+	if a.project != nil {
+		// Apply the minimum policy last so a per-test replacement cannot restore
+		// a value masked by a project rule for the same field.
+		rules := append(append([]artifact.Redaction(nil), payload.Redactions...), a.project.Redactions...)
+		last := map[artifact.Redaction]int{}
+		for i, rule := range rules {
+			last[rule] = i
 		}
-		if payload.Meta == nil {
-			payload.Meta = map[string]any{}
+		payload.Redactions = nil
+		for i, rule := range rules {
+			if last[rule] == i {
+				payload.Redactions = append(payload.Redactions, rule)
+			}
 		}
-		if payload.Meta["application_knowledge"] != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "declare application_knowledge once, either directly or in meta"})
-			return
-		}
-		binding := map[string]any{"test_id": identity.TestID}
-		if identity.Key != "" {
-			binding["key"] = identity.Key
-		}
-		if identity.ExecutionGroup != "" {
-			binding["execution_group"] = identity.ExecutionGroup
-		}
-		if identity.AttemptOrdinal != nil {
-			binding["attempt_ordinal"] = *identity.AttemptOrdinal
-		}
-		payload.Meta["application_knowledge"] = binding
+	}
+	if err := redact.Validate(payload.Redactions); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	if err := payload.Identity.Validate(); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
 	}
 	var root trace.SpanContext
 	if payload.TraceContext != nil {
@@ -343,6 +336,7 @@ func (a *App) handleSetupTest(w http.ResponseWriter, r *http.Request) {
 		store.AddRedaction(rule)
 	}
 	store.SetTraceContext(root)
+	store.SetTestIdentity(payload.Identity)
 	if err := store.RegisterActive(); err != nil {
 		store.AbortCase()
 		a.sessionsMu.Unlock()
@@ -493,7 +487,7 @@ func (a *App) handleRuntimeReport(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bundle_path is required when no capture run exists"})
 		return
 	}
-	report, err := bundlereport.Rebuild(input)
+	report, err := coverage.Generate(r.Context(), input, "", false)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
@@ -507,8 +501,6 @@ func (a *App) handleRuntimeReport(w http.ResponseWriter, r *http.Request) {
 	absolute, _ := filepath.Abs(input)
 	response["run_id"] = run.RunID
 	response["bundle_path"] = absolute
-	response["index_path"] = filepath.Join(absolute, "index.md")
-	response["viewer_path"] = filepath.Join(absolute, "docs", "viewer.html")
 	response["run_state"] = run.RunState
 	response["snapshot_revision"] = run.Revision
 	writeJSON(w, http.StatusOK, response)
@@ -520,19 +512,49 @@ func (a *App) handleFinishRun(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 		return
 	}
+	var payload struct {
+		Outputs *runoutput.Config `json:"outputs,omitempty"`
+	}
+	if err := decodeStrictJSON(r, &payload); err != nil && !errors.Is(err, io.EOF) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
+		return
+	}
+	selected := payload.Outputs
+	if selected == nil && a.project != nil {
+		selected = a.project.Outputs
+	}
+	if selected != nil {
+		if err := selected.Validate(); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+	}
+	runID := ""
+	if current := a.currentBundle(); current != nil {
+		runID = current.Snapshot().RunID
+	}
 	archivePath, err := a.finishRun(r.Context())
 	if err != nil {
 		response := map[string]string{"error": err.Error()}
 		if archivePath != "" {
-			response["run_archive_path"] = archivePath
+			response["bundle_path"] = archivePath
 		}
 		writeJSON(w, http.StatusConflict, response)
 		return
 	}
-	response := map[string]string{"status": "complete"}
-	if a.project != nil && a.project.Publication != nil && archivePath != "" {
-		response["run_archive_path"] = archivePath
-		response["publication_path"] = a.project.Publication.Output
+	response := map[string]any{"status": "complete"}
+	if archivePath != "" {
+		response["bundle_path"] = archivePath
+		response["run_id"] = runID
+		if selected != nil {
+			outputs, err := runoutput.Generate(r.Context(), archivePath, *selected)
+			response["outputs"] = outputs
+			if err != nil {
+				response["error"] = err.Error()
+				writeJSON(w, http.StatusConflict, response)
+				return
+			}
+		}
 	}
 	writeJSON(w, http.StatusOK, response)
 }
@@ -572,8 +594,6 @@ func (a *App) addBundleLocations(response map[string]any) {
 		snapshot := current.Snapshot()
 		response["run_id"] = snapshot.RunID
 		response["bundle_path"] = current.Path()
-		response["index_path"] = current.IndexPath()
-		response["viewer_path"] = filepath.Join(current.Path(), "docs", "viewer.html")
 		response["run_state"] = snapshot.RunState
 		response["snapshot_revision"] = snapshot.Revision
 	}
@@ -583,16 +603,6 @@ func (a *App) writeCaptureResponse(w http.ResponseWriter, art *artifact.Artifact
 	response := map[string]any{"capture": art, "attempt_path": path}
 	if sessionID != "" {
 		response["session_id"] = sessionID
-	}
-	if current := a.currentBundle(); current != nil && path != "" {
-		if _, err := bundlereport.Refresh(current.Path()); err != nil {
-			response["view_error"] = err.Error()
-			if a.logger != nil {
-				a.logger.Warn("bundle view refresh failed", "error", err)
-			}
-		} else if art != nil {
-			response["attempt_page_path"] = filepath.Join(current.Path(), "tests", art.TestCase.ID+".md")
-		}
 	}
 	a.addBundleLocations(response)
 	writeJSON(w, http.StatusOK, response)

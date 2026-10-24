@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/phrond/wiretap/internal/bundle"
-	"github.com/phrond/wiretap/internal/project"
+	"github.com/mattlock83/wiretap/internal/bundle"
+	"github.com/mattlock83/wiretap/internal/project"
 )
 
 func TestApplicationIdentityFromStartRunPersistsWithoutTests(t *testing.T) {

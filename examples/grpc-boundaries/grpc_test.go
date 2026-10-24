@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	wiretap "github.com/phrond/wiretap/sdk/go"
+	wiretap "github.com/mattlock83/wiretap/sdk/go"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"

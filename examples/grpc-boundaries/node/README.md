@@ -14,7 +14,7 @@ npm ci --prefix examples/grpc-boundaries/node
 ./examples/grpc-boundaries/run-node.sh
 ```
 
-Requires Go 1.24+, Node.js 20.12+, Bash and OpenSSL with `req -addext` support.
+Requires Go 1.26+, Node.js 22+, Bash and OpenSSL with `req -addext` support.
 Go builds the Wiretap binary and the existing Go provider used by the cross-language
 case. The other providers and mocks run in Node. The runner uses temporary local
 ports and creates a fresh one-day development TLS certificate. It stops processes
@@ -24,7 +24,7 @@ installation command.
 
 Bundles are written beneath `artifacts/grpc-node/`; set
 `WIRETAP_GRPC_ARTIFACT_DIR` to choose another directory. Each test group prints
-its bundle path. Open its `docs/viewer.html` or `index.md`.
+its capture path. Inspect `bundle.json`, `tests/`, and `coverage.json`.
 
 The fixture exercises:
 
@@ -38,9 +38,9 @@ The fixture exercises:
 - Two overlapping tests on a reused channel, through a Node gRPC provider and
   Node mock, and through an HTTP provider calling that same gRPC mock. Standard
   OTel propagates each test's trace through the provider's ordinary outbound client.
-- Canonical bundle ownership, API roles, numeric RPC status (including zero),
+- Raw capture ownership, API roles, numeric RPC status (including zero),
   payload hashes and frozen local contracts. The fixture stops upstreams and
-  deletes source contracts before rebuilding the report from the bundle.
+  deletes source contracts before rebuilding JSON coverage from the capture.
 
 `tracing.cjs` shows application-owned OTel setup loaded **before** importing gRPC
 and HTTP modules. The SDK preserves the application's tracer provider and context

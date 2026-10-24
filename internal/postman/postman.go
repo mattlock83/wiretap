@@ -12,8 +12,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/phrond/wiretap/internal/artifact"
-	"github.com/phrond/wiretap/internal/bundle"
+	"github.com/mattlock83/wiretap/internal/artifact"
+	"github.com/mattlock83/wiretap/internal/bundle"
 )
 
 const collectionSchema = "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
@@ -108,11 +108,13 @@ func generateCollection(run *bundle.Run, captures []*artifact.Artifact, name, ch
 			},
 		},
 	}
+	labels := attemptFolderNames(captures)
 	for _, capture := range captures {
 		folder, err := exportTest(capture, channel, assetID)
 		if err != nil {
 			return nil, fmt.Errorf("export Postman test %q: %w", capture.TestCase.ID, err)
 		}
+		folder.ID, folder.Name = capture.TestCase.ID, labels[capture.TestCase.ID]
 		collection.Items = append(collection.Items, folder)
 	}
 	return collection, nil

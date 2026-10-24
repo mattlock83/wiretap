@@ -7,12 +7,12 @@ import (
 	"math/big"
 	"net/url"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 
-	"github.com/phrond/wiretap/internal/artifact"
-	"github.com/phrond/wiretap/internal/schemajson"
+	"github.com/mattlock83/wiretap/internal/artifact"
+	"github.com/mattlock83/wiretap/internal/fileuri"
+	"github.com/mattlock83/wiretap/internal/schemajson"
 )
 
 // ReplayContractRevision shares coverage's canonical identity and precision
@@ -43,11 +43,11 @@ func contractRevision(ref artifact.SchemaRef) (string, bool, error) {
 		root = &url.URL{Scheme: "wiretap-inline", Host: "root"}
 		inline = []byte(ref.Source.Content)
 	} else if ref.Source.Type == "file" {
-		absolute, err := filepath.Abs(ref.Source.Path)
+		var err error
+		root, err = fileuri.FromPath(ref.Source.Path)
 		if err != nil {
 			return "", false, err
 		}
-		root = &url.URL{Scheme: "file", Path: filepath.ToSlash(absolute)}
 	} else {
 		return "", false, fmt.Errorf("Contract identity requires a frozen file or inline schema")
 	}
@@ -62,8 +62,11 @@ func contractRevision(ref artifact.SchemaRef) (string, bool, error) {
 			if docs[i].uri.Scheme != "file" {
 				return "", false, fmt.Errorf("Unfrozen external schema reference")
 			}
-			var err error
-			raw, err = os.ReadFile(filepath.FromSlash(docs[i].uri.Path))
+			name, err := fileuri.Path(docs[i].uri)
+			if err != nil {
+				return "", false, err
+			}
+			raw, err = os.ReadFile(name)
 			if err != nil {
 				return "", false, err
 			}

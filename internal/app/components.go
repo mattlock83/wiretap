@@ -6,9 +6,9 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/phrond/wiretap/internal/core"
-	"github.com/phrond/wiretap/internal/proxy"
-	tlsmgr "github.com/phrond/wiretap/internal/tls"
+	"github.com/mattlock83/wiretap/internal/core"
+	"github.com/mattlock83/wiretap/internal/proxy"
+	tlsmgr "github.com/mattlock83/wiretap/internal/tls"
 )
 
 type ProxyComponent struct {

@@ -4,7 +4,7 @@ import (
 	"errors"
 	"sort"
 
-	"github.com/phrond/wiretap/internal/artifact"
+	"github.com/mattlock83/wiretap/internal/artifact"
 )
 
 // API describes one configured or observed boundary. IDs are local to the

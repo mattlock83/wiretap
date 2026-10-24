@@ -43,5 +43,13 @@ for (const runner of ['node', 'jest']) test(`${runner} final outcomes include ti
     assert.equal(outcomes['never settles'], 'fail');
     assert.equal(outcomes['assertion count'], 'fail');
     assert.equal(outcomes['hooks hook failure'], 'fail');
+    assert.equal(outcomes['failed setup body never runs'], 'fail');
+    assert.equal(result.calls.some(call => call.path === '/must-not-run'), false);
+    for (const [name, prefix] of [['hooks hook failure', '/hook/'], ['failed setup body never runs', '/failed-setup/']]) {
+      const setup = setups.find(call => call.body.name === name);
+      const traffic = result.calls.filter(call => call.path.startsWith(prefix));
+      assert.equal(traffic.length, 2, `${name}: setup and cleanup must each run once`);
+      for (const call of traffic) assert.equal(call.traceparent.split('-')[1], setup.body.trace_context.traceparent.split('-')[1]);
+    }
   }
 });

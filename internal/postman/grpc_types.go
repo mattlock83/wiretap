@@ -10,12 +10,14 @@ type GRPCCollection struct {
 }
 
 type GRPCFolder struct {
+	ID    string        `json:"id,omitempty"`
 	Kind  string        `json:"$kind"`
 	Name  string        `json:"name"`
 	Items []GRPCRequest `json:"items"`
 }
 
 type GRPCCall struct {
+	URL        string       `json:"url,omitempty"`
 	MethodPath string       `json:"methodPath"`
 	Metadata   []Header     `json:"metadata"`
 	Message    *GRPCContent `json:"message,omitempty"`
@@ -26,7 +28,18 @@ type GRPCRequest struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
 	GRPCCall
+	Schema   *GRPCSchema   `json:"schema,omitempty"`
+	Settings *GRPCSettings `json:"settings,omitempty"`
 	Examples []GRPCExample `json:"examples"`
+}
+
+type GRPCSchema struct {
+	Source   string `json:"source"`
+	Location string `json:"location"`
+}
+
+type GRPCSettings struct {
+	SecureConnection bool `json:"secureConnection"`
 }
 
 type GRPCContent struct {

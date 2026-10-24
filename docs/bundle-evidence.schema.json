@@ -7,6 +7,9 @@
     { "$ref": "#/$defs/attempt" }
   ],
   "$defs": {
+    "producer": {"type": "object", "required": ["name", "version"], "properties": {"name": {"const": "wiretap"}, "version": {"type": "string"}, "commit": {"type": "string"}, "dirty": {"type": "boolean"}}},
+    "testIdentity": {"type": "object", "required": ["id"], "properties": {"id": {"type": "string", "minLength": 1, "maxLength": 256}, "variant": {"type": "string"}, "attempt_ordinal": {"type": "integer", "minimum": 0}}},
+    "providerRef": {"type": "object", "required": ["application_id", "api_id"], "properties": {"application_id": {"type": "string", "minLength": 1}, "api_id": {"type": "string", "minLength": 1}, "version": {"type": "string"}}},
     "version": { "type": "string", "pattern": "^3\\.[0-9]+$" },
     "capabilities": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
     "id": { "type": "string", "pattern": "^(?!\\.{1,2}$)[A-Za-z0-9._-]+$" },
@@ -59,6 +62,8 @@
       "required": ["format_version", "required_capabilities", "run_id", "revision", "run_state", "started_at", "updated_at", "inventory_scope", "provided_apis", "dependencies", "tests"],
       "properties": {
         "format_version": { "$ref": "#/$defs/version" },
+        "producer": { "$ref": "#/$defs/producer" },
+        "provider_mappings": { "type": "object", "additionalProperties": { "$ref": "#/$defs/providerRef" } },
         "required_capabilities": { "$ref": "#/$defs/capabilities" },
         "application": {
           "type": "object",
@@ -109,7 +114,8 @@
             "type": "object",
             "required": ["attempt_id", "name", "started_at"],
             "properties": {
-              "attempt_id": { "$ref": "#/$defs/id" },
+              "identity": { "$ref": "#/$defs/testIdentity" },
+            "attempt_id": { "$ref": "#/$defs/id" },
               "name": { "type": "string" },
               "started_at": { "type": "string", "format": "date-time" },
               "meta": { "type": "object" }
@@ -357,6 +363,7 @@
           "type": "object",
           "required": ["id", "name", "started_at"],
           "properties": {
+            "identity": { "$ref": "#/$defs/testIdentity" },
             "id": { "$ref": "#/$defs/id" },
             "name": { "type": "string" },
             "started_at": { "type": "string", "format": "date-time" }

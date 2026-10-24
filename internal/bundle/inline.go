@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"unicode/utf8"
 
-	"github.com/phrond/wiretap/internal/artifact"
+	"github.com/mattlock83/wiretap/internal/artifact"
 )
 
 // ValidateInlineCapture applies recording semantics independently of archive

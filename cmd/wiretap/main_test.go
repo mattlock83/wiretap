@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/phrond/wiretap/internal/core"
+	"github.com/mattlock83/wiretap/internal/core"
 )
 
 func TestApplyEnvProxySettings(t *testing.T) {

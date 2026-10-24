@@ -5,10 +5,8 @@ import (
 	"errors"
 	"time"
 
-	"github.com/phrond/wiretap/internal/bundle"
-	"github.com/phrond/wiretap/internal/bundlereport"
-	"github.com/phrond/wiretap/internal/knowledge"
-	"github.com/phrond/wiretap/internal/proxy"
+	"github.com/mattlock83/wiretap/internal/bundle"
+	"github.com/mattlock83/wiretap/internal/proxy"
 )
 
 func (a *App) startRun(ctx context.Context) error {
@@ -84,14 +82,7 @@ func (a *App) finishRun(ctx context.Context) (string, error) {
 	if current == nil {
 		return "", nil
 	}
-	_, err = bundlereport.Refresh(current.Path())
-	if err == nil && a.project != nil && a.project.Publication != nil {
-		c, configErr := knowledge.ReadConfig(a.project.Publication.Config)
-		if configErr != nil {
-			return current.Path(), configErr
-		}
-		_, err = knowledge.Publish(current.Path(), a.project.Publication.Output, c, false)
-	}
+	_, _, err = bundle.Load(current.Path())
 	return current.Path(), err
 }
 func (a *App) interruptRun() error {
@@ -104,7 +95,7 @@ func (a *App) interruptRun() error {
 	current := a.currentBundle()
 	err := a.closeBundle("interrupted")
 	if err == nil && current != nil {
-		_, err = bundlereport.Refresh(current.Path())
+		_, _, err = bundle.Load(current.Path())
 	}
 	return errors.Join(stopErr, err)
 }

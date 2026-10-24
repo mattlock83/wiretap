@@ -201,9 +201,13 @@ async function fixture(t, { name, mode = 'provider', tls = false, explicitSessio
         return JSON.parse(await fs.readFile(path.join(root, ref.path), 'utf8'));
       };
       await inspect({ root, manifest, attempts, projection });
-      // The reader must rebuild solely from the bundle after both upstreams and sources are gone.
-      execFileSync(process.env.WIRETAP_EXAMPLE_BINARY, ['report', '--bundle', root], { stdio: 'pipe' });
-      console.log(`OKF bundle: ${root}`);
+      // Coverage must rebuild solely from the capture after upstreams and sources are gone.
+      const coveragePath = path.join(root, 'coverage.json');
+      execFileSync(process.env.WIRETAP_EXAMPLE_BINARY, ['report', '--bundle', root, '--format', 'json', '--output', coveragePath], { stdio: 'pipe' });
+      const coverage = JSON.parse(await fs.readFile(coveragePath, 'utf8'));
+      assert.equal(coverage.artifact_count, attempts.length);
+      console.log(`Raw capture: ${root}`);
+      console.log(`JSON coverage: ${coveragePath}`);
       return { root, manifest, attempts };
     },
   };

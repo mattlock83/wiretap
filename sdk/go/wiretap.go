@@ -36,35 +36,80 @@ func (r *Runtime) FinishRun(ctx context.Context) error {
 	return r.call(ctx, "/v1/finishRun", map[string]any{}, nil)
 }
 
+// OutputOptions selects exports made by the suite owner after all workers finish.
+// Omit these options to inherit the runtime project's outputs configuration.
+type OutputOptions struct {
+	Coverage       []string        `json:"coverage,omitempty"`
+	Postman        bool            `json:"postman,omitempty"`
+	PostmanOptions *PostmanOptions `json:"postman_options,omitempty"`
+}
+type PostmanOptions struct {
+	OmitIncomplete bool                         `json:"omit_incomplete,omitempty"`
+	GRPC           map[string]PostmanGRPCTarget `json:"grpc,omitempty"`
+}
+type PostmanGRPCTarget struct {
+	URL       string `json:"url,omitempty"`
+	ProtoRoot string `json:"proto_root,omitempty"`
+	ProtoFile string `json:"proto_file,omitempty"`
+}
+type OutputResult struct {
+	PostmanFiles     []string `json:"postman_files,omitempty"`
+	PostmanOmissions []struct {
+		AttemptID string `json:"attempt_id"`
+		FlowID    string `json:"flow_id"`
+		Protocol  string `json:"protocol"`
+		Message   string `json:"message"`
+	} `json:"postman_omissions,omitempty"`
+	BundlePath string            `json:"bundle_path"`
+	Coverage   map[string]string `json:"coverage"`
+	Postman    []string          `json:"postman"`
+	Errors     []struct {
+		Format  string `json:"format"`
+		Message string `json:"message"`
+	} `json:"errors"`
+}
+type FinishResult struct {
+	Status     string        `json:"status"`
+	RunID      string        `json:"run_id"`
+	BundlePath string        `json:"bundle_path"`
+	Outputs    *OutputResult `json:"outputs,omitempty"`
+}
+
+// FinishRunWithOutputs returns exact artifact paths, including available outputs
+// when a different export fails. The non-nil error still fails suite cleanup.
+func (r *Runtime) FinishRunWithOutputs(ctx context.Context, options *OutputOptions) (*FinishResult, error) {
+	result := &FinishResult{}
+	err := r.call(ctx, "/v1/finishRun", struct {
+		Outputs *OutputOptions `json:"outputs,omitempty"`
+	}{options}, result)
+	return result, err
+}
+
+type TestIdentity struct {
+	ID             string `json:"id"`
+	Variant        string `json:"variant,omitempty"`
+	AttemptOrdinal *int   `json:"attempt_ordinal,omitempty"`
+}
 type TestOptions struct {
-	Application     *Application           `json:"application,omitempty"`
-	Knowledge       *TestKnowledgeIdentity `json:"application_knowledge,omitempty"`
-	SchemaRequired  *bool                  `json:"schema_required,omitempty"`
-	Redactions      []Redaction            `json:"redactions,omitempty"`
-	APIID           string                 `json:"api_id,omitempty"`
-	SUTTargetKind   string                 `json:"sut_target_kind,omitempty"`
-	TestSource      map[string]any         `json:"test_source,omitempty"`
-	SUTSource       map[string]any         `json:"sut_source,omitempty"`
-	SUTBaseURL      string                 `json:"sut_base_url,omitempty"`
-	SUTProtocol     string                 `json:"sut_protocol,omitempty"`
-	Schemas         []Schema               `json:"schemas,omitempty"`
-	Dependencies    []Dependency           `json:"dependencies,omitempty"`
-	ExplicitSession bool                   `json:"explicit_session,omitempty"`
-	Tags            []string               `json:"tags,omitempty"`
-	Meta            map[string]any         `json:"meta,omitempty"`
-	DrainTimeout    time.Duration          `json:"-"`
+	Identity        *TestIdentity  `json:"test_identity,omitempty"`
+	Application     *Application   `json:"application,omitempty"`
+	SchemaRequired  *bool          `json:"schema_required,omitempty"`
+	Redactions      []Redaction    `json:"redactions,omitempty"`
+	APIID           string         `json:"api_id,omitempty"`
+	SUTTargetKind   string         `json:"sut_target_kind,omitempty"`
+	TestSource      map[string]any `json:"test_source,omitempty"`
+	SUTSource       map[string]any `json:"sut_source,omitempty"`
+	SUTBaseURL      string         `json:"sut_base_url,omitempty"`
+	SUTProtocol     string         `json:"sut_protocol,omitempty"`
+	Schemas         []Schema       `json:"schemas,omitempty"`
+	Dependencies    []Dependency   `json:"dependencies,omitempty"`
+	ExplicitSession bool           `json:"explicit_session,omitempty"`
+	Tags            []string       `json:"tags,omitempty"`
+	Meta            map[string]any `json:"meta,omitempty"`
+	DrainTimeout    time.Duration  `json:"-"`
 	// SetupTimeout includes first-test contract discovery for every boundary.
 	// Zero uses 30 seconds. Increase it for larger or slower gRPC inventories.
 	SetupTimeout time.Duration `json:"-"`
-}
-
-// TestKnowledgeIdentity separates a logical test from its execution ID. Retries
-// use harness-assigned ordinals, beginning at zero; variants use distinct IDs.
-type TestKnowledgeIdentity struct {
-	TestID         string `json:"test_id"`
-	Key            string `json:"key,omitempty"`
-	ExecutionGroup string `json:"execution_group,omitempty"`
-	AttemptOrdinal *int   `json:"attempt_ordinal,omitempty"`
 }
 
 type Session struct {
@@ -74,8 +119,6 @@ type Session struct {
 	Dependencies map[string]string `json:"dependencies"`
 	RunID        string            `json:"run_id"`
 	BundlePath   string            `json:"bundle_path"`
-	IndexPath    string            `json:"index_path"`
-	ViewerPath   string            `json:"viewer_path"`
 	Context      context.Context   `json:"-"`
 }
 
@@ -107,6 +150,9 @@ func (r *Runtime) StartTest(t testing.TB, options TestOptions) *Session {
 		}
 		provider = fallbackProvider
 		ctx, span = fallbackProvider.Tracer("wiretap.tests").Start(context.Background(), t.Name(), trace.WithNewRoot())
+	}
+	if options.Identity == nil && len(t.Name()) <= 256 {
+		options.Identity = &TestIdentity{ID: t.Name()}
 	}
 	carrier := propagation.MapCarrier{}
 	propagation.TraceContext{}.Inject(ctx, carrier)
@@ -227,6 +273,9 @@ func (r *Runtime) call(ctx context.Context, path string, payload, output any) er
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(res.Body, 8192))
+		if output != nil {
+			_ = json.Unmarshal(body, output)
+		}
 		return fmt.Errorf("Wiretap %s: HTTP %d: %s", path, res.StatusCode, body)
 	}
 	if output != nil {

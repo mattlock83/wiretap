@@ -7,7 +7,7 @@ import (
 	"net"
 	"strings"
 
-	"github.com/phrond/wiretap/examples/grpc-streaming/fixture"
+	"github.com/mattlock83/wiretap/examples/grpc-streaming/fixture"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"

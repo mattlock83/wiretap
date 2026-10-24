@@ -9,11 +9,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/phrond/wiretap/internal/artifact"
-	"github.com/phrond/wiretap/internal/bundle"
-	"github.com/phrond/wiretap/internal/bundlereport"
-	"github.com/phrond/wiretap/internal/postman"
-	"github.com/phrond/wiretap/internal/project"
+	"github.com/mattlock83/wiretap/internal/artifact"
+	"github.com/mattlock83/wiretap/internal/bundle"
+	"github.com/mattlock83/wiretap/internal/postman"
+	"github.com/mattlock83/wiretap/internal/project"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/grpc"
@@ -124,16 +123,6 @@ func TestNativeGRPCRichErrorsRemainTransparentAndPortable(t *testing.T) {
 				if !proto.Equal(direct.Proto(), &exported) {
 					t.Fatal("v3 export changed the RPC error details")
 				}
-			}
-			if _, err := bundlereport.Rebuild(root); err != nil {
-				t.Fatal(err)
-			}
-			page, err := os.ReadFile(filepath.Join(root, "docs", "viewer.html"))
-			if err != nil {
-				t.Fatal(err)
-			}
-			if !strings.Contains(string(page), "RPC error details") || !strings.Contains(string(page), "google.rpc.BadRequest") {
-				t.Fatal("viewer omitted typed outcomes")
 			}
 			if redacted {
 				if response.StatusDetails.Details[0].State != "redacted" || response.StatusDetails.Wire != nil || response.StatusDetails.Details[0].Wire != nil {

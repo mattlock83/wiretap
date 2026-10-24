@@ -64,9 +64,8 @@ timing-based parent inferences and ambiguity.
    background dependency activity. Closing the test early cannot establish the
    ownership of later work reliably.
 6. **Supply schemas.** Configure specs in `.wiretap.yaml`. An individual API
-   can explicitly omit a spec with `schema_required: false`. Inferred mock
-   drafts document observations and do not replace supplied contracts. See
-   [configuration](configuration.md).
+   can explicitly omit a spec with `schema_required: false`; its coverage
+   denominator remains unknown. See [configuration](configuration.md).
 
 Your harness starts the Wiretap process; test framework hooks call its HTTP API
 through the SDK to start and finalize capture. Set `WIRETAP_BASE_URL` when needed.
@@ -108,8 +107,7 @@ wiretap.test("creates an order", async () => {
 The SDK instruments Node `http`/`https` and native `fetch` through
 standard HTTP and Undici instrumentation. Keep existing calls and assertions.
 Other clients work when they use an instrumented stack; custom transports,
-ESM module hooks and in-process mock interception need separate verification. The SDK requires Node 18.19+ or 20.6+; its
-`node:test` adapter requires **Node 20.12+** for the runner's
+ESM module hooks and in-process mock interception need separate verification. The SDK and its `node:test` adapter require **Node 22+** for the runner's
 [final outcome API](https://nodejs.org/api/test.html#contextpassed).
 HTTP and native fetch are covered by SDK integration tests; HTTPS capture is
 also covered by the proxy's decrypted HTTPS tests.
@@ -167,9 +165,13 @@ Jest's `done` callback style is not supported here. Completion comes from Jest's
 runner, including timeouts, assertion-count checks, and per-test hook failures.
 Retries create new roots even if the old callback has not finished.
 
-The wrapper covers the test callback and its optional `testDefaults.onSession`
-hook. Put captured setup and cleanup inside that callback using `try/finally`;
-requests in separate Jest `beforeEach`/`afterEach` hooks are outside the trace.
+The environment activates the attempt context for ordinary `beforeEach` and
+`afterEach` hooks as well as the test callback, including nested hooks. Sync,
+promise/async and `done` fixture hooks keep Jest's ordering; hook failures and
+timeouts affect the recorded outcome. `testDefaults.onSession` runs once before
+the first captured callback. `beforeAll`/`afterAll` are suite work and have no
+individual test owner. Jest does not execute per-test hooks for `.concurrent`
+tests; keep concurrent fixtures in the test callback using `try/finally`.
 Ordinary tests default to serial capture. For an uninstrumented shared SUT,
 run Jest with `--runInBand` and avoid `.concurrent`. Concurrent tests always
 use explicit sessions; set `explicitSession: true` on the suite for multiple
@@ -179,7 +181,7 @@ SUT propagation, or isolate each worker's runtime and SUT.
 Jest suites always use `manageRuntime: false`. Start Wiretap with the existing
 harness and call `POST /v1/finishRun` from Jest global teardown after **all**
 workers finish. See the [example teardown](../examples/basic-rest/jest-teardown.cjs).
-Bundles and views are automatic. Worker teardown never stops another worker's
+Run finalization writes the raw archive. Worker teardown never stops another worker's
 proxy. Existing host-level OTel instrumentation can be preloaded with `NODE_OPTIONS`; set
 `WIRETAP_EXISTING_OTEL=1` to keep the Jest environment from installing duplicates.
 
@@ -222,8 +224,8 @@ Attempts retain `testcase.trace_id`, `testcase.root_span_id`, sender
 `request_span_id`, `trace_context_source`, `test_correlation`, and
 `parent_correlation`. A trace match identifies the test; `trace_unique` and
 `timing` parent relationships are inferences. `ambiguous`/`unmatched` flows omit
-`parent_flow_id`. The bundle's test pages show these distinctions and preserve
-retry IDs; the bundled HTML dashboard presents the same evidence.
+`parent_flow_id`. The raw test recordings preserve these distinctions and each
+attempt's identity.
 Captured evidence retains the received W3C context.
 
 Await all expected activity before finishing a test. Teardown stops new

@@ -9,7 +9,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/phrond/wiretap/internal/artifact"
+	"github.com/mattlock83/wiretap/internal/artifact"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/protobuf/encoding/protojson"

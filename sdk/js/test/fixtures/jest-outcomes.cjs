@@ -8,8 +8,20 @@ suite.test('never settles', () => new Promise(() => {}), 60);
 suite.test('assertion count', () => { expect.assertions(1); });
 suite.test('validation', () => {});
 describe('hooks', () => {
-  afterEach(() => { throw Error('cleanup failed'); });
+  beforeEach(async () => { await fetch(suite.sutUrl + '/hook/setup'); });
+  afterEach(async () => {
+    await fetch(suite.sutUrl + '/hook/cleanup');
+    throw Error('cleanup failed');
+  });
   suite.test('hook failure', () => {});
+});
+describe('failed setup', () => {
+  beforeEach(async () => {
+    await fetch(suite.sutUrl + '/failed-setup/setup');
+    throw Error('setup failed');
+  });
+  afterEach(done => { fetch(suite.sutUrl + '/failed-setup/cleanup').then(() => done(), done); });
+  suite.test('body never runs', async () => { await fetch(suite.sutUrl + '/must-not-run'); });
 });
 afterAll(async () => {
   await new Promise(resolve => setTimeout(resolve, 200));

@@ -91,25 +91,38 @@ function normalizeDependencies(value) {
 class CoreClient {
   constructor(config = {}) {
     this.baseUrl = config.baseUrl || process.env.WIRETAP_BASE_URL || DEFAULT_BASE_URL;
-    this.timeoutMs = config.timeoutMs || 0;
+    this.timeoutMs = config.timeoutMs ?? 30000;
+    if (!Number.isSafeInteger(this.timeoutMs) || this.timeoutMs < 0 || this.timeoutMs > 2147483647) {
+      throw new Error("timeoutMs must be an integer between 0 and 2147483647 (0 disables the control request deadline)");
+    }
+    this.explicitTimeout = config.timeoutMs !== undefined;
   }
 
   startRun(payload) { return this._request("POST", "/v1/startRun", payload || {}); }
   setupTest(payload) { return this._request("POST", "/v1/setupTest", payload || {}); }
   teardownTest(payload) { return this._request("POST", "/v1/teardownTest", payload || {}); }
   report(payload) { return this._request("POST", "/v1/report", payload || {}); }
-  finishRun() { return this._request("POST", "/v1/finishRun", {}); }
+  finishRun(payload = {}) { return this._request("POST", "/v1/finishRun", payload); }
 
   async _request(method, path, payload) {
     if (typeof fetch !== "function") throw new Error("global fetch is not available; require Node.js >= 18");
     const options = { method, headers: { "content-type": "application/json" } };
     if (payload !== undefined) options.body = JSON.stringify(payload);
-    let timeout;
-    if (this.timeoutMs > 0) {
-      const controller = new AbortController();
+    // A default cleanup deadline must allow the requested runtime drain. An
+    // explicitly configured deadline (including zero) always belongs to the caller.
+    const timeoutMs = !this.explicitTimeout && path === "/v1/teardownTest"
+      ? Math.max(this.timeoutMs, (payload?.drain_timeout_ms ?? 5000) + 10000)
+      : this.timeoutMs;
+    let timeout, controller, deadlineError;
+    if (timeoutMs > 0) {
+      controller = new AbortController();
       options.signal = controller.signal;
-      timeout = setTimeout(() => controller.abort(), this.timeoutMs);
-      timeout.unref?.();
+      timeout = setTimeout(() => {
+        deadlineError = new Error(`Wiretap control request ${method} ${path} timed out after ${timeoutMs}ms`);
+        deadlineError.name = "TimeoutError";
+        deadlineError.code = "WIRETAP_CONTROL_TIMEOUT";
+        controller.abort(deadlineError);
+      }, timeoutMs);
     }
     try {
       const res = await tracing.withoutTracing(() => fetch(new URL(path, this.baseUrl), options));
@@ -122,6 +135,8 @@ class CoreClient {
         throw err;
       }
       return body;
+    } catch (error) {
+      throw deadlineError || error;
     } finally {
       if (timeout) clearTimeout(timeout);
     }
@@ -145,6 +160,7 @@ class Runtime {
     this.sutTargetKind = pickFirstString(config.sutTargetKind);
     this.testSource = config.testSource;
     this.sutSource = config.sutSource;
+    this.outputs = config.outputs;
     this.sutUrl = runtimeInfo.sut_url;
     this.runDependencyUrls = runtimeInfo.dependencies || {};
     this.sessions = new AsyncLocalStorage();
@@ -167,11 +183,12 @@ class Runtime {
   // settlement. Keep this handle per attempt so fixtures and retries are isolated.
   createTestAttempt(name, options = {}) {
     const scope = { session: null, closed: false };
-    const ready = this.sessions.run(scope, () => this.setupTest({ ...options, name }));
+    const ready = this.sessions.run(scope, () => this.setupTest({ ...options, name, identity: options.identity || (typeof name === "string" && name.trim() && Buffer.byteLength(name) <= 256 ? { id: name } : undefined) }));
     // A runner may execute hooks before invoking run/finish. Observe setup
     // rejection immediately while preserving it for those awaited paths.
     ready.catch(() => {});
     let finishing;
+    let sessionInitialization;
     return {
       run: async (fn) => {
         const session = await ready;
@@ -179,7 +196,12 @@ class Runtime {
         return this.sessions.run(scope, () => tracing.api.context.with(
           tracing.api.trace.setSpan(tracing.api.ROOT_CONTEXT, session.span),
           async () => {
-            if (typeof options.onSession === "function") await options.onSession(session);
+            if (typeof options.onSession === "function") {
+              // Separate fixture callbacks share one attempt. Initialize the
+              // session once even when setup, test and cleanup activate it.
+              sessionInitialization ??= Promise.resolve().then(() => options.onSession(session));
+              await sessionInitialization;
+            }
             return fn(session);
           }
         ));
@@ -234,12 +256,7 @@ class Runtime {
       : normalizeDependencies(options.dependencies);
     const payload = {
       application: options.application ?? this.application,
-      application_knowledge: options.knowledge ? {
-        test_id: options.knowledge.testId,
-        key: options.knowledge.key,
-        execution_group: options.knowledge.executionGroup,
-        attempt_ordinal: options.knowledge.attemptOrdinal
-      } : undefined,
+      test_identity: options.identity ? { id: options.identity.id, variant: options.identity.variant, attempt_ordinal: options.identity.attemptOrdinal } : undefined,
       name: pickFirstString(options.name) || undefined,
       tags: options.tags,
       meta: options.meta,
@@ -274,8 +291,6 @@ class Runtime {
       sutUrl: session.sut_url,
       runId: session.run_id,
       bundlePath: session.bundle_path,
-      indexPath: session.index_path,
-      viewerPath: session.viewer_path,
       dependencyUrls: session.dependencies,
     };
     return this.activeSession;
@@ -316,11 +331,11 @@ class Runtime {
     return this.client.report({ bundle_path: options.bundlePath });
   }
 
-  async finishRun() {
+  async finishRun(options = {}) {
     await Promise.all(this.pendingCleanup);
     if (this.openSessions.size) throw new Error("teardown all capture sessions before closing the runtime");
     if (!this.manageRuntime) return { status: "shared" };
-    return this.client.finishRun();
+    return this.client.finishRun({ outputs: options.outputs ?? this.outputs });
   }
 }
 

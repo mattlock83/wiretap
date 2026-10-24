@@ -7,7 +7,7 @@ module.exports = async function outcomesServer() {
   const server = http.createServer(async (req, res) => {
     let raw = ''; for await (const chunk of req) raw += chunk;
     const body = JSON.parse(raw || '{}');
-    calls.push({ path: req.url, body });
+    calls.push({ path: req.url, body, traceparent: req.headers.traceparent });
     res.setHeader('content-type', 'application/json');
     if (req.url === '/v1/setupTest') res.end(JSON.stringify({ session_id: body.name, name: body.name, sut_url: url, proxy_listen: url }));
     else if (req.url === '/v1/teardownTest') res.end(JSON.stringify({

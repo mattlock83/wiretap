@@ -16,7 +16,7 @@ Wiretap and does not itself establish that authentication was tested.
 | POST | `/v1/setupTest` | Register a test attempt, trace, schemas, and redactions. |
 | POST | `/v1/teardownTest` | Drain, validate, and commit an attempt. |
 | POST | `/v1/finishRun` | Finalize the bundle and stop capture. |
-| POST | `/v1/report` | Rebuild bundle views, including inferred mock OpenAPI drafts. |
+| POST | `/v1/report` | Calculate JSON coverage from the current or selected run artifact. |
 | GET | `/v1/proxy/ca` | Read the public proxy CA certificate. |
 
 ## Suite lifecycle
@@ -35,7 +35,7 @@ Wiretap and does not itself establish that authentication was tested.
 
 The response contains `sut_url`, the reverse proxy address tests should call,
 and `dependency_base_url`, the reserved dependency gateway on that same proxy.
-It also returns `run_id`, `bundle_path`, `index_path`, and `viewer_path`. A new run gets a
+It also returns `run_id` and `bundle_path`. A new run gets a
 fresh bundle under `WIRETAP_OUTPUT_DIR` (default `./artifacts`). The response
 also includes `defaults`, the resolved project test settings from `.wiretap.yaml`.
 For gRPC projects, `sut_url` and `dependencies` contain direct listener origins
@@ -97,21 +97,11 @@ owner must control finalization when suites/workers share a runtime. This stops
 capture and completes the bundle; it leaves the control process running. The reverse SUT
 target cannot be changed while sessions are active.
 
-When `.wiretap.yaml` opts into `publication`, successful finalization also publishes
-the stable repository bundle and returns `publication_path` and `run_archive_path`.
-A publication conflict returns 409 with the preserved archive path for an explicit
-`wiretap publish` retry. See [Repository bundles](repository-bundles.md).
-
 ## Test lifecycle
 
 `POST /v1/setupTest` creates a named capture session. It also starts the proxy
 if needed, so lower-level consumers do not have to call `startRun` first.
 
-Optional `application_knowledge` binds the attempt to a stable logical scenario:
-`{test_id, key?, execution_group?, attempt_ordinal?}`. The ordinal is nonnegative
-and assigned by the harness, starting at zero. It is persisted in testcase
-`meta.application_knowledge`; do not also declare the same field in `meta`.
-Execution/session IDs remain independent of the logical scenario ID.
 Omitted fields inherit project defaults. Supplied arrays replace the defaults.
 OpenAPI specs are required and validated for HTTP before the session starts; an API can
 explicitly allow an absent spec with `schema_required: false`. An invalid
@@ -157,7 +147,7 @@ Dependency `asset_name` supplies its display name in Postman mock collection
 exports, for example `Inventory Service - inventory`.
 
 The response includes `session_id`, `sut_url`, `proxy_listen`, `run_id`,
-`bundle_path`, `index_path`, `viewer_path`, and a
+`bundle_path`, and a
 `dependencies` object mapping asset IDs to their capture URLs. Send inbound
 calls to `sut_url`. Configure the SUT's existing dependency base URL to the
 returned inventory URL, for example:
@@ -222,8 +212,7 @@ context into an untraced dependency request. Ambiguous unlabeled traffic returns
 ```
 
 The response contains `capture`, the completed test capture including
-`schema_validation`, plus `attempt_path` (canonical JSON), `attempt_page_path`
-(readable Markdown), `bundle_path`, `index_path`, and `viewer_path`. These paths
+`schema_validation`, plus `attempt_path` (canonical JSON) and `bundle_path`. These paths
 are on the Wiretap server's filesystem; a remote SDK cannot open them locally
 without copying or mounting that directory. OpenAPI
 violations change an otherwise passing artifact to `fail`. Teardown stops new
@@ -232,20 +221,11 @@ admission and waits for accepted exchanges, up to `drain_timeout_ms` (default
 `capture_diagnostics`, and failed status. Completion after finalization cannot
 mutate the attempt or enter another session. Await background work first.
 
-## Mock OpenAPI drafts
-
-Dependencies with `upstream_kind: mock` automatically get a separate inferred
-OpenAPI draft in the bundle, with or without a supplied schema. Without a schema,
-set `schema_required: false` explicitly. Drafts update at teardown and run
-finalization, describe observed traffic, and never replace supplied contracts or
-affect validation and coverage. The Dependencies page and HTML dashboard link
-to each draft. See [capture bundles](okf-bundles.md#inferred-mock-assumptions).
-
 ## Reports
 
-`POST /v1/report` refreshes the current run's OKF pages and returns
-`run_id`, `bundle_path`, `index_path`, `viewer_path`, `run_state`, `snapshot_revision`, and a
-coverage summary. A copied bundle can be selected with `bundle_path`:
+`POST /v1/report` verifies the current run artifact and returns coverage in
+`report`, alongside `run_id`, `bundle_path`, `run_state` and `snapshot_revision`.
+A copied artifact directory can be selected with `bundle_path`:
 
 ```json
 {
@@ -253,8 +233,9 @@ coverage summary. A copied bundle can be selected with `bundle_path`:
 }
 ```
 
-The bundle's `docs/viewer.html` is written automatically from the same
-bundle evidence. Only bundles are accepted. Unknown request fields are rejected. See [capture bundles](okf-bundles.md).
+Only run artifact directories are accepted. Unknown request fields are rejected.
+The response includes detailed condition results under `report.contract_coverage`. The CLI
+can also export YAML and Postman collections; see [capture artifacts and exports](artifacts.md).
 
 ## Proxy certificate
 

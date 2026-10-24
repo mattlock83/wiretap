@@ -5,4 +5,6 @@ module.exports = async () => {
     method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}'
   });
   if (!response.ok) throw new Error(`Wiretap finalization failed: ${await response.text()}`);
+  const result = await response.json();
+  if (process.env.WIRETAP_RESULT_FILE) require('node:fs').writeFileSync(process.env.WIRETAP_RESULT_FILE, JSON.stringify(result));
 };

@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/phrond/wiretap/internal/core"
+	"github.com/mattlock83/wiretap/internal/core"
 )
 
 func newLogger(cfg core.LogConfig) *slog.Logger {

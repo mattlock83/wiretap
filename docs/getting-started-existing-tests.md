@@ -15,7 +15,7 @@ For a working example first, see [examples](../examples/README.md).
 
 ## 1. Build the runtime and choose an integration
 
-From the Wiretap repository, install the binary with Go 1.24+:
+From the Wiretap repository, install the binary with Go 1.26+:
 
 ```bash
 go install ./cmd/wiretap
@@ -33,6 +33,8 @@ from native Node test hooks.
 When working from this checkout, install its JavaScript dependencies with
 `npm ci --prefix sdk/js`. To use the checkout in another Node project, add it
 there with `npm install --save-dev /absolute/path/to/wiretap/sdk/js`.
+For a portable local SDK tarball, versioned binaries and a clean-project smoke
+check, see [local installation and release preparation](local-release.md).
 
 ## 2. Configure the boundaries
 
@@ -40,6 +42,9 @@ Put `.wiretap.yaml` at your test project's root:
 
 ```yaml
 version: 1
+outputs:
+  coverage: [json]
+  postman: true
 sut:
   id: orders
   url: http://127.0.0.1:8080
@@ -90,7 +95,12 @@ const { startCapture } = require("@wiretap/sdk");
 let capture;
 
 before(async () => { capture = await startCapture(); });
-after(async () => { if (capture) await capture.finishRun(); });
+after(async () => {
+  if (capture) {
+    const result = await capture.finishRun();
+    console.log(result.outputs);
+  }
+});
 
 test("gets an order", () => capture.runTest("gets an order", async session => {
   // Keep existing fixture setup and mock configuration here.
@@ -106,6 +116,9 @@ Load tracing before HTTP client modules, then run the tests:
 node --require @wiretap/sdk/tracing --test test/orders.test.js
 ```
 
+The final result names the exact raw archive, coverage and Postman paths. Use
+these paths when saving CI artifacts or passing evidence to another tool.
+
 `runTest` records the supplied callback's outcome. To include separate framework
 hooks or runner timeouts, use `createTestAttempt` or an optional Node/Jest adapter;
 see the [JavaScript guide](../sdk/js/README.md). Go's `StartTest` uses `t.Cleanup`
@@ -115,7 +128,7 @@ One suite owner finalizes capture after every worker finishes. Workers finish
 their own attempts; they must not stop a shared run early. Await captured HTTP
 calls and expected dependency work before finishing an attempt.
 
-## 5. Choose concurrency and inspect the bundle
+## 5. Choose concurrency and inspect the artifacts
 
 A shared application must propagate W3C `traceparent` from its server to its
 outbound clients for parallel test correlation. The mock needs no instrumentation.
@@ -123,12 +136,11 @@ Without application propagation, run tests and requests sequentially or give
 each worker its own application and Wiretap runtime. See
 [tracing and concurrency](otel-adoption.md).
 
-SDK/API responses give the exact `index.md` and `docs/viewer.html` paths.
-Wiretap writes the views automatically; no report command is needed. Keep the
-whole bundle for CI or agent use.
+SDK/API responses give the exact `bundle_path`. Read `bundle.json` and its
+referenced `tests/*.json` recordings to inspect requests, responses and outcomes.
+Keep the complete directory for CI or external analysis.
 
-Start with **Test runs** to inspect the recorded requests and responses, then
-**Contract coverage** for the conditions those executions covered. A mock reply
-records a test assumption, not proof of real provider behaviour. See the
-[bundle guide](okf-bundles.md) for interpretation and the
+Generate coverage with `wiretap report --bundle <path> --output coverage.json`.
+A mock reply records a test assumption, not proof of real provider behaviour.
+See the [artifact guide](artifacts.md) for exports and the
 [coverage rules](contract-coverage-rules.md) for supported cases and limits.

@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/phrond/wiretap/internal/artifact"
-	"github.com/phrond/wiretap/internal/bundle"
-	"github.com/phrond/wiretap/internal/postman"
+	"github.com/mattlock83/wiretap/internal/artifact"
+	"github.com/mattlock83/wiretap/internal/bundle"
+	"github.com/mattlock83/wiretap/internal/postman"
 )
 
 func TestCLIPostmanMockCollections(t *testing.T) {
@@ -71,7 +71,7 @@ func TestCLIPostmanMockCollections(t *testing.T) {
 				t.Fatalf("catalog test requests or responses lost: %+v", catalog.Items)
 			}
 			if tc.option == "--output" {
-				if info, err := os.Stat(output); err != nil || info.Mode().Perm() != 0600 {
+				if info, err := os.Stat(output); err != nil || (runtime.GOOS != "windows" && info.Mode().Perm() != 0600) {
 					t.Fatalf("requested SUT filename or existing permissions lost: %v, %v", info, err)
 				}
 			}

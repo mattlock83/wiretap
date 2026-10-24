@@ -13,8 +13,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/phrond/wiretap/internal/artifact"
-	"github.com/phrond/wiretap/internal/bundle"
+	"github.com/mattlock83/wiretap/internal/artifact"
+	"github.com/mattlock83/wiretap/internal/bundle"
+	"github.com/mattlock83/wiretap/internal/redact"
+	"github.com/mattlock83/wiretap/internal/runoutput"
+
 	"gopkg.in/yaml.v3"
 )
 
@@ -126,22 +129,20 @@ func (a API) Schemas(id, role string) []artifact.SchemaRef {
 }
 
 type Config struct {
-	Version      int                 `yaml:"version"`
-	Application  *bundle.Application `yaml:"application,omitempty"`
-	HTTPListen   string              `yaml:"http_listen"`
-	ProxyListen  string              `yaml:"proxy_listen"`
-	OutputDir    string              `yaml:"output_dir"`
-	CADir        string              `yaml:"ca_dir"`
-	SUT          API                 `yaml:"sut"`
-	Dependencies map[string]API      `yaml:"dependencies"`
-	Path         string              `yaml:"-"`
-	Publication  *Publication        `yaml:"publication,omitempty"`
-}
-
-// Publication opts into maintaining a repository bundle when a run finishes.
-type Publication struct {
-	Config string `yaml:"config"`
-	Output string `yaml:"output"`
+	ProviderMappings map[string]bundle.ProviderRef `yaml:"provider_mappings,omitempty"`
+	TestSource       map[string]any                `yaml:"test_source,omitempty"`
+	SUTSource        map[string]any                `yaml:"sut_source,omitempty"`
+	Version          int                           `yaml:"version"`
+	Application      *bundle.Application           `yaml:"application,omitempty"`
+	HTTPListen       string                        `yaml:"http_listen"`
+	ProxyListen      string                        `yaml:"proxy_listen"`
+	OutputDir        string                        `yaml:"output_dir"`
+	CADir            string                        `yaml:"ca_dir"`
+	SUT              API                           `yaml:"sut"`
+	Dependencies     map[string]API                `yaml:"dependencies"`
+	Path             string                        `yaml:"-"`
+	Outputs          *runoutput.Config             `yaml:"outputs,omitempty"`
+	Redactions       []artifact.Redaction          `yaml:"redactions,omitempty"`
 }
 
 // Load discovers .wiretap.yaml in the working directory or its ancestors.
@@ -195,8 +196,25 @@ func Decode(raw []byte, path string) (*Config, error) {
 	if cfg.Version != 1 {
 		return nil, fmt.Errorf("%s: version must be 1", path)
 	}
+	if cfg.Outputs != nil {
+		if err := cfg.Outputs.Validate(); err != nil {
+			return nil, err
+		}
+	}
+	if err := redact.Validate(cfg.Redactions); err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+
+	}
 	if cfg.Application != nil && strings.TrimSpace(cfg.Application.Name) == "" && strings.TrimSpace(cfg.Application.ID) == "" {
 		return nil, fmt.Errorf("%s: application requires a name or ID", path)
+	}
+	for id, provider := range cfg.ProviderMappings {
+		if _, ok := cfg.Dependencies[id]; !ok {
+			return nil, fmt.Errorf("provider mapping %q is not a configured dependency", id)
+		}
+		if err := provider.Validate(); err != nil {
+			return nil, err
+		}
 	}
 	cfg.Path = path
 	base := filepath.Dir(path)
@@ -213,6 +231,17 @@ func Decode(raw []byte, path string) (*Config, error) {
 			return "", fmt.Errorf("%s: environment variable %s is not set", path, missing)
 		}
 		return result, nil
+	}
+	for _, source := range []map[string]any{cfg.TestSource, cfg.SUTSource} {
+		for key, value := range source {
+			if text, ok := value.(string); ok {
+				expanded, err := expand(text)
+				if err != nil {
+					return nil, err
+				}
+				source[key] = expanded
+			}
+		}
 	}
 	resolve := func(value string) (string, error) {
 		v, err := expand(value)
@@ -231,20 +260,6 @@ func Decode(raw []byte, path string) (*Config, error) {
 		*field, err = resolve(*field)
 		if err != nil {
 			return nil, err
-		}
-	}
-	if cfg.Publication != nil {
-		if cfg.Publication.Config == "" {
-			return nil, errors.New("publication.config is required")
-		}
-		if cfg.Publication.Output == "" {
-			cfg.Publication.Output = "docs/knowledge"
-		}
-		for _, field := range []*string{&cfg.Publication.Config, &cfg.Publication.Output} {
-			*field, err = resolve(*field)
-			if err != nil {
-				return nil, err
-			}
 		}
 	}
 	for _, field := range []*string{&cfg.HTTPListen, &cfg.ProxyListen} {
@@ -354,6 +369,19 @@ func Decode(raw []byte, path string) (*Config, error) {
 			return a, fmt.Errorf("%s: kind must be mock, service, or unknown", id)
 		}
 		return a, nil
+	}
+	if cfg.Outputs != nil && cfg.Outputs.PostmanOptions != nil {
+		for id, target := range cfg.Outputs.PostmanOptions.GRPC {
+			target.URL, err = expand(target.URL)
+			if err != nil {
+				return nil, err
+			}
+			target.ProtoRoot, err = resolve(target.ProtoRoot)
+			if err != nil {
+				return nil, err
+			}
+			cfg.Outputs.PostmanOptions.GRPC[id] = target
+		}
 	}
 	cfg.SUT, err = resolveAPI("sut", cfg.SUT)
 	if err != nil {
