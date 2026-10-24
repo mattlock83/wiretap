@@ -6,6 +6,7 @@ and print their capture directory. Inspect `bundle.json`, the attempts in
 
 | Example | Demonstrates | Requirements |
 | --- | --- | --- |
+| [Existing Jest suite](existing-jest/README.md) | Pinned external Express API, 120 unchanged tests, automatic SDK setup and Postman parser checks. | Git, Go 1.26+, Node.js 22+. |
 | [Complete Node suite](node-suite/README.md) | Copyable two-file harness, startup/readiness, negative tests, framework outcomes and finalization after failures. | Go 1.26+, Node.js 22+. |
 | [Basic REST](basic-rest/README.md) | Existing Node tests and an HTTP dependency mock; optional parallel Jest capture. | Go 1.26+, Node.js 22+, Bash and curl. |
 | [Microsvc Transactions](microsvc-transactions/README.md) | A real service image, an Accounts mock, disposable database state and authenticated tests. | Go 1.26+, Python 3.9+, Docker and the documented local images. |

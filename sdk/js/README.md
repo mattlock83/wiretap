@@ -1,9 +1,70 @@
 # JavaScript test integration
 
 The SDK is a library called from your existing test framework's lifecycle.
-It controls a separately running Wiretap service over HTTP and creates standard
-trace contexts for capture. It does not discover, schedule, or launch tests.
+It creates standard trace contexts and controls Wiretap over HTTP. The Jest
+configuration helper can start and stop a local Wiretap process; other integrations
+can connect to an existing runtime. Your framework discovers and runs the tests.
 TypeScript declarations are included. See [configuration](https://github.com/mattlock83/wiretap/blob/main/docs/configuration.md).
+
+## Existing Jest tests: automatic capture
+
+For Jest 29 or 30 on Node 22+, wrap your existing Node-environment configuration:
+
+```js
+// jest.config.cjs
+const { withWiretap } = require('@wiretap/sdk/jest');
+module.exports = withWiretap({
+  setupFilesAfterEnv: ['<rootDir>/test/wiretap.cjs'],
+  // Keep your existing testMatch, reporters and other Jest settings here.
+});
+```
+
+For an Express app, register its existing request handler:
+
+```js
+// test/wiretap.cjs
+const { captureJest } = require('@wiretap/sdk/jest');
+captureJest({ app: require('../app') });
+```
+
+Point your shared client at `process.env.WIRETAP_SUT_URL`, for example
+`supertest(process.env.WIRETAP_SUT_URL || app)`. Keep existing test files,
+assertions, mocks and fixtures. For an already running service, put its URL in
+`.wiretap.yaml` and omit the setup file entirely.
+
+Run your usual Jest command with `wiretap` on PATH, or set `WIRETAP_BINARY` to a
+local build. `withWiretap(config, { binary, config, outputDir })` accepts explicit
+paths too. The helper selects available ports, starts one run, captures every
+executed test, finalizes outputs even when tests fail, and stops Wiretap. It writes
+`last-run.json` and a bounded `wiretap.log` alongside the run directories. Keep
+that complete output directory in CI. On interruption, the helper stops its
+process and preserves the receipt; an unfinished attempt leaves an interrupted
+archive without complete exports. Nothing is downloaded or published by the
+SDK; install a Wiretap binary and the local SDK package first.
+
+Configure your API contract and outputs in `.wiretap.yaml`:
+
+```yaml
+version: 1
+application: {id: my-api}
+output_dir: artifacts/wiretap
+outputs: {coverage: [json, text], postman: true}
+sut:
+  id: my-api
+  kind: service
+  schema: openapi.yaml
+  # Add url: http://127.0.0.1:8080 for an already running service.
+```
+
+Capture includes ordinary `beforeEach`/`afterEach` work and preserves sync,
+async, `done`, generator, parameterized and retry outcomes. Suite-wide hooks are
+outside individual attempts. Files run with one worker by default; parallel
+workers require `{ explicitSession: true }` and propagated trace context through
+the SUT. Jest concurrent tests also require that propagation. Custom environments,
+watch mode and a shared multi-project run require a project-owned integration.
+
+Try the [pinned external Express/Jest demo](https://github.com/mattlock83/wiretap/tree/main/examples/existing-jest),
+which compares all 120 existing test outcomes before and after capture.
 
 ## Recommended Node integration
 
@@ -75,10 +136,10 @@ and standard OTel context binding, or call the language-independent
 [HTTP API](https://github.com/mattlock83/wiretap/blob/main/docs/runtime-api.md). Manual setup alone does not activate a
 span around unrelated callbacks. Use a new handle/root for every retry.
 
-## Optional Jest adapter and concurrency
+## Selective Jest adapter and concurrency
 
 Use `createJestSuite` from `@wiretap/sdk/jest` with
-`testEnvironment: "@wiretap/sdk/jest-environment"`. The Jest 30 adapter supports
+`testEnvironment: "@wiretap/sdk/jest-environment"`. The explicit adapter supports
 async callbacks, `.concurrent`, `.each`, `.only`, `.skip`, and retries.
 Ordinary tests default to serial capture. Use `--runInBand` for an uninstrumented
 shared SUT. Concurrent tests use explicit sessions; set `explicitSession: true`
@@ -96,15 +157,19 @@ individual attempts. See [tracing adoption](https://github.com/mattlock83/wireta
 
 Start the binary with `wiretap [--config path]` using the existing harness. The
 SDK connects through HTTP at `WIRETAP_BASE_URL` or `http://127.0.0.1:18000`.
-It never invokes the CLI or launches the test process. `.wiretap.yaml` supplies
-shared defaults; SDK options can override them.
+The lower-level `startCapture` client never launches processes. `.wiretap.yaml`
+supplies shared defaults; SDK options can override them. For managed local
+ownership outside Jest, `startManagedRuntime` from `@wiretap/sdk/managed-runtime`
+returns `{ baseUrl, sutUrl, runtimeInfo, close }`; await `close()` in a `finally`
+block. It owns only Wiretap, leaving the application and test runner to your harness.
 
 A single suite can call `startCapture` in suite setup and `finishRun` in suite
 cleanup. When multiple suites/workers share a run, set `manageRuntime: false`
 in worker integrations. Their `finishRun` calls check local cleanup but leave
 the shared capture running. One global suite owner calls `/v1/finishRun` after
-all workers have completed. The optional Jest adapter always uses this shared
-mode; configure Jest global teardown as shown in the
+all workers have completed. Jest test workers always use this shared
+mode. `withWiretap` supplies the global owner automatically; for an externally
+managed runtime, configure global teardown as shown in the
 [example](https://github.com/mattlock83/wiretap/blob/main/examples/basic-rest/jest-teardown.cjs).
 
 `finishRun` finalizes the bundle and stops the capture proxy. It does not stop

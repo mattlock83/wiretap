@@ -1,0 +1,302 @@
+openapi: 3.0.3
+info:
+  title: Property Management API demo
+  version: 1.0.0
+  description: |
+    Contract for the ten routes in the upstream app.js, using the valid resource
+    shapes asserted by its existing tests. The tests expect required, non-null
+    fields; the mock application does not enforce all of those constraints.
+    Keep those discrepancies visible as request/response validation evidence.
+
+    PUT and DELETE return text/html because the application uses Express
+    res.send(string). Creation returns only the generated identifier.
+    Resource identifiers are generated UUIDs, but lookup parameters accept any
+    nonempty string and return 404 when the identifier is unknown.
+
+    property_id is a nonempty string, not a UUID or a foreign-key guarantee:
+    successful tests use values such as "random" and "updated-id". The upstream
+    tests do not establish a consistent tenant-name grammar beyond a nonempty
+    string. Business rules and exact error-message assertions remain in Jest.
+paths:
+  /properties:
+    get:
+      operationId: listProperties
+      summary: List properties
+      responses:
+        '200':
+          description: Current properties in the mock database
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Property'
+    post:
+      operationId: createProperty
+      summary: Create a property
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PropertyInput'
+      responses:
+        '201':
+          $ref: '#/components/responses/Created'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /properties/{id}:
+    parameters:
+      - $ref: '#/components/parameters/ResourceId'
+    get:
+      operationId: getProperty
+      summary: Get a property
+      responses:
+        '200':
+          description: The requested property
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Property'
+        '404':
+          $ref: '#/components/responses/PropertyNotFound'
+    put:
+      operationId: updateProperty
+      summary: Update a property
+      description: The existing suite sends the full resource, including its id.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PropertyUpdate'
+      responses:
+        '200':
+          description: Property updated
+          content:
+            text/html:
+              schema:
+                type: string
+                enum: [Property updated]
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/PropertyNotFound'
+    delete:
+      operationId: deleteProperty
+      summary: Delete a property
+      responses:
+        '200':
+          description: Property deleted
+          content:
+            text/html:
+              schema:
+                type: string
+                enum: [Property deleted]
+        '404':
+          $ref: '#/components/responses/PropertyNotFound'
+  /tenants:
+    get:
+      operationId: listTenants
+      summary: List tenants
+      responses:
+        '200':
+          description: Current tenants in the mock database
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Tenant'
+    post:
+      operationId: createTenant
+      summary: Create a tenant
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TenantInput'
+      responses:
+        '201':
+          $ref: '#/components/responses/Created'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /tenants/{id}:
+    parameters:
+      - $ref: '#/components/parameters/ResourceId'
+    get:
+      operationId: getTenant
+      summary: Get a tenant
+      responses:
+        '200':
+          description: The requested tenant
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tenant'
+        '404':
+          $ref: '#/components/responses/TenantNotFound'
+    put:
+      operationId: updateTenant
+      summary: Update a tenant
+      description: The existing suite sends the full resource, including its id.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TenantUpdate'
+      responses:
+        '200':
+          description: Tenant updated
+          content:
+            text/html:
+              schema:
+                type: string
+                enum: [Tenant updated]
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/TenantNotFound'
+    delete:
+      operationId: deleteTenant
+      summary: Delete a tenant
+      responses:
+        '200':
+          description: Tenant deleted
+          content:
+            text/html:
+              schema:
+                type: string
+                enum: [Tenant deleted]
+        '404':
+          $ref: '#/components/responses/TenantNotFound'
+components:
+  parameters:
+    ResourceId:
+      name: id
+      in: path
+      required: true
+      description: Resource identifier; an unknown value returns 404.
+      schema:
+        type: string
+        minLength: 1
+  schemas:
+    Identifier:
+      type: string
+      format: uuid
+      description: Identifier generated by uuid.v4 when a resource is created.
+    NonemptyString:
+      type: string
+      minLength: 1
+    PropertyInput:
+      type: object
+      required: [name, address, rent, is_available]
+      properties:
+        name:
+          $ref: '#/components/schemas/NonemptyString'
+        address:
+          $ref: '#/components/schemas/NonemptyString'
+        rent:
+          type: number
+          minimum: 0
+          exclusiveMinimum: true
+        is_available:
+          type: boolean
+    PropertyUpdate:
+      allOf:
+        - $ref: '#/components/schemas/PropertyInput'
+        - type: object
+          required: [id]
+          properties:
+            id:
+              $ref: '#/components/schemas/NonemptyString'
+    Property:
+      allOf:
+        - $ref: '#/components/schemas/PropertyInput'
+        - type: object
+          required: [id]
+          properties:
+            id:
+              $ref: '#/components/schemas/Identifier'
+    TenantInput:
+      type: object
+      required: [name, email, phone, property_id]
+      properties:
+        name:
+          $ref: '#/components/schemas/NonemptyString'
+        email:
+          type: string
+          pattern: '^[^\s@]+@[^\s@]+\.[^\s@]+$'
+          description: The email expression used by the application.
+        phone:
+          type: string
+          pattern: '^\d+$'
+          description: One or more digits, matching the application expression.
+        property_id:
+          $ref: '#/components/schemas/NonemptyString'
+    TenantUpdate:
+      allOf:
+        - $ref: '#/components/schemas/TenantInput'
+        - type: object
+          required: [id]
+          properties:
+            id:
+              $ref: '#/components/schemas/NonemptyString'
+    Tenant:
+      allOf:
+        - $ref: '#/components/schemas/TenantInput'
+        - type: object
+          required: [id]
+          properties:
+            id:
+              $ref: '#/components/schemas/Identifier'
+    Created:
+      type: object
+      required: [id]
+      properties:
+        id:
+          $ref: '#/components/schemas/Identifier'
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+          minLength: 1
+  responses:
+    Created:
+      description: Resource created
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Created'
+    BadRequest:
+      description: Empty or invalid resource payload
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    PropertyNotFound:
+      description: No property has this identifier
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error]
+            properties:
+              error:
+                type: string
+                enum: [Invalid property ID]
+    TenantNotFound:
+      description: No tenant has this identifier
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error]
+            properties:
+              error:
+                type: string
+                enum: [Invalid tenant ID]

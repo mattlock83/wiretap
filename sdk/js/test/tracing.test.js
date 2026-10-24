@@ -92,6 +92,23 @@ test('a framework can finish a timed-out attempt before its callback settles', a
   assert.equal(completed.length, 1);
   assert.equal(completed[0].body.status, 'fail');
 });
+test('finishing during async session setup prevents the late test callback', async t => {
+  const { runtime, calls } = await fixture(t);
+  let initialized, release, ran = false;
+  const ready = new Promise(resolve => { initialized = resolve; });
+  const gate = new Promise(resolve => { release = resolve; });
+  t.after(() => release());
+  const attempt = runtime.createTestAttempt('timed out during setup', {
+    async onSession() { initialized(); await gate; }
+  });
+  const running = attempt.run(() => { ran = true; });
+  await ready;
+  await attempt.finish({ status: 'fail', error: new Error('runner timeout') });
+  release();
+  await assert.rejects(running, /already closed/);
+  assert.equal(ran, false);
+  assert.deepEqual(calls.filter(call => call.path === '/v1/teardownTest').map(call => call.body.status), ['fail']);
+});
 test('schema evidence preserves outcomes while callback and onSession failures close error spans', async t => {
   const exporter = new InMemorySpanExporter();
   const provider = new BasicTracerProvider({ spanProcessors: [new SimpleSpanProcessor(exporter)] });

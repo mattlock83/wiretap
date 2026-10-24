@@ -52,7 +52,7 @@ try {
 
   const packed = JSON.parse((await mustRun(npm, ['pack', '--ignore-scripts', '--json', '--pack-destination', scratch], { cwd: path.join(root, 'sdk/js') })).stdout)[0];
   const packedPaths = new Set(packed.files.map(file => file.path));
-  for (const required of ['LICENSE', 'src/index.js', 'src/index.d.ts', 'src/node-test.js', 'tracing.js', 'tracing.d.ts', 'jest.js', 'jest.d.ts', 'jest-environment.js']) {
+  for (const required of ['LICENSE', 'src/index.js', 'src/index.d.ts', 'src/node-test.js', 'tracing.js', 'tracing.d.ts', 'jest.js', 'jest.d.ts', 'jest-environment.js', 'src/managed-runtime.js', 'src/managed-runtime.d.ts', 'src/jest-config.js', 'src/jest-config.d.ts', 'src/jest-global-setup.js', 'src/jest-global-teardown.js']) {
     assert.ok(packedPaths.has(required), `packed SDK omitted ${required}`);
   }
   assert.ok([...packedPaths].every(name => !name.startsWith('test/') && !name.includes('node_modules/') && !name.endsWith('package-lock.json')), 'packed SDK includes development files');
@@ -66,6 +66,9 @@ try {
     const assert = require('node:assert/strict');
     assert.equal(typeof require('@wiretap/sdk').startCapture, 'function');
     assert.equal(typeof require('@wiretap/sdk/jest').createJestSuite, 'function');
+    assert.equal(typeof require('@wiretap/sdk/jest').withWiretap, 'function');
+    assert.equal(typeof require('@wiretap/sdk/jest').captureJest, 'function');
+    assert.equal(typeof require('@wiretap/sdk/managed-runtime').startManagedRuntime, 'function');
     assert.ok(require.resolve('@wiretap/sdk/jest-environment'));
     assert.equal(require('@wiretap/sdk/package.json').license, 'MIT');
   `], { cwd: consumer });

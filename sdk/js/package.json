@@ -25,7 +25,7 @@
     "jest": "^30.5.2"
   },
   "peerDependencies": {
-    "jest-environment-node": "^30.0.0"
+    "jest-environment-node": "^29.7.0 || ^30.0.0"
   },
   "peerDependenciesMeta": {
     "jest-environment-node": {
@@ -65,6 +65,11 @@
       "default": "./jest.js"
     },
     "./jest-environment": "./jest-environment.js",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./managed-runtime": {
+      "types": "./src/managed-runtime.d.ts",
+      "require": "./src/managed-runtime.js",
+      "default": "./src/managed-runtime.js"
+    }
   }
 }

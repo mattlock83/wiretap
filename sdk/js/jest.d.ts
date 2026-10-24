@@ -1,4 +1,8 @@
 import type { Config, Runtime } from './src';
+import type { RequestListener } from 'node:http';
+export { withWiretap } from './src/jest-config';
+/** Capture existing Jest callbacks, optionally hosting an Express/Node app. */
+export function captureJest(config?: Config & { app?: RequestListener }, api?: object): void;
 interface JestTest {
   (name: string, callback: (...args: any[]) => unknown, timeout?: number): unknown;
   each(cases: readonly unknown[]): (name: string, callback: (...args: any[]) => unknown, timeout?: number) => unknown;

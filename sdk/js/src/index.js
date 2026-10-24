@@ -209,6 +209,9 @@ class Runtime {
               sessionInitialization ??= Promise.resolve().then(() => options.onSession(session));
               await sessionInitialization;
             }
+            // A framework timeout may close the attempt while async setup is
+            // still settling. Never start the test body after that cleanup.
+            if (scope.closed) throw new Error("capture attempt is already closed");
             return fn(session);
           }
         ));

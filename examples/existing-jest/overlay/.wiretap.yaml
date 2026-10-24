@@ -1,0 +1,12 @@
+version: 1
+application:
+  id: property-management-demo
+  name: Property Management Demo
+output_dir: artifacts/wiretap
+outputs:
+  coverage: [json, text]
+  postman: true
+sut:
+  id: property-api
+  kind: service
+  schema: wiretap/openapi.yaml

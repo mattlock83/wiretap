@@ -4,7 +4,9 @@ Wiretap runs beside your existing test suite and produces raw evidence, Postman
 collections and API coverage. Use isolated services, synthetic data and dummy
 secrets: captured traffic is retained as sent, with no built-in redaction.
 
-The recommended Node integration below uses the outcome-aware adapter, two test
+For existing Jest 29/30 suites, start with the [automatic Jest setup](../sdk/js/README.md#existing-jest-tests-automatic-capture): wrap the configuration, point the shared client at the capture URL, and keep your tests unchanged. The [external Express demo](../examples/existing-jest/README.md) exercises this against 120 existing tests.
+
+The Node integration below uses the outcome-aware adapter, two test
 files and one parent harness. The framework keeps ownership of test execution
 and outcomes, including cleanup-hook failures. For Go, use the
 [Go SDK](../sdk/go/README.md); for native gRPC, use the
