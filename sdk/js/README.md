@@ -79,10 +79,13 @@ Ordinary tests default to serial capture. Use `--runInBand` for an uninstrumente
 shared SUT. Concurrent tests use explicit sessions; set `explicitSession: true`
 for multiple workers sharing a SUT that propagates W3C context.
 
-The wrapper activates context for the callback and optional
-`testDefaults.onSession`. Separate Jest `beforeEach`/`afterEach` requests are
-outside that trace; put captured setup/cleanup within the callback. See
-[tracing adoption](../../docs/otel-adoption.md) for examples and limitations.
+The environment activates the same attempt context for the test and ordinary
+Jest `beforeEach`/`afterEach` hooks, including nested suites. Sync, promise/async,
+and `done` fixture hooks retain their ordering and runner outcomes. The optional
+`testDefaults.onSession` runs once before the first captured callback. Jest does
+not run per-test hooks for `.concurrent` tests; put their fixtures in the test
+callback with `try/finally`. Suite-wide `beforeAll`/`afterAll` work is outside
+individual attempts. See [tracing adoption](../../docs/otel-adoption.md).
 
 ## Configuration and ownership
 
@@ -102,6 +105,13 @@ mode; configure Jest global teardown as shown in the
 `finishRun` finalizes the bundle and stops the capture proxy. It does not stop
 the HTTP control process. Your harness owns that process and the SUT/mocks.
 No environment flag changes run ownership implicitly.
+
+Control API requests have a 30-second deadline by default. A default teardown
+deadline expands to the requested drain plus ten seconds when necessary.
+`timeoutMs` overrides every control deadline; set `timeoutMs: 0` to opt out.
+Choose a larger positive value for slow contract discovery or finalization.
+Timeouts reject with `code: "WIRETAP_CONTROL_TIMEOUT"` and identify the control
+operation; surface these errors through your test or suite cleanup.
 
 SDK configuration can override project defaults, or supply the full setup when
 there is no `.wiretap.yaml`:

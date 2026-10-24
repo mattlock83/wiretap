@@ -125,7 +125,7 @@ func (w *Writer) attachEvents(attempt *Attempt) error {
 	return nil
 }
 
-func restoreEventBody(root string, flows map[string]*artifact.Flow, seen map[string]bool, ref BodyRef) error {
+func restoreEventBody(root string, flows map[string]*artifact.Flow, seen map[string]bool, ref BodyRef, readFile func(string) ([]byte, error)) error {
 	key := eventBodyKey(ref.FlowID, ref.EventID, ref.PayloadName)
 	if seen[key] || ref.EventID == "" || ref.PayloadName == "" || ref.MessageIndex != nil || ref.Kind != "" {
 		return fmt.Errorf("invalid or duplicate event attachment %q", key)
@@ -153,7 +153,7 @@ func restoreEventBody(root string, flows map[string]*artifact.Flow, seen map[str
 	if ref.Path != "payloads/"+ref.SHA256+".bin" {
 		return fmt.Errorf("invalid event payload path %q", ref.Path)
 	}
-	raw, err := readRef(root, ref.FileRef)
+	raw, err := readRef(root, ref.FileRef, readFile)
 	if err != nil {
 		return err
 	}

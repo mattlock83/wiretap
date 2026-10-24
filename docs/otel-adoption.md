@@ -166,9 +166,13 @@ Jest's `done` callback style is not supported here. Completion comes from Jest's
 runner, including timeouts, assertion-count checks, and per-test hook failures.
 Retries create new roots even if the old callback has not finished.
 
-The wrapper covers the test callback and its optional `testDefaults.onSession`
-hook. Put captured setup and cleanup inside that callback using `try/finally`;
-requests in separate Jest `beforeEach`/`afterEach` hooks are outside the trace.
+The environment activates the attempt context for ordinary `beforeEach` and
+`afterEach` hooks as well as the test callback, including nested hooks. Sync,
+promise/async and `done` fixture hooks keep Jest's ordering; hook failures and
+timeouts affect the recorded outcome. `testDefaults.onSession` runs once before
+the first captured callback. `beforeAll`/`afterAll` are suite work and have no
+individual test owner. Jest does not execute per-test hooks for `.concurrent`
+tests; keep concurrent fixtures in the test callback using `try/finally`.
 Ordinary tests default to serial capture. For an uninstrumented shared SUT,
 run Jest with `--runInBand` and avoid `.concurrent`. Concurrent tests always
 use explicit sessions; set `explicitSession: true` on the suite for multiple
@@ -178,7 +182,7 @@ SUT propagation, or isolate each worker's runtime and SUT.
 Jest suites always use `manageRuntime: false`. Start Wiretap with the existing
 harness and call `POST /v1/finishRun` from Jest global teardown after **all**
 workers finish. See the [example teardown](../examples/basic-rest/jest-teardown.cjs).
-Bundles and views are automatic. Worker teardown never stops another worker's
+Run finalization writes the raw archive. Worker teardown never stops another worker's
 proxy. Existing host-level OTel instrumentation can be preloaded with `NODE_OPTIONS`; set
 `WIRETAP_EXISTING_OTEL=1` to keep the Jest environment from installing duplicates.
 

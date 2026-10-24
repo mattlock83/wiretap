@@ -62,7 +62,7 @@ func (w *Writer) attachGRPCStatus(attempt *Attempt) error {
 	return nil
 }
 
-func restoreGRPCStatusBody(root string, flows map[string]*artifact.Flow, seen map[string]bool, ref BodyRef) error {
+func restoreGRPCStatusBody(root string, flows map[string]*artifact.Flow, seen map[string]bool, ref BodyRef, readFile func(string) ([]byte, error)) error {
 	key := statusBodyKey(ref.FlowID, ref.Kind, ref.StatusDetailIndex)
 	if seen[key] || ref.Phase != "response" || ref.MessageIndex != nil || ref.EventID != "" || ref.PayloadName != "" {
 		return fmt.Errorf("invalid or duplicate gRPC status attachment %q", key)
@@ -102,7 +102,7 @@ func restoreGRPCStatusBody(root string, flows map[string]*artifact.Flow, seen ma
 	if info.Size() > int64(limit) {
 		return fmt.Errorf("status attachment %q exceeds retention limit", key)
 	}
-	raw, err := readRef(root, ref.FileRef)
+	raw, err := readRef(root, ref.FileRef, readFile)
 	if err != nil {
 		return err
 	}

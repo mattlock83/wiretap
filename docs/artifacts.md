@@ -45,6 +45,9 @@ validation diagnostics and detailed condition results under `contract_coverage`.
 These reports are derived from the raw artifact and never become evidence inputs.
 `POST /v1/report` exposes the same JSON coverage calculation through the runtime.
 
+Offline loading uses finite [archive loading budgets](archive-loading.md),
+including limits on individual files, cumulative bytes and file reads.
+
 Operation coverage shows which declared operations were observed. Contract
 coverage measures finite, supported cases from supplied specs, such as an enum
 value, optional-field absence or a declared numeric boundary. One test attempt

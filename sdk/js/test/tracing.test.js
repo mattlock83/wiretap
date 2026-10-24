@@ -125,3 +125,21 @@ test('falsy thrown values remain test failures even when cleanup also fails', as
   assert.ok(rejected);
   assert.equal(calls.find(call => call.path === '/v1/teardownTest').body.status, 'fail');
 });
+
+test('separate fixture activations initialize onSession once per attempt', async t => {
+  const { runtime } = await fixture(t);
+  let initialized = 0;
+  const attempt = runtime.createTestAttempt('fixtures', {
+    onSession(session) {
+      initialized++;
+      assert.equal(runtime.activeSession, session);
+    }
+  });
+  for (const phase of ['setup', 'test', 'cleanup']) {
+    await attempt.run(session => {
+      assert.equal(runtime.activeSession, session, phase);
+      assert.equal(initialized, 1, phase);
+    });
+  }
+  await attempt.finish();
+});

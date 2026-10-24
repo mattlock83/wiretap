@@ -206,7 +206,7 @@ func TestRichStatusRejectsOversizedDetailInventoryBeforeAttachmentRead(t *testin
 	status := &artifact.GrpcStatusDetails{Wire: &artifact.Body{Encoding: "base64"}, Details: make([]artifact.GrpcStatusDetail, grpccontract.StatusDetailLimit+1)}
 	flow := &artifact.Flow{ID: "oversized", Response: artifact.Message{GRPC: &artifact.GrpcMessage{StatusDetails: status}}}
 	ref := BodyRef{FlowID: flow.ID, Phase: "response", Kind: "status-envelope", Representation: "bytes", FileRef: FileRef{Path: "missing", SHA256: strings.Repeat("0", 64)}}
-	err := restoreGRPCStatusBody(t.TempDir(), map[string]*artifact.Flow{flow.ID: flow}, map[string]bool{}, ref)
+	err := restoreGRPCStatusBody(t.TempDir(), map[string]*artifact.Flow{flow.ID: flow}, map[string]bool{}, ref, os.ReadFile)
 	if err == nil || !strings.Contains(err.Error(), "detail inventory exceeds") {
 		t.Fatalf("oversized inventory reached attachment processing: %v", err)
 	}

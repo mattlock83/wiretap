@@ -40,6 +40,9 @@ export interface TestOptions {
 export interface Config extends TestOptions {
   outputs?: OutputOptions;
   baseUrl?: string;
+  /** Control HTTP deadline: 30 seconds by default; default teardown allows its
+   * requested drain plus 10 seconds. Set 0 to disable or a positive integer to
+   * override every control request, including cleanup. */
   timeoutMs?: number;
   proxy?: true | { listenAddr?: string; targetUrl?: string };
   instrumentation?: boolean;

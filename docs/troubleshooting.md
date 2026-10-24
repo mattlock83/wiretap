@@ -71,9 +71,10 @@ Wiretap keeps the test grouping and leaves ambiguous parents unset.
 
 Use `createJestSuite` with `testEnvironment: "@wiretap/sdk/jest-environment"`.
 The environment bridges Jest's VM and native clients. The adapter activates
-context around async test callbacks, including `.each`/`.concurrent`, and
-`testDefaults.onSession`. Separate `beforeEach`/`afterEach` requests are outside
-that trace. See the [Jest guide](otel-adoption.md#optional-jest-adapter).
+context around test callbacks, including `.each`/`.concurrent`, and ordinary
+`beforeEach`/`afterEach` fixtures. Jest skips per-test hooks for `.concurrent`;
+put concurrent fixtures inside the callback. Suite-wide hooks do not belong to
+an individual attempt. See the [Jest guide](otel-adoption.md#optional-jest-adapter).
 
 ### Teardown reports incomplete capture or `finishRun` returns 409
 

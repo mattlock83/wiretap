@@ -90,6 +90,8 @@ type Server struct {
 	grpcHandler       http.HandlerFunc
 	grpcProvider      bool
 	connections       Connections
+	transportMu       sync.Mutex
+	transport         *http.Transport
 }
 
 // Recorder receives captured HTTP exchanges.
@@ -247,6 +249,9 @@ func (s *Server) SetCaptureTLS(certFile, keyFile string) error {
 
 // Stop gracefully stops the proxy server.
 func (s *Server) Stop(ctx context.Context) error {
+	// Also release pools created by direct ServeHTTP users. Shutdown first drains
+	// active handlers so their final responses cannot repopulate the idle pool.
+	defer s.closeHTTPTransport()
 	if s.server == nil {
 		return nil
 	}
@@ -322,7 +327,7 @@ func (s *Server) SetGRPCProvider(enabled bool) {
 }
 
 func (s *Server) handleHTTP(w http.ResponseWriter, r *http.Request) {
-	transport := s.httpTransport(nil)
+	transport := s.httpTransport()
 	started := time.Now()
 
 	req := r.Clone(r.Context())
@@ -375,9 +380,6 @@ func (s *Server) handleHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		req.Host = parsed.Host
-		if parsed.Scheme == "https" {
-			transport = s.httpTransport(s.upstreamTLSConfig(parsed.Host))
-		}
 	}
 
 	if req.URL.Scheme == "" || req.URL.Host == "" {
@@ -397,9 +399,6 @@ func (s *Server) handleHTTP(w http.ResponseWriter, r *http.Request) {
 		req.URL.Host = parsed.Host
 		req.URL.Path = strings.TrimSuffix(parsed.Path, "/") + req.URL.Path
 		req.Host = parsed.Host
-		if parsed.Scheme == "https" {
-			transport = s.httpTransport(s.upstreamTLSConfig(parsed.Host))
-		}
 	}
 	req.RequestURI = ""
 	req.Header.Del("Proxy-Connection")
@@ -601,7 +600,7 @@ func (s *Server) proxyTLSRequest(clientTLS net.Conn, req *http.Request) bool {
 	}
 	record := s.exchangeRecorder(req, admission, isDependency)
 
-	resp, err := s.httpTransport(s.upstreamTLSConfig(req.URL.Host)).RoundTrip(req)
+	resp, err := s.httpTransport().RoundTrip(req)
 	if err != nil {
 		capturedRequest := reqCapture.Body()
 		record(HTTPExchange{
@@ -674,29 +673,41 @@ type capturingResponseBody struct {
 	io.Closer
 }
 
-func (s *Server) httpTransport(tlsConfig *tls.Config) *http.Transport {
-	return &http.Transport{
+func (s *Server) httpTransport() *http.Transport {
+	s.transportMu.Lock()
+	defer s.transportMu.Unlock()
+	if s.transport != nil {
+		return s.transport
+	}
+	var tlsConfig *tls.Config
+	if s.cfg.UpstreamTLSConfig != nil {
+		tlsConfig = s.cfg.UpstreamTLSConfig.Clone()
+		// Transport derives SNI and certificate verification from each request's
+		// host. Never pin a shared pool to the first upstream's server name.
+		tlsConfig.ServerName = ""
+	}
+	s.transport = &http.Transport{
 		Proxy:                 nil,
 		DialContext:           (&net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
 		ForceAttemptHTTP2:     false,
 		TLSClientConfig:       tlsConfig,
 		DisableCompression:    false,
 		MaxIdleConns:          100,
+		MaxIdleConnsPerHost:   10,
 		IdleConnTimeout:       90 * time.Second,
 		TLSHandshakeTimeout:   10 * time.Second,
 		ExpectContinueTimeout: 1 * time.Second,
 	}
+	return s.transport
 }
 
-func (s *Server) upstreamTLSConfig(hostport string) *tls.Config {
-	host := hostOnly(hostport)
-	base := &tls.Config{ServerName: host}
-	if s.cfg.UpstreamTLSConfig == nil {
-		return base
+func (s *Server) closeHTTPTransport() {
+	s.transportMu.Lock()
+	defer s.transportMu.Unlock()
+	if s.transport != nil {
+		s.transport.CloseIdleConnections()
+		s.transport = nil
 	}
-	clone := s.cfg.UpstreamTLSConfig.Clone()
-	clone.ServerName = host
-	return clone
 }
 
 func proxyStream(a net.Conn, b net.Conn) {

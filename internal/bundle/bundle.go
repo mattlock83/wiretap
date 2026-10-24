@@ -662,7 +662,24 @@ func writeAtomic(path string, data []byte) error {
 // Load verifies canonical evidence, then restores body and schema paths for
 // existing coverage and export calculations. It never reads generated Markdown.
 func Load(root string) (*Run, []*artifact.Artifact, error) {
-	root, err := filepath.Abs(root)
+	limits, err := loadLimitsFromEnv()
+	if err != nil {
+		return nil, nil, err
+	}
+	return LoadWithLimits(root, limits)
+}
+
+// LoadWithLimits verifies and restores an archive within explicit read budgets.
+// Zero limit fields use DefaultLoadLimits; negative fields are invalid. Every
+// file read, including manifests, imported contracts and repeated attachments,
+// consumes the same budget. Errors wrapping ErrLoadLimit identify budget failures.
+func LoadWithLimits(root string, limits LoadLimits) (*Run, []*artifact.Artifact, error) {
+	limits, err := limits.normalized()
+	if err != nil {
+		return nil, nil, err
+	}
+	reader := &archiveReader{limits: limits}
+	root, err = filepath.Abs(root)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -670,7 +687,7 @@ func Load(root string) (*Run, []*artifact.Artifact, error) {
 	if err != nil {
 		return nil, nil, fmt.Errorf("read run evidence: %w", err)
 	}
-	data, err := os.ReadFile(runPath)
+	data, err := reader.readFile(runPath)
 	if err != nil {
 		return nil, nil, fmt.Errorf("read run evidence: %w", err)
 	}
@@ -698,10 +715,15 @@ func Load(root string) (*Run, []*artifact.Artifact, error) {
 	if !safeID(run.RunID) || run.Revision == 0 || run.StartedAt.IsZero() || (run.RunState != "open" && run.RunState != "complete" && run.RunState != "interrupted") {
 		return nil, nil, errors.New("invalid run identity or revision")
 	}
+	// Each inventory entry requires at least one read. Reject an impossible
+	// inventory before allocating per-attempt bookkeeping or resolving contracts.
+	if err := reader.requireReads(len(run.Attempts)); err != nil {
+		return nil, nil, fmt.Errorf("run test inventory: %w", err)
+	}
 	// Preserve portable paths for inventory validation after captures are loaded.
 	storedInventory := run
 	storedInventory.Schemas = append([]artifact.SchemaRef(nil), run.Schemas...)
-	if err := resolveSchemas(root, run.Schemas); err != nil {
+	if err := resolveSchemas(root, run.Schemas, reader); err != nil {
 		return nil, nil, err
 	}
 	if err := validateContractResolutions(run); err != nil {
@@ -714,7 +736,7 @@ func Load(root string) (*Run, []*artifact.Artifact, error) {
 			return nil, nil, fmt.Errorf("duplicate or invalid attempt ID %q", ref.AttemptID)
 		}
 		seen[ref.AttemptID] = true
-		data, err := readRef(root, ref.FileRef)
+		data, err := readRef(root, ref.FileRef, reader.readFile)
 		if err != nil {
 			return nil, nil, fmt.Errorf("attempt %q: %w", ref.AttemptID, err)
 		}
@@ -736,7 +758,7 @@ func Load(root string) (*Run, []*artifact.Artifact, error) {
 		if !sameJSON(attempt.RequiredCapabilities, requiredCapabilities(attempt.Capture.Schemas, []*artifact.Artifact{&attempt.Capture})) {
 			return nil, nil, fmt.Errorf("attempt %q capability declaration disagrees with content", ref.AttemptID)
 		}
-		if err := resolveSchemas(root, attempt.Capture.Schemas); err != nil {
+		if err := resolveSchemas(root, attempt.Capture.Schemas, reader); err != nil {
 			return nil, nil, err
 		}
 		if err := validateGRPCMessages(attempt.EvidenceVersion, attempt.Capture); err != nil {
@@ -744,6 +766,9 @@ func Load(root string) (*Run, []*artifact.Artifact, error) {
 		}
 		if err := validateGRPCSnapshot(run, attempt.Capture); err != nil {
 			return nil, nil, err
+		}
+		if err := reader.requireReads(len(attempt.Bodies)); err != nil {
+			return nil, nil, fmt.Errorf("attempt %q attachment inventory: %w", ref.AttemptID, err)
 		}
 		flowMap := map[string]*artifact.Flow{}
 		for i := range attempt.Capture.Traffic {
@@ -756,7 +781,7 @@ func Load(root string) (*Run, []*artifact.Artifact, error) {
 		seenBodies := map[string]bool{}
 		for _, bodyRef := range attempt.Bodies {
 			if strings.HasPrefix(bodyRef.Kind, "status-") {
-				if err := restoreGRPCStatusBody(root, flowMap, seenBodies, bodyRef); err != nil {
+				if err := restoreGRPCStatusBody(root, flowMap, seenBodies, bodyRef, reader.readFile); err != nil {
 					return nil, nil, err
 				}
 				continue
@@ -765,7 +790,7 @@ func Load(root string) (*Run, []*artifact.Artifact, error) {
 				return nil, nil, errors.New("status selector on non-status attachment")
 			}
 			if bodyRef.Phase == "event" {
-				if err := restoreEventBody(root, flowMap, seenBodies, bodyRef); err != nil {
+				if err := restoreEventBody(root, flowMap, seenBodies, bodyRef, reader.readFile); err != nil {
 					return nil, nil, err
 				}
 				continue
@@ -831,7 +856,7 @@ func Load(root string) (*Run, []*artifact.Artifact, error) {
 					return nil, nil, fmt.Errorf("gRPC body %q exceeds attachment limit", key)
 				}
 			}
-			raw, err := readRef(root, bodyRef.FileRef)
+			raw, err := readRef(root, bodyRef.FileRef, reader.readFile)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -870,10 +895,10 @@ func Load(root string) (*Run, []*artifact.Artifact, error) {
 				}
 			}
 		}
-		if err := verifyGRPCStatus(attempt.Capture, seenBodies); err != nil {
+		if err := verifyGRPCStatusUsing(attempt.Capture, seenBodies, reader.readFile); err != nil {
 			return nil, nil, err
 		}
-		if err := verifyGRPCPayloads(attempt.Capture); err != nil {
+		if err := verifyGRPCPayloadsUsing(attempt.Capture, reader.readFile); err != nil {
 			return nil, nil, err
 		}
 		if err := validateEventAttachments(attempt.Capture, seenBodies); err != nil {
@@ -908,7 +933,16 @@ func supportedEvidenceVersion(value string) bool {
 	return err == nil && minor >= 0
 }
 
-func resolveSchemas(root string, schemas []artifact.SchemaRef) error {
+func resolveSchemas(root string, schemas []artifact.SchemaRef, reader *archiveReader) error {
+	frozenCount := 0
+	for _, ref := range schemas {
+		if ref.Source.Type != "omitted" {
+			frozenCount++
+		}
+	}
+	if err := reader.requireReads(frozenCount); err != nil {
+		return fmt.Errorf("contract inventory: %w", err)
+	}
 	for i := range schemas {
 		ref := &schemas[i]
 		if err := validateSchemaBoundary(*ref); err != nil {
@@ -939,7 +973,7 @@ func resolveSchemas(root string, schemas []artifact.SchemaRef) error {
 		if err != nil {
 			return err
 		}
-		data, err := os.ReadFile(path)
+		data, err := reader.readFile(path)
 		if err != nil {
 			return err
 		}
@@ -959,7 +993,7 @@ func resolveSchemas(root string, schemas []artifact.SchemaRef) error {
 		if err != nil {
 			return err
 		}
-		manifestData, err := os.ReadFile(manifestPath)
+		manifestData, err := reader.readFile(manifestPath)
 		if err != nil {
 			return err
 		}
@@ -980,6 +1014,9 @@ func resolveSchemas(root string, schemas []artifact.SchemaRef) error {
 		} else if manifest.Profile != "" || manifest.Type != "" {
 			return fmt.Errorf("schema %q has an unsupported package profile", ref.ID)
 		}
+		if err := reader.requireReads(len(manifest.Files)); err != nil {
+			return fmt.Errorf("schema %q file inventory: %w", ref.ID, err)
+		}
 		foundRoot := false
 		seen := map[string]bool{}
 		for _, file := range manifest.Files {
@@ -996,7 +1033,7 @@ func resolveSchemas(root string, schemas []artifact.SchemaRef) error {
 			if !strings.HasPrefix(file.Path, setBase+"/") || filepath.ToSlash(filepath.Clean(file.Path)) != file.Path {
 				return fmt.Errorf("schema %q manifest file outside schema set", ref.ID)
 			}
-			if _, err := readRef(root, FileRef{Path: file.Path, SHA256: file.SHA256}); err != nil {
+			if _, err := readRef(root, FileRef{Path: file.Path, SHA256: file.SHA256}, reader.readFile); err != nil {
 				return err
 			}
 		}
@@ -1028,12 +1065,12 @@ func containedPath(root, rel string) (string, error) {
 	return actual, nil
 }
 
-func readRef(root string, ref FileRef) ([]byte, error) {
+func readRef(root string, ref FileRef, readFile func(string) ([]byte, error)) ([]byte, error) {
 	path, err := containedPath(root, ref.Path)
 	if err != nil {
 		return nil, err
 	}
-	data, err := os.ReadFile(path)
+	data, err := readFile(path)
 	if err != nil {
 		return nil, err
 	}

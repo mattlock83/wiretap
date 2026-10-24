@@ -91,7 +91,11 @@ function normalizeDependencies(value) {
 class CoreClient {
   constructor(config = {}) {
     this.baseUrl = config.baseUrl || process.env.WIRETAP_BASE_URL || DEFAULT_BASE_URL;
-    this.timeoutMs = config.timeoutMs || 0;
+    this.timeoutMs = config.timeoutMs ?? 30000;
+    if (!Number.isSafeInteger(this.timeoutMs) || this.timeoutMs < 0 || this.timeoutMs > 2147483647) {
+      throw new Error("timeoutMs must be an integer between 0 and 2147483647 (0 disables the control request deadline)");
+    }
+    this.explicitTimeout = config.timeoutMs !== undefined;
   }
 
   startRun(payload) { return this._request("POST", "/v1/startRun", payload || {}); }
@@ -104,11 +108,21 @@ class CoreClient {
     if (typeof fetch !== "function") throw new Error("global fetch is not available; require Node.js >= 18");
     const options = { method, headers: { "content-type": "application/json" } };
     if (payload !== undefined) options.body = JSON.stringify(payload);
-    let timeout;
-    if (this.timeoutMs > 0) {
-      const controller = new AbortController();
+    // A default cleanup deadline must allow the requested runtime drain. An
+    // explicitly configured deadline (including zero) always belongs to the caller.
+    const timeoutMs = !this.explicitTimeout && path === "/v1/teardownTest"
+      ? Math.max(this.timeoutMs, (payload?.drain_timeout_ms ?? 5000) + 10000)
+      : this.timeoutMs;
+    let timeout, controller, deadlineError;
+    if (timeoutMs > 0) {
+      controller = new AbortController();
       options.signal = controller.signal;
-      timeout = setTimeout(() => controller.abort(), this.timeoutMs);
+      timeout = setTimeout(() => {
+        deadlineError = new Error(`Wiretap control request ${method} ${path} timed out after ${timeoutMs}ms`);
+        deadlineError.name = "TimeoutError";
+        deadlineError.code = "WIRETAP_CONTROL_TIMEOUT";
+        controller.abort(deadlineError);
+      }, timeoutMs);
       timeout.unref?.();
     }
     try {
@@ -122,6 +136,8 @@ class CoreClient {
         throw err;
       }
       return body;
+    } catch (error) {
+      throw deadlineError || error;
     } finally {
       if (timeout) clearTimeout(timeout);
     }
@@ -173,6 +189,7 @@ class Runtime {
     // rejection immediately while preserving it for those awaited paths.
     ready.catch(() => {});
     let finishing;
+    let sessionInitialization;
     return {
       run: async (fn) => {
         const session = await ready;
@@ -180,7 +197,12 @@ class Runtime {
         return this.sessions.run(scope, () => tracing.api.context.with(
           tracing.api.trace.setSpan(tracing.api.ROOT_CONTEXT, session.span),
           async () => {
-            if (typeof options.onSession === "function") await options.onSession(session);
+            if (typeof options.onSession === "function") {
+              // Separate fixture callbacks share one attempt. Initialize the
+              // session once even when setup, test and cleanup activate it.
+              sessionInitialization ??= Promise.resolve().then(() => options.onSession(session));
+              await sessionInitialization;
+            }
             return fn(session);
           }
         ));
