@@ -41,6 +41,10 @@ ordinary fixture hooks and automatic exports.
 
 ## Add it to your suite
 
+Follow the [getting started guide](docs/getting-started-existing-tests.md) for the
+complete workflow: integrate your tests, understand the artifacts, share them
+under application folders, and check consumer/provider assumptions.
+
 For Jest, Playwright Test and Mocha, follow the [SDK setup guide](sdk/js/README.md):
 configure the contract, add the runner wrapper and route your shared client
 through capture. The adapter handles startup and finalization.

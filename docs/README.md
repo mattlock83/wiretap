@@ -8,6 +8,10 @@ text summary gives the first view of results. Offline assumption checks compare
 captured mocks with provider test examples. Use isolated tests with synthetic
 data and dummy secrets: retained traffic is unchanged.
 
+Start with [Getting started](getting-started-existing-tests.md) for one path from
+test integration to artifacts, shared application folders and consumer/provider
+checks. Use the guides below for configuration and format details.
+
 ## Which specs do I need?
 
 | Boundary | Default | Where its contract comes from |
@@ -26,7 +30,7 @@ and the [shared snapshot workflow](assumption-checks.md#share-provider-snapshots
 
 | Guide | Use it to |
 | --- | --- |
-| [Capture existing tests](getting-started-existing-tests.md) | Configure boundaries, connect lifecycle hooks and run capture. |
+| [Getting started](getting-started-existing-tests.md) | Integrate existing tests, understand and share artifacts, then check consumer/provider assumptions. |
 | [Go suite](../examples/go-suite/README.md) | Add `Run` and `StartTest` to an ordinary HTTP test suite. |
 | [Plain Node suite](../examples/node-suite/README.md) | Use the managed runtime helper with two test files and one suite owner. |
 | [Runnable examples](../examples/README.md) | Try HTTP/gRPC capture, database fixtures or Microsvc Transactions. |
