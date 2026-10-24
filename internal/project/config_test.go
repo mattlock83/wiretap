@@ -24,24 +24,13 @@ func TestLoadResolvesPathsAndEnvironmentFromProject(t *testing.T) {
 	}
 }
 
-func TestProjectRedactionPolicy(t *testing.T) {
-	base := "version: 1\nsut: {schema_required: false}\nredactions:\n"
-	cfg, err := Decode([]byte(base+"  - {field: request.query.token, rule: remove}\n  - {field: response.body.password, rule: mask}\n"), filepath.Join(t.TempDir(), ".wiretap.yaml"))
-	if err != nil || len(cfg.Redactions) != 2 || cfg.Redactions[0].Field != "request.query.token" {
-		t.Fatalf("central policy lost: %+v %v", cfg, err)
-	}
-	for _, value := range []string{"{field: request.qurey.token, rule: remove}", "{field: request.body.token, rule: misspelled}", "{field: request.url.nonexistent, rule: mask}"} {
-		if _, err := Decode([]byte(base+"  - "+value+"\n"), filepath.Join(t.TempDir(), ".wiretap.yaml")); err == nil {
-			t.Fatalf("invalid policy accepted: %s", value)
-		}
-	}
-}
 func TestLoadRejectsMistakesAndKeepsSpecsRequired(t *testing.T) {
 	for _, tc := range []struct{ name, body, want string }{
 		{"missing schema", "version: 1\nsut: {}", "schema is required"},
 		{"misspelled option", "version: 1\nsut: {schema: api.yaml}\noutputz: bad", "field outputz"},
 		{"missing variable", "version: 1\nsut: {schema: '${WIRETAP_TEST_MISSING_VARIABLE}'}", "is not set"},
 		{"extra document", "version: 1\nsut: {schema: api.yaml}\n---\nversion: 1", "one YAML document"},
+		{"redaction removed", "version: 1\nsut: {schema_required: false}\nredactions: []", "field redactions"},
 		{"publication removed", "version: 1\nsut: {schema: api.yaml}\npublication: {config: publication.json}", "field publication"},
 		{"SUT generation", "version: 1\nsut: {generate_schema: true}", "field generate_schema"},
 		{"dependency generation", "version: 1\nsut: {schema: api.yaml}\ndependencies:\n  dep: {generate_schema: true}", "field generate_schema"},

@@ -21,8 +21,8 @@ func TestConfiguredBoundariesSurviveRunWithNoTests(t *testing.T) {
 	cfg.Proxy.CABaseDir = t.TempDir()
 	appInstance, err := New(Deps{Config: cfg, Project: &project.Config{
 		Application:  &bundle.Application{Name: "Orders", ID: "orders-app", Description: "Order processing"},
-		SUT:          project.API{ID: "orders", Kind: "service", URL: "http://localhost:8080"},
-		Dependencies: map[string]project.API{"payments": {Kind: "service", URL: "http://localhost:8081"}},
+		SUT:          project.API{ID: "orders", Kind: "service", URL: "http://localhost:8080", SchemaRequired: new(bool)},
+		Dependencies: map[string]project.API{"payments": {Kind: "service", URL: "http://localhost:8081", SchemaRequired: new(bool)}},
 	}})
 	if err != nil {
 		t.Fatal(err)

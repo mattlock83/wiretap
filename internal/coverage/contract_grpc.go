@@ -296,7 +296,7 @@ func decodeGRPCDirection(side *artifact.GrpcMessage, desc protoreflect.MessageDe
 }
 
 func decodeGRPCPayloadCoverage(side *artifact.GrpcMessage, p artifact.GrpcPayload, desc protoreflect.MessageDescriptor, contract *grpccontract.Contract) (protoreflect.Message, error) {
-	if p.Redacted || p.DecodeError != "" || p.Wire == nil || p.Wire.Truncated {
+	if p.Redacted || p.DecodeError != "" || p.Wire == nil || p.Wire.Truncated || p.Wire.Omitted || p.Wire.Redacted {
 		return nil, fmt.Errorf("payload is redacted, undecodable or unavailable")
 	}
 	raw, err := base64.StdEncoding.DecodeString(p.Wire.Bytes)

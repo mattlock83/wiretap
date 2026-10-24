@@ -72,7 +72,7 @@ func TestSchemaExceptionDoesNotWeakenOtherAPIsOrIgnoreInvalidSpecs(t *testing.T)
 		{ID: "strict", Protocol: "http", Channel: "sut_to_dependency", AssetID: "strict", Request: artifact.Message{HTTP: &artifact.HttpMessage{Method: "GET", URL: "http://dep/not-in-spec"}}, Response: artifact.Message{HTTP: &artifact.HttpMessage{Status: 200}}},
 	}}
 	applySchemaValidation(art)
-	if art.SchemaValidation.Status != "fail" || art.TestCase.Status != "fail" || len(art.SchemaValidation.Skipped) != 1 {
+	if art.SchemaValidation.Status != "fail" || art.TestCase.Status != "pass" || len(art.SchemaValidation.Skipped) != 1 {
 		t.Fatalf("strict validation lost: %#v", art.SchemaValidation)
 	}
 	for _, issue := range art.SchemaValidation.Errors {

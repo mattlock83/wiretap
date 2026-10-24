@@ -186,7 +186,7 @@ func exportGRPCFlow(flow artifact.Flow, ordinal int) (GRPCRequest, error) {
 	ordered := []orderedMessage{}
 	for direction, message := range []*artifact.GrpcMessage{req, res} {
 		for _, payload := range message.Messages {
-			if payload.DecodeState != "decoded" || payload.DecodeError != "" || payload.Body == nil || payload.Body.Truncated || payload.Body.Encoding != "json" || payload.Observation == nil {
+			if payload.Redacted || payload.DecodeState != "decoded" || payload.DecodeError != "" || payload.Body == nil || payload.Body.Truncated || payload.Body.Omitted || payload.Body.Redacted || payload.Body.Encoding != "json" || payload.Observation == nil {
 				return GRPCRequest{}, fmt.Errorf("all gRPC messages need complete decoded JSON projections")
 			}
 			// UseNumber avoids losing precision in protobuf JSON numeric fields.

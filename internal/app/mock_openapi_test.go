@@ -8,7 +8,7 @@ import (
 	"github.com/mattlock83/wiretap/internal/artifact"
 )
 
-func TestMockCapturePreservesContractEnforcement(t *testing.T) {
+func TestMockCapturePreservesContractValidationAndFrameworkOutcome(t *testing.T) {
 	for _, supplied := range []bool{false, true} {
 		name := "omitted spec"
 		if supplied {
@@ -48,12 +48,12 @@ paths:
 			response.Body.Close()
 			result := postDependencyJSON(t, control.URL, "/v1/teardownTest", map[string]any{"session_id": session["session_id"], "status": "pass"})
 			capture := dependencyArtifact(t, result)
-			wantStatus, wantValidation := "pass", "skipped"
+			wantValidation := "skipped"
 			if supplied {
-				wantStatus, wantValidation = "fail", "fail"
+				wantValidation = "fail"
 			}
-			if capture.TestCase.Status != wantStatus || capture.SchemaValidation.Status != wantValidation {
-				t.Fatalf("capture changed enforcement: %s / %s", capture.TestCase.Status, capture.SchemaValidation.Status)
+			if capture.TestCase.Status != "pass" || capture.SchemaValidation.Status != wantValidation {
+				t.Fatalf("capture changed framework outcome or validation: %s / %s", capture.TestCase.Status, capture.SchemaValidation.Status)
 			}
 			if len(capture.Traffic) != 1 || capture.Traffic[0].Response.HTTP == nil || capture.Traffic[0].Response.HTTP.Body == nil || capture.Traffic[0].Response.HTTP.Body.Text != `{"value":42}` {
 				t.Fatalf("archive lost actual mock response: %+v", capture.Traffic)

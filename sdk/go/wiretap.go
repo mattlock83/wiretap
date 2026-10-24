@@ -94,7 +94,6 @@ type TestOptions struct {
 	Identity        *TestIdentity  `json:"test_identity,omitempty"`
 	Application     *Application   `json:"application,omitempty"`
 	SchemaRequired  *bool          `json:"schema_required,omitempty"`
-	Redactions      []Redaction    `json:"redactions,omitempty"`
 	APIID           string         `json:"api_id,omitempty"`
 	SUTTargetKind   string         `json:"sut_target_kind,omitempty"`
 	TestSource      map[string]any `json:"test_source,omitempty"`
@@ -191,14 +190,11 @@ func (r *Runtime) StartTest(t testing.TB, options TestOptions) *Session {
 		var response struct {
 			Capture struct {
 				CaptureIncomplete bool `json:"capture_incomplete"`
-				TestCase          struct {
-					Status string `json:"status"`
-				} `json:"testcase"`
 			} `json:"capture"`
 		}
 		err := r.call(cleanupCtx, "/v1/teardownTest", map[string]any{"session_id": session.ID, "status": status, "drain_timeout_ms": timeout.Milliseconds()}, &response)
-		if err == nil && (response.Capture.CaptureIncomplete || response.Capture.TestCase.Status == "fail") {
-			err = fmt.Errorf("Wiretap capture or validation failed for %s", t.Name())
+		if err == nil && response.Capture.CaptureIncomplete {
+			err = fmt.Errorf("Wiretap capture incomplete for %s", t.Name())
 		}
 		if err != nil {
 			span.RecordError(err)

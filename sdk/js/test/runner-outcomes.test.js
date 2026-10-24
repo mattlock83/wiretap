@@ -30,6 +30,7 @@ for (const runner of ['node', 'jest']) test(`${runner} final outcomes include ti
   assert.equal(result.open, 0);
   const outcomes = Object.fromEntries(teardowns.map(call => [call.body.session_id, call.body.status]));
   assert.equal(outcomes.pass, 'pass');
+  assert.equal(outcomes.validation, 'pass');
   assert.equal(outcomes.timeout, 'fail');
   assert.ok(setups.every(call => call.body.explicit_session === false), 'serial fallback must stay available');
   if (runner === 'node') {
@@ -38,7 +39,8 @@ for (const runner of ['node', 'jest']) test(`${runner} final outcomes include ti
     assert.equal(outcomes['subtest failure'], 'fail');
     assert.equal(outcomes.skip, 'skip');
     const spans = Object.fromEntries(result.spans.map(span => [span.name, span.status]));
-    for (const name of ['hook failure', 'subtest failure', 'timeout', 'validation']) assert.equal(spans[name], 2, name);
+    for (const name of ['hook failure', 'subtest failure', 'timeout']) assert.equal(spans[name], 2, name);
+    assert.equal(spans.validation, 1);
   } else {
     assert.equal(outcomes['never settles'], 'fail');
     assert.equal(outcomes['assertion count'], 'fail');

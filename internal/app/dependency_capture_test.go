@@ -280,7 +280,7 @@ func TestDependencyUpstreamFailureRecords502AndTransportError(t *testing.T) {
 	}
 }
 
-func TestDependencySchemaViolationsFailTheOwningTest(t *testing.T) {
+func TestDependencySchemaViolationsPreserveTheOwningTestOutcome(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusTeapot)
 	}))
@@ -299,8 +299,8 @@ func TestDependencySchemaViolationsFailTheOwningTest(t *testing.T) {
 	art := dependencyArtifact(t, postDependencyJSON(t, control.URL, "/v1/teardownTest", map[string]any{
 		"session_id": session["session_id"], "status": "pass",
 	}))
-	if art.TestCase.Status != "fail" || art.SchemaValidation == nil || art.SchemaValidation.Status != "fail" {
-		t.Fatalf("dependency schema violation did not fail the test: %#v", art)
+	if art.TestCase.Status != "pass" || art.SchemaValidation == nil || art.SchemaValidation.Status != "fail" {
+		t.Fatalf("dependency schema violation changed the test outcome or lost validation evidence: %#v", art)
 	}
 	if len(art.SchemaValidation.Errors) == 0 || art.SchemaValidation.Errors[0].Channel != "sut_to_dependency" {
 		t.Fatalf("dependency schema issue lost channel attribution: %#v", art.SchemaValidation)

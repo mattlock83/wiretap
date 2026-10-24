@@ -187,3 +187,18 @@ func executeCapturingStdout(t *testing.T, args []string) (int, []byte) {
 	}
 	return code, data
 }
+
+func TestTextReportReadsVerifiedArchive(t *testing.T) {
+	root := postmanBundleFixture(t)
+	code, output := executeCapturingStdout(t, []string{"report", "--bundle", root, "--format", "text"})
+	if code != 0 || !strings.Contains(string(output), "2 (2 passed, 0 failed, 0 skipped)") {
+		t.Fatalf("text summary failed: exit %d: %s", code, output)
+	}
+	if err := os.WriteFile(filepath.Join(root, "tests", "read-items.json"), []byte("{}\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	code, output = executeCapturingStdout(t, []string{"report", "--bundle", root, "--format", "text"})
+	if code != 1 || len(output) != 0 {
+		t.Fatalf("corrupt evidence produced a summary: exit %d: %s", code, output)
+	}
+}

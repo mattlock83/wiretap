@@ -255,6 +255,8 @@ func (b *contractBuilder) measureHTTP(spec *openapiSpec, plans map[string]*contr
 			}
 		}
 		mediaKnown := true
+		// Older archives may record only rules without body availability flags.
+		// Original conditions cannot safely be inferred from their changed data.
 		for _, r := range a.Redactions {
 			field := strings.ToLower(strings.TrimSpace(r.Field))
 			if strings.HasPrefix(field, phase+".") {

@@ -15,7 +15,6 @@ import (
 
 	"github.com/mattlock83/wiretap/internal/artifact"
 	"github.com/mattlock83/wiretap/internal/bundle"
-	"github.com/mattlock83/wiretap/internal/redact"
 	"github.com/mattlock83/wiretap/internal/runoutput"
 
 	"gopkg.in/yaml.v3"
@@ -142,7 +141,6 @@ type Config struct {
 	Dependencies     map[string]API                `yaml:"dependencies"`
 	Path             string                        `yaml:"-"`
 	Outputs          *runoutput.Config             `yaml:"outputs,omitempty"`
-	Redactions       []artifact.Redaction          `yaml:"redactions,omitempty"`
 }
 
 // Load discovers .wiretap.yaml in the working directory or its ancestors.
@@ -200,10 +198,6 @@ func Decode(raw []byte, path string) (*Config, error) {
 		if err := cfg.Outputs.Validate(); err != nil {
 			return nil, err
 		}
-	}
-	if err := redact.Validate(cfg.Redactions); err != nil {
-		return nil, fmt.Errorf("%s: %w", path, err)
-
 	}
 	if cfg.Application != nil && strings.TrimSpace(cfg.Application.Name) == "" && strings.TrimSpace(cfg.Application.ID) == "" {
 		return nil, fmt.Errorf("%s: application requires a name or ID", path)

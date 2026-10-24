@@ -18,8 +18,9 @@ type Artifact struct {
 	Traffic            []Flow            `json:"traffic"`
 	Assertions         []Assertion       `json:"assertions,omitempty"`
 	SchemaValidation   *SchemaValidation `json:"schema_validation,omitempty"`
-	Redactions         []Redaction       `json:"redactions,omitempty"`
-	Meta               map[string]any    `json:"meta,omitempty"`
+	// Redactions is legacy read metadata. New captures never populate it.
+	Redactions []Redaction    `json:"redactions,omitempty"`
+	Meta       map[string]any `json:"meta,omitempty"`
 }
 
 // Normalize ensures deterministic ordering for slices.
@@ -209,11 +210,12 @@ type GrpcPayload struct {
 	Index       int                     `json:"index"`
 	Type        string                  `json:"type,omitempty"`
 	Compressed  bool                    `json:"compressed,omitempty"`
-	Redacted    bool                    `json:"redacted,omitempty"`
-	Body        *Body                   `json:"body,omitempty"`
-	Wire        *Body                   `json:"wire,omitempty"`
-	DecodeError string                  `json:"decode_error,omitempty"`
-	DecodeState string                  `json:"decode_state,omitempty"`
+	// Redacted preserves unavailable payload evidence from legacy archives.
+	Redacted    bool   `json:"redacted,omitempty"`
+	Body        *Body  `json:"body,omitempty"`
+	Wire        *Body  `json:"wire,omitempty"`
+	DecodeError string `json:"decode_error,omitempty"`
+	DecodeState string `json:"decode_state,omitempty"`
 }
 
 // HttpMessage represents a request or response payload.
@@ -235,7 +237,8 @@ type Body struct {
 	Text     string `json:"text,omitempty"`
 	Bytes    string `json:"bytes,omitempty"`
 	// Omitted means no retained representation is available, independently of
-	// whether capture was truncated. Redacted identifies a changed representation.
+	// whether capture was truncated. Redacted is legacy metadata identifying a
+	// changed representation; new captures never set it.
 	Omitted  bool `json:"omitted,omitempty"`
 	Redacted bool `json:"redacted,omitempty"`
 	// Truncated is true when only a bounded prefix was retained.
@@ -289,7 +292,8 @@ type SchemaValidationError struct {
 	Message  string `json:"message,omitempty"`
 }
 
-// Redaction defines a redaction rule applied before export.
+// Redaction describes a rule recorded by older producers. It exists only to
+// interpret legacy archives conservatively; runtime redaction is unsupported.
 type Redaction struct {
 	Field       string `json:"field"`
 	Rule        string `json:"rule"`

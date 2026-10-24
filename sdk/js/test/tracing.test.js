@@ -92,16 +92,27 @@ test('a framework can finish a timed-out attempt before its callback settles', a
   assert.equal(completed.length, 1);
   assert.equal(completed[0].body.status, 'fail');
 });
-test('schema errors and onSession failures close root spans and preserve original failures', async t => {
+test('schema evidence preserves outcomes while callback and onSession failures close error spans', async t => {
   const exporter = new InMemorySpanExporter();
   const provider = new BasicTracerProvider({ spanProcessors: [new SimpleSpanProcessor(exporter)] });
   const { runtime, calls } = await fixture(t, { tracerProvider: provider, teardown: { capture: { schema_validation: { status: 'fail', errors: [{ message: 'schema mismatch' }] } } } });
   const original = new Error('original failure');
   await assert.rejects(runtime.runTest('callback failure', () => { throw original; }), err => err === original);
-  await assert.rejects(runtime.runTest('schema failure', () => {}), /schema mismatch/);
+  await runtime.runTest('schema mismatch', () => {});
   await assert.rejects(runtime.runTest('hook failure', () => assert.fail('must not run'), { onSession() { throw original; } }), err => err === original);
   assert.equal(calls.filter(x => x.path === '/v1/teardownTest').length, 3);
-  assert.deepEqual(exporter.getFinishedSpans().map(span => span.status.code), [2, 2, 2]);
+  assert.deepEqual(exporter.getFinishedSpans().map(span => span.status.code), [2, 1, 2]);
+});
+test('incomplete capture still fails cleanup after a passing callback', async t => {
+  const exporter = new InMemorySpanExporter();
+  const provider = new BasicTracerProvider({ spanProcessors: [new SimpleSpanProcessor(exporter)] });
+  const { runtime, calls } = await fixture(t, { tracerProvider: provider, teardown: {
+    capture: { capture_incomplete: true, capture_diagnostics: ['capture drain timed out'] }
+  } });
+  await assert.rejects(runtime.runTest('capture failure', () => {}), /capture drain timed out/);
+  assert.equal(calls.find(call => call.path === '/v1/teardownTest').body.status, 'pass');
+  assert.equal(exporter.getFinishedSpans()[0].status.code, 2);
+  await runtime.finishRun();
 });
 test('shared suites do not stop the runtime, and manual sessions prevent premature shutdown', async t => {
   const { runtime, calls } = await fixture(t, { manageRuntime: false });
@@ -118,7 +129,7 @@ test('node:test binding gives each concurrent callback its own session', async t
 });
 
 test('falsy thrown values remain test failures even when cleanup also fails', async t => {
-  const { runtime, calls } = await fixture(t, { teardown: { capture: { schema_validation: { status: 'fail' } } } });
+  const { runtime, calls } = await fixture(t, { teardown: { capture: { capture_incomplete: true } } });
   let rejected = false;
   try { await runtime.runTest('falsy failure', () => { throw 0; }); }
   catch (error) { rejected = true; assert.equal(error, 0); }

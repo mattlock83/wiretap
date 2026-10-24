@@ -112,6 +112,10 @@ func GenerateAllWithOptions(path, name string, options Options) (*Result, error)
 			var problem error
 			if capture.CaptureIncomplete {
 				problem = errors.New("test capture is incomplete")
+			} else if len(capture.Redactions) > 0 {
+				// Legacy producers did not record which fields were changed, so
+				// their configured rules cannot safely be replayed as originals.
+				problem = errors.New("legacy capture contains redaction rules; original exchange is unavailable")
 			} else if flow.Protocol == "grpc" {
 				_, problem = exportGRPCFlow(flow, 1)
 			} else {
@@ -151,8 +155,8 @@ func httpCompleteness(flow artifact.Flow) error {
 		return fmt.Errorf("HTTP transport error: %s", flow.TransportError)
 	}
 	for _, message := range []*artifact.HttpMessage{flow.Request.HTTP, flow.Response.HTTP} {
-		if message.Body != nil && (message.Body.Truncated || message.Body.Omitted) {
-			return errors.New("HTTP body was truncated or omitted during capture")
+		if message.Body != nil && (message.Body.Truncated || message.Body.Omitted || message.Body.Redacted) {
+			return errors.New("HTTP body was truncated, omitted or changed by a legacy producer")
 		}
 	}
 	return nil

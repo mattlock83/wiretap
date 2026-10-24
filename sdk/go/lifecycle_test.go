@@ -89,7 +89,7 @@ func TestFinalGoTestOutcomes(t *testing.T) {
 			t.Errorf("wrong %s outcome: %v", name, outcomes[name])
 		}
 	}
-	if outcomes["skip"]["capture"] != "skip" || outcomes["validation"]["span"] != "Error" {
+	if outcomes["skip"]["capture"] != "skip" || outcomes["validation"]["capture"] != "pass" || outcomes["validation"]["span"] != "Ok" || outcomes["incomplete"]["span"] != "Error" {
 		t.Fatalf("wrong skip/validation outcomes: %v", outcomes)
 	}
 }
@@ -112,15 +112,19 @@ func runOutcomeFixture(t *testing.T) {
 		mu.Lock()
 		outcomes[name] = map[string]string{"capture": payload["status"].(string)}
 		mu.Unlock()
-		status := payload["status"].(string)
+		validation := "pass"
 		if name == "validation" {
-			status = "fail"
+			validation = "fail"
 		}
-		json.NewEncoder(w).Encode(map[string]any{"capture": map[string]any{"testcase": map[string]string{"status": status}}})
+		json.NewEncoder(w).Encode(map[string]any{"capture": map[string]any{
+			"testcase":           map[string]string{"status": payload["status"].(string)},
+			"schema_validation":  map[string]string{"status": validation},
+			"capture_incomplete": name == "incomplete",
+		}})
 	}))
 	defer server.Close()
 	runtime := Runtime{BaseURL: server.URL, TracerProvider: provider}
-	for _, name := range []string{"fatal", "cleanup", "skip", "validation"} {
+	for _, name := range []string{"fatal", "cleanup", "skip", "validation", "incomplete"} {
 		t.Run(name, func(t *testing.T) {
 			runtime.StartTest(t, TestOptions{SchemaRequired: new(bool)})
 			switch name {

@@ -312,6 +312,8 @@ func WriteReport(w io.Writer, report *Report, format string) error {
 		return errors.New("report is nil")
 	}
 	switch strings.ToLower(strings.TrimSpace(format)) {
+	case "text":
+		return writeTextReport(w, report)
 	case "yaml":
 		data, err := yaml.Marshal(report)
 		if err != nil {

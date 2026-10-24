@@ -19,6 +19,36 @@ async function controlServer(handler) {
   };
 }
 
+test("removed redaction options fail clearly before creating capture state", async () => {
+  const calls = [];
+  const server = await controlServer((path) => {
+    calls.push(path);
+    return {};
+  });
+  const removed = /redactions option was removed.*retains test traffic unchanged/;
+  try {
+    for (const redactions of [[], undefined, null, [{ field: "request.headers.authorization", rule: "mask" }]]) {
+      const config = { baseUrl: server.baseUrl, schemaRequired: false, redactions };
+      await assert.rejects(startCapture(config), removed);
+      await assert.rejects(startCapture({ baseUrl: server.baseUrl, schemaRequired: false, testDefaults: { redactions } }), removed);
+      assert.throws(() => createNodeTestSuite(config), removed);
+      assert.throws(() => createNodeTestSuite({ schemaRequired: false, testDefaults: { redactions } }), removed);
+      assert.throws(() => bindTest({}, () => {}, { redactions }), removed);
+    }
+    assert.deepEqual(calls, []);
+
+    const runtime = await startCapture({ baseUrl: server.baseUrl, schemaRequired: false });
+    await assert.rejects(runtime.setupTest({ name: "manual", redactions: [] }), removed);
+    assert.throws(() => runtime.createTestAttempt("framework", { redactions: [] }), removed);
+    await assert.rejects(runtime.runTest("callback", () => assert.fail("must not run"), { redactions: [] }), removed);
+    const wrapped = bindTest(runtime, () => assert.fail("must not register"));
+    assert.throws(() => wrapped("runner options", { redactions: [] }, () => {}), removed);
+    assert.deepEqual(calls, ["/v1/startRun"]);
+  } finally {
+    await server.close();
+  }
+});
+
 test("startCapture and named test session send capture-only payloads", async () => {
   const calls = [];
   const server = await controlServer((path, body) => {
@@ -202,7 +232,7 @@ test("explicit schema omission permits skipped validation and finalizes the run"
   }
 });
 
-test("strict schema violations fail teardown", async () => {
+test("schema violations remain evidence without failing teardown", async () => {
   const server = await controlServer((path, body) => {
     if (path === "/v1/startRun") return { sut_url: "http://127.0.0.1:20010", proxy: { listen_addr: "127.0.0.1:20010" } };
     if (path === "/v1/setupTest") return { session_id: "session-1", name: body.name, proxy_listen: "http://127.0.0.1:20010" };
@@ -212,7 +242,9 @@ test("strict schema violations fail teardown", async () => {
   try {
     const runtime = await startCapture({ baseUrl: server.baseUrl, schemas: [{ id: "sut-api" }] });
     await runtime.setupTest({ name: "invalid response" });
-    await assert.rejects(() => runtime.teardownTest({ status: "pass" }), /response body is invalid/);
+    const result = await runtime.teardownTest({ status: "pass" });
+    assert.equal(result.capture.schema_validation.status, "fail");
+    assert.equal(result.capture.schema_validation.errors[0].message, "response body is invalid");
   } finally {
     await server.close();
   }

@@ -2,6 +2,13 @@ const { AsyncLocalStorage } = require("node:async_hooks");
 const tracing = require("./tracing");
 const DEFAULT_BASE_URL = "http://127.0.0.1:18000";
 
+function rejectRemovedRedactions(options) {
+  if (options && (Object.hasOwn(options, "redactions") ||
+      (options.testDefaults && Object.hasOwn(options.testDefaults, "redactions")))) {
+    throw new Error("The redactions option was removed. Wiretap retains test traffic unchanged; use synthetic data and dummy secrets.");
+  }
+}
+
 function pickFirstString(...values) {
   for (const value of values) {
     if (typeof value === "string" && value.trim()) return value.trim();
@@ -154,7 +161,6 @@ class Runtime {
     this.defaultSchemas = [...schemaConfig.schemas];
     this.schemaRequired = config.schemaRequired;
     this.defaultDependencies = normalizeDependencies(config.dependencies);
-    this.defaultRedactions = config.redactions;
     this.application = config.application;
     this.apiId = pickFirstString(config.apiId);
     this.sutTargetKind = pickFirstString(config.sutTargetKind);
@@ -182,6 +188,7 @@ class Runtime {
   // Framework completion hooks own the outcome independently of callback
   // settlement. Keep this handle per attempt so fixtures and retries are isolated.
   createTestAttempt(name, options = {}) {
+    rejectRemovedRedactions(options);
     const scope = { session: null, closed: false };
     const ready = this.sessions.run(scope, () => this.setupTest({ ...options, name, identity: options.identity || (typeof name === "string" && name.trim() && Buffer.byteLength(name) <= 256 ? { id: name } : undefined) }));
     // A runner may execute hooks before invoking run/finish. Observe setup
@@ -245,6 +252,7 @@ class Runtime {
   }
 
   async setupTest(options = {}) {
+    rejectRemovedRedactions(options);
     const owner = this.sessions.getStore() || this;
     if (owner.closed) throw new Error("capture attempt is already closed");
     if (this.activeSession || owner.setupPending) throw new Error("a capture session is already active");
@@ -269,7 +277,6 @@ class Runtime {
       explicit_session: Boolean(options.explicitSession ?? this.explicitSession),
       schemas: schemaConfig.schemas,
       schema_required: options.schemaRequired ?? this.schemaRequired,
-      redactions: options.redactions ?? this.defaultRedactions,
       dependencies
     };
     const span = tracing.newTestSpan(payload.name || "test", this.tracerProvider);
@@ -307,16 +314,8 @@ class Runtime {
         ...(options.drainTimeoutMs !== undefined ? { drain_timeout_ms: options.drainTimeoutMs } : {}) });
       this.openSessions.delete(sessionId);
       if (session?.sessionId === sessionId) this.activeSession = null;
-      const validationStatus = response?.capture?.schema_validation?.status;
-      if (validationStatus === "fail") {
-        const errors = response.capture.schema_validation.errors || [];
-        const err = new Error(errors.map((entry) => entry.message || "schema violation").join("; ") || "schema validation failed");
-        err.schemaValidation = response.capture.schema_validation;
-        err.response = response;
-        throw err;
-      }
-      if (response?.capture?.capture_incomplete || (response?.capture?.testcase?.status === "fail" && options.status !== "fail")) {
-        const err = new Error(response.capture.capture_diagnostics?.join("; ") || "captured test failed");
+      if (response?.capture?.capture_incomplete) {
+        const err = new Error(response.capture.capture_diagnostics?.join("; ") || "Wiretap capture incomplete");
         err.response = response;
         throw err;
       }
@@ -341,6 +340,7 @@ class Runtime {
 
 async function startCapture(config = {}) {
   if (!config || typeof config !== "object" || Array.isArray(config)) throw new Error("startCapture config must be an object");
+  rejectRemovedRedactions(config);
   tracing.initializeTracing({ instrumentation: config.instrumentation !== false });
   schemaConfiguration(config, true);
   if (config.dependencies !== undefined) normalizeDependencies(config.dependencies);
@@ -355,7 +355,6 @@ async function startCapture(config = {}) {
     sutTargetKind: defaults.sut_target_kind,
     schemas: defaults.schemas,
     schemaRequired: defaults.schema_required,
-    redactions: defaults.redactions,
     testSource: defaults.test_source,
     sutSource: defaults.sut_source,
     dependencies: defaults.dependencies?.map(dependency => ({
@@ -374,11 +373,13 @@ async function startCapture(config = {}) {
 }
 
 function bindTest(runtimeOrGetter, testFn, defaults = {}) {
+  rejectRemovedRedactions(defaults);
   const resolveRuntime = typeof runtimeOrGetter === "function" ? runtimeOrGetter : () => runtimeOrGetter;
   if (typeof testFn !== "function") throw new Error("bindTest requires a test function");
   return function wiretapTest(name, optionsOrFn, maybeFn) {
     const fn = typeof optionsOrFn === "function" ? optionsOrFn : maybeFn;
     const testOptions = typeof optionsOrFn === "function" ? undefined : optionsOrFn;
+    rejectRemovedRedactions(testOptions);
     const run = async (t) => {
       const runtime = resolveRuntime();
       if (!runtime) throw new Error("bindTest could not resolve a Wiretap runtime");
@@ -392,6 +393,7 @@ function bindTest(runtimeOrGetter, testFn, defaults = {}) {
 }
 
 function createNodeTestSuite(config = {}) {
+  rejectRemovedRedactions(config);
   schemaConfiguration(config, true);
   normalizeDependencies(config.dependencies);
   const testApi = config.testApi || require("node:test");

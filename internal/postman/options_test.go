@@ -258,12 +258,43 @@ func TestReadPostmanOptionsRejectsOversizedDocument(t *testing.T) {
 	}
 }
 
-func TestStrictPostmanRefusesOmittedBodyEvenWithoutTruncation(t *testing.T) {
-	flow := httpFlow("omitted", "http://sut/", 200, grpcTime())
-	flow.Request.HTTP.Body = &artifact.Body{Encoding: "utf8", Omitted: true, Redacted: true, OriginalBytes: 200}
-	root := configuredBundle(t, bundle.Identity{}, capture("attempt", "omitted", flow.StartedAt, []artifact.Flow{flow}))
+func TestLegacyHTTPUnavailableEvidenceIsNotReplayed(t *testing.T) {
+	for _, kind := range []string{"omitted body", "redacted body", "legacy rules"} {
+		t.Run(kind, func(t *testing.T) {
+			flow := httpFlow("legacy", "http://sut/", 200, grpcTime())
+			c := capture("attempt", "legacy", flow.StartedAt, []artifact.Flow{flow})
+			switch kind {
+			case "omitted body":
+				flow.Request.HTTP.Body = &artifact.Body{Encoding: "utf8", Omitted: true, OriginalBytes: 200}
+			case "redacted body":
+				flow.Request.HTTP.Body = &artifact.Body{Encoding: "utf8", Text: "changed", Redacted: true}
+			case "legacy rules":
+				c.Redactions = []artifact.Redaction{{Field: "request.headers.authorization", Rule: "mask"}}
+			}
+			root := configuredBundle(t, bundle.Identity{}, c)
+			if _, err := GenerateAll(root, ""); err == nil {
+				t.Fatal("replayed unavailable original evidence")
+			}
+			result, err := GenerateAllWithOptions(root, "", Options{OmitIncomplete: true})
+			if err != nil || len(result.Diagnostics) != 1 || len(result.Exports[0].Collection.Items[0].Items) != 0 {
+				t.Fatalf("missing omission: %+v %v", result, err)
+			}
+		})
+	}
+}
+
+func TestLegacyGRPCUnavailableEvidenceIsNotReplayed(t *testing.T) {
+	flow, schema := grpcFixture(t, "Echo")
+	payload := &flow.Request.GRPC.Messages[0]
+	payload.Redacted, payload.Wire = true, nil
+	c := capture("attempt", "legacy", flow.StartedAt, []artifact.Flow{flow})
+	c.Schemas = []artifact.SchemaRef{schema}
+	root := configuredBundle(t, bundle.Identity{}, c)
+	if _, _, err := bundle.Load(root); err != nil {
+		t.Fatalf("legacy artifact became unreadable: %v", err)
+	}
 	if _, err := GenerateAll(root, ""); err == nil {
-		t.Fatal("replayed an omitted body as empty")
+		t.Fatal("replayed changed gRPC projection without original wire bytes")
 	}
 	result, err := GenerateAllWithOptions(root, "", Options{OmitIncomplete: true})
 	if err != nil || len(result.Diagnostics) != 1 {

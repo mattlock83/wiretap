@@ -143,7 +143,7 @@ func TestGRPCNegativeOutcomeDoesNotCoverOutput(t *testing.T) {
 }
 
 func TestGRPCCoverageQualityGates(t *testing.T) {
-	for _, name := range []string{"redacted", "missing", "bad-status", "unknown-fields", "unknown-enum", "failed", "incomplete", "bad-wire"} {
+	for _, name := range []string{"redacted", "omitted-wire", "redacted-wire", "missing", "bad-status", "unknown-fields", "unknown-enum", "failed", "incomplete", "bad-wire"} {
 		t.Run(name, func(t *testing.T) {
 			run, a := grpcConditionFixture(t, grpcConditionsProto, `{}`)
 			p := &a.Traffic[0].Request.GRPC.Messages[0]
@@ -151,6 +151,10 @@ func TestGRPCCoverageQualityGates(t *testing.T) {
 			case "redacted":
 				p.Redacted = true
 				p.Wire = nil
+			case "omitted-wire":
+				p.Wire.Omitted = true
+			case "redacted-wire":
+				p.Wire.Redacted = true
 			case "missing":
 				a.Traffic[0].Request.GRPC.Messages = nil
 			case "bad-status":

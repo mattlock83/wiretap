@@ -14,7 +14,6 @@ import (
 	"github.com/mattlock83/wiretap/internal/bundle"
 	"github.com/mattlock83/wiretap/internal/coverage"
 	"github.com/mattlock83/wiretap/internal/proxy"
-	"github.com/mattlock83/wiretap/internal/redact"
 	"github.com/mattlock83/wiretap/internal/runoutput"
 	"github.com/mattlock83/wiretap/internal/tracecontext"
 
@@ -116,7 +115,6 @@ type setupTestRequest struct {
 	Application     *bundle.Application      `json:"application,omitempty"`
 	SUTProtocol     string                   `json:"sut_protocol,omitempty"`
 	SchemaRequired  *bool                    `json:"schema_required,omitempty"`
-	Redactions      []artifact.Redaction     `json:"redactions,omitempty"`
 	APIID           string                   `json:"api_id,omitempty"`
 	SUTTargetKind   string                   `json:"sut_target_kind,omitempty"`
 	TestSource      map[string]any           `json:"test_source,omitempty"`
@@ -155,27 +153,6 @@ func (a *App) handleSetupTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	payload.Application = application
-	// Project rules are a minimum policy, even when a caller supplies its own
-	// rules or an empty list. Per-test rules can only add redactions.
-	if a.project != nil {
-		// Apply the minimum policy last so a per-test replacement cannot restore
-		// a value masked by a project rule for the same field.
-		rules := append(append([]artifact.Redaction(nil), payload.Redactions...), a.project.Redactions...)
-		last := map[artifact.Redaction]int{}
-		for i, rule := range rules {
-			last[rule] = i
-		}
-		payload.Redactions = nil
-		for i, rule := range rules {
-			if last[rule] == i {
-				payload.Redactions = append(payload.Redactions, rule)
-			}
-		}
-	}
-	if err := redact.Validate(payload.Redactions); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
-		return
-	}
 	if err := payload.Identity.Validate(); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
@@ -331,9 +308,6 @@ func (a *App) handleSetupTest(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, schema := range dependencySchemas {
 		store.AddSchema(schema)
-	}
-	for _, rule := range payload.Redactions {
-		store.AddRedaction(rule)
 	}
 	store.SetTraceContext(root)
 	store.SetTestIdentity(payload.Identity)

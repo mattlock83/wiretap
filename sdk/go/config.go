@@ -30,8 +30,3 @@ type Dependency struct {
 	Schemas        []Schema `json:"schemas,omitempty"`
 	SchemaRequired *bool    `json:"schema_required,omitempty"`
 }
-type Redaction struct {
-	Field       string `json:"field"`
-	Rule        string `json:"rule"`
-	Replacement string `json:"replacement,omitempty"`
-}

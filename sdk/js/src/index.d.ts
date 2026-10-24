@@ -36,7 +36,6 @@ export interface TestOptions {
   sutSource?: Record<string, unknown>;
   explicitSession?: boolean;
   drainTimeoutMs?: number;
-  redactions?: { field: string; rule: string; replacement?: string }[];
   onSession?: (session: Session) => unknown | Promise<unknown>;
 }
 export interface Config extends TestOptions {
@@ -82,7 +81,7 @@ export interface Runtime {
   report(options?: { bundlePath?: string }): Promise<CaptureResponse>;
   finishRun(options?: { outputs?: OutputOptions }): Promise<CaptureResponse>;
 }
-export interface OutputOptions { coverage?: ('json' | 'yaml')[]; postman?: boolean; postman_options?: { omit_incomplete?: boolean; grpc?: Record<string, { url?: string; proto_root?: string; proto_file?: string }> }; }
+export interface OutputOptions { coverage?: ('json' | 'yaml' | 'text')[]; postman?: boolean; postman_options?: { omit_incomplete?: boolean; grpc?: Record<string, { url?: string; proto_root?: string; proto_file?: string }> }; }
 export interface OutputResult {
   bundle_path: string;
   coverage: Record<string, string>;

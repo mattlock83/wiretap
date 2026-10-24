@@ -30,7 +30,7 @@ func reportCommand(args []string) error {
 	flags.StringVar(&sutName, "sut-name", "", "SUT name in the report or SUT Postman collection name")
 	flags.StringVar(&outputPath, "output", "", "output file path; additional Postman collections are written alongside the primary collection (default: stdout)")
 	flags.StringVar(&outputDir, "output-dir", "", "Postman collection output directory")
-	flags.StringVar(&format, "format", "json", "output format: json, yaml, postman, all")
+	flags.StringVar(&format, "format", "json", "output format: json, yaml, text, postman, all")
 	flags.StringVar(&postmanConfig, "postman-config", "", "Postman export options JSON (gRPC endpoints and source proto packages)")
 	flags.BoolVar(&omitIncomplete, "postman-omit-incomplete", false, "omit unrepresentable interactions and report each omission (Postman only)")
 	flags.BoolVar(&includeArtifacts, "include-artifacts", false, "include artifact file paths in the report")
@@ -45,7 +45,7 @@ func reportCommand(args []string) error {
 	}
 	format = strings.ToLower(strings.TrimSpace(format))
 	switch format {
-	case "json", "yaml", "postman", "all":
+	case "json", "yaml", "text", "postman", "all":
 	default:
 		return fmt.Errorf("%w: unsupported format: %s", errUsage, format)
 	}

@@ -46,27 +46,8 @@ func (a *App) finishRun(ctx context.Context) (string, error) {
 	if a.hasActiveSessions() {
 		return "", errors.New("capture exchanges are still active")
 	}
-	refs, _, err := a.resolveGRPCContracts(ctx)
-	if err != nil {
+	if _, _, err := a.resolveGRPCContracts(ctx); err != nil {
 		return "", err
-	}
-	if current := a.currentBundle(); current != nil && len(current.Snapshot().Schemas) == 0 && len(refs) > 0 {
-		if a.project != nil {
-			kinds := map[string]string{}
-			for _, id := range a.project.DependencyIDs() {
-				kinds[id] = a.project.Dependencies[id].Kind
-			}
-			id := a.project.SUT.ID
-			if id == "" {
-				id = "sut"
-			}
-			if err := current.Configure(bundle.Identity{APIID: id, SUTTargetKind: a.project.SUT.Kind, DependencyKinds: kinds}); err != nil {
-				return "", err
-			}
-		}
-		if err := current.RegisterSchemas(refs); err != nil {
-			return "", err
-		}
 	}
 	if err := a.stopGRPCListeners(ctx); err != nil {
 		return "", err
@@ -82,7 +63,7 @@ func (a *App) finishRun(ctx context.Context) (string, error) {
 	if current == nil {
 		return "", nil
 	}
-	_, _, err = bundle.Load(current.Path())
+	_, _, err := bundle.Load(current.Path())
 	return current.Path(), err
 }
 func (a *App) interruptRun() error {

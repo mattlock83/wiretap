@@ -11,7 +11,6 @@ import (
 
 	"github.com/mattlock83/wiretap/internal/artifact"
 	"github.com/mattlock83/wiretap/internal/grpccontract"
-	"github.com/mattlock83/wiretap/internal/redact"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
@@ -21,7 +20,7 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 )
 
-func richBundleFixture(t *testing.T, rules ...artifact.Redaction) (string, Attempt, Run) {
+func richBundleFixture(t *testing.T, transform ...func(*artifact.Artifact)) (string, Attempt, Run) {
 	t.Helper()
 	w, err := New(t.TempDir())
 	if err != nil {
@@ -44,8 +43,8 @@ func richBundleFixture(t *testing.T, rules ...artifact.Redaction) (string, Attem
 	response := &artifact.GrpcMessage{Kind: "grpc", Procedure: request.Procedure, Service: request.Service, Method: request.Method, SchemaRef: request.SchemaRef, HTTPStatus: 200, StatusCode: 3, Trailers: artifact.Headers{"Grpc-Status-Details-Bin": {base64.RawStdEncoding.EncodeToString(envelope)}}}
 	grpccontract.CaptureStatusDetails(response, contract)
 	capture := &artifact.Artifact{Version: 1, TestCase: tc, Schemas: schemas, Traffic: []artifact.Flow{{ID: "flow", Protocol: "grpc", Channel: "test_to_sut", Request: artifact.Message{GRPC: request}, Response: artifact.Message{GRPC: response}}}}
-	if err := redact.Apply(capture, rules); err != nil {
-		t.Fatal(err)
+	for _, apply := range transform {
+		apply(capture)
 	}
 	path, err := w.Commit(capture)
 	if err != nil {
@@ -127,38 +126,27 @@ func TestRichStatusRoundTripAndTampering(t *testing.T) {
 	}
 }
 
-func TestRichStatusFieldRedactionRemovesContainingCopies(t *testing.T) {
-	root, attempt, _ := richBundleFixture(t, artifact.Redaction{Field: "response.status_details[0].body.field_violations[*].description", Rule: "remove"})
+// Archives created before redaction was removed remain readable without
+// reconstructing bytes that were deliberately absent from those archives.
+func TestLegacyRedactedRichStatusRemainsReadable(t *testing.T) {
+	root, _, _ := richBundleFixture(t, func(capture *artifact.Artifact) {
+		response := capture.Traffic[0].Response.GRPC
+		status := response.StatusDetails
+		status.State, status.Wire = "redacted", nil
+		status.Details[0].State, status.Details[0].Wire, status.Details[0].Body = "redacted", nil, nil
+		for key := range response.Trailers {
+			if strings.EqualFold(key, "grpc-status-details-bin") {
+				delete(response.Trailers, key)
+			}
+		}
+	})
 	_, captures, err := Load(root)
 	if err != nil {
 		t.Fatal(err)
 	}
 	status := captures[0].Traffic[0].Response.GRPC.StatusDetails
 	if status.State != "redacted" || status.Wire != nil || status.Details[0].Wire != nil || status.Details[0].State != "redacted" || status.Details[1].State != "decoded" || status.Details[1].Wire == nil {
-		t.Fatalf("incorrect redaction: %+v", status)
-	}
-	if len(attempt.Bodies) == 0 {
-		t.Fatal("missing attachments")
-	}
-	secret := "rich-status-secret-f38ad973"
-	err = filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if entry.IsDir() {
-			return nil
-		}
-		raw, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		if strings.Contains(string(raw), secret) || strings.Contains(string(raw), base64.StdEncoding.EncodeToString([]byte(secret))) {
-			t.Errorf("secret retained in %s", path)
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("legacy evidence availability changed: %+v", status)
 	}
 }
 

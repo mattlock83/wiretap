@@ -22,11 +22,11 @@ type Config struct {
 	PostmanOptions *postman.Options `json:"postman_options,omitempty" yaml:"postman_options,omitempty"`
 }
 
-func Defaults() Config { return Config{Coverage: []string{"json"}, Postman: true} }
+func Defaults() Config { return Config{Coverage: []string{"json", "text"}, Postman: true} }
 func (c Config) Validate() error {
 	seen := map[string]bool{}
 	for _, format := range c.Coverage {
-		if format != "json" && format != "yaml" {
+		if format != "json" && format != "yaml" && format != "text" {
 			return fmt.Errorf("outputs.coverage: unsupported format %q", format)
 		}
 		if seen[format] {
@@ -77,7 +77,11 @@ func Generate(ctx context.Context, archive string, cfg Config) (*Result, error) 
 			for _, format := range cfg.Coverage {
 				var data bytes.Buffer
 				err := coverage.WriteReport(&data, report, format)
-				path := filepath.Join(root, "exports", "coverage."+format)
+				extension := format
+				if format == "text" {
+					extension = "txt"
+				}
+				path := filepath.Join(root, "exports", "coverage."+extension)
 				if err == nil {
 					err = writeFile(ctx, root, path, data.Bytes())
 				}

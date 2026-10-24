@@ -8,11 +8,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mattlock83/wiretap/internal/artifact"
 	"github.com/mattlock83/wiretap/internal/bundle"
 )
 
-func TestTestLifecycleWritesRedactedBundle(t *testing.T) {
+func TestTestLifecycleRetainsSyntheticTestData(t *testing.T) {
 	sut := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "secret" {
 			t.Error("proxy changed the live request")
@@ -22,8 +21,7 @@ func TestTestLifecycleWritesRedactedBundle(t *testing.T) {
 	defer sut.Close()
 	control, _ := dependencyCaptureRuntime(t)
 	session := postDependencyJSON(t, control.URL, "/v1/setupTest", map[string]any{
-		"name": "redacted boundary", "sut_base_url": sut.URL, "schema_required": false,
-		"redactions": []artifact.Redaction{{Field: "request.headers.authorization", Rule: "mask"}},
+		"name": "synthetic boundary", "sut_base_url": sut.URL, "schema_required": false,
 	})
 	request, _ := http.NewRequest(http.MethodGet, session["sut_url"].(string)+"/items", nil)
 	request.Header.Set("Authorization", "secret")
@@ -34,8 +32,8 @@ func TestTestLifecycleWritesRedactedBundle(t *testing.T) {
 	response.Body.Close()
 	result := postDependencyJSON(t, control.URL, "/v1/teardownTest", map[string]any{"session_id": session["session_id"], "status": "pass"})
 	capture := dependencyArtifact(t, result)
-	if len(capture.Redactions) != 1 || len(capture.Traffic) != 1 {
-		t.Fatal("capture lost its evidence or redaction rule")
+	if len(capture.Redactions) != 0 || len(capture.Traffic) != 1 {
+		t.Fatal("capture lost its original evidence")
 	}
 	if result["artifact"] != nil || result["path"] != nil || result["schema_validation"] != nil {
 		t.Fatal("response contains duplicate compatibility fields")
@@ -44,8 +42,8 @@ func TestTestLifecycleWritesRedactedBundle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(raw), "secret") {
-		t.Fatal("persisted capture contains unredacted data")
+	if !strings.Contains(string(raw), "secret") {
+		t.Fatal("persisted capture changed the dummy credential")
 	}
 	for _, key := range []string{"index_path", "viewer_path", "attempt_page_path", "view_error"} {
 		if _, exists := result[key]; exists {
@@ -75,6 +73,7 @@ func TestOnlyCurrentControlRoutesAndFieldsAreAccepted(t *testing.T) {
 	}
 	apiStatus(t, control.URL, "/v1/setupTest", map[string]any{"name": "removed identity", "application_knowledge": map[string]string{"test_id": "test:old"}}, http.StatusBadRequest)
 	apiStatus(t, control.URL, "/v1/setupTest", map[string]any{"name": "removed generation", "generate_schema": true}, http.StatusBadRequest)
+	apiStatus(t, control.URL, "/v1/setupTest", map[string]any{"name": "removed redaction", "redactions": []any{}}, http.StatusBadRequest)
 	for path, payload := range map[string]map[string]any{
 		"/v1/startRun":     {"target_url": "http://sut.test"},
 		"/v1/setupTest":    {"name": "old schema field", "sut_schemas": []any{}},

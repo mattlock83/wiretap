@@ -94,7 +94,7 @@ func generateCollection(run *bundle.Run, captures []*artifact.Artifact, name, ch
 			Name: name, Schema: collectionSchema,
 			Description: "Captured HTTP requests " + scope + ". Run: " + run.RunID + ". " +
 				"Each folder represents one test attempt. URLs, payloads and expected status codes " +
-				"come from captured traffic; redactions and capture limits still apply. gRPC traffic is excluded.",
+				"come from captured traffic and retain synthetic test data. Capture limits still apply. gRPC traffic is excluded.",
 		},
 		Items: make([]Folder, 0, len(captures)),
 		// Preserve the captured requests: redirects are separate exchanges,
@@ -250,7 +250,7 @@ func bodyText(body *artifact.Body) (string, bool, error) {
 }
 
 func requestHeaders(req *artifact.HttpMessage) []Header {
-	// Postman computes framing for the retained (possibly redacted) body.
+	// Postman computes framing for the retained body.
 	omit := map[string]bool{
 		"host": true, "content-length": true, "transfer-encoding": true,
 		"connection": true, "proxy-connection": true, "trailer": true,

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -43,11 +44,11 @@ func TestFailedAttemptsProduceEverySelectedOutput(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := Generate(t.Context(), root, Config{Coverage: []string{"json", "yaml"}, Postman: true})
+	result, err := Generate(t.Context(), root, Config{Coverage: []string{"json", "yaml", "text"}, Postman: true})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(result.Coverage) != 2 || len(result.Postman) != 1 || len(result.Errors) != 0 {
+	if len(result.Coverage) != 3 || len(result.Postman) != 1 || len(result.Errors) != 0 {
 		t.Fatalf("wrong outputs: %+v", result)
 	}
 	var report coverage.Report
@@ -57,6 +58,10 @@ func TestFailedAttemptsProduceEverySelectedOutput(t *testing.T) {
 	}
 	if report.ArtifactCount != 1 || len(report.TestCases) != 1 || report.TestCases[0].Attempts[0].Status != "fail" {
 		t.Fatalf("lost failed attempt: %+v", report)
+	}
+	textReport, err := os.ReadFile(result.Coverage["text"])
+	if err != nil || filepath.Ext(result.Coverage["text"]) != ".txt" || !strings.Contains(string(textReport), "1 failed") {
+		t.Fatalf("missing readable failed-run summary: %s, %v", textReport, err)
 	}
 	var collection postman.Collection
 	data, _ = os.ReadFile(result.Postman[0])

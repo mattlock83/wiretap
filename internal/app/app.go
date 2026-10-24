@@ -79,6 +79,38 @@ func (a *App) ensureBundle() (*bundle.Writer, error) {
 		if err := w.Configure(bundle.Identity{ProviderMappings: a.project.ProviderMappings, TestSource: defaults.TestSource, SUTSource: defaults.SUTSource, Application: defaults.Application, APIID: defaults.APIID, SUTTargetKind: defaults.SUTTargetKind, DependencyKinds: kinds}); err != nil {
 			return nil, err
 		}
+		// Freeze the configured HTTP inventory before any test starts. Empty or
+		// interrupted runs still need a denominator for their coverage reports.
+		var schemas []artifact.SchemaRef
+		if defaults.SUTProtocol != "grpc" {
+			schemas = append(schemas, defaults.Schemas...)
+			for i := range schemas {
+				schemas[i].Role = "sut"
+				schemas[i].AssetID = defaults.APIID
+			}
+			if len(schemas) == 0 && !requiresSchema(defaults.SchemaRequired) {
+				schemas = append(schemas, omittedSchema(defaults.APIID, "sut"))
+			}
+		}
+		var httpDependencies []dependencyRegistration
+		for _, dependency := range defaults.Dependencies {
+			if dependency.Protocol != "grpc" {
+				httpDependencies = append(httpDependencies, dependency)
+			}
+		}
+		_, dependencySchemas, err := normalizeDependencies(httpDependencies)
+		if err != nil {
+			return nil, err
+		}
+		schemas = append(schemas, dependencySchemas...)
+		for i := range schemas {
+			if schemas[i].AssetName == "" {
+				schemas[i].AssetName = schemas[i].ID
+			}
+		}
+		if err := w.RegisterSchemas(schemas); err != nil {
+			return nil, err
+		}
 	}
 	a.bundle = w
 	return w, nil

@@ -25,7 +25,6 @@ import (
 	"github.com/mattlock83/wiretap/internal/capture"
 	"github.com/mattlock83/wiretap/internal/grpccontract"
 	"github.com/mattlock83/wiretap/internal/proxy"
-	"github.com/mattlock83/wiretap/internal/redact"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -80,7 +79,6 @@ type testCaseState struct {
 	sutBaseURL         string
 	flows              []artifact.Flow
 	schemas            []artifact.SchemaRef
-	redactions         []artifact.Redaction
 }
 
 func NewTestCaseStore(sink CaptureSink, maxBodyBytes int64) *TestCaseStore {
@@ -181,12 +179,11 @@ func (s *TestCaseStore) FinishCase(status string, env *artifact.Environment) (*a
 	art := &artifact.Artifact{
 		Version:           2,
 		CaptureIncomplete: state.captureIncomplete, CaptureDiagnostics: state.captureDiagnostics,
-		TestCase:   artifact.TestCase{Identity: state.identity, ID: state.id, Name: state.name, StartedAt: state.startedAt, FinishedAt: finishedAt, Status: status, Tags: state.tags, Meta: state.meta},
-		Env:        env,
-		Schemas:    append([]artifact.SchemaRef{}, state.schemas...),
-		Traffic:    flows,
-		Redactions: append([]artifact.Redaction{}, state.redactions...),
-		Meta:       map[string]any{},
+		TestCase: artifact.TestCase{Identity: state.identity, ID: state.id, Name: state.name, StartedAt: state.startedAt, FinishedAt: finishedAt, Status: status, Tags: state.tags, Meta: state.meta},
+		Env:      env,
+		Schemas:  append([]artifact.SchemaRef{}, state.schemas...),
+		Traffic:  flows,
+		Meta:     map[string]any{},
 	}
 	if state.root.IsValid() {
 		art.TestCase.TraceID = state.root.TraceID().String()
@@ -194,15 +191,6 @@ func (s *TestCaseStore) FinishCase(status string, env *artifact.Environment) (*a
 	}
 
 	applySchemaValidation(art)
-
-	if len(art.Redactions) > 0 {
-		if err := redact.Apply(art, art.Redactions); err != nil {
-			return nil, "", err
-		}
-	}
-	for i := range art.Traffic {
-		art.Traffic[i].Fingerprint = flowFingerprint(art.Traffic[i])
-	}
 
 	path, err := s.sink.Commit(art)
 	if err != nil {
@@ -260,16 +248,6 @@ func fillSchemaSHA(ref *artifact.SchemaRef) {
 		sum := sha256.Sum256(data)
 		ref.Source.SHA256 = hex.EncodeToString(sum[:])
 	}
-}
-
-func (s *TestCaseStore) AddRedaction(rule artifact.Redaction) artifact.Redaction {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.active == nil {
-		return rule
-	}
-	s.active.redactions = append(s.active.redactions, rule)
-	return rule
 }
 
 func (s *TestCaseStore) RecordHTTP(exchange proxy.HTTPExchange) {

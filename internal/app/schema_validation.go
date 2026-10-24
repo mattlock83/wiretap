@@ -72,6 +72,8 @@ func applySchemaValidation(art *artifact.Artifact) {
 	art.SchemaValidation = result
 
 	if len(issues) > 0 {
+		// Schema validation is evidence about this exchange. The framework owns
+		// the test outcome, including tests that deliberately send invalid input.
 		for i, issue := range issues {
 			assertion := artifact.Assertion{
 				ID:       fmt.Sprintf("schema-%d", i+1),
@@ -87,9 +89,6 @@ func applySchemaValidation(art *artifact.Artifact) {
 				assertion.Field = issue.SchemaID
 			}
 			art.Assertions = append(art.Assertions, assertion)
-		}
-		if strings.EqualFold(art.TestCase.Status, "pass") || art.TestCase.Status == "" {
-			art.TestCase.Status = "fail"
 		}
 	}
 }
@@ -366,9 +365,7 @@ func validateHTTPAgainstSpec(flow artifact.Flow, spec openapiSpec) (error, error
 			ExcludeRequestBody: msg.Body != nil && msg.Body.Truncated,
 		},
 	}
-	if err := openapi3filter.ValidateRequest(context.Background(), input); err != nil {
-		return err, nil
-	}
+	requestErr := openapi3filter.ValidateRequest(context.Background(), input)
 
 	respBody := bodyBytes(respMsg.Body)
 	resp := &openapi3filter.ResponseValidationInput{
@@ -382,10 +379,7 @@ func validateHTTPAgainstSpec(flow artifact.Flow, spec openapiSpec) (error, error
 			ExcludeResponseBody:   respMsg.Body != nil && respMsg.Body.Truncated,
 		},
 	}
-	if err := openapi3filter.ValidateResponse(context.Background(), resp); err != nil {
-		return nil, err
-	}
-	return nil, nil
+	return requestErr, openapi3filter.ValidateResponse(context.Background(), resp)
 }
 
 func loadOpenAPISpec(ref artifact.SchemaRef) (openapiSpec, error) {
