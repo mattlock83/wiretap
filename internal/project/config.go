@@ -341,6 +341,19 @@ func Decode(raw []byte, path string) (*Config, error) {
 		}
 		return a, nil
 	}
+	if cfg.Outputs != nil && cfg.Outputs.PostmanOptions != nil {
+		for id, target := range cfg.Outputs.PostmanOptions.GRPC {
+			target.URL, err = expand(target.URL)
+			if err != nil {
+				return nil, err
+			}
+			target.ProtoRoot, err = resolve(target.ProtoRoot)
+			if err != nil {
+				return nil, err
+			}
+			cfg.Outputs.PostmanOptions.GRPC[id] = target
+		}
+	}
 	cfg.SUT, err = resolveAPI("sut", cfg.SUT)
 	if err != nil {
 		return nil, err

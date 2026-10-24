@@ -179,6 +179,10 @@ func TestGRPCV3OmitsRunResultsAndTimes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if first.Items[0].ID != "attempt-one" || second.Items[0].ID != "different-attempt" {
+		t.Fatal("attempt identity lost")
+	}
+	first.Items[0].ID, second.Items[0].ID = "", ""
 	a, _ := json.Marshal(first)
 	b, _ := json.Marshal(second)
 	if !bytes.Equal(a, b) {
@@ -279,7 +283,7 @@ func TestGRPCV3MockBoundariesAndDuplicateScenarios(t *testing.T) {
 	if len(exports) != 1 || exports[0].Filename != "mock-stock.grpc.postman_collection.json" {
 		t.Fatalf("wrong target: %+v", exports)
 	}
-	if _, err := generateGRPC([]*artifact.Artifact{tc, tc}, "Stock", "sut_to_dependency", "stock"); err == nil || !strings.Contains(err.Error(), "duplicate test name") {
+	if _, err := generateGRPC([]*artifact.Artifact{tc, tc}, "Stock", "sut_to_dependency", "stock"); err == nil || !strings.Contains(err.Error(), "duplicate test attempt") {
 		t.Fatalf("ambiguous folders accepted: %v", err)
 	}
 }

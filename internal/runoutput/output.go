@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/phrond/wiretap/internal/bundle"
 	"github.com/phrond/wiretap/internal/coverage"
@@ -16,8 +17,9 @@ import (
 )
 
 type Config struct {
-	Coverage []string `json:"coverage,omitempty" yaml:"coverage,omitempty"`
-	Postman  bool     `json:"postman,omitempty" yaml:"postman,omitempty"`
+	Coverage       []string         `json:"coverage,omitempty" yaml:"coverage,omitempty"`
+	Postman        bool             `json:"postman,omitempty" yaml:"postman,omitempty"`
+	PostmanOptions *postman.Options `json:"postman_options,omitempty" yaml:"postman_options,omitempty"`
 }
 
 func Defaults() Config { return Config{Coverage: []string{"json"}, Postman: true} }
@@ -40,10 +42,12 @@ type Diagnostic struct {
 	Message string `json:"message"`
 }
 type Result struct {
-	BundlePath string            `json:"bundle_path"`
-	Coverage   map[string]string `json:"coverage"`
-	Postman    []string          `json:"postman"`
-	Errors     []Diagnostic      `json:"errors"`
+	BundlePath       string               `json:"bundle_path"`
+	Coverage         map[string]string    `json:"coverage"`
+	Postman          []string             `json:"postman"`
+	Errors           []Diagnostic         `json:"errors"`
+	PostmanFiles     []string             `json:"postman_files,omitempty"`
+	PostmanOmissions []postman.Diagnostic `json:"postman_omissions,omitempty"`
 }
 
 // Generate keeps successful outputs available when another exporter fails. It
@@ -75,7 +79,7 @@ func Generate(ctx context.Context, archive string, cfg Config) (*Result, error) 
 				err := coverage.WriteReport(&data, report, format)
 				path := filepath.Join(root, "exports", "coverage."+format)
 				if err == nil {
-					err = writeFile(ctx, path, data.Bytes())
+					err = writeFile(ctx, root, path, data.Bytes())
 				}
 				if err != nil {
 					fail("coverage."+format, err)
@@ -89,10 +93,18 @@ func Generate(ctx context.Context, archive string, cfg Config) (*Result, error) 
 		if err := ctx.Err(); err != nil {
 			fail("postman", err)
 		} else {
-			exports, err := postman.GenerateAll(root, "")
+			options := postman.Options{}
+			if cfg.PostmanOptions != nil {
+				options = *cfg.PostmanOptions
+			}
+			generated, err := postman.GenerateAllWithOptions(root, "", options)
+			if generated != nil {
+				result.PostmanOmissions = generated.Diagnostics
+			}
 			if err != nil {
 				fail("postman", err)
 			} else {
+				exports := generated.Exports
 				// Encode every collection before replacing any file, including mixed runs.
 				encoded := make([][]byte, len(exports))
 				for i, export := range exports {
@@ -106,12 +118,25 @@ func Generate(ctx context.Context, archive string, cfg Config) (*Result, error) 
 					fail("postman", err)
 				} else {
 					for i, export := range exports {
+						companions := []string{}
+						for _, companion := range export.Files {
+							path := filepath.Join(root, "exports", "postman", filepath.FromSlash(companion.Path))
+							if err = writeFile(ctx, root, path, companion.Data); err != nil {
+								break
+							}
+							companions = append(companions, path)
+						}
+						if err != nil {
+							fail("postman", err)
+							break
+						}
 						path := filepath.Join(root, "exports", "postman", export.Filename)
-						if err := writeFile(ctx, path, encoded[i]); err != nil {
+						if err := writeFile(ctx, root, path, encoded[i]); err != nil {
 							fail("postman", err)
 							break
 						}
 						result.Postman = append(result.Postman, path)
+						result.PostmanFiles = append(result.PostmanFiles, companions...)
 					}
 				}
 			}
@@ -121,7 +146,7 @@ func Generate(ctx context.Context, archive string, cfg Config) (*Result, error) 
 	// use these exact paths instead of guessing the newest run or scanning a dir.
 	data, err := json.MarshalIndent(result, "", "  ")
 	if err == nil {
-		err = writeFile(ctx, filepath.Join(root, "exports", "result.json"), append(data, '\n'))
+		err = writeFile(ctx, root, filepath.Join(root, "exports", "result.json"), append(data, '\n'))
 	}
 	if err != nil {
 		fail("receipt", err)
@@ -129,22 +154,32 @@ func Generate(ctx context.Context, archive string, cfg Config) (*Result, error) 
 	return result, errors.Join(failures...)
 }
 
-func writeFile(ctx context.Context, path string, data []byte) error {
+func writeFile(ctx context.Context, root, path string, data []byte) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 	dir := filepath.Dir(path)
-	// These directories are fixed descendants of an already verified archive.
-	dirs := []string{dir}
-	if filepath.Base(dir) == "postman" {
-		dirs = []string{filepath.Dir(dir), dir}
+	base := filepath.Join(root, "exports")
+	relative, err := filepath.Rel(base, path)
+	if err != nil || relative == "." || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) || filepath.IsAbs(relative) {
+		return errors.New("export path must be inside archive exports directory")
 	}
-	for _, current := range dirs {
+	// Check every ancestor before creation, including nested proto companions.
+	for current := base; ; {
 		if info, err := os.Lstat(current); err == nil && (!info.IsDir() || info.Mode()&os.ModeSymlink != 0) {
 			return fmt.Errorf("export destination %q is not a regular directory", current)
 		} else if err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
+		if current == dir {
+			break
+		}
+		remainder, err := filepath.Rel(current, dir)
+		if err != nil {
+			return err
+		}
+		part := strings.Split(remainder, string(filepath.Separator))[0]
+		current = filepath.Join(current, part)
 	}
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return err

@@ -10,8 +10,10 @@ type Collection struct {
 // Export is one independently importable collection and its suggested filename.
 type Export struct {
 	Filename   string
+	BoundaryID string
 	Collection *Collection
 	GRPC       *GRPCCollection
+	Files      []CompanionFile
 }
 
 type ProtocolBehavior struct {
@@ -29,6 +31,7 @@ type Info struct {
 }
 
 type Folder struct {
+	ID          string `json:"id,omitempty"`
 	Name        string `json:"name"`
 	Description string `json:"description"`
 	Items       []Item `json:"item"`

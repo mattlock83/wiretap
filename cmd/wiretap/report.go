@@ -10,6 +10,7 @@ import (
 
 	"encoding/json"
 	"github.com/phrond/wiretap/internal/coverage"
+	"github.com/phrond/wiretap/internal/postman"
 	"github.com/phrond/wiretap/internal/runoutput"
 )
 
@@ -23,11 +24,15 @@ func reportCommand(args []string) error {
 	var outputDir string
 	var format string
 	var includeArtifacts bool
+	var postmanConfig string
+	var omitIncomplete bool
 	flags.StringVar(&bundlePath, "bundle", "", "capture bundle directory")
 	flags.StringVar(&sutName, "sut-name", "", "SUT name in the report or SUT Postman collection name")
 	flags.StringVar(&outputPath, "output", "", "output file path; additional Postman collections are written alongside the primary collection (default: stdout)")
 	flags.StringVar(&outputDir, "output-dir", "", "Postman collection output directory")
 	flags.StringVar(&format, "format", "json", "output format: json, yaml, postman, all")
+	flags.StringVar(&postmanConfig, "postman-config", "", "Postman export options JSON (gRPC endpoints and source proto packages)")
+	flags.BoolVar(&omitIncomplete, "postman-omit-incomplete", false, "omit unrepresentable interactions and report each omission (Postman only)")
 	flags.BoolVar(&includeArtifacts, "include-artifacts", false, "include artifact file paths in the report")
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -53,14 +58,30 @@ func reportCommand(args []string) error {
 	if outputDir != "" && outputPath != "" {
 		return fmt.Errorf("%w: use either --output-dir or --output", errUsage)
 	}
+	if (postmanConfig != "" || omitIncomplete) && format != "postman" && format != "all" {
+		return fmt.Errorf("%w: Postman options require --format postman or all", errUsage)
+	}
+	options := postman.Options{}
+	if format == "postman" || format == "all" {
+		if postmanConfig != "" {
+			var err error
+			options, err = postman.ReadOptions(postmanConfig)
+			if err != nil {
+				return fmt.Errorf("%w: Postman config: %v", errUsage, err)
+			}
+		}
+		options.OmitIncomplete = options.OmitIncomplete || omitIncomplete
+	}
 	if format == "postman" {
-		return exportPostman(bundlePath, sutName, outputPath, outputDir)
+		return exportPostmanWithOptions(bundlePath, sutName, outputPath, outputDir, options)
 	}
 	if format == "all" {
 		if outputPath != "" || outputDir != "" || sutName != "" || includeArtifacts {
 			return fmt.Errorf("%w: all writes standard outputs inside the capture archive; use --bundle only", errUsage)
 		}
-		result, exportErr := runoutput.Generate(context.Background(), bundlePath, runoutput.Defaults())
+		config := runoutput.Defaults()
+		config.PostmanOptions = &options
+		result, exportErr := runoutput.Generate(context.Background(), bundlePath, config)
 		if result != nil {
 			if err := json.NewEncoder(os.Stdout).Encode(result); err != nil {
 				return err

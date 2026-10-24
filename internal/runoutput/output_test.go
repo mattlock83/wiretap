@@ -13,7 +13,7 @@ import (
 	"github.com/phrond/wiretap/internal/postman"
 )
 
-func failedRun(t *testing.T) string {
+func failedRun(t *testing.T, changes ...func(*artifact.Artifact)) string {
 	t.Helper()
 	writer, err := bundle.New(t.TempDir())
 	if err != nil {
@@ -25,6 +25,9 @@ func failedRun(t *testing.T) string {
 		t.Fatal(err)
 	}
 	capture := &artifact.Artifact{Version: 2, TestCase: tc, Schemas: frozen, Traffic: []artifact.Flow{{ID: "f-1", Protocol: "http", Channel: "test_to_sut", Request: artifact.Message{HTTP: &artifact.HttpMessage{Method: "GET", URL: "http://sut.test/orders"}}, Response: artifact.Message{HTTP: &artifact.HttpMessage{Status: 503, Body: &artifact.Body{Text: "unavailable"}}}}}}
+	for _, change := range changes {
+		change(capture)
+	}
 	if _, err := writer.Commit(capture); err != nil {
 		t.Fatal(err)
 	}
@@ -113,5 +116,54 @@ func TestOutputDirectorySymlinkCannotWriteOutsideArchive(t *testing.T) {
 	entries, err := os.ReadDir(outside)
 	if err != nil || len(entries) != 0 {
 		t.Fatalf("wrote outside archive: %v %v", entries, err)
+	}
+}
+
+func TestAutomaticPostmanOmissionPolicyRetainsExactDiagnostics(t *testing.T) {
+	root := failedRun(t, func(c *artifact.Artifact) {
+		incomplete := c.Traffic[0]
+		incomplete.ID = "incomplete"
+		request := *incomplete.Request.HTTP
+		request.Body = &artifact.Body{Text: "prefix", Truncated: true, OriginalBytes: 99}
+		incomplete.Request.HTTP = &request
+		c.Traffic = append(c.Traffic, incomplete)
+	})
+	result, err := Generate(t.Context(), root, Config{Coverage: []string{"json"}, Postman: true, PostmanOptions: &postman.Options{OmitIncomplete: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Postman) != 1 || len(result.PostmanOmissions) != 1 || result.PostmanOmissions[0].FlowID != "incomplete" || len(result.Errors) != 0 {
+		t.Fatalf("missing omissions: %+v", result)
+	}
+	receipt, err := os.ReadFile(filepath.Join(root, "exports", "result.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var saved Result
+	if err := json.Unmarshal(receipt, &saved); err != nil || len(saved.PostmanOmissions) != 1 {
+		t.Fatalf("missing receipt diagnostics: %s %v", receipt, err)
+	}
+}
+
+func TestNestedCompanionWritesRejectEverySymlinkAncestor(t *testing.T) {
+	root := t.TempDir()
+	parent := filepath.Join(root, "exports", "postman")
+	if err := os.MkdirAll(parent, 0700); err != nil {
+		t.Fatal(err)
+	}
+	outside := t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(parent, "schemas")); err != nil {
+		t.Skip(err)
+	}
+	path := filepath.Join(parent, "schemas", "service", "api.proto")
+	if err := writeFile(t.Context(), root, path, []byte("secret")); err == nil {
+		t.Fatal("followed nested symlink")
+	}
+	entries, err := os.ReadDir(outside)
+	if err != nil || len(entries) != 0 {
+		t.Fatalf("wrote outside: %v %v", entries, err)
+	}
+	if err := writeFile(t.Context(), root, filepath.Join(outside, "escape"), nil); err == nil {
+		t.Fatal("allowed path escape")
 	}
 }

@@ -125,3 +125,67 @@ func TestCLIPostmanIncompleteGRPCPreservesOutputs(t *testing.T) {
 		t.Fatalf("failed export created partial outputs: %v, %v", entries, err)
 	}
 }
+
+func TestCLIPostmanOmissionsAreExplicitAndKeepHealthyHTTP(t *testing.T) {
+	root := postmanGRPCBundleFixture(t, true, true)
+	directory := t.TempDir()
+	if code := execute(t.Context(), []string{"export", "--bundle", root, "--format", "postman", "--postman-omit-incomplete", "--output-dir", directory}); code != 0 {
+		t.Fatalf("opt-in omission = %d", code)
+	}
+	diagnostic, err := os.ReadFile(filepath.Join(directory, "wiretap-postman-diagnostics.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var omissions []postman.Diagnostic
+	if err := json.Unmarshal(diagnostic, &omissions); err != nil || len(omissions) != 1 || omissions[0].FlowID != "grpc-flow" {
+		t.Fatalf("missing omission provenance: %s, %v", diagnostic, err)
+	}
+	collection, err := os.ReadFile(filepath.Join(directory, "sut-health-app.postman_collection.json"))
+	if err != nil || !strings.Contains(string(collection), "http://health.test/status") {
+		t.Fatalf("healthy HTTP lost: %s %v", collection, err)
+	}
+}
+
+func TestCLIPostmanCopiesConfiguredGRPCSource(t *testing.T) {
+	root := postmanGRPCBundleFixture(t, false, false)
+	configDir := t.TempDir()
+	source := `syntax = "proto3";
+package grpc.health.v1;
+message HealthCheckRequest {string service=1;}
+message HealthCheckResponse {enum ServingStatus {UNKNOWN=0; SERVING=1; NOT_SERVING=2; SERVICE_UNKNOWN=3;} ServingStatus status=1;}
+service Health {rpc Check(HealthCheckRequest) returns (HealthCheckResponse);}
+`
+	if err := os.WriteFile(filepath.Join(configDir, "health.proto"), []byte(source), 0600); err != nil {
+		t.Fatal(err)
+	}
+	config := filepath.Join(configDir, "postman.json")
+	if err := os.WriteFile(config, []byte(`{"grpc":{"sut":{"url":"https://localhost:50051","proto_root":".","proto_file":"health.proto"}}}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	directory := t.TempDir()
+	if code := execute(t.Context(), []string{"export", "--bundle", root, "--format", "postman", "--postman-config", config, "--output-dir", directory}); code != 0 {
+		t.Fatalf("configured gRPC export = %d", code)
+	}
+	raw, err := os.ReadFile(filepath.Join(directory, "sut-health-app.grpc.postman_collection.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var collection postman.GRPCCollection
+	if err := json.Unmarshal(raw, &collection); err != nil {
+		t.Fatal(err)
+	}
+	request := collection.Items[0].Items[0]
+	if request.URL != "localhost:50051" || request.Schema == nil || request.Settings == nil || !request.Settings.SecureConnection {
+		t.Fatalf("mapping not applied: %+v", request)
+	}
+	copied, err := os.ReadFile(filepath.Join(directory, filepath.FromSlash(request.Schema.Location)))
+	if err != nil || string(copied) != source {
+		t.Fatalf("source schema not preserved: %s %v", copied, err)
+	}
+	if code, _ := executeCapturingStdout(t, []string{"export", "--bundle", root, "--format", "postman", "--postman-config", config}); code != 2 {
+		t.Fatalf("stdout cannot write companions, got %d", code)
+	}
+	if code := execute(t.Context(), []string{"report", "--bundle", root, "--format", "json", "--postman-config", config}); code != 2 {
+		t.Fatalf("Postman flag accepted for JSON, got %d", code)
+	}
+}

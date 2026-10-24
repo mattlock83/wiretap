@@ -97,7 +97,7 @@ HTTP filenames normally use `sut-<application-id>.postman_collection.json` and
 `sut-<application-id>.grpc.postman_collection.json` and
 `mock-<dependency-id>.grpc.postman_collection.json`. Unusual or conflicting IDs
 receive stable, unique filenames. A gRPC-only run does not add an empty SUT HTTP
-collection. HTTP-only exports keep their previous files and encoding.
+collection. HTTP-only exports retain their previous filenames and request encoding.
 
 The SUT collection name is `<application.name> - <application.id>`, for example
 `Orders - orders-app`. If the application ID is absent, the API ID is used; if
@@ -118,9 +118,11 @@ collection.
 verifies the run's captured evidence and retained payloads, so the original
 workspace and running systems are not required.
 
-For HTTP, each captured test attempt becomes a folder named after its test. Repeated test
-attempts remain separate folders, including empty folders when a system had no
-HTTP requests in that test. The SUT collection contains requests from tests to
+For both protocols, each test attempt has its original attempt ID as the folder
+ID. Unique test names remain unchanged. Repeated names get an explicit
+`[attempt <id>]` suffix; collisions with literal names are resolved deterministically.
+Every retry is retained. The original recording names and IDs remain unchanged.
+HTTP also retains empty folders when a system had no HTTP requests in that test. The SUT collection contains requests from tests to
 the SUT; each mock collection contains the SUT's requests to that dependency.
 Requests are ordered by request start time. If a request lacks a start time,
 the folder retains capture order and notes that limit. A recorded response is
@@ -146,19 +148,103 @@ canonical padded base64; rich errors retain the verified original
 request's initial `message`, as required to describe the invocable request; it
 is not an additional send in the saved conversation.
 
-gRPC output contains no execution result, attempt ID, timestamp or duration.
-An RPC error status is still a recorded interaction. Repeated test names are
-rejected rather than disambiguated using attempt IDs. Export also rejects
-incomplete capture, undecoded messages, missing terminal status, and request
-trailers that v3 cannot represent. Complete negative RPC responses are exported.
+gRPC output retains attempt IDs for folder identity. Execution results, timestamps
+and durations remain excluded. An RPC error status is still a recorded interaction.
+Complete negative RPC responses are exported.
 The v3 schema cannot represent explicit half-close events or raw protobuf
 message bytes; those are not added as invented messages. Timing is excluded.
 
-The captured gRPC records do not retain an endpoint URL or a portable source
-`.proto` path, so the exporter omits `url` and `schema` rather than inventing
-them. Supply contracts as separate files and configure a server and schema in
-Postman for replay.
-The exporter emits the official single-document JSON representation, not the
-native-Git YAML directory layout. Its output is checked against the
-[official v3 JSON schema](https://schema.postman.com/collection/json/v3.0.0/draft-07/collection.json);
-a Postman desktop import/export round trip is not covered by the test suite.
+### Incomplete captures
+
+The CLI and automatic Postman export are strict by default: incomplete captures,
+truncated bodies, transport failures, undecoded gRPC messages, missing terminal
+status, and request trailers that v3 cannot represent fail the export before
+replacing any collection. A complete negative API response remains exportable.
+
+To retain healthy exchanges from a mixed run, use:
+
+```bash
+wiretap export --bundle ./artifacts/<run-id> --format postman \
+  --postman-omit-incomplete --output-dir ./postman
+```
+
+Every omitted interaction is reported to stderr and recorded in
+`wiretap-postman-diagnostics.json` beside the collections. Valid interactions in
+other tests, dependencies, or protocols remain available. This opt-in does not
+modify the source archive. Corrupt archives or invalid configuration always fail;
+they cannot be made valid by requesting omissions.
+
+### gRPC replay targets and source schemas
+
+An offline archive does not provide a portable server address or original source
+`.proto` files. The default export leaves those fields unspecified. Supply
+explicit replay settings with `--postman-config ./postman.json`:
+
+```json
+{
+  "grpc": {
+    "sut": {
+      "url": "http://localhost:50051",
+      "proto_root": "./proto",
+      "proto_file": "inventory/v1/inventory.proto"
+    },
+    "dependency:payments": { "url": "https://payments.example.test:443" }
+  }
+}
+```
+
+Keys are `sut` or `dependency:<exact dependency ID>`. Keys match original
+recorded export-eligible boundaries, including boundaries whose interactions
+were all explicitly omitted. Unknown keys fail so a typo cannot silently drop
+a replay override. `http`/`grpc` selects plaintext and
+`https`/`grpcs` selects TLS; credentials, URL query strings and endpoint paths are
+rejected. These settings affect derived collections only.
+
+`proto_root` is relative to the configuration file and `proto_file` is relative
+to that root. Supply both together. The exporter compiles the local source
+package and verifies the recorded methods are present, then copies source bytes
+under `schemas/` and sets Postman's native `schema.source: file` and `location`.
+The copied package contains its local `.proto` files and is limited to 256 files
+and 16 MiB. A frozen reflection descriptor is
+never turned into invented `.proto` source. If original source is unavailable,
+configure the schema manually in Postman or use a server with reflection.
+
+Keep the collection and copied `schemas/` tree together. Postman's v3 file schema
+locations are relative to its working directory; use the export directory as the
+working directory, or select the copied root proto after importing in the desktop
+app. Source schema companions require `--output` or `--output-dir`.
+
+### Automatic exports
+
+The same options work in `.wiretap.yaml` for suite-finalization exports:
+
+```yaml
+outputs:
+  coverage: [json]
+  postman: true
+  postman_options:
+    omit_incomplete: true
+    grpc:
+      sut:
+        url: http://localhost:50051
+        proto_root: ./proto
+        proto_file: inventory/v1/inventory.proto
+```
+
+Here `proto_root` is relative to `.wiretap.yaml`. The automatic output receipt
+`exports/result.json` includes `postman` collection paths, `postman_files` copied
+source paths, and `postman_omissions` with exact attempt/flow identities. Export
+errors remain under `errors`; coverage can succeed when Postman export fails.
+`--format all` also accepts `--postman-config` and `--postman-omit-incomplete` for
+explicit regeneration with these settings.
+
+### Compatibility checks
+
+The exporter emits Postman's official single-document JSON representation rather
+than the native Git YAML directory layout. HTTP exports are parsed and
+round-tripped with the official Postman Collection SDK. Native gRPC v3 is checked
+against the [official JSON schema](https://schema.postman.com/collection/json/v3.0.0/draft-07/collection.json)
+and a lossless JSON round trip because the published SDK supports v2.1 only.
+The [compatibility harness](../tests/postman-compat/README.md) covers RPC shapes,
+binary data, rich errors and retries using actual exporter output. It does not
+claim desktop import/export or server invocation has been automated.

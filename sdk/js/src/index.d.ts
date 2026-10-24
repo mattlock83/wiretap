@@ -80,11 +80,13 @@ export interface Runtime {
   report(options?: { bundlePath?: string }): Promise<CaptureResponse>;
   finishRun(options?: { outputs?: OutputOptions }): Promise<CaptureResponse>;
 }
-export interface OutputOptions { coverage?: ('json' | 'yaml')[]; postman?: boolean; }
+export interface OutputOptions { coverage?: ('json' | 'yaml')[]; postman?: boolean; postman_options?: { omit_incomplete?: boolean; grpc?: Record<string, { url?: string; proto_root?: string; proto_file?: string }> }; }
 export interface OutputResult {
   bundle_path: string;
   coverage: Record<string, string>;
   postman: string[];
+  postman_files?: string[];
+  postman_omissions?: { attempt_id: string; flow_id: string; protocol: string; message: string }[];
   errors: { format: string; message: string }[];
 }
 export interface TestAttempt {

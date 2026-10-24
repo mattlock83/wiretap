@@ -159,3 +159,21 @@ func TestGRPCConfigRejectsMissingContractsAndInvalidSources(t *testing.T) {
 		})
 	}
 }
+
+func TestAutomaticPostmanProtoRootsResolveFromProject(t *testing.T) {
+	config, err := Decode([]byte(`version: 1
+sut: {url: http://localhost:8080, schema_required: false}
+outputs:
+  postman: true
+  postman_options:
+    grpc:
+      sut: {url: grpc://localhost:50051, proto_root: proto, proto_file: api.proto}
+`), filepath.Join(t.TempDir(), ".wiretap.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := config.Outputs.PostmanOptions.GRPC["sut"]
+	if target.ProtoRoot != filepath.Join(filepath.Dir(config.Path), "proto") || target.ProtoFile != "api.proto" {
+		t.Fatalf("incorrect proto paths: %+v", target)
+	}
+}

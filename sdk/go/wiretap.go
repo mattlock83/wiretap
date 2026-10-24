@@ -39,10 +39,27 @@ func (r *Runtime) FinishRun(ctx context.Context) error {
 // OutputOptions selects exports made by the suite owner after all workers finish.
 // Omit these options to inherit the runtime project's outputs configuration.
 type OutputOptions struct {
-	Coverage []string `json:"coverage,omitempty"`
-	Postman  bool     `json:"postman,omitempty"`
+	Coverage       []string        `json:"coverage,omitempty"`
+	Postman        bool            `json:"postman,omitempty"`
+	PostmanOptions *PostmanOptions `json:"postman_options,omitempty"`
+}
+type PostmanOptions struct {
+	OmitIncomplete bool                         `json:"omit_incomplete,omitempty"`
+	GRPC           map[string]PostmanGRPCTarget `json:"grpc,omitempty"`
+}
+type PostmanGRPCTarget struct {
+	URL       string `json:"url,omitempty"`
+	ProtoRoot string `json:"proto_root,omitempty"`
+	ProtoFile string `json:"proto_file,omitempty"`
 }
 type OutputResult struct {
+	PostmanFiles     []string `json:"postman_files,omitempty"`
+	PostmanOmissions []struct {
+		AttemptID string `json:"attempt_id"`
+		FlowID    string `json:"flow_id"`
+		Protocol  string `json:"protocol"`
+		Message   string `json:"message"`
+	} `json:"postman_omissions,omitempty"`
 	BundlePath string            `json:"bundle_path"`
 	Coverage   map[string]string `json:"coverage"`
 	Postman    []string          `json:"postman"`

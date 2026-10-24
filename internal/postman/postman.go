@@ -108,11 +108,13 @@ func generateCollection(run *bundle.Run, captures []*artifact.Artifact, name, ch
 			},
 		},
 	}
+	labels := attemptFolderNames(captures)
 	for _, capture := range captures {
 		folder, err := exportTest(capture, channel, assetID)
 		if err != nil {
 			return nil, fmt.Errorf("export Postman test %q: %w", capture.TestCase.ID, err)
 		}
+		folder.ID, folder.Name = capture.TestCase.ID, labels[capture.TestCase.ID]
 		collection.Items = append(collection.Items, folder)
 	}
 	return collection, nil
