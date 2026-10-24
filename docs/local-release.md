@@ -52,6 +52,7 @@ mkdir -p dist
 npm pack ./sdk/js --pack-destination ./dist
 node scripts/package-smoke.mjs
 node scripts/runner-smoke.mjs
+node scripts/go-sdk-smoke.mjs
 ```
 
 The package has a source-file allowlist and public exports for `@wiretap/sdk`,
@@ -76,6 +77,13 @@ It also type-checks CommonJS and ESM consumers with strict TypeScript settings.
 Playwright API tests do not need a browser installation. The Linux CI lane
 additionally runs the [browser example](../examples/playwright-runner/README.md)
 with Chromium and parallel API tests.
+
+The Go SDK smoke uses a clean external Go module with a local replacement for
+this checkout. It runs standard test packages concurrently, verifies coverage
+and Postman output, repeated attempts, final cleanup outcomes and output
+overrides, and checks that panics and test timeouts stop the owned runtime.
+It requires Go and Node.js, with no npm installation. The
+[Go suite example](../examples/go-suite/README.md) is also runnable directly.
 
 The development-only Mocha 11 compatibility fixture uses patched `diff` and
 `serialize-javascript` overrides; these do not change consumers' Mocha dependencies.

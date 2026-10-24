@@ -25,8 +25,13 @@ jobs:
         with:
           go-version: '1.26.10'
       - run: go test ./...
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify Go SDK adoption in an external test suite
+        run: node scripts/go-sdk-smoke.mjs
       - if: runner.os == 'Linux'
-        run: go test -race ./internal/proxy ./internal/app
+        run: go test -race ./internal/proxy ./internal/app ./sdk/go
       - if: runner.os == 'Linux'
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
   javascript-and-package:

@@ -18,7 +18,7 @@ redaction.
 | [Configuration and commands](configuration.md) | Configure `.wiretap.yaml`, ownership, specs and CLI commands. |
 | [Local installation and release preparation](local-release.md) | Build versioned binaries, pack the SDK and test installation in an external project. |
 | [JavaScript SDK](../sdk/js/README.md) | Choose Jest, Playwright Test, Mocha or the plain JavaScript lifecycle API. |
-| [Go SDK](../sdk/go/README.md) | Integrate `testing` and existing clients. |
+| [Go SDK](../sdk/go/README.md) | Add managed capture to standard `testing` with `Run` and `StartTest`. |
 | [Runtime HTTP API](runtime-api.md) | Integrate another language or test framework directly. |
 | [Tracing and concurrency](otel-adoption.md) | Reuse OTel and choose shared, sequential or isolated capture. |
 | [HTTPS trust](https-trust.md) | Configure the proxy CA for decrypted HTTPS capture. |

@@ -1,100 +1,127 @@
-# Go test integration
+# Go SDK
 
-Import `github.com/mattlock83/wiretap/sdk/go` as `wiretap`. The helper uses the root
-Go module and standard OTel APIs. Put addresses and specs in `.wiretap.yaml` and
-start `wiretap` alongside the SUT and mocks using your existing harness. Run tests
-normally with `go test`. The SDK inherits runtime defaults over HTTP; it never
-invokes the CLI or launches test processes.
+Add API capture to standard Go tests with two hooks: `wiretap.Run(m)` in
+`TestMain`, and `wiretap.StartTest(t)` in each test or shared setup helper. Keep
+your existing requests, assertions and mocks. Wiretap starts on available ports,
+records each test's final outcome, generates coverage and Postman exports, and
+stops when the package finishes.
 
-```go
-runtime := wiretap.Runtime{} // WIRETAP_BASE_URL or http://127.0.0.1:18000
+## Configure once
 
-t.Run("gets an order", func(t *testing.T) {
-    t.Parallel() // only with working SUT propagation / isolated runtimes
-    session := runtime.StartTest(t, wiretap.TestOptions{ExplicitSession: true})
-    client := session.HTTPClient(existingClient)
-    response, err := client.Get(session.SUTURL + "/orders")
-    if err != nil { t.Fatal(err) }
-    defer response.Body.Close()
-    // Keep existing assertions and mock verification here.
-})
+Import `github.com/mattlock83/wiretap/sdk/go` as `wiretap`. The SDK is part of
+Wiretap's root Go module and requires Go 1.26+. To use a local checkout in another
+Go module, add a replacement and run `go mod tidy` after adding the imports:
+
+```sh
+go mod edit -replace=github.com/mattlock83/wiretap=/absolute/path/to/wiretap
+go mod tidy
 ```
 
-Finish the run from suite cleanup after every test has completed. For a runtime
-owned by one Go test package, use its existing `TestMain`:
+Put the locally built `wiretap` executable on `PATH`, or set `WIRETAP_BINARY` to
+its absolute path. See [local installation](../../docs/local-release.md).
+The SDK does not download or build binaries.
+
+Put `.wiretap.yaml` at the project root:
+
+```yaml
+version: 1
+application: {id: my-api}
+output_dir: artifacts/wiretap
+outputs: {coverage: [json, text], postman: true}
+sut:
+  id: my-api
+  kind: service
+  url: http://127.0.0.1:3000 # Your existing API test server.
+  schema: openapi.yaml
+```
+
+Configuration is discovered from the test package's directory up to the nearest
+parent containing `.wiretap.yaml`. Schema and output paths are relative to that
+file. Use synthetic data and dummy credentials; captured traffic is retained
+unchanged.
+
+## Connect your tests
+
+Add the suite hook to your existing test package:
 
 ```go
+import (
+    "os"
+    "testing"
+
+    wiretap "github.com/mattlock83/wiretap/sdk/go"
+)
+
 func TestMain(m *testing.M) {
-    code := m.Run() // StartTest starts capture lazily; testing owns execution.
-    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-    runtime := wiretap.Runtime{}
-    if err := runtime.FinishRun(ctx); err != nil {
-        fmt.Fprintln(os.Stderr, err)
-        if code == 0 { code = 1 }
-    }
-    cancel()
-    os.Exit(code)
+    os.Exit(wiretap.Run(m))
 }
 ```
 
-`FinishRun` calls `/v1/finishRun` to stop capture and finalize the bundle; the
-HTTP control process remains available. For multiple packages/workers sharing
-a runtime, finalize once from the outer suite/harness after all packages finish,
-instead of each package's `TestMain`. The method returns an error if attempts
-are still active. Use a bounded context and propagate finalization errors.
+Start capture in each test, or in the shared helper your tests already call:
 
-`StartTest` creates a fresh root and registers cleanup. Call it after
-`t.Parallel()` and before registering user cleanups so capture teardown runs
-last. Cleanup records the final test result, handles `t.Fatal`/skip, drains
-accepted traffic, and fails the test if capture is incomplete. Contract
-violations remain recorded separately and do not change the framework outcome,
-so deliberate invalid requests can be tested normally.
-It uses an independent cleanup context so a cancelled request context does not
-prevent teardown. Setup defaults to a 30-second deadline; set
-`TestOptions.SetupTimeout` to allow a larger first-test contract discovery budget,
-for example `2 * time.Minute`. Cleanup allows the configured drain plus ten
-seconds. An explicitly supplied `Runtime.Client` retains its own timeout, which
-must allow both setup and cleanup windows. The root span ends after teardown.
+```go
+func TestOrders(t *testing.T) {
+    session := wiretap.StartTest(t)
+    client := session.HTTPClient(existingClient)
 
-`Session.HTTPClient` clones the supplied standard client and wraps its transport
-with `otelhttp`. It binds requests to the test without mutating the shared client.
-Cancellation and existing request context values are preserved. Supply a client
-whose transport is not already instrumented. For an existing `otelhttp` client,
-keep it and create requests using `http.NewRequestWithContext(session.Context,
-...)` instead. Set `Runtime.TracerProvider` to reuse an explicit provider; absent
-one, the global provider is used, with a local fallback for a no-op global setup.
-No exporter or collector is needed; unsampled contexts work.
+    response, err := client.Get(session.SUTURL + "/orders")
+    if err != nil {
+        t.Fatal(err)
+    }
+    defer response.Body.Close()
+    // Keep your existing assertions and mock verification.
+}
+```
 
-For gRPC projects, configure `protocol: grpc` and reflection or local Protobuf
-sources in `.wiretap.yaml`. `Session.SUTURL` and `Session.Dependencies` contain
-direct capture origins for ordinary generated gRPC clients. Pass
-`Session.Context` into RPCs and use the application's existing OTel gRPC
-instrumentation for parallel ownership. See the [gRPC guide](../../docs/grpc-user-guide.md).
+`HTTPClient` clones your standard HTTP client and attaches the test's tracing
+context. Use the returned `SUTURL` so requests pass through capture. Tests that
+call a handler directly with `httptest.NewRecorder` bypass the network and need
+an HTTP client/server boundary to be captured.
 
-`TestOptions.Schemas` and `TestOptions.Dependencies` accept typed `Schema` and
-`Dependency` overrides. `SchemaSource` supports file, URL, and inline content. The returned `Dependencies` map
-contains capture URLs. Configure the SUT's dependency endpoints once to stable
-`/__wiretap/dep/<asset-id>` URLs for traced sessions. Each API requires its spec unless its
-`SchemaRequired` pointer is explicitly false; supplied specs always validate.
-`DrainTimeout` defaults to five seconds; use a positive duration up to one minute.
+Run your usual test command with caching disabled to get fresh artifacts:
 
-Each runtime run writes a portable Wiretap archive. `Session.RunID` and
-`Session.BundlePath` identify it. Test cleanup commits the attempt's JSON evidence,
-frozen contracts and retained payloads. Set `WIRETAP_OUTPUT_DIR` on the runtime
-process to choose the output parent. Use `wiretap report` for JSON or YAML
-coverage and `wiretap export --format postman` for REST and gRPC collections. See the
-[archive guide](../../docs/bundle-evidence.md).
+```sh
+go test -count=1 ./...
+```
 
-One runtime has one reverse SUT target. Distinct per-test `httptest.NewServer`
-instances need distinct runtimes if they overlap. Direct handler tests using
-`httptest.NewRecorder` bypass the network and cannot be captured. Without SUT
-propagation, keep tests and SUT requests sequential or isolate each worker's SUT,
-Wiretap, and dependency routes. See [adoption notes](../../docs/otel-adoption.md).
+`Run` preserves the test result and returns a failure code if startup, capture
+finalization or shutdown fails. `StartTest` records failed assertions, `t.Fatal`,
+skips and failing cleanup hooks. Register it before your own `t.Cleanup` calls so
+Wiretap observes their outcomes. API contract violations are separate evidence:
+deliberate invalid requests can still pass their test assertions.
 
-### Generate suite outputs
+## Let Wiretap host an HTTP handler
 
-Set `outputs: {coverage: [json, text], postman: true}` in `.wiretap.yaml` and retain the
-normal `FinishRun` cleanup. For explicit selection and returned paths, use
-`FinishRunWithOutputs(ctx, &wiretap.OutputOptions{Coverage: []string{"json", "text"}, Postman: true})`.
-It returns the archive and available export paths even when another export fails;
-check its error and preserve the existing test exit status in the owning harness.
+If your application exposes an `http.Handler`, pass it to `Run` and omit `sut.url`
+from the configuration:
+
+```go
+func TestMain(m *testing.M) {
+    os.Exit(wiretap.Run(m, wiretap.RunOptions{Handler: newAPIHandler()}))
+}
+```
+
+Wiretap serves the handler on an available local port and keeps it alive through
+test cleanup and export. Existing suites can instead keep their own servers and
+mocks. See the [runnable Go example](../../examples/go-suite/README.md).
+
+## Keep the outputs
+
+Each test package owns its Wiretap process and a unique run archive, even when
+`go test ./...` executes packages concurrently. Retain the complete configured
+output directory in CI on success and failure. Normal suite completion writes
+`last-run.json` with exact artifact/export paths and a `wiretap.log` inside the
+run directory, alongside captured traffic, contracts, test outcomes and exports.
+
+Normal test failures still finalize exports. A hard panic, `go test -timeout`,
+or process termination can leave an interrupted archive without completed
+exports; the owned runtime stops when its test process disappears.
+
+Tests run serially by default. For `t.Parallel()`, enable `ExplicitSession` and
+propagate W3C trace context through captured application dependencies. Call
+`StartTest` after `t.Parallel()`. See [parallel capture and advanced options](docs/advanced.md).
+
+The existing `Runtime` API remains available for an externally managed process,
+shared suite ownership, custom tracing providers and manual finalization. See
+the [advanced guide](docs/advanced.md), [gRPC guide](../../docs/grpc-user-guide.md)
+and [configuration reference](../../docs/configuration.md).

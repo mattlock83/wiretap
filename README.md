@@ -41,6 +41,11 @@ For Jest, Playwright Test and Mocha, follow the [SDK setup guide](sdk/js/README.
 configure the contract, add the runner wrapper and route your shared client
 through capture. The adapter handles startup and finalization.
 
+For standard Go tests, add `wiretap.Run(m)` in `TestMain` and
+`wiretap.StartTest(t)` in a test or shared setup helper. The [Go SDK](sdk/go/README.md)
+manages startup, cleanup and exports; the [Go example](examples/go-suite/README.md)
+shows a complete suite with an existing HTTP handler and client.
+
 For a custom harness:
 
 1. Put application/dependency URLs and contracts in `.wiretap.yaml`.

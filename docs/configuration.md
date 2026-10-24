@@ -79,9 +79,14 @@ launch test processes or choose their framework, ordering, concurrency, or exit
 status. Use your usual test command separately, such as `npm test` or `go test`.
 Wiretap has one reverse SUT target per runtime.
 
-Set `WIRETAP_BASE_URL` in the test process when the control API is not at its
-default `http://127.0.0.1:18000`. The SDK reads configuration defaults over HTTP;
-it does not invoke the binary. Startup/session responses give the actual
+The Jest, Playwright Test and Mocha adapters and Go's `wiretap.Run(m)` can own
+runtime startup and shutdown, using available local ports. See the
+[JavaScript](../sdk/js/README.md) and [Go](../sdk/go/README.md) guides.
+
+For an externally managed runtime, set `WIRETAP_BASE_URL` in the test process
+when the control API is not at its default `http://127.0.0.1:18000`. The plain
+JavaScript API and Go's `Runtime` connect to that process and read configuration
+defaults over HTTP. Startup/session responses give the actual
 `sut_url` and dependency capture addresses. A proxy listener ending in `:0`
 allocates a free port; your harness must pass its returned addresses to the
 relevant clients. Use a known control listener address so SDKs can connect.
@@ -92,7 +97,7 @@ The [existing-tests guide](getting-started-existing-tests.md) describes the SDK
 integration. The language-independent contract is:
 
 1. Suite setup calls `POST /v1/startRun` (JavaScript `startCapture`). Test
-   setup also starts capture lazily when necessary, as Go's `StartTest` does.
+   setup also starts capture lazily when necessary, as Go's `Runtime.StartTest` does.
 2. Each test attempt calls `POST /v1/setupTest` with its name and trace context.
 3. Requests in test/fixture callbacks run in that attempt's context.
 4. The framework's completion hook calls `POST /v1/teardownTest` with the result.
@@ -100,10 +105,13 @@ integration. The language-independent contract is:
    `POST /v1/finishRun` (JavaScript `finishRun`, Go `FinishRun`).
 
 One suite-level owner must finalize a shared run. Worker-local Node integrations
-use `manageRuntime: false`; the optional Jest adapter always leaves finalization
-to a global teardown hook. For multiple Go packages sharing a runtime, finalize
-once in the outer harness, not in each package's `TestMain`. Independently owned
-runtimes can be finalized by each package or suite.
+use `manageRuntime: false`; the Jest adapter leaves finalization to a global
+teardown hook. Go's `Run` owns an independent runtime per test package, finalizes
+after all test cleanup, and writes `last-run.json` and `wiretap.log` inside that
+package's unique archive. Packages can run concurrently against one configured
+output directory. Use `go test -count=1 ./...` for fresh captures. An advanced Go
+setup sharing one external runtime across packages must finalize once in its
+outer harness after every package finishes.
 
 Finalization writes the completed raw run artifact.
 `finishRun` stops capture and finalizes the run; the HTTP
@@ -111,6 +119,10 @@ control process stays available for another run. The harness stops that process
 when it is no longer needed. Stopping it with unfinished capture preserves an
 interrupted bundle and pending attempts. SDK cleanup failures should fail the
 owning test or suite; the test framework controls the test process exit code.
+Go-managed processes use an open stdin pipe as a parent lifeline. The internal
+`WIRETAP_EXIT_ON_STDIN_EOF=1` switch lets the runtime stop if its test process
+crashes or times out; normal CLI invocations leave this switch unset. Hard
+aborts can preserve interrupted evidence without completed exports or receipts.
 
 Without a configuration file, supply schemas, addresses, and dependencies
 through the SDK or API. Wiretap process usage/configuration errors return `2` and
