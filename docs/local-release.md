@@ -51,11 +51,12 @@ npm ci --prefix sdk/js
 mkdir -p dist
 npm pack ./sdk/js --pack-destination ./dist
 node scripts/package-smoke.mjs
+node scripts/runner-smoke.mjs
 ```
 
 The package has a source-file allowlist and public exports for `@wiretap/sdk`,
-`@wiretap/sdk/tracing`, `@wiretap/sdk/jest` and
-`@wiretap/sdk/jest-environment`. It includes TypeScript declarations and a copy
+`@wiretap/sdk/tracing`, `@wiretap/sdk/jest`, `@wiretap/sdk/jest-environment`,
+`@wiretap/sdk/playwright`, `@wiretap/sdk/mocha` and `@wiretap/sdk/managed-runtime`. It includes TypeScript declarations and a copy
 of the MIT license. Test fixtures, test dependencies and the lockfile are
 excluded from the package.
 
@@ -67,6 +68,17 @@ and recorded outcomes for both passing tests and a deliberately failing test.
 The failing test must retain exit status 1 while still writing its outputs.
 The temporary project is removed afterward. npm may access its dependency
 registry/cache; nothing is published.
+
+The runner smoke additionally installs the packed SDK with Jest, Playwright Test
+and Mocha in a clean project. It checks retries, failing cleanup hooks, preserved
+user fixtures, coverage and Postman parsing with the official Node library.
+It also type-checks CommonJS and ESM consumers with strict TypeScript settings.
+Playwright API tests do not need a browser installation. The Linux CI lane
+additionally runs the [browser example](../examples/playwright-runner/README.md)
+with Chromium and parallel API tests.
+
+The development-only Mocha 11 compatibility fixture uses patched `diff` and
+`serialize-javascript` overrides; these do not change consumers' Mocha dependencies.
 
 Pass `--binary /absolute/path/to/wiretap` to check a locally built release binary.
 On Windows the script invokes npm's JavaScript entry point from the standard

@@ -29,14 +29,19 @@ The example starts its services, runs a test, finalizes the capture and generate
 JSON coverage and Postman collections automatically. It prints a short coverage
 summary and exact output paths. Everything stays under `artifacts/<run-id>/`.
 
-For the recommended **copyable two-file Node test suite**, including startup,
-readiness checks, failure handling and one finalization owner, follow
-[the existing-tests guide](docs/getting-started-existing-tests.md) and
-[the complete harness](examples/node-suite/README.md).
-[More examples](examples/README.md) cover parallel Jest, native gRPC, streaming,
-real clients and existing mocks.
+For existing JavaScript tests, choose the [Jest, Playwright Test or Mocha adapter](sdk/js/README.md).
+Each manages Wiretap startup and exports around your normal test command. The
+[plain JavaScript API and Node harness](sdk/js/docs/javascript.md) remain available
+for custom setups. [More examples](examples/README.md) cover existing external
+tests, native gRPC, streaming, real clients and mocks.
 
 ## Add it to your suite
+
+For Jest, Playwright Test and Mocha, follow the [SDK setup guide](sdk/js/README.md):
+configure the contract, add the runner wrapper and route your shared client
+through capture. The adapter handles startup and finalization.
+
+For a custom harness:
 
 1. Put application/dependency URLs and contracts in `.wiretap.yaml`.
 2. Start Wiretap alongside your application and mocks in your existing harness.

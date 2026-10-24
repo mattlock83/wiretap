@@ -17,7 +17,7 @@ redaction.
 | [Runnable examples](../examples/README.md) | Try HTTP/gRPC capture, database fixtures or Microsvc Transactions. |
 | [Configuration and commands](configuration.md) | Configure `.wiretap.yaml`, ownership, specs and CLI commands. |
 | [Local installation and release preparation](local-release.md) | Build versioned binaries, pack the SDK and test installation in an external project. |
-| [JavaScript SDK](../sdk/js/README.md) | Use native hooks or the optional Node/Jest adapters. |
+| [JavaScript SDK](../sdk/js/README.md) | Choose Jest, Playwright Test, Mocha or the plain JavaScript lifecycle API. |
 | [Go SDK](../sdk/go/README.md) | Integrate `testing` and existing clients. |
 | [Runtime HTTP API](runtime-api.md) | Integrate another language or test framework directly. |
 | [Tracing and concurrency](otel-adoption.md) | Reuse OTel and choose shared, sequential or isolated capture. |

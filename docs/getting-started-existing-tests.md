@@ -4,13 +4,23 @@ Wiretap runs beside your existing test suite and produces raw evidence, Postman
 collections and API coverage. Use isolated services, synthetic data and dummy
 secrets: captured traffic is retained as sent, with no built-in redaction.
 
-For existing Jest 29/30 suites, start with the [automatic Jest setup](../sdk/js/README.md#existing-jest-tests-automatic-capture): wrap the configuration, point the shared client at the capture URL, and keep your tests unchanged. The [external Express demo](../examples/existing-jest/README.md) exercises this against 120 existing tests.
+For JavaScript, choose your runner in the [SDK setup guide](../sdk/js/README.md):
 
-The Node integration below uses the outcome-aware adapter, two test
-files and one parent harness. The framework keeps ownership of test execution
-and outcomes, including cleanup-hook failures. For Go, use the
-[Go SDK](../sdk/go/README.md); for native gRPC, use the
-[gRPC guide](grpc-user-guide.md).
+| Runner | Smallest setup |
+| --- | --- |
+| [Jest](../sdk/js/docs/jest.md) | Wrap the config and point your shared client at `WIRETAP_SUT_URL`. |
+| [Playwright Test](../sdk/js/docs/playwright.md) | Wrap the config and import the supplied `test` fixture. |
+| [Mocha](../sdk/js/docs/mocha.md) | Wrap the config and point your shared client at `WIRETAP_SUT_URL`. |
+| [Plain JavaScript / Node](../sdk/js/docs/javascript.md) | Connect the lifecycle API to your existing harness. |
+
+The runner adapters start Wiretap, record final test outcomes and finalize exports
+around your usual command. The [external Express/Jest demo](../examples/existing-jest/README.md)
+checks 120 unchanged tests; the [Playwright Todo example](../examples/playwright-runner/README.md)
+provides a small API suite you can copy.
+
+The Node integration below shows a project-owned alternative with two test files
+and one parent harness. For Go, use the [Go SDK](../sdk/go/README.md); for native
+gRPC, use the [gRPC guide](grpc-user-guide.md).
 
 ## 1. Run the complete adoption example
 

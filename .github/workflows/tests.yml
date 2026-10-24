@@ -51,6 +51,26 @@ jobs:
       - run: npm test --prefix sdk/js
       - run: npm audit --prefix sdk/js --audit-level=low
       - run: node scripts/package-smoke.mjs
+      - run: node scripts/runner-smoke.mjs
+      - name: Install Chromium for the real browser capture check
+        if: runner.os == 'Linux' && matrix.node == '22'
+        run: node sdk/js/node_modules/@playwright/test/cli.js install --with-deps chromium
+      - name: Build the browser example runtime
+        if: runner.os == 'Linux' && matrix.node == '22'
+        run: go build -mod=readonly -o dist/wiretap ./cmd/wiretap
+      - name: Verify browser and parallel API capture
+        if: runner.os == 'Linux' && matrix.node == '22'
+        env:
+          WIRETAP_BINARY: ${{ github.workspace }}/dist/wiretap
+          WIRETAP_PLAYWRIGHT_BROWSER: chromium
+          WIRETAP_PLAYWRIGHT_PARALLEL: '1'
+        run: node sdk/js/node_modules/@playwright/test/cli.js test --config examples/playwright-runner/playwright.config.cjs
+      - uses: actions/upload-artifact@v4
+        if: always() && runner.os == 'Linux' && matrix.node == '22'
+        with:
+          name: playwright-browser-evidence
+          path: examples/playwright-runner/artifacts/
+          retention-days: 7
   local-release:
     runs-on: ubuntu-latest
     timeout-minutes: 20
