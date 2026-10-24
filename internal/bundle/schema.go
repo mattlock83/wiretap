@@ -17,6 +17,7 @@ import (
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/mattlock83/wiretap/internal/artifact"
+	"github.com/mattlock83/wiretap/internal/fileuri"
 	"github.com/mattlock83/wiretap/internal/grpccontract"
 	"github.com/mattlock83/wiretap/internal/schemajson"
 )
@@ -67,11 +68,11 @@ func (w *Writer) freezeSchema(ref artifact.SchemaRef) (artifact.SchemaRef, error
 		}
 		return ref, nil
 	case "file":
-		path, err := filepath.Abs(ref.Source.Path)
+		var err error
+		rootURL, err = fileuri.FromPath(ref.Source.Path)
 		if err != nil {
 			return ref, err
 		}
-		rootURL = &url.URL{Scheme: "file", Path: filepath.ToSlash(path)}
 	case "url":
 		var err error
 		rootURL, err = url.Parse(ref.Source.URL)
@@ -298,7 +299,11 @@ func (w *Writer) freezeProtobuf(ref artifact.SchemaRef) (artifact.SchemaRef, err
 func fetchSchema(uri *url.URL) ([]byte, error) {
 	switch uri.Scheme {
 	case "file":
-		return os.ReadFile(filepath.FromSlash(uri.Path))
+		name, err := fileuri.Path(uri)
+		if err != nil {
+			return nil, err
+		}
+		return os.ReadFile(name)
 	case "http", "https":
 		client := http.Client{Timeout: 15 * time.Second}
 		res, err := client.Get(uri.String())
