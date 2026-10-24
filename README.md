@@ -2,8 +2,9 @@
 
 Turn existing HTTP and native gRPC API tests into **portable evidence, Postman
 collections and API coverage**. Keep your test framework, clients, assertions and
-mocks. Wiretap captures traffic at the application boundary and measures it
-against your OpenAPI or Protobuf contracts.
+mocks. Wiretap captures traffic at the application boundary, measures it against
+your OpenAPI or Protobuf contracts, and checks mock assumptions against provider
+test evidence.
 
 Wiretap is for **isolated test environments using synthetic data and dummy
 secrets**. It retains the traffic you send through it, including credentials and
@@ -100,11 +101,27 @@ v2.1; native gRPC uses v3. See [exports and compatibility](docs/artifacts.md).
 For tools consuming the results, use the versioned
 [machine interface](docs/machine-interface.md).
 
+## Check assumptions against another suite
+
+Compare a consumer's captured mocks with the provider's captured tests:
+
+```sh
+wiretap check consumer --consumer ./orders-run --provider ./inventory-run --dependency inventory
+```
+
+Use `wiretap check provider` with the same inputs to check from the provider's
+viewpoint. Both commands require matching concrete requests and compatible
+responses from passing provider tests. Missing provider coverage fails the
+check. Collections default to each run's `exports/postman/` directory and are
+verified against the raw archive. See [assumption checks](docs/assumption-checks.md)
+for dependency mapping, limits, custom collection paths and CI output.
+
 ## Product scope and documentation
 
-Wiretap's job ends at capture and export. Mock responses record consumer
-assumptions; comparing them against provider evidence belongs in a separate
-future diffing tool. Wiretap does not generate or execute additional tests.
+Wiretap captures existing tests, exports their evidence and verifies concrete
+consumer/provider examples offline. A passing check covers the supplied
+examples; it does not prove arbitrary business behavior. Wiretap does not
+generate or execute additional tests.
 
 Start with the [documentation index](docs/README.md) for setup, CI, formats and
 troubleshooting. The [product scope](docs/roadmap.md) describes the completion

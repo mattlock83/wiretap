@@ -1,7 +1,8 @@
 # Wiretap product scope
 
-Wiretap has one job: capture existing HTTP and native gRPC API tests and produce
-portable evidence, Postman collections and API-level coverage. It runs locally
+Wiretap makes existing HTTP and native gRPC API tests portable and comparable:
+capture evidence, export Postman collections and API-level coverage, and verify
+consumer mock examples against provider tests. It runs locally
 in isolated test environments with synthetic data and dummy secrets.
 
 ## Completion criteria
@@ -14,9 +15,13 @@ in isolated test environments with synthetic data and dummy secrets.
   native unary and streaming gRPC alongside HTTP.
 - Freeze declared contracts and report untested operations even in empty runs.
 - Retain raw evidence, stable identities, build provenance and explicit limits
-  so another tool can compare runs without access to the original environment.
+  so checks and downstream tools can compare runs without the original environment.
 - Produce Postman HTTP v2.1 and gRPC v3 exports with automated compatibility
   checks and clear replay limitations.
+- Check selected consumer mock requests and paired responses against complete
+  passing provider service tests, with explicit uncovered and unverified results.
+- Verify supplied Postman collections against their source archives before
+  accepting them as part of an assumption check.
 - Keep installation local, document the supported setup and test it across
   Linux, macOS and Windows.
 
@@ -32,11 +37,13 @@ Captures retain synthetic test data as sent. Contract mismatches
 are recorded without replacing the framework's outcome. Capture failures and
 invalid configuration still fail integration cleanup or setup.
 
-Cross-repository assumption matching and regression comparison belong in a
-separate future diff tool that consumes these files. Test generation, dependency
-simulation, hosted registries and managed test execution are outside Wiretap's
-scope. A mock's response is evidence of an assumption, not verified provider
-agreement.
+The offline [assumption checker](assumption-checks.md) requires provider test
+evidence for each selected concrete mock request and paired response. It fails
+for incompatible, uncovered or unverified assumptions. A passing result supports
+those examples, not arbitrary values, business behavior or a live deployment.
+Test generation, dependency simulation, hosted registries and managed test
+execution are outside Wiretap's scope. Capturing a mock response alone does not
+establish provider agreement.
 
 Supported integrations are Jest, Playwright Test, Mocha, plain JavaScript and
 Go's standard `testing` package. Other runners and languages can use the

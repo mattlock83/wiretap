@@ -35,7 +35,9 @@ The JSON separates `origin` (`provided` or `dependency`) and `target_kind`
 (`mock`, `service`, or `unknown`). Select the intended source/run revisions from
 `bundle.json` before comparing. Covered consumer/mock keys missing from
 provider coverage identify evidence gaps, not automatic incompatibilities.
-The cross-bundle comparator itself is not implemented.
+The separate [assumption checker](assumption-checks.md) uses concrete request and
+paired response evidence rather than equating coverage keys. It fails when a
+selected mock scenario is unsupported by qualifying provider tests.
 
 ## Current measurement profiles
 

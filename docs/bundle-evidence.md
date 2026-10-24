@@ -207,9 +207,10 @@ require `event-interactions.v1`; frozen Avro/AsyncAPI/GraphQL packages require
 availability of a live capture, coverage or execution adapter.
 
 For outbound flows, `assumption` says `evidence_basis: observed_exchange`,
-`consumed_fields: unknown`, and `provider_check.status: not_checked` unless a
-later, explicit provider comparison changes that separate result. Capturing a
+`consumed_fields: unknown`, and `provider_check.status: not_checked`. Capturing a
 field in a mock response does not mean the consumer required it.
+The offline [assumption checker](assumption-checks.md) writes a separate result;
+it does not mutate the captured assumption or its original `not_checked` state.
 
 An HTTP API explicitly configured with `schema_required: false` and no supplied spec
 has a schema reference with `source.type: omitted` and no source bytes. This is

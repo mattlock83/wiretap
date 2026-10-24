@@ -61,7 +61,7 @@ func generateHTTP(run *bundle.Run, captures []*artifact.Artifact, sutName string
 		if err != nil {
 			return nil, err
 		}
-		exports = append(exports, Export{Filename: exportFilename("mock", id, usedFilenames), Collection: collection})
+		exports = append(exports, Export{Filename: exportFilename("mock", id, usedFilenames), BoundaryID: id, Collection: collection})
 	}
 	return exports, nil
 }

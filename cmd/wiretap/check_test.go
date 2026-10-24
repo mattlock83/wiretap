@@ -1,0 +1,212 @@
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/mattlock83/wiretap/internal/artifact"
+	"github.com/mattlock83/wiretap/internal/assumptions"
+	"github.com/mattlock83/wiretap/internal/bundle"
+	"github.com/mattlock83/wiretap/internal/postman"
+)
+
+func cliCheckArchive(t *testing.T, consumer bool, path string, status int, response string, states ...string) string {
+	t.Helper()
+	writer, err := bundle.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	identity := bundle.Identity{Application: &bundle.Application{ID: "inventory-service"}, APIID: "inventory", SUTTargetKind: "service"}
+	channel, asset := "test_to_sut", ""
+	if consumer {
+		identity = bundle.Identity{Application: &bundle.Application{ID: "orders"}, APIID: "orders", SUTTargetKind: "service", DependencyKinds: map[string]string{"stock": "mock"}, ProviderMappings: map[string]bundle.ProviderRef{"stock": {ApplicationID: "inventory-service", APIID: "inventory"}}}
+		channel, asset = "sut_to_dependency", "stock"
+	}
+	if err := writer.Configure(identity); err != nil {
+		t.Fatal(err)
+	}
+	capture := &artifact.Artifact{Version: 1, TestCase: artifact.TestCase{ID: "attempt", Name: "checks inventory", Status: "pass", StartedAt: time.Now().UTC()}, Traffic: []artifact.Flow{{
+		ID: "call", Protocol: "http", Channel: channel, AssetID: asset,
+		Request:  artifact.Message{HTTP: &artifact.HttpMessage{Method: "GET", URL: "http://local.test" + path, Headers: artifact.Headers{"Accept": {"application/json"}}}},
+		Response: artifact.Message{HTTP: &artifact.HttpMessage{Status: status, Headers: artifact.Headers{"Content-Type": {"application/json"}}, Body: &artifact.Body{Text: response}}},
+	}}}
+	if _, err := writer.Register(capture.TestCase, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := writer.Commit(capture); err != nil {
+		t.Fatal(err)
+	}
+	state := "complete"
+	if len(states) > 0 {
+		state = states[0]
+	}
+	if err := writer.Finalize(state); err != nil {
+		t.Fatal(err)
+	}
+	exports, err := postman.GenerateAll(writer.Path(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	directory := filepath.Join(writer.Path(), "exports", "postman")
+	if err := os.MkdirAll(directory, 0755); err != nil {
+		t.Fatal(err)
+	}
+	for _, export := range exports {
+		file, err := os.Create(filepath.Join(directory, export.Filename))
+		if err != nil {
+			t.Fatal(err)
+		}
+		writeErr := postman.WriteExport(file, export)
+		closeErr := file.Close()
+		if writeErr != nil || closeErr != nil {
+			t.Fatalf("write collection: %v / %v", writeErr, closeErr)
+		}
+	}
+	return writer.Path()
+}
+
+func TestCLIAssumptionCheckBothViewpoints(t *testing.T) {
+	consumer := cliCheckArchive(t, true, "/items?limit=1", 200, `{"stock":3}`)
+	provider := cliCheckArchive(t, false, "/items?limit=1", 200, `{"stock":3.0}`)
+	for _, mode := range []string{"consumer", "provider"} {
+		t.Run(mode, func(t *testing.T) {
+			code, data := executeCapturingStdout(t, []string{"check", mode, "--consumer", filepath.Join(consumer, "bundle.json"), "--provider", provider, "--format", "json"})
+			var report assumptions.Report
+			if err := json.Unmarshal(data, &report); err != nil {
+				t.Fatalf("invalid report: %v\n%s", err, data)
+			}
+			if code != 0 || !report.Compatible || report.Mode != mode || report.Counts.Verified != 1 || report.Binding != "declared_mapping" {
+				t.Fatalf("check returned %d: %+v", code, report)
+			}
+		})
+	}
+}
+
+func TestCLIAssumptionCheckReportsFailureAndWritesJSON(t *testing.T) {
+	consumer := cliCheckArchive(t, true, "/items?limit=1", 200, `{"stock":3}`)
+	for _, scenario := range []struct {
+		name, path     string
+		status         int
+		response, kind string
+	}{
+		{"response mismatch", "/items?limit=1", 200, `{"stock":"three"}`, "mismatch"},
+		{"missing coverage", "/items?limit=2", 200, `{"stock":3}`, "uncovered"},
+		{"status mismatch", "/items?limit=1", 503, `{"stock":3}`, "mismatch"},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			provider := cliCheckArchive(t, false, scenario.path, scenario.status, scenario.response)
+			args := []string{"check", "consumer", "--consumer", consumer, "--provider", provider}
+			code, text := executeCapturingStdout(t, args)
+			if code != 1 || !strings.Contains(string(text), "["+scenario.kind+"]") || !strings.Contains(string(text), "tests/attempt.json#/capture/traffic/0") {
+				t.Fatalf("check exit %d: %s", code, text)
+			}
+			output := filepath.Join(t.TempDir(), "check.json")
+			if err := os.WriteFile(output, []byte("old report"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			code = execute(context.Background(), append(args, "--format", "json", "--output", output))
+			data, err := os.ReadFile(output)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var report assumptions.Report
+			if code != 1 || json.Unmarshal(data, &report) != nil || report.Compatible || len(report.Findings) != 1 || report.Findings[0].Kind != scenario.kind {
+				t.Fatalf("file report exit %d: %s", code, data)
+			}
+		})
+	}
+}
+
+func TestCLIAssumptionCheckProtectsInputsAndExistingReports(t *testing.T) {
+	consumer := cliCheckArchive(t, true, "/items", 200, `{"ok":true}`)
+	provider := cliCheckArchive(t, false, "/items", 200, `{"ok":true}`)
+	args := []string{"check", "consumer", "--consumer", consumer, "--provider", provider}
+	manifest := filepath.Join(consumer, "bundle.json")
+	before, err := os.ReadFile(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if code := execute(context.Background(), append(args, "--output", manifest)); code != 2 {
+		t.Fatalf("input overwrite exit %d", code)
+	}
+	after, err := os.ReadFile(manifest)
+	if err != nil || string(after) != string(before) {
+		t.Fatal("check changed its source archive")
+	}
+	output := filepath.Join(t.TempDir(), "existing.json")
+	if err := os.WriteFile(output, []byte("keep existing"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	badCollection := filepath.Join(t.TempDir(), "bad.json")
+	if err := os.WriteFile(badCollection, []byte(`{"info":{},"item":[]}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if code := execute(context.Background(), append(args, "--consumer-collection", badCollection, "--output", output)); code != 2 {
+		t.Fatalf("invalid collection exit %d", code)
+	}
+	data, err := os.ReadFile(output)
+	if err != nil || string(data) != "keep existing" {
+		t.Fatal("invalid input changed existing report")
+	}
+}
+
+func TestCLIAssumptionCheckUsage(t *testing.T) {
+	for _, args := range [][]string{
+		{"check", "--help"}, {"check", "consumer", "--help"}, {"check", "provider", "--help"},
+	} {
+		if code := execute(context.Background(), args); code != 0 {
+			t.Fatalf("help %v: exit %d", args, code)
+		}
+	}
+	for _, args := range [][]string{
+		{"check"}, {"check", "other"}, {"check", "consumer"}, {"check", "provider", "--consumer", "x"},
+		{"check", "consumer", "--consumer", "x", "--provider", "y", "--format", "yaml"},
+		{"check", "consumer", "--consumer", "x", "--provider", "y", "extra"},
+	} {
+		if code := execute(context.Background(), args); code != 2 {
+			t.Fatalf("usage %v: exit %d", args, code)
+		}
+	}
+}
+
+func TestCLIAssumptionCheckProtectsCaseAliases(t *testing.T) {
+	consumer := cliCheckArchive(t, true, "/items", 200, `{"ok":true}`)
+	provider := cliCheckArchive(t, false, "/items", 200, `{"ok":true}`)
+	alias := filepath.Join(filepath.Dir(consumer), strings.ToUpper(filepath.Base(consumer)))
+	if !sameCheckFile(alias, consumer) {
+		t.Skip("filesystem distinguishes directory casing")
+	}
+	manifest := filepath.Join(consumer, "bundle.json")
+	before, err := os.ReadFile(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	code := execute(context.Background(), []string{"check", "consumer", "--consumer", consumer, "--provider", provider, "--output", filepath.Join(alias, "bundle.json")})
+	after, err := os.ReadFile(manifest)
+	if code != 2 || err != nil || string(before) != string(after) {
+		t.Fatalf("case alias bypassed input protection: exit %d error %v", code, err)
+	}
+}
+
+func TestCLIAssumptionCheckSavesUnverifiedReportWithoutExports(t *testing.T) {
+	consumer := cliCheckArchive(t, true, "/items", 200, `{"ok":true}`)
+	provider := cliCheckArchive(t, false, "/items", 200, `{"ok":true}`, "interrupted")
+	if err := os.RemoveAll(filepath.Join(provider, "exports")); err != nil {
+		t.Fatal(err)
+	}
+	output := filepath.Join(t.TempDir(), "unverified.json")
+	code := execute(context.Background(), []string{"check", "provider", "--consumer", consumer, "--provider", provider, "--format", "json", "--output", output})
+	data, err := os.ReadFile(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var report assumptions.Report
+	if code != 1 || json.Unmarshal(data, &report) != nil || report.Compatible || len(report.Findings) == 0 || report.Findings[0].Code != "provider_run_incomplete" {
+		t.Fatalf("missing unverified result: exit %d, %s", code, data)
+	}
+}

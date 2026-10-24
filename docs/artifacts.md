@@ -35,6 +35,15 @@ provider-only, consumer-only and mixed systems, while the current runtime setup
 remains centred on a SUT. Empty inventories describe configured and observed
 scope; they do not prove that no other APIs or dependencies exist.
 
+## Verify consumer/provider examples
+
+Use `wiretap check consumer` or `wiretap check provider` with both complete
+archives and their Postman collections. The checker verifies the collections
+against their raw evidence, then requires each selected mock request and paired
+response to have compatible evidence from a passing provider service test.
+Uncovered scenarios fail the check. See [assumption checks](assumption-checks.md)
+for command examples, dependency selection, JSON results and limits.
+
 ## Generate coverage
 
 `report` and `export` read and verify captured evidence, frozen contracts and

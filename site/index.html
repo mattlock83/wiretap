@@ -68,7 +68,7 @@
           <p class="assumption-copy">The order flow passed when inventory replied:</p>
           <pre class="assumption-json"><code>{ "available": true, "quantity": 42 }</code></pre>
           <div class="verification-line"><span>Real provider agreement</span><strong>Not verified</strong></div>
-          <p class="panel-footnote">Keep this assumption with the test evidence, ready to compare with the provider's own tests.</p>
+          <p class="panel-footnote">Check this captured assumption against the provider's own test evidence with <code>wiretap check consumer</code>.</p>
         </div>
         <div class="demo-bottom"><span class="file-icon" aria-hidden="true"></span> Captured exchanges. Exportable coverage.</div>
       </div>
@@ -164,7 +164,7 @@ note:     { type: string } # optional</code></pre><div class="case-heading"><spa
       <details><summary>Do I need to change my test framework?</summary><p>No. Jest, Playwright Test and Mocha use a configuration wrapper. Go uses Run in TestMain and StartTest in a test or shared helper. These integrations handle Wiretap startup, cleanup and exports. Plain JavaScript and the HTTP API support custom harnesses. Your framework owns the tests and assertions.</p></details>
       <details><summary>Does my application need Wiretap-specific code?</summary><p>Configure your test environment's URLs so traffic passes through Wiretap. For parallel tests sharing one application, reuse working OpenTelemetry/W3C trace propagation. Without it, run sequentially or isolate workers. There is no Wiretap-specific ID to propagate through the application.</p></details>
       <details><summary>Do I need a spec?</summary><p>HTTP APIs use OpenAPI; an individual HTTP API can explicitly opt out with unknown contract coverage. Native gRPC requires Protobuf descriptors, obtained by reflection or supplied locally. Native gRPC coverage includes methods and supported field cases such as enums, presence and collections across unary and streaming calls. Unevaluated validation annotations remain visible as measurement limits.</p></details>
-      <details><summary>Does it prove my mocks match the real provider?</summary><p>Wiretap makes the assumptions visible and preserves the evidence needed to investigate them. A passing consumer test alone cannot prove provider agreement. Comparison belongs in a separate future tool that consumes the exported evidence.</p></details>
+      <details><summary>Can I check my mocks against provider tests?</summary><p>Use <code>wiretap check consumer</code> with both complete archives and their Postman collections. Every selected mock request needs a compatible response from the provider's passing tests; uncovered scenarios fail. Use <code>wiretap check provider</code> from the provider's viewpoint. This checks concrete examples, not every possible value or a live deployment. <a href="https://github.com/mattlock83/wiretap/blob/main/docs/assumption-checks.md">Read the checking guide</a>.</p></details>
       <details><summary>What data should I use?</summary><p>Use isolated test environments with synthetic data and dummy secrets. Wiretap retains the traffic you send, including payloads and credentials. Captured traffic is retained unchanged.</p></details>
     </div></section>
 

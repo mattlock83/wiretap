@@ -94,8 +94,11 @@ unsupported semantics remain visible. See [coverage rules](contract-coverage-rul
 Dependency records retain mock/service provenance. They show what the target
 returned during a test, without proving provider agreement or identifying which
 fields the SUT consumed. Provider mappings retain the intended cross-project
-identity without claiming agreement. A cross-repository comparator is not
-implemented.
+identity without claiming agreement. The offline
+[assumption checker](assumption-checks.md) verifies exported collections against
+their archives and compares selected mock scenarios with complete passing
+provider service tests. It requires request and response agreement within the
+same exchange and reports missing evidence as a failure.
 Wiretap does not execute or generate tests.
 
 HTTP and native gRPC support capture, validation and coverage, including all four

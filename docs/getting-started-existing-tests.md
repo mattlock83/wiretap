@@ -167,6 +167,8 @@ artifact upload. Rebuild the summary offline with:
 wiretap report --bundle artifacts/<run-id> --format text
 ```
 
-A mock response is a recorded assumption, not proof of provider agreement. Keep
-the raw archive for a later diff tool; the [machine interface](machine-interface.md)
-explains identities, versions, provenance and evidence limits.
+A mock response is a recorded assumption. To verify its examples against the
+provider's own tests, keep both complete archives and their Postman collections
+and run the [assumption checker](assumption-checks.md). The
+[machine interface](machine-interface.md) explains identities, versions,
+provenance and evidence limits.
