@@ -108,11 +108,14 @@ type grpcRequestBody struct {
 	capture         *grpcCapture
 	trailers        *http.Header
 	forwardTrailers *http.Header
+	readMu          sync.Mutex
 	closeOnce       sync.Once
 	closeError      error
 }
 
 func (b *grpcRequestBody) Read(p []byte) (int, error) {
+	b.readMu.Lock()
+	defer b.readMu.Unlock()
 	n, err := b.ReadCloser.Read(p)
 	if n > 0 {
 		_, _ = b.capture.request.Write(p[:n])
@@ -139,7 +142,12 @@ func (b *grpcRequestBody) Read(p []byte) (int, error) {
 
 func (b *grpcRequestBody) Close() error {
 	b.closeOnce.Do(func() {
+		// Closing must release a blocked transport read before waiting for its
+		// observation. Otherwise a concurrent close can record "closed" before
+		// that read records the EOF it already received from the client.
 		b.closeError = b.ReadCloser.Close()
+		b.readMu.Lock()
+		defer b.readMu.Unlock()
 		b.capture.request.Finish(b.closeError)
 	})
 	return b.closeError

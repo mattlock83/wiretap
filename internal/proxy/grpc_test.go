@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mattlock83/wiretap/internal/capture"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 )
@@ -153,6 +154,96 @@ func TestGRPCEarlyResponseClosesRequestAndRetainsSafeSnapshot(t *testing.T) {
 	if !exchange.RequestTruncated || retainedBytes > 1024 {
 		t.Fatalf("early response snapshot: %d retained bytes, %#v", retainedBytes, exchange)
 	}
+}
+
+func TestGRPCRequestCloseWaitsForEOFObservation(t *testing.T) {
+	clock := capture.NewGRPCClock(time.Now())
+	observer := &grpcCapture{clock: clock, request: capture.NewGRPCObserver(clock, "request", 1024, 10)}
+	source := &gatedGRPCRequestBody{read: make(chan struct{}), closed: make(chan struct{}), eof: true}
+	trailers := http.Header{"Example-Bin": {"YWJj"}}
+	body := &grpcRequestBody{ReadCloser: source, capture: observer, trailers: &trailers}
+
+	// Pause observation after the underlying reader returns EOF. The HTTP/2
+	// transport can close the request concurrently after receiving its response.
+	observer.mu.Lock()
+	readDone := make(chan error, 1)
+	go func() {
+		_, err := body.Read(make([]byte, 1))
+		readDone <- err
+	}()
+	<-source.read
+	closeDone := make(chan error, 1)
+	go func() { closeDone <- body.Close() }()
+	<-source.closed
+	closedBeforeObservation := false
+	select {
+	case <-closeDone:
+		closedBeforeObservation = true
+	case <-time.After(25 * time.Millisecond):
+	}
+	observer.mu.Unlock()
+	if err := <-readDone; err != io.EOF {
+		t.Fatalf("request read = %v", err)
+	}
+	if !closedBeforeObservation {
+		if err := <-closeDone; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if observation := observer.request.Snapshot(); !observation.EOF || observation.End != "eof" {
+		t.Fatalf("concurrent close lost observed request EOF: %+v", observation)
+	}
+	if observer.exchange.RequestTrailers["Example-Bin"][0] != "YWJj" {
+		t.Fatal("concurrent close lost observed request trailers")
+	}
+}
+
+func TestGRPCRequestCloseUnblocksActiveReadWithoutInventingEOF(t *testing.T) {
+	clock := capture.NewGRPCClock(time.Now())
+	observer := &grpcCapture{clock: clock, request: capture.NewGRPCObserver(clock, "request", 1024, 10)}
+	source := &gatedGRPCRequestBody{read: make(chan struct{}), closed: make(chan struct{})}
+	body := &grpcRequestBody{ReadCloser: source, capture: observer}
+	readDone := make(chan error, 1)
+	go func() {
+		_, err := body.Read(make([]byte, 1))
+		readDone <- err
+	}()
+	<-source.read
+	closeDone := make(chan error, 1)
+	go func() { closeDone <- body.Close() }()
+	select {
+	case err := <-closeDone:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("closing request did not release its blocked read")
+	}
+	if err := <-readDone; err != io.ErrClosedPipe {
+		t.Fatalf("interrupted request read = %v", err)
+	}
+	if observation := observer.request.Snapshot(); observation.EOF || observation.End == "open" {
+		t.Fatalf("closing an open request invented EOF or left capture open: %+v", observation)
+	}
+}
+
+type gatedGRPCRequestBody struct {
+	read, closed chan struct{}
+	eof          bool
+}
+
+func (b *gatedGRPCRequestBody) Read([]byte) (int, error) {
+	close(b.read)
+	if b.eof {
+		return 0, io.EOF
+	}
+	<-b.closed
+	return 0, io.ErrClosedPipe
+}
+
+func (b *gatedGRPCRequestBody) Close() error {
+	close(b.closed)
+	return nil
 }
 
 func TestGRPCSnapshotIsCommittedOnceBeforeCancellation(t *testing.T) {
