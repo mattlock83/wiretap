@@ -79,6 +79,9 @@ with Chromium and parallel API tests.
 
 The development-only Mocha 11 compatibility fixture uses patched `diff` and
 `serialize-javascript` overrides; these do not change consumers' Mocha dependencies.
+Regenerate the SDK lockfile from a directory containing only its package files,
+then verify a clean install with CI's npm versions. Updating it beside an existing
+`node_modules` tree can omit optional packages for other platforms.
 
 Pass `--binary /absolute/path/to/wiretap` to check a locally built release binary.
 On Windows the script invokes npm's JavaScript entry point from the standard
