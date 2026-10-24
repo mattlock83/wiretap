@@ -104,20 +104,30 @@ v2.1; native gRPC uses v3. See [exports and compatibility](docs/artifacts.md).
 For tools consuming the results, use the versioned
 [machine interface](docs/machine-interface.md).
 
-## Check assumptions against another suite
+## Check assumptions across applications
 
-Compare a consumer's captured mocks with the provider's captured tests:
+Upload complete runs and Postman exports to a shared artifact store, grouped
+by application ID. Restore the selected snapshots locally, then check your run
+against the other teams' evidence:
 
 ```sh
-wiretap check consumer --consumer ./orders-run --provider ./inventory-run --dependency inventory
+wiretap check consumer --consumer ./orders-run --artifacts ./api-evidence
+wiretap check provider --provider ./inventory-run --artifacts ./api-evidence
 ```
 
-Use `wiretap check provider` with the same inputs to check from the provider's
-viewpoint. Both commands require matching concrete requests and compatible
-responses from passing provider tests. Missing provider coverage fails the
-check. Collections default to each run's `exports/postman/` directory and are
-verified against the raw archive. See [assumption checks](docs/assumption-checks.md)
-for dependency mapping, limits, custom collection paths and CI output.
+The consumer command checks all captured mock dependencies using their declared
+provider mappings. The provider command finds consumers mapped to its API and
+checks that its tests still support their mocks. Each selected mock request and
+response needs supporting evidence from a complete passing provider test;
+missing provider coverage fails the check. Wiretap requires an unambiguous
+snapshot for each selected application/API and never guesses the latest build.
+Collections stay in each run's `exports/postman/` directory and are verified
+against the raw archive.
+
+For a single pair, supply `--consumer ./orders-run --provider ./inventory-run`
+in either mode, with `--dependency inventory` if needed. See
+[assumption checks](docs/assumption-checks.md) for mappings, folder layout,
+selection rules and CI output.
 
 The checker finds changed mock responses, request scenarios absent from provider
 tests, drift in exercised OpenAPI 3.0 rules when both contracts are supplied,
@@ -135,8 +145,8 @@ calls remain part of your tests.
 
 Keep complete runs in your shared artifact store under stable application/API
 IDs, tested revisions and run IDs. The [shared snapshot workflow](docs/assumption-checks.md#share-provider-snapshots)
-shows provider and consumer configuration, a folder convention and the checks
-to run after downloading the selected archives.
+shows provider and consumer configuration, the application-folder layout and
+how to prepare an unambiguous set of downloaded archives for each check.
 
 ## Product scope and documentation
 

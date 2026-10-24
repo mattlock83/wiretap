@@ -30,17 +30,18 @@ func checkCommand(ctx context.Context, args []string) (int, error) {
 	flags := flag.NewFlagSet("wiretap check", flag.ContinueOnError)
 	options := assumptions.Options{}
 	var consumerCollections, providerCollections, ignored checkValues
-	var format, output string
+	var format, output, artifacts string
 	flags.StringVar(&options.Consumer, "consumer", "", "consumer run directory or bundle.json")
 	flags.StringVar(&options.Provider, "provider", "", "provider run directory or bundle.json")
-	flags.StringVar(&options.Dependency, "dependency", "", "consumer's local mock dependency ID (inferred when unambiguous)")
-	flags.Var(&consumerCollections, "consumer-collection", "consumer Postman collection file or directory; repeatable (default: <consumer>/exports/postman)")
-	flags.Var(&providerCollections, "provider-collection", "provider Postman collection file or directory; repeatable (default: <provider>/exports/postman)")
+	flags.StringVar(&artifacts, "artifacts", "", "local shared artifact root, grouped by application ID; discovers peers for the supplied run")
+	flags.StringVar(&options.Dependency, "dependency", "", "consumer's local mock ID (all mocks in consumer discovery; inferred for explicit pairs)")
+	flags.Var(&consumerCollections, "consumer-collection", "consumer Postman file or directory for explicit pairs; repeatable (default: <consumer>/exports/postman)")
+	flags.Var(&providerCollections, "provider-collection", "provider Postman file or directory for explicit pairs; repeatable (default: <provider>/exports/postman)")
 	flags.Var(&ignored, "ignore-header", "ignore another captured HTTP header or gRPC metadata field; declared HTTP header rules still apply; repeatable")
 	flags.StringVar(&format, "format", "text", "report format: text or json")
-	flags.StringVar(&output, "output", "", "write report outside input archives (default: stdout)")
+	flags.StringVar(&output, "output", "", "write report outside input archives and artifact root (default: stdout)")
 	flags.Usage = func() {
-		fmt.Fprintln(flags.Output(), "Usage: wiretap check consumer --consumer <capture> --provider <capture> [options]\n       wiretap check provider --provider <capture> --consumer <capture> [options]\n\nVerify mock request/response examples and exercised contract rules against complete passing provider tests.\nBoth viewpoints enforce the same consumer-to-provider obligation. No traffic is replayed.")
+		fmt.Fprintln(flags.Output(), "Usage: wiretap check consumer --consumer <capture> --artifacts <directory> [options]\n       wiretap check provider --provider <capture> --artifacts <directory> [options]\n       wiretap check <consumer|provider> --consumer <capture> --provider <capture> [options]\n\nConsumer checks discover mapped providers; provider checks discover mapped consumers.\nThe artifact root contains application folders with complete runs and exports/postman.\nSelections must be unambiguous; historical snapshots are never merged.\nExplicit pairs check one mock boundary. No traffic is replayed.")
 		flags.PrintDefaults()
 	}
 	if len(args) == 1 && (args[0] == "--help" || args[0] == "-h") {
@@ -60,8 +61,11 @@ func checkCommand(ctx context.Context, args []string) (int, error) {
 	if len(flags.Args()) != 0 {
 		return 2, fmt.Errorf("%w: unexpected arguments: %v", errUsage, flags.Args())
 	}
-	if options.Consumer == "" || options.Provider == "" {
-		return 2, fmt.Errorf("%w: --consumer and --provider are required", errUsage)
+	if artifacts == "" && (options.Consumer == "" || options.Provider == "") {
+		return 2, fmt.Errorf("%w: supply --consumer and --provider, or the local --%s capture with --artifacts", errUsage, options.Mode)
+	}
+	if artifacts != "" && (len(consumerCollections) > 0 || len(providerCollections) > 0) {
+		return 2, fmt.Errorf("%w: --artifacts uses each run's exports/postman; collection overrides require an explicit consumer/provider pair", errUsage)
 	}
 	if format != "text" && format != "json" {
 		return 2, fmt.Errorf("%w: --format must be text or json", errUsage)
@@ -69,28 +73,54 @@ func checkCommand(ctx context.Context, args []string) (int, error) {
 	options.ConsumerCollections = consumerCollections
 	options.ProviderCollections = providerCollections
 	options.IgnoreHeaders = ignored
-	report, err := assumptions.Check(ctx, options)
+	var data bytes.Buffer
+	var result any
+	var compatible bool
+	var sources []assumptions.Source
+	var roots []string
+	var err error
+	if artifacts != "" {
+		var report *assumptions.StoreReport
+		report, err = assumptions.CheckStore(ctx, assumptions.StoreOptions{
+			Mode: options.Mode, Consumer: options.Consumer, Provider: options.Provider,
+			Dependency: options.Dependency, Artifacts: artifacts,
+		}, options.IgnoreHeaders)
+		if err == nil {
+			result, compatible = report, report.Compatible
+			roots = []string{report.ArtifactsPath}
+			for _, comparison := range report.Comparisons {
+				sources = append(sources, comparison.Consumer, comparison.Provider)
+			}
+			if format == "text" {
+				err = writeStoreCheckText(&data, report)
+			}
+		}
+	} else {
+		var report *assumptions.Report
+		report, err = assumptions.Check(ctx, options)
+		if err == nil {
+			result, compatible = report, report.Compatible
+			sources = []assumptions.Source{report.Consumer, report.Provider}
+			if format == "text" {
+				err = writeCheckText(&data, report)
+			}
+		}
+	}
+	if err == nil && format == "json" {
+		encoder := json.NewEncoder(&data)
+		encoder.SetIndent("", "  ")
+		err = encoder.Encode(result)
+	}
 	if err != nil {
 		if errors.Is(err, assumptions.ErrInput) {
 			return 2, err
 		}
 		return 1, err
 	}
-	var data bytes.Buffer
-	if format == "json" {
-		encoder := json.NewEncoder(&data)
-		encoder.SetIndent("", "  ")
-		err = encoder.Encode(report)
-	} else {
-		err = writeCheckText(&data, report)
-	}
-	if err != nil {
-		return 1, err
-	}
 	if output == "" {
 		_, err = os.Stdout.Write(data.Bytes())
 	} else {
-		err = writeCheckOutput(output, report, data.Bytes())
+		err = writeCheckOutput(output, sources, roots, data.Bytes())
 	}
 	if err != nil {
 		if errors.Is(err, errUsage) {
@@ -98,10 +128,29 @@ func checkCommand(ctx context.Context, args []string) (int, error) {
 		}
 		return 1, err
 	}
-	if !report.Compatible {
+	if !compatible {
 		return 1, nil
 	}
 	return 0, nil
+}
+
+func writeStoreCheckText(out io.Writer, report *assumptions.StoreReport) error {
+	status := "FAIL"
+	if report.Compatible {
+		status = "PASS"
+	}
+	if _, err := fmt.Fprintf(out, "%s: check %s — %d comparisons; %d of %d mock examples verified\nArtifacts: %s\n", status, report.Mode, len(report.Comparisons), report.Counts.Verified, report.Counts.Assumptions, report.ArtifactsPath); err != nil {
+		return err
+	}
+	for _, comparison := range report.Comparisons {
+		if _, err := fmt.Fprintln(out); err != nil {
+			return err
+		}
+		if err := writeCheckText(out, comparison); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func writeCheckText(out io.Writer, report *assumptions.Report) error {
@@ -119,7 +168,7 @@ func writeCheckText(out io.Writer, report *assumptions.Report) error {
 	}
 	fmt.Fprintf(&text, "Contracts: %d HTTP declaration and value checks; %d HTTP provider-spec checks; %d protobuf declaration and wire checks; %d example-only matches (schemas unavailable)\n", contracts["openapi_3_0_validation_rules"], contracts["openapi_3_0_provider_contract"], contracts["protobuf_rules_and_observed_wire"], contracts["unavailable"])
 	for _, finding := range report.Findings {
-		fmt.Fprintf(&text, "\n[%s] %s", finding.Kind, finding.Operation)
+		fmt.Fprintf(&text, "\n[%s] %s: %s", finding.Kind, finding.Code, finding.Operation)
 		if finding.Operation != "" {
 			text.WriteString(": ")
 		}
@@ -145,7 +194,7 @@ func writeCheckText(out io.Writer, report *assumptions.Report) error {
 	return err
 }
 
-func writeCheckOutput(path string, report *assumptions.Report, data []byte) error {
+func writeCheckOutput(path string, sources []assumptions.Source, roots []string, data []byte) error {
 	absolute, err := filepath.Abs(path)
 	if err != nil {
 		return err
@@ -155,7 +204,16 @@ func writeCheckOutput(path string, report *assumptions.Report, data []byte) erro
 		return err
 	}
 	absolute = filepath.Join(parent, filepath.Base(absolute))
-	for _, source := range []assumptions.Source{report.Consumer, report.Provider} {
+	for _, input := range roots {
+		root, err := filepath.EvalSymlinks(input)
+		if err != nil {
+			return err
+		}
+		if absolute == root || sameCheckFile(root, absolute) || withinCheckPath(root, absolute) {
+			return fmt.Errorf("%w: --output must be outside the shared artifact directory", errUsage)
+		}
+	}
+	for _, source := range sources {
 		root, err := filepath.EvalSymlinks(source.BundlePath)
 		if err != nil {
 			return err

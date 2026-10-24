@@ -164,6 +164,40 @@ Use the [checking guide](assumption-checks.md) for setup and examples. Its
 [result interpretation](assumption-checks.md#interpreting-results) define what
 the verdict means.
 
+### Shared artifacts are missing, ambiguous or select no consumers
+
+`--artifacts` expects a local extracted directory with application IDs as the
+top-level folders, such as `api-evidence/inventory-service/<run-id>/bundle.json`.
+The folder must match the captured application ID. Keep `tests/`, `contracts/`,
+`payloads/` and `exports/postman/` alongside each manifest. A ZIP/TAR file or a
+folder containing only collections cannot be discovered as a complete run.
+Restore real directories and files rather than symbolic links. An invalid or
+unsupported manifest anywhere in the scanned store fails discovery. Keep the
+local root dedicated to selected snapshots; the guide documents its
+[scan limits](assumption-checks.md#share-provider-snapshots).
+
+For `check consumer`, every selected mock needs a declared `provider_mappings`
+entry naming the provider application/API. Ensure its provider snapshot is
+present and, if the mapping pins a version, that the archive records that exact
+`sut_source.version`. A missing provider is an input error. For `check provider`,
+consumer mappings must name the local provider application/API. No mapped
+consumers is an input error; it does not certify that a provider has no users.
+
+If more than one snapshot matches a selected application/API, restore only the
+intended run into the local comparison set. Consumer version pins narrow
+provider discovery but do not choose between multiple runs of the same version.
+Provider mode requires one selected snapshot per consumer application/API.
+Wiretap never guesses the newest run or merges historical passing examples.
+Your remote store can keep full history; download a deliberate set for each
+check. Use explicit `--consumer` and `--provider` paths without `--artifacts`
+when you want to select a particular pair.
+
+Provider mode retains consumer mappings pinned to a different provider version
+as `provider_version_unverified`. Review the intended application versions and
+regenerate consumer evidence against the desired provider version; those
+consumers are not silently skipped. See the
+[shared snapshot workflow](assumption-checks.md#share-provider-snapshots).
+
 ### Both suites test the endpoint, but the request is uncovered
 
 `provider_request_uncovered` means no complete passing provider example matches
@@ -304,8 +338,10 @@ wiretap export --bundle ./provider-run --format postman --output-dir ./provider-
 Keep the original contracts and payloads. Regeneration cannot recover missing
 raw evidence; restore the complete archive when integrity checks fail. Directory
 inputs discover `*.postman_collection.json` recursively. Supply
-`--consumer-collection` or `--provider-collection` explicitly when the files
-live elsewhere. Native gRPC replay URLs and source-schema settings may differ;
+`--consumer-collection` or `--provider-collection` in explicit pair mode when
+the files live elsewhere. With `--artifacts`, keep each run's collections in
+its own `exports/postman/`; collection overrides are rejected. Native gRPC replay
+URLs and source-schema settings may differ;
 HTTP collection URLs must still agree with their own archive. Request/response
 evidence must agree with the archive in both cases.
 
@@ -318,10 +354,12 @@ failure can also prevent a new report. Preserve the command's exit status and
 stderr; use a fresh output path so an old file cannot be confused with this run.
 See the [CI gate example](ci-example.md#gate-consumerprovider-assumptions-offline).
 
-The output's parent directory must exist. `--output` must be outside both input
-archives and supplied Postman directories, and cannot replace a collection
-file. Incomplete runs, unverifiable provider identities and an empty consumer
-selection instead produce an unverified result before collections are required.
+The output's parent directory must exist. With `--artifacts`, `--output` must
+be outside the entire artifact root and the local input archive. In explicit
+pair mode it must be outside both archives and supplied Postman directories.
+It cannot replace a collection file. Once a valid pair is selected, incomplete
+runs, unverifiable provider identities and zero captured calls to the selected
+mock instead produce an unverified result before collections are required.
 
 ### The check passed, but an assertion or expected mock call is missing
 

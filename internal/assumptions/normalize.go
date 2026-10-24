@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"math/big"
+	"mime"
 	"net/url"
 	"sort"
 	"strings"
@@ -87,11 +88,11 @@ func normalizeHTTP(flow artifact.Flow, ignored map[string]bool) (any, any, error
 	if path == "" {
 		path = "/"
 	}
-	reqBody, err := normalizeBody(req.Body)
+	reqBody, err := normalizeHTTPBody(req)
 	if err != nil {
 		return nil, nil, fmt.Errorf("HTTP request body: %w", err)
 	}
-	resBody, err := normalizeBody(res.Body)
+	resBody, err := normalizeHTTPBody(res)
 	if err != nil {
 		return nil, nil, fmt.Errorf("HTTP response body: %w", err)
 	}
@@ -141,6 +142,33 @@ func normalizeHeaders(headers artifact.Headers, ignored map[string]bool, body *a
 type normalizedBody struct {
 	Representation string `json:"representation"`
 	Value          any    `json:"value"`
+}
+
+func normalizeHTTPBody(message *artifact.HttpMessage) (normalizedBody, error) {
+	var contentTypes []string
+	for name, values := range message.Headers {
+		if strings.EqualFold(name, "Content-Type") {
+			contentTypes = append(contentTypes, values...)
+		}
+	}
+	if message.Body == nil || httpBodyIsJSON(contentTypes) {
+		return normalizeBody(message.Body)
+	}
+	return normalizeWireBody(message.Body)
+}
+
+// Honor a declared HTTP representation before interpreting JSON-looking bytes.
+// Missing Content-Type retains legacy JSON sniffing; malformed, conflicting or
+// non-JSON declarations compare bytes exactly. Storage encoding is irrelevant.
+func httpBodyIsJSON(contentTypes []string) bool {
+	if len(contentTypes) == 0 {
+		return true
+	}
+	if len(contentTypes) != 1 {
+		return false
+	}
+	media, _, err := mime.ParseMediaType(contentTypes[0])
+	return err == nil && (media == "application/json" || strings.HasSuffix(media, "+json"))
 }
 
 func normalizeBody(body *artifact.Body) (normalizedBody, error) {

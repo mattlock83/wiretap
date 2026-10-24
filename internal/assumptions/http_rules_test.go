@@ -205,6 +205,37 @@ func TestCheckHTTPContractAvailability(t *testing.T) {
 	}
 }
 
+func TestCheckHTTPAmbiguousCapturedMediaTypesRemainUnverified(t *testing.T) {
+	for _, phase := range []string{"request", "response"} {
+		for _, variant := range []string{"repeated", "case variants"} {
+			t.Run(phase+"/"+variant, func(t *testing.T) {
+				document := httpRulesDocument("response", map[string]any{"type": "string"})
+				consumer := httpRulesCapture(t, false, nil, `"shared"`)
+				provider := httpRulesCapture(t, true, document, `"shared"`)
+				for _, capture := range []*artifact.Artifact{consumer, provider} {
+					message := capture.Traffic[0].Request.HTTP
+					if phase == "response" {
+						message = capture.Traffic[0].Response.HTTP
+					}
+					if variant == "case variants" {
+						message.Headers["content-type"] = []string{"text/plain"}
+					} else {
+						message.Headers["Content-Type"] = []string{"application/json", "text/plain"}
+					}
+				}
+				options := checkHTTPPair(t, []*artifact.Artifact{consumer}, []*artifact.Artifact{provider})
+				for _, mode := range []string{"consumer", "provider"} {
+					options.Mode = mode
+					report := mustCheck(t, options)
+					if report.Compatible || report.Counts.Verified != 0 || !findingCode(report, "http_contract_unavailable") {
+						t.Fatalf("%s selected one ambiguous %s media type to certify an exchange: %+v", mode, phase, report)
+					}
+				}
+			})
+		}
+	}
+}
+
 func TestCheckHTTPProviderContractSupportsAbsentAndOmittedConsumerSchema(t *testing.T) {
 	for _, omitted := range []bool{false, true} {
 		name := "absent"

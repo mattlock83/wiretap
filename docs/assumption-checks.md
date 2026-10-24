@@ -13,6 +13,7 @@ the report identifies them. With only the provider's HTTP schema, the check
 validates both captured exchanges against that provider contract. Native gRPC
 checks the exercised method's declared message graphs and observed wire compatibility.
 
+- [Check against shared application artifacts](#check-against-shared-application-artifacts)
 - [What a passing result establishes](#what-a-passing-result-establishes)
 - [Issues the check will find](#issues-the-check-will-find)
 - [What the check will not establish](#what-the-check-will-not-establish)
@@ -23,38 +24,51 @@ checks the exercised method's declared message graphs and observed wire compatib
 - [Interpreting results](#interpreting-results)
 - [Use the result in CI](#use-the-result-in-ci)
 
-Run it after both suites have finalized their archives and Postman exports:
+## Check against shared application artifacts
+
+Each team uploads its complete Wiretap runs and Postman exports under its
+application ID in your shared artifact store. Restore the intended snapshots
+into a local `api-evidence/` directory, then use one command from either side:
+
+```sh
+wiretap check consumer --consumer ./orders-run --artifacts ./api-evidence
+wiretap check provider --provider ./inventory-run --artifacts ./api-evidence
+```
+
+The consumer command asks: **Do all my captured mocks agree with their
+providers' tests?** It uses each mock dependency's declared provider mapping to
+find the provider application/API. Add `--dependency inventory` to check just
+that mock. Every selected mock needs a mapping and a unique provider snapshot.
+
+The provider command asks: **Do my tests still support the mocks used by other
+applications?** It discovers consumer snapshots whose mappings point to the
+local provider application/API and checks each matching mock. Consumers mapped
+to a different provider version remain visible as unverified; they are not
+silently excluded from the impact check.
+
+Both modes require matching concrete requests and compatible responses from
+complete passing provider tests. A request scenario absent from those tests
+fails, even when it is valid under the provider's schema. Additional provider
+scenarios do not create obligations for consumers.
+
+An HTTP mock needs no consumer-owned copy of the provider spec: the check uses
+the provider archive's frozen contract. The consumer's own main HTTP API still
+requires its spec by default. See [the shared snapshot setup](#share-provider-snapshots)
+for configuration, identity and version selection, and the directory layout.
+
+For a deliberately chosen pair, keep both paths explicit:
 
 ```sh
 wiretap check consumer \
-  --consumer ./orders/artifacts/<run-id> \
-  --provider ./inventory/artifacts/<run-id> \
+  --consumer ./orders-run \
+  --provider ./inventory-run \
   --dependency inventory
 ```
 
-This asks: **Do the inventory mocks used by these orders tests agree with
-examples covered by the inventory provider's tests?** Every observed request
-scenario to the selected mock needs a matching request and compatible response
-from the provider's complete passing tests. An untested request scenario fails
-the check, even if it would be valid under the provider's schema.
-An HTTP dependency needs no consumer-owned copy of the provider spec: capture
-the mock without one, then use the provider archive's frozen contract. The
-consumer's own main HTTP API still requires its spec by default.
-
-From the provider repository, use the other viewpoint:
-
-```sh
-wiretap check provider \
-  --provider ./inventory/artifacts/<run-id> \
-  --consumer ./orders/artifacts/<run-id> \
-  --dependency inventory
-```
-
-This asks: **Do these provider test results still support this consumer's
-mocks?** The relation and required evidence are the same in both commands;
-`provider` and `consumer` identify the local viewpoint. Neither command requires
-the provider to exercise scenarios the consumer has never assumed. Run the
-command once for each consumer archive you want to protect.
+`wiretap check provider` accepts the same explicit inputs. Both viewpoints
+enforce the same consumer-to-provider relationship. This form also supports
+older captures without declared mappings; the supplied pair establishes the
+relationship. A declared mapping, when present, must still agree.
 
 ## What a passing result establishes
 
@@ -181,7 +195,8 @@ unsupported OpenAPI 3.1, unreadable contracts or rules whose precision cannot be
 unverified. Unsupported examples also include media-type `encoding` rules,
 OpenAPI `content`-encoded parameters or response-header definitions, complex
 numeric object parameter/header serialization, and path/operation-level server
-overrides. `nullable` combined with enum, `not` or composition is also
+overrides. Multiple differently cased keys for one captured header, or multiple
+`Content-Type` values, also prevent a reliable contract check. `nullable` combined with enum, `not` or composition is also
 unavailable because the underlying validator cannot establish those null cases
 reliably. Scalar and array numeric parameters are supported. Rule projection
 is bounded, so schemas exceeding its depth or node budget remain
@@ -450,9 +465,13 @@ the edited collection will no longer match its recorded export.
 
 Zero calls to the selected mock fail. However, one captured call can pass
 without detecting that an expected second call never happened; assert those
-requirements in the application tests. Capture each dependency and check it
-explicitly. One invocation does not check every dependency or every consumer
-of a provider.
+requirements in the application tests. Capture each dependency and declare its
+provider mapping. With `--artifacts`,
+the consumer command selects all mock dependencies by default, and the provider
+command selects all mapped consumers present in that local artifact set. It
+cannot discover consumers whose evidence was never uploaded or restored.
+In consumer discovery or explicit pair mode, `--dependency` narrows the
+selection, so a scoped pass covers only that mock.
 
 ### That a live deployment, security policy or performance is correct
 
@@ -522,7 +541,9 @@ wiretap check consumer \
   --provider-collection ./provider-collections
 ```
 
-Repeat `--consumer-collection` or `--provider-collection` for multiple inputs.
+These collection overrides apply to explicit pair mode. Repeat
+`--consumer-collection` or `--provider-collection` for multiple inputs.
+Shared-store mode keeps each run's own `exports/postman/` directory.
 Directories are searched recursively for `*.postman_collection.json` and may
 contain collections for other boundaries.
 Wiretap verifies the collections against projections regenerated from their
@@ -601,9 +622,10 @@ The mapped provider `version` must equal the provider archive's recorded
 `sut_source.version`. The provider's Wiretap version is a separate recorder
 version and does not establish the SUT build.
 
-Keep each complete provider run under stable application/API identities and a
-known tested revision and run ID. For example, an existing CI artifact store
-could retain this directory layout:
+Use the stable application ID as the first folder beneath the artifact root.
+Each run keeps its own files together. Additional API, revision and run folders
+are optional; discovery reads identities and version provenance from
+`bundle.json`, rather than inferring them from nested folder names:
 
 ```text
 api-evidence/
@@ -616,7 +638,24 @@ api-evidence/
           contracts/
           payloads/
           exports/postman/
+  orders-service/
+    orders-http/
+      <sut-revision>/
+        <run-id>/
+          bundle.json
+          tests/
+          contracts/
+          payloads/
+          exports/postman/
 ```
+
+The top-level application folder must agree with the captured application ID.
+Use a single folder name for that ID, such as `inventory-service`; IDs containing
+path separators or traversal components cannot identify a shared-store folder.
+Existing captures with such application IDs remain usable in explicit pair
+mode; the shared-store layout requires folder-compatible identities.
+Keep both providers and consumers in this shared structure: a service can be a
+provider of its own API and a consumer of several other APIs in the same run.
 
 Use your existing artifact upload/download tooling. Download the complete run
 before invoking `wiretap check`. For Artifactory or CI artifacts packaged as
@@ -625,33 +664,71 @@ or its `bundle.json`, with all referenced files retained alongside it.
 Preserve internal paths, filenames and contents; moving the whole run is
 supported, while flattening its files or copying only collections loses inputs.
 Keep `contracts/` and its imported files together with `tests/` and `payloads/`.
-The CLI implements no remote store discovery or fetching. The layout is a
-convention for your pipeline, not a hosted Wiretap registry.
+`--artifacts` discovers local extracted runs beneath application folders. It
+does not upload to or fetch from Artifactory or another remote store.
 
-Pin the intended provider application/API, tested revision and run. Retain the
-manifest digest and use a declared provider mapping/version where appropriate.
-Display names and a moving `latest` directory do not establish the intended
-provider build. A capture's Wiretap producer commit identifies the recorder,
-not the SUT revision; use the recorded SUT source provenance for the latter.
+Discovery stops at each run directory instead of scanning its payloads. It
+rejects symbolic links in the scanned folder structure and invalid or
+unsupported manifests, even for applications that would not be selected.
+Keep this local directory dedicated to comparison snapshots. Discovery is
+bounded to 32 directory levels, 100,000 scanned entries and 1,024 manifests,
+with 64 MiB per manifest and 256 MiB of manifests in total. A limit produces
+an input error; reduce the downloaded comparison set.
 
-After downloading both selected runs, check the same inputs from either
-viewpoint:
+A copy of the local run can remain in the store and is not selected as its own
+peer. Different manifests claiming the same run ID are rejected; retain intact
+snapshots with their original identities.
 
-```bash
+Prepare a deliberate set of snapshots for each check:
+
+- **Consumer mode:** each selected mock mapping must resolve to exactly one
+  provider run with the declared application/API ID. A mapping's `version`
+  narrows selection to matching `sut_source.version` values. Two matching runs
+  remain ambiguous even if their contents are identical.
+- **Provider mode:** discover consumers whose mappings name the local provider
+  application/API, then require one snapshot for each selected consumer
+  application/API. A mapping to another provider version is still compared and
+  produces `provider_version_unverified` rather than disappearing.
+- **Both modes:** missing required peers, ambiguous snapshots and an empty
+  selection are input errors. Consumer mode also rejects a selected mock without
+  a provider mapping. Wiretap does not choose the latest timestamp,
+  combine passing examples from historical runs or silently skip an unresolved
+  dependency. Restore only the intended snapshots, or use explicit pair inputs
+  to select a particular run.
+
+Your remote store can retain full history. The local `--artifacts` directory is
+the selected comparison set, so download a specific revision/run from each team
+for the current gate. Keep that set stable while checking: changed manifests or
+added/removed runs invalidate the result, including changes to previously
+unrelated applications. Record the manifest digests with the result. A capture's
+Wiretap producer commit identifies the recorder; `sut_source` identifies the
+application build. Display names and a moving `latest` label do not establish
+that build.
+
+Once the local set is ready:
+
+```sh
 wiretap check consumer \
-  --consumer ./evidence/orders-run \
-  --provider ./evidence/inventory-run \
-  --dependency inventory
+  --consumer ./orders-run \
+  --artifacts ./api-evidence
 
 wiretap check provider \
-  --provider ./evidence/inventory-run \
-  --consumer ./evidence/orders-run \
-  --dependency inventory
+  --provider ./inventory-run \
+  --artifacts ./api-evidence
 ```
 
-Collections default to each run's `exports/postman/`. Save any check result
-outside both input archives. Create `check-results/`, then add
-`--format json --output ./check-results/inventory.json` to the command.
+Shared-store checks always use each run's `exports/postman/` and reject
+`--consumer-collection` or `--provider-collection` overrides. Use explicit pair
+mode when collections live elsewhere. Supply only the local viewpoint's run
+with `--artifacts`: `--consumer` in consumer mode or `--provider` in provider
+mode. Supplying both run flags together with `--artifacts` is an input error.
+
+Save reports outside the entire artifact root and the local input archive.
+Create `check-results/`, then add
+`--format json --output ./check-results/inventory.json` to either command.
+The result contains one comparison per selected consumer/mock/provider
+relationship and fails if any comparison is uncovered, mismatched or unverified.
+No matching consumers is an input error, not a passing provider check.
 
 | Inputs | What a passing HTTP match establishes |
 | --- | --- |
@@ -704,12 +781,18 @@ sut:
   schema: schemas/inventory.openapi.yaml
 ```
 
-Declared mappings must agree with the supplied provider archive. Wiretap infers
-a selection only when it is unambiguous; otherwise supply `--dependency`.
-Choose the intended application and test revisions explicitly. Wiretap checks
-the files you supplied and does not discover the latest build of another repo.
+Declared mappings must agree with the selected provider archive. With an
+explicit pair, Wiretap infers the mock only when it is unambiguous; otherwise
+supply `--dependency`. With `--artifacts`, mappings drive discovery, and consumer
+mode checks every mock by default. `--dependency` scopes consumer discovery to
+one local mock. Provider discovery checks every mapped consumer dependency
+and rejects `--dependency`; use an explicit pair to select just one.
+
 If a mapping declares `version`, the provider's captured `sut_source.version`
-must establish that version; a missing version leaves the check unverified.
+must establish it. Consumer discovery requires a snapshot matching the pinned
+version. For explicit pairs and provider impact checks, a missing or different
+version produces an unverified comparison. Choose tested revisions and runs
+with your artifact tooling; Wiretap does not select a latest build.
 
 The HTTP inventory mock needs no schema or opt-out flag. Its captured contract
 coverage is unknown when no dependency spec was recorded. The later provider-contract
@@ -740,9 +823,11 @@ names are case-insensitive, while method tokens and escaped paths retain their
 case and values. Query key order is normalized, while repeated values retain
 their order. Header values and repeated-header order remain significant unless
 the header is ignored; semantically equivalent spellings are not inferred.
-Valid JSON body bytes receive JSON normalization regardless of HTTP
-`Content-Type`; the content-type header itself still participates in header
-comparison.
+JSON normalization applies to JSON media types (`application/json` and types
+ending in `+json`) and valid JSON when `Content-Type` is absent. An explicit
+non-JSON media type, such as `text/plain`, keeps byte equality even when its
+body happens to look like JSON. Thus `text/plain` bodies `1` and `1.0` differ.
+The content-type header itself still participates in header comparison.
 Request origin addresses are excluded, while paths are retained.
 gRPC comparisons also retain stream shape, message order, observed direction
 interleaving and rich-error details.
@@ -830,13 +915,13 @@ result of the current command; use its exit status as well.
 
 ### Read the exact evidence
 
-An abbreviated example-only JSON result for the inventory type mismatch above,
+An abbreviated explicit-pair JSON result for the inventory type mismatch above,
 when both sides omitted their HTTP schemas, could contain:
 
 ```json
 {
   "report_version": "1.0",
-  "rules_version": "wiretap-assumptions-3",
+  "rules_version": "wiretap-assumptions-4",
   "mode": "consumer",
   "scope": "observed_mock_examples_and_exercised_contracts",
   "compatible": false,
@@ -877,8 +962,10 @@ when both sides omitted their HTTP schemas, could contain:
 }
 ```
 
-The full result also identifies both source archives, manifest digests, input
-collections, binding and ignored-header policy. An `evidence_path` is relative
+The full pair result also identifies both source archives, manifest digests,
+input collections, binding and ignored-header policy. With `--artifacts`, each
+entry in `comparisons` has this same pair-report shape; the outer report supplies
+the overall verdict and totals. An `evidence_path` is relative
 to its source archive; the fragment selects the recorded flow in the attempt
 file. Consumer and provider attempt IDs need not match each other.
 
@@ -913,24 +1000,32 @@ Text is the default. For a machine-readable result, select JSON and optionally
 save it to a file:
 
 ```sh
-wiretap check provider --provider ./provider-run --consumer ./consumer-run \
-  --dependency inventory --format json --output assumption-check.json
+wiretap check provider --provider ./inventory-run --artifacts ./api-evidence \
+  --format json --output assumption-check.json
 ```
 
 The output's parent directory must already exist. Choose a location outside
-both input archives and any supplied Postman input directory; an output cannot
-replace a collection input.
+the entire `--artifacts` root and local input archive. In explicit pair mode,
+keep it outside both archives and any supplied Postman input directory; an
+output cannot replace a collection input.
 
-The JSON result uses `report_version: "1.0"` and
-`rules_version: "wiretap-assumptions-3"`. `compatible` is the verdict;
+Both result shapes use `report_version: "1.0"` and
+`rules_version: "wiretap-assumptions-4"`. `compatible` is the verdict, and
 `counts` separates verified, uncovered, mismatched and unverified assumptions.
-Unverified counts can also include comparison-level blockers, such as an
-interrupted archive or conflicting provider identity.
-`matches` and `findings` retain source archive paths and test/flow evidence
-references so the result can be traced back to the contributing exchanges.
-Keep the archives alongside the result when sharing it. See the
-[machine interface](machine-interface.md#assumption-check-results) for envelope
-fields.
+With `--artifacts`, the outer report uses
+`scope: "discovered_consumer_provider_relationships"`, identifies `artifacts_path`,
+and includes each pair report in `comparisons`. Counts are totals across those
+comparisons. One incompatible comparison fails the overall check.
+
+Each pair report uses `scope: "observed_mock_examples_and_exercised_contracts"`.
+Its `matches` and `findings` preserve archive paths and test/flow evidence
+references. Unverified counts can also include comparison-level blockers, such
+as an interrupted archive or conflicting provider identity; they need not
+partition the assumption count. Invalid discovery or pair inputs produce
+stderr and no new JSON report. Keep the input archives alongside the result.
+See the [machine interface](machine-interface.md#assumption-check-results) for
+both envelopes and the [CI example](ci-example.md#gate-consumerprovider-assumptions-offline)
+for preserving the exit status and diagnostics.
 
 | Exit status | Meaning |
 | --- | --- |

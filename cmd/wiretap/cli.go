@@ -57,7 +57,7 @@ func execute(ctx context.Context, args []string) int {
 	flags := flag.NewFlagSet("wiretap "+command, flag.ContinueOnError)
 	configPath := flags.String("config", "", "project configuration (default: discover .wiretap.yaml)")
 	flags.Usage = func() {
-		fmt.Fprintln(flags.Output(), "Usage: wiretap [--config path]\n  wiretap ca [--config path]\n  wiretap version [--json]\n  wiretap report --bundle <directory> [--format json|yaml|text|all]\n  wiretap export --bundle <directory> --format json --output coverage.json\n  wiretap export --bundle <directory> --format postman --output-dir postman\n  wiretap check consumer --consumer <capture> --provider <capture> [--dependency <id>]\n  wiretap check provider --provider <capture> --consumer <capture> [--dependency <id>]")
+		fmt.Fprintln(flags.Output(), "Usage: wiretap [--config path]\n  wiretap ca [--config path]\n  wiretap version [--json]\n  wiretap report --bundle <directory> [--format json|yaml|text|all]\n  wiretap export --bundle <directory> --format json --output coverage.json\n  wiretap export --bundle <directory> --format postman --output-dir postman\n  wiretap check consumer --consumer <capture> --artifacts <directory>\n  wiretap check provider --provider <capture> --artifacts <directory>\n  wiretap check <consumer|provider> --consumer <capture> --provider <capture> [--dependency <id>]")
 		flags.PrintDefaults()
 	}
 	if err := flags.Parse(args); err != nil {

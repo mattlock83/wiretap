@@ -170,6 +170,39 @@ func TestNormalizeExactNumbersAndNonJSON(t *testing.T) {
 	}
 }
 
+func TestNormalizeHTTPOnlyNormalizesDeclaredJSONBodies(t *testing.T) {
+	for _, tc := range []struct {
+		media string
+		equal bool
+	}{
+		{"application/json", true},
+		{"application/problem+json; charset=utf-8", true},
+		{"Application/JSON", true},
+		{"", true}, // Legacy captures can lack Content-Type.
+		{"text/plain", false},
+		{"application/octet-stream", false},
+		{"application/x-www-form-urlencoded", false},
+		{"application/json; invalid", false},
+	} {
+		t.Run(tc.media, func(t *testing.T) {
+			left, right := httpNormalizationFixture(), httpNormalizationFixture()
+			for _, message := range []*artifact.HttpMessage{left.Request.HTTP, right.Request.HTTP, left.Response.HTTP, right.Response.HTTP} {
+				delete(message.Headers, "Content-Type")
+				if tc.media != "" {
+					message.Headers["Content-Type"] = []string{tc.media}
+				}
+			}
+			left.Request.HTTP.Body.Text, right.Request.HTTP.Body.Text = "1", "1.0"
+			left.Response.HTTP.Body.Text, right.Response.HTTP.Body.Text = "[1,2]", "[1, 2]"
+			lreq, lres := normalizedSignatures(t, left)
+			rreq, rres := normalizedSignatures(t, right)
+			if (lreq == rreq) != tc.equal || (lres == rres) != tc.equal {
+				t.Fatalf("media %q lost its body comparison semantics: request equal %t, response equal %t", tc.media, lreq == rreq, lres == rres)
+			}
+		})
+	}
+}
+
 func TestNormalizeExplicitHeaderExceptions(t *testing.T) {
 	left, right := httpNormalizationFixture(), httpNormalizationFixture()
 	right.Request.HTTP.Headers["Authorization"] = []string{"Bearer other-dummy"}

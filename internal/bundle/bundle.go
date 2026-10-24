@@ -736,48 +736,15 @@ func LoadWithLimits(root string, limits LoadLimits) (*Run, []*artifact.Artifact,
 	if err != nil {
 		return nil, nil, fmt.Errorf("read run evidence: %w", err)
 	}
-	if err := rejectDuplicateKeys(data); err != nil {
+	decoded, err := DecodeManifest(data)
+	if err != nil {
 		return nil, nil, err
 	}
-	var run Run
-	runDecoder := json.NewDecoder(bytes.NewReader(data))
-	runDecoder.UseNumber()
-	if err := runDecoder.Decode(&run); err != nil {
-		return nil, nil, err
-	}
-	if err := runDecoder.Decode(new(any)); err != io.EOF {
-		return nil, nil, fmt.Errorf("run manifest contains trailing JSON or invalid data")
-	}
-	if !supportedEvidenceVersion(run.EvidenceVersion) {
-		return nil, nil, fmt.Errorf("unsupported evidence version %q", run.EvidenceVersion)
-	}
-	if err := checkCapabilities(run.RequiredCapabilities); err != nil {
-		return nil, nil, err
-	}
-	if err := validateApplication(run.Application); err != nil {
-		return nil, nil, err
-	}
-	if !safeID(run.RunID) || run.Revision == 0 || run.StartedAt.IsZero() || (run.RunState != "open" && run.RunState != "complete" && run.RunState != "interrupted") {
-		return nil, nil, errors.New("invalid run identity or revision")
-	}
+	run := *decoded
 	// Each inventory entry requires at least one read. Reject an impossible
 	// inventory before allocating per-attempt bookkeeping or resolving contracts.
 	if err := reader.requireReads(len(run.Attempts)); err != nil {
 		return nil, nil, fmt.Errorf("run test inventory: %w", err)
-	}
-	for _, pending := range run.Pending {
-		if err := pending.Identity.Validate(); err != nil {
-			return nil, nil, err
-		}
-	}
-	for id, provider := range run.ProviderMappings {
-		if !safeID(id) {
-			return nil, nil, errors.New("invalid provider mapping dependency id")
-		}
-		if err := provider.Validate(); err != nil {
-			return nil, nil, err
-		}
-
 	}
 	// Preserve portable paths for inventory validation after captures are loaded.
 	storedInventory := run

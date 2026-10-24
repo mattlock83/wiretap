@@ -99,7 +99,9 @@ fields the SUT consumed. Provider mappings retain the intended cross-project
 identity without claiming agreement. The offline
 [assumption checker](assumption-checks.md) verifies exported collections against
 their archives and compares selected mock scenarios with complete passing
-provider service tests. It requires request and response agreement within the
+provider service tests. It accepts explicit pairs or discovers mapped peers
+from a local artifact root grouped by application ID, requiring unique selected
+snapshots rather than merging run history. It requires request and response agreement within the
 same exchange and reports missing evidence as a failure. The provider's frozen
 OpenAPI 3.0 contract can validate both exchanges without a consumer dependency
 spec. With both contracts present, it additionally compares exercised rules

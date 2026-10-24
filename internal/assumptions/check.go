@@ -24,7 +24,7 @@ import (
 	"github.com/mattlock83/wiretap/internal/postman"
 )
 
-const RulesVersion = "wiretap-assumptions-3"
+const RulesVersion = "wiretap-assumptions-4"
 
 // ErrInput identifies invalid, corrupt or inconsistent comparison inputs.
 var ErrInput = errors.New("invalid assumption-check input")
@@ -193,13 +193,12 @@ func Check(ctx context.Context, options Options) (*Report, error) {
 	}
 	index := map[string][]sample{}
 	byOperation := map[string][]Evidence{}
-	var wire wireVerifier
-	var httpContracts httpContractVerifier
+	var contracts contractVerifier
 	for _, candidate := range providers {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		problem := evidenceProblem(provider, candidate)
+		problem := candidate.problem
 		if problem == "" {
 			candidate.request, candidate.response, err = normalizeFlow(candidate.flow, options.IgnoreHeaders)
 			if err != nil {
@@ -218,7 +217,7 @@ func Check(ctx context.Context, options Options) (*Report, error) {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		problem := evidenceProblem(consumer, assumption)
+		problem := assumption.problem
 		if problem == "" {
 			assumption.request, assumption.response, err = normalizeFlow(assumption.flow, options.IgnoreHeaders)
 			if err != nil {
@@ -236,43 +235,24 @@ func Check(ctx context.Context, options Options) (*Report, error) {
 			continue
 		}
 		matched := false
-		wireProblem := ""
 		var contractProblem *contractCheckProblem
 		for _, candidate := range candidates {
-			if candidate.response == assumption.response {
-				contractCheck := "unavailable"
-				if assumption.flow.Protocol == "grpc" {
-					if err := wire.verify(assumption.flow.Request.GRPC, candidate.flow.Request.GRPC, candidate.schema, false); err != nil {
-						wireProblem = "consumer request wire is incompatible with the provider contract: " + err.Error()
-						continue
-					}
-					if err := wire.verify(candidate.flow.Response.GRPC, assumption.flow.Response.GRPC, assumption.schema, true); err != nil {
-						wireProblem = "provider response wire is incompatible with the consumer contract: " + err.Error()
-						continue
-					}
-					differences, err := wire.rulesMatch(assumption, candidate)
-					if err != nil {
-						contractProblem = &contractCheckProblem{"unverified", "protobuf_contract_unavailable", "protobuf declarations cannot be compared reliably: " + err.Error(), []string{"protobuf/contract"}}
-						continue
-					}
-					if len(differences) > 0 {
-						contractProblem = &contractCheckProblem{"mismatch", "protobuf_contract_mismatch", "consumer and provider protobuf declarations differ for this exercised method, including its reachable message fields and enum values", differences}
-						continue
-					}
-					contractCheck = "protobuf_rules_and_observed_wire"
-				} else if assumption.flow.Protocol == "http" {
-					var problem *contractCheckProblem
-					contractCheck, problem = verifyHTTPContracts(ctx, &httpContracts, assumption, candidate)
-					if problem != nil {
-						contractProblem = problem
-						continue
-					}
-				}
-				report.Matches = append(report.Matches, Match{assumption.evidence, candidate.evidence, contractCheck})
-				report.Counts.Verified++
-				matched = true
-				break
+			if candidate.response != assumption.response {
+				continue
 			}
+			contractCheck, problem := contracts.verify(ctx, assumption, candidate)
+			if problem != nil {
+				// Preserve wire incompatibility as the most concrete diagnostic
+				// when several equal-looking responses fail different checks.
+				if contractProblem == nil || contractProblem.code != "provider_wire_mismatch" || problem.code == "provider_wire_mismatch" {
+					contractProblem = problem
+				}
+				continue
+			}
+			report.Matches = append(report.Matches, Match{assumption.evidence, candidate.evidence, contractCheck})
+			report.Counts.Verified++
+			matched = true
+			break
 		}
 		if !matched {
 			refs := []Evidence{}
@@ -280,11 +260,7 @@ func Check(ctx context.Context, options Options) (*Report, error) {
 				refs = append(refs, candidate.evidence)
 			}
 			finding := Finding{Kind: "mismatch", Code: "provider_response_mismatch", Operation: assumption.operation, Message: "provider tests cover the request, but none returns the mocked response", Consumer: &assumption.evidence, Provider: limitedEvidence(refs), Differences: differencePaths(assumption.response, candidates[0].response)}
-			if wireProblem != "" {
-				finding.Code = "provider_wire_mismatch"
-				finding.Message = wireProblem
-				finding.Differences = []string{"protobuf/wire"}
-			} else if contractProblem != nil {
+			if contractProblem != nil {
 				finding.Kind, finding.Code, finding.Message = contractProblem.kind, contractProblem.code, contractProblem.message
 				finding.Differences = contractProblem.differences
 			}
@@ -507,10 +483,6 @@ func (s *snapshot) samples(channel, dependency string) []sample {
 		return out[i].evidence.FlowID < out[j].evidence.FlowID
 	})
 	return out
-}
-
-func evidenceProblem(_ *snapshot, item sample) string {
-	return item.problem
 }
 
 func (s *snapshot) verifyCollections(inputs []string, boundary string) error {

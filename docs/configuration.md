@@ -220,8 +220,9 @@ through the [HTTP API](runtime-api.md), usually via an SDK.
 | `wiretap report --bundle <path>` | Print a JSON coverage report from verified raw artifacts; `--format yaml` and `--output <file>` are supported. |
 | `wiretap export --bundle <path> --format json` | Export a diagnostic coverage report to stdout; `--format yaml` and `--output <file>` are also supported. |
 | `wiretap export --bundle <path> --format postman --output-dir <directory>` | Export HTTP v2.1 and gRPC v3 JSON collections for the SUT and mocked dependencies, with test folders and saved interactions. |
-| `wiretap check consumer --consumer <run> --provider <run> [--dependency <id>]` | Verify captured consumer mock assumptions against provider service tests and their Postman collections. |
-| `wiretap check provider --provider <run> --consumer <run> [--dependency <id>]` | Check whether provider test examples support the selected consumer mocks. |
+| `wiretap check consumer --consumer <run> --artifacts <root>` | Find mapped providers beneath shared application folders and check all local mock dependencies. |
+| `wiretap check provider --provider <run> --artifacts <root>` | Find mapped consumers beneath shared application folders and check that local provider tests support their mocks. |
+| `wiretap check <consumer\|provider> --consumer <run> --provider <run>` | Compare one explicitly selected consumer/provider pair. |
 | `wiretap ca [--config path]` | Print the public proxy CA certificate, creating the local CA if needed. |
 
 `report` and `export` support `json`, `yaml`, `text`, `postman` and `all`;
@@ -229,15 +230,27 @@ JSON is the default. `--format text` prints the compact coverage summary.
 They work offline from complete capture directories and do not execute tests.
 See [capture artifacts and exports](artifacts.md) for examples.
 
-`check` accepts run directories or `bundle.json` paths. Collections default to
-`exports/postman/` within each archive; repeat `--consumer-collection <file-or-dir>`
-or `--provider-collection <file-or-dir>` to select explicit inputs. Select the
-consumer's local mock with `--dependency` when it cannot be inferred
-unambiguously. `--ignore-header <name>` is repeatable. `--format text|json` and
-`--output <file>` control the result. Exit statuses are `0` for agreement, `1`
-for incompatible/uncovered/unverified assumptions, and `2` for invalid inputs.
-The output's parent must exist; choose a destination outside both input
-archives and Postman input directories that does not replace a collection file.
+`check` accepts run directories or `bundle.json` paths. With `--artifacts`,
+supply the local run (`--consumer` or `--provider`) and an extracted local store
+whose top-level folders are application IDs. Declared provider mappings select
+relationships; exactly one snapshot must resolve for each selected
+application/API. Missing or ambiguous peers fail instead of selecting a latest
+build. The CLI does not upload or download artifacts. See
+[shared snapshot selection](assumption-checks.md#share-provider-snapshots).
+
+`--dependency <id>` scopes consumer discovery to a consumer-local mock ID. In
+explicit pair mode it is required only when the dependency cannot be inferred
+unambiguously. Provider discovery checks all mapped consumers and rejects
+`--dependency`; use an explicit pair to scope that viewpoint. Collections default to `exports/postman/` in each run. Only
+explicit pair mode permits repeatable `--consumer-collection <file-or-dir>` and
+`--provider-collection <file-or-dir>` overrides.
+
+`--ignore-header <name>` is repeatable and applies to every selected comparison.
+`--format text|json` and `--output <file>` control the result. Exit statuses are
+`0` for agreement, `1` for incompatible/uncovered/unverified assumptions, and
+`2` for invalid inputs. The output's parent must exist. Keep output outside the
+artifact root, all input archives and Postman input directories, and do not
+replace a collection file.
 See [assumption checks](assumption-checks.md) for comparison rules and limits.
 That guide separates [issues the check finds](assumption-checks.md#issues-the-check-will-find)
 from [claims it cannot establish](assumption-checks.md#what-the-check-will-not-establish)

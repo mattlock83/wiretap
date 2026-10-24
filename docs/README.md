@@ -46,7 +46,7 @@ and the [shared snapshot workflow](assumption-checks.md#share-provider-snapshots
 | --- | --- |
 | [Capture artifacts and exports](artifacts.md) | Read raw artifacts, a text summary, JSON/YAML coverage and Postman collections. |
 | [Assumption checks](assumption-checks.md) | Verify consumer examples and exercised HTTP/Protobuf declarations against provider tests, or check whether provider tests still support consumers. |
-| [Share provider snapshots](assumption-checks.md#share-provider-snapshots) | Keep complete runs in a shared artifact store under stable application/API IDs and select the tested provider version. |
+| [Share provider snapshots](assumption-checks.md#share-provider-snapshots) | Organize complete runs by application, declare provider mappings and discover comparisons with `--artifacts`. |
 | [Contract coverage rules](contract-coverage-rules.md) | Understand condition keys, counts, evidence quality and measurement limits. |
 | [Bundle format](bundle-evidence.md) | Parse API inventories, test recordings, contracts and payloads. |
 | [Machine-readable evidence and coverage](machine-interface.md) | Consume versioned reports, stable identities, provenance, provider mappings and payload availability. |
@@ -54,8 +54,9 @@ and the [shared snapshot workflow](assumption-checks.md#share-provider-snapshots
 | [gRPC user guide](grpc-user-guide.md) | Use reflection/local contracts and existing clients for unary and streaming capture. |
 | [gRPC support](grpc-support-plan.md) | Review supported scope, verification and protocol limits. |
 
-For assumption checks, start with
-[issues the check will find](assumption-checks.md#issues-the-check-will-find),
+For assumption checks, start with the
+[shared application workflow](assumption-checks.md#check-against-shared-application-artifacts),
+then read [issues the check will find](assumption-checks.md#issues-the-check-will-find),
 [what the check will not establish](assumption-checks.md#what-the-check-will-not-establish)
 and [interpreting results](assumption-checks.md#interpreting-results). The
 [CI guide](ci-example.md#gate-consumerprovider-assumptions-offline) shows how to

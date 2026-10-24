@@ -118,17 +118,24 @@ is needed to run it.
 
 ## Gate consumer/provider assumptions offline
 
-After capturing both suites, restore the exact complete consumer and provider
-archives into the check job, including their `exports/postman/` directories.
-Select known run IDs or artifact versions from the tested revisions. Do not
-substitute the newest folder or an unrelated green provider build. The check
-needs no running application, mock server or provider, and executes no Postman
-scripts.
+Upload each complete run, including `exports/postman/`, under its stable
+application ID in your shared artifact store. For the check job, restore the
+selected peer snapshots into a local application-folder root. Keep the local
+suite's exact completed run as the anchor. Artifact upload/download remains
+part of your existing CI or Artifactory tooling.
 
-The example below assumes `evidence/orders-run/` and
-`evidence/inventory-run/` have already been restored and `wiretap` is on `PATH`.
-The output directory is separate from both inputs. Use a fresh output directory
-per job so an old report cannot be mistaken for a new result.
+Use a known run ID and tested revision for each application/API. Consumer
+provider mappings can pin `sut_source.version`, but two runs matching that pin
+are still ambiguous. Restore one intended peer snapshot per selected
+application/API; Wiretap does not choose a newest folder or merge evidence
+from historical runs. The check needs no running server and executes no
+Postman scripts.
+
+The example assumes the local consumer is in `evidence/orders-run/`, mapped
+providers have been restored beneath `api-evidence/<application-id>/`, and
+`wiretap` is on `PATH`. Keep results outside all input archives and outside
+`api-evidence/`. Use a fresh result directory per job so an old report cannot
+be mistaken for a new result.
 
 ```yaml
 - name: Check captured assumptions
@@ -138,8 +145,7 @@ per job so an old report cannot be mistaken for a new result.
     set +e
     wiretap check consumer \
       --consumer evidence/orders-run \
-      --provider evidence/inventory-run \
-      --dependency inventory \
+      --artifacts api-evidence \
       --format json \
       --output assumption-results/check.json \
       2> assumption-results/check.stderr
@@ -155,7 +161,7 @@ per job so an old report cannot be mistaken for a new result.
     path: |
       assumption-results/
       evidence/orders-run/
-      evidence/inventory-run/
+      api-evidence/
     if-no-files-found: error
 ```
 
@@ -165,11 +171,30 @@ evidence; `1` means an incompatible, uncovered or unverified result; `2` means
 invalid input or flags. Input errors are written to stderr and may prevent a
 JSON report from being written. Preserve diagnostics even when no report exists.
 
-For a provider repository's gate, change `check consumer` to `check provider`.
-Keep `--consumer` pointing to the consumer's mock archive and `--provider` to
-the provider's service archive. Both modes enforce the same relationship; the
-mode changes the viewpoint, not the direction of the assumptions. Run a separate
-check for each consumer or dependency to protect.
+For a provider repository's gate, restore the intended consumer snapshots
+beneath application folders and use:
+
+```sh
+wiretap check provider \
+  --provider evidence/inventory-run \
+  --artifacts api-evidence \
+  --format json \
+  --output assumption-results/check.json
+```
+
+Consumer mode checks every local mock dependency through its provider mapping.
+Provider mode finds consumer mappings to the local application/API. Both modes
+enforce the same relationship, returning one aggregate report with pair details
+in `comparisons`. No matches, missing mappings, missing peers or ambiguous
+snapshots fail with exit `2`; they do not produce a passing empty report.
+Provider mode includes mappings pinned to a different provider version and
+reports them as unverified, rather than silently ignoring those consumers.
+
+Add `--dependency inventory` to scope consumer discovery to that local mock ID.
+Provider discovery always checks all mapped consumer dependencies. To compare
+one selected relationship, use `--consumer` and `--provider` together, omit
+`--artifacts`, and add `--dependency` when needed. Preserve that pair's two
+archives with the report.
 
 Before making a check mandatory, align synthetic request fixtures between the
 suites. Different IDs or body values are uncovered scenarios. Decide which
@@ -198,12 +223,13 @@ catch a newly allowed enum value even when no example returns it. Custom
 validation options are compared as opaque declarations, so retain tests that
 assert their actual validation behavior.
 
-Retrieve provider snapshots with your existing CI artifact tooling before this
-step. Keep stable application/API IDs and pin the intended tested revision,
-run and manifest identity; avoid display-name matching or a moving `latest`
-artifact. The CLI reads downloaded local archives and does not fetch from a
-remote store. See [sharing provider snapshots](assumption-checks.md#share-provider-snapshots)
-for a suggested layout. Provider-contract validation of a schema-free consumer
+Retain the exact snapshot identities and manifest digests used by the check.
+Keep stable application/API IDs and select the intended tested revision and
+run; display names and moving `latest` labels do not establish that identity.
+The CLI reads downloaded, extracted local archives. See
+[sharing provider snapshots](assumption-checks.md#share-provider-snapshots) for
+the required application-folder layout and discovery rules. Provider-contract
+validation of a schema-free consumer
 capture does not retroactively give that archive contract coverage, and a spec
 without a matching passing provider test still leaves the scenario uncovered.
 

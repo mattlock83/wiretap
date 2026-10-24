@@ -96,8 +96,12 @@ or retained evidence can make a result `unverified`.
 
 ## Assumption-check results
 
-`wiretap check consumer` and `wiretap check provider` read two archives and their
-Postman collections. A passing result requires collections verified against
+`wiretap check consumer` and `wiretap check provider` compare either an explicit
+consumer/provider pair or a local run against discovered peers under
+`--artifacts <root>`. Discovery uses declared provider mappings and top-level
+application folders; it requires an unambiguous snapshot selection. Each pair
+reads complete archives and their Postman collections. A passing result requires
+collections verified against
 archive-derived projections and selected mock scenarios supported by complete
 passing provider service tests. With only the provider's frozen OpenAPI 3.0
 contract it validates both concrete exchanges under that schema. With both
@@ -108,9 +112,37 @@ gRPC matches require selected-method declaration equality and observed wire
 cross-decoding.
 
 Use `--format json` for the versioned result, and `--output <file>` to save it.
-The envelope has `report_version: "1.0"`,
-`rules_version: "wiretap-assumptions-3"` and `scope: "observed_mock_examples_and_exercised_contracts"`.
-Consumers should check these versions before interpreting a result.
+Both result shapes have `report_version: "1.0"` and
+`rules_version: "wiretap-assumptions-4"`. Check both versions and `scope` before
+interpreting a result. Version 4 respects explicit non-JSON HTTP media types:
+JSON-looking `text/plain` body bytes compare exactly; JSON media types and
+valid JSON without a content type retain JSON normalization.
+
+### Shared-artifact result
+
+With `--artifacts`, the envelope has
+`scope: "discovered_consumer_provider_relationships"`:
+
+| Field | Meaning |
+| --- | --- |
+| `mode` | `consumer` or `provider`, the local viewpoint used for discovery. |
+| `artifacts_path` | Local artifact root used to discover application snapshots. |
+| `compatible` | True only when all selected pair reports are compatible. An empty selection is an input error. |
+| `counts` | Sums of the corresponding count fields in every pair report. |
+| `comparisons` | Pair reports, each with its own archive identities, dependency, counts, evidence and findings. |
+
+The consumer command resolves every selected mock mapping to a provider. The
+provider command discovers consumer mappings to its application/API, including
+mappings to other provider versions so those mismatches remain visible.
+Ambiguous snapshots, missing peers and invalid discovery inputs fail with
+exit `2` and no new report. The check does not merge history or select a latest
+run. See [selection rules](assumption-checks.md#share-provider-snapshots).
+
+### Pair result
+
+Explicit pair mode returns a pair report directly. Shared-artifact mode places
+the same report shape in each `comparisons` entry. A pair report has
+`scope: "observed_mock_examples_and_exercised_contracts"`:
 
 | Field | Meaning |
 | --- | --- |
@@ -166,7 +198,7 @@ HTTP schemas are needed for declared-rule drift checks.
 ### Finding codes
 
 `kind` is the broad classification. Use `code` for the specific diagnostic
-under `wiretap-assumptions-3`:
+under `wiretap-assumptions-4`:
 
 | Code | Kind | Meaning |
 | --- | --- | --- |
@@ -214,7 +246,9 @@ discriminator mappings are retained conservatively, including their declared
 schema target identities.
 OpenAPI `content`-encoded parameters/response headers, complex numeric object
 parameter/header serialization and path/operation-level server overrides also
-remain unsupported required checks. Nullable schemas combined with enum,
+remain unsupported required checks. Captured headers with multiple differently
+cased keys for one name, or multiple `Content-Type` values, prevent a reliable
+contract check as well. Nullable schemas combined with enum,
 `not` or composition are unverified because of validator ambiguity for null.
 
 Protobuf declaration comparison follows only the exercised method's static
@@ -247,6 +281,8 @@ before any JSON report is written. A report write failure can also leave no new
 output. Consumers should preserve the exit status and stderr, and use a fresh
 report path rather than trusting an existing file after a failed invocation.
 
-`--output` requires an existing parent directory and a destination outside both
-archives and supplied Postman input directories. It cannot replace a collection
-input. The checker writes a separate report and leaves the inputs unchanged.
+`--output` requires an existing parent directory. Shared-artifact mode requires
+a destination outside the entire artifact root and the local input archive.
+Explicit pair mode requires a destination outside both archives and supplied
+Postman input directories. Output cannot replace a collection input. The checker
+writes a separate report and leaves the inputs unchanged.

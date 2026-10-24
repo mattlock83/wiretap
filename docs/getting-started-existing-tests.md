@@ -169,7 +169,9 @@ wiretap report --bundle artifacts/<run-id> --format text
 ```
 
 A mock response is a recorded assumption. To verify its examples against the
-provider's own tests, keep both complete archives and their Postman collections
-and run the [assumption checker](assumption-checks.md). The
+provider's own tests, share complete runs and Postman exports under application
+folders, then use `wiretap check consumer --consumer <run> --artifacts <root>`
+with the selected snapshots restored locally. See the
+[assumption checker](assumption-checks.md) for provider mappings and selection. The
 [machine interface](machine-interface.md) explains identities, versions,
 provenance and evidence limits.

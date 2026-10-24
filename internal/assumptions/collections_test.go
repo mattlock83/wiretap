@@ -100,6 +100,33 @@ func TestVerifyCollectionsNormalizesSDKURLsFoldersHeadersAndJSON(t *testing.T) {
 	}
 }
 
+func TestVerifyCollectionsRejectsEditedNonJSONBodyBytes(t *testing.T) {
+	for _, media := range []string{"text/plain", "application/octet-stream"} {
+		for _, phase := range []string{"request", "response"} {
+			t.Run(media+"/"+phase, func(t *testing.T) {
+				export := collectionHTTPFixture()
+				item := &export.Collection.Items[0].Items[0]
+				body := "1"
+				item.Request.Headers[0].Value = media
+				item.Request.Body.Raw = &body
+				item.Responses[0].OriginalRequest = item.Request
+				item.Responses[0].Headers[0].Value = media
+				item.Responses[0].Body = body
+				object := collectionObject(t, export)
+				if phase == "request" {
+					firstHTTPItem(object)["request"].(map[string]any)["body"].(map[string]any)["raw"] = "1.0"
+				} else {
+					firstHTTPResponse(firstHTTPItem(object))["body"] = "1.0"
+				}
+				file := writeCollectionObject(t, t.TempDir(), "edited.json", object)
+				if err := VerifyCollections([]string{file}, []postman.Export{export}); err == nil {
+					t.Fatalf("edited %s %s bytes were accepted as equivalent JSON", media, phase)
+				}
+			})
+		}
+	}
+}
+
 func TestVerifyCollectionsRejectsChangedHTTPAssumptions(t *testing.T) {
 	mutations := map[string]func(map[string]any){
 		"request value": func(object map[string]any) {

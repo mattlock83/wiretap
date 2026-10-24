@@ -382,7 +382,7 @@ func normalizeHTTPItem(item map[string]any, binaryResponses map[string]bool) (no
 		if err != nil {
 			return result, fmt.Errorf("HTTP response originalRequest: %w", err)
 		}
-		normalizedBody := normalizeCollectionBody(body)
+		normalizedBody := normalizeHTTPCollectionBody(body, headers)
 		if binaryResponses[binaryResponseKey(original, code, headers, body)] {
 			decoded, err := base64.StdEncoding.DecodeString(body)
 			if err != nil {
@@ -452,7 +452,7 @@ func normalizeHTTPRequest(value any) (normalizedHTTPRequest, error) {
 				}
 			}
 		}
-		normalized := normalizeCollectionBody(raw)
+		normalized := normalizeHTTPCollectionBody(raw, headers)
 		result.Body = &normalized
 	case "file":
 		file, ok := body["file"].(map[string]any)
@@ -758,6 +758,19 @@ func normalizeCollectionBody(raw string) normalizedCollectionBody {
 		return normalizedCollectionBody{Kind: "text", Content: raw}
 	}
 	return normalizedCollectionBody{Kind: "json", Content: canonical.String()}
+}
+
+func normalizeHTTPCollectionBody(raw string, headers [][2]string) normalizedCollectionBody {
+	var contentTypes []string
+	for _, header := range headers {
+		if header[0] == "content-type" {
+			contentTypes = append(contentTypes, header[1])
+		}
+	}
+	if httpBodyIsJSON(contentTypes) {
+		return normalizeCollectionBody(raw)
+	}
+	return normalizedCollectionBody{Kind: "text", Content: raw}
 }
 
 // Decode tokens rather than unmarshalling so ambiguous duplicate keys and deeply

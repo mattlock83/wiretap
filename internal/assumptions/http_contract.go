@@ -306,6 +306,16 @@ func (c *httpContract) validate(ctx context.Context, flow artifact.Flow) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	for _, entry := range []struct {
+		phase   string
+		message *artifact.HttpMessage
+	}{{"request", flow.Request.HTTP}, {"response", flow.Response.HTTP}} {
+		if entry.message != nil {
+			if err := unambiguousHTTPHeaders(entry.message.Headers); err != nil {
+				return fmt.Errorf("%s: %w", entry.phase, err)
+			}
+		}
+	}
 	input, err := c.input(flow)
 	if err != nil {
 		return err
@@ -340,6 +350,21 @@ func (c *httpContract) validate(ctx context.Context, flow artifact.Flow) error {
 		return fmt.Errorf("response violates OpenAPI: %w", err)
 	}
 	return ctx.Err()
+}
+
+func unambiguousHTTPHeaders(headers artifact.Headers) error {
+	names := map[string]string{}
+	for _, name := range sortedRuleKeys(headers) {
+		key := strings.ToLower(name)
+		if previous, found := names[key]; found {
+			return fmt.Errorf("%w: captured headers %q and %q have ambiguous ordering", errHTTPContractUnavailable, previous, name)
+		}
+		names[key] = name
+		if key == "content-type" && len(headers[name]) > 1 {
+			return fmt.Errorf("%w: multiple captured Content-Type values cannot select one body schema reliably", errHTTPContractUnavailable)
+		}
+	}
+	return nil
 }
 
 func preciseHTTPBody(message *artifact.HttpMessage) error {

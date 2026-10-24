@@ -37,8 +37,10 @@ scope; they do not prove that no other APIs or dependencies exist.
 
 ## Verify consumer/provider examples
 
-Use `wiretap check consumer` or `wiretap check provider` with both complete
-archives and their Postman collections. The checker verifies the collections
+Use `wiretap check consumer` or `wiretap check provider` with a local run and
+`--artifacts <root>` to discover mapped peers beneath application folders. You
+can also select an explicit pair with `--consumer` and `--provider`. Every run
+needs its complete archive and Postman exports. The checker verifies the collections
 against their raw evidence, then requires each selected mock request and paired
 response to have compatible evidence from a passing provider service test.
 The provider's frozen OpenAPI 3.0 contract can validate both concrete exchanges

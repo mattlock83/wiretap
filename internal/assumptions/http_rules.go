@@ -13,11 +13,6 @@ import (
 	"github.com/mattlock83/wiretap/internal/artifact"
 )
 
-type contractCheckProblem struct {
-	kind, code, message string
-	differences         []string
-}
-
 func verifyHTTPContracts(ctx context.Context, verifier *httpContractVerifier, consumer, provider sample) (string, *contractCheckProblem) {
 	unavailable := func(reason string) (string, *contractCheckProblem) {
 		return "", &contractCheckProblem{"unverified", "http_contract_unavailable", reason, []string{"contract"}}
