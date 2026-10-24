@@ -217,7 +217,14 @@ That guide separates [issues the check finds](assumption-checks.md#issues-the-ch
 from [claims it cannot establish](assumption-checks.md#what-the-check-will-not-establish)
 and explains [result interpretation](assumption-checks.md#interpreting-results).
 An equal coverage condition is insufficient: the checker requires the same
-concrete request and a compatible response from one provider exchange.
+concrete request and a compatible response from one provider exchange. With
+frozen OpenAPI 3.0 contracts, it also compares rules for the exercised operation,
+selected response status and media types, then validates each side's qualifying
+messages against its own schema. Both omitted HTTP schemas allow a reported
+example-only match; one-sided or unsupported contract availability is unverified.
+Native gRPC also compares the selected method's reachable message/enum
+declarations after observed wire cross-decoding. Custom validation options are
+compared as opaque declarations and are not executed.
 
 ## Suite outputs
 

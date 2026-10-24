@@ -1,4 +1,5 @@
-// Package assumptions checks observed consumer mock examples against provider tests.
+// Package assumptions checks consumer mock examples and exercised contract rules
+// against provider tests.
 package assumptions
 
 import (
@@ -23,7 +24,7 @@ import (
 	"github.com/mattlock83/wiretap/internal/postman"
 )
 
-const RulesVersion = "wiretap-assumptions-1"
+const RulesVersion = "wiretap-assumptions-2"
 
 // ErrInput identifies invalid, corrupt or inconsistent comparison inputs.
 var ErrInput = errors.New("invalid assumption-check input")
@@ -65,8 +66,9 @@ type Finding struct {
 }
 
 type Match struct {
-	Consumer Evidence `json:"consumer"`
-	Provider Evidence `json:"provider"`
+	Consumer      Evidence `json:"consumer"`
+	Provider      Evidence `json:"provider"`
+	ContractCheck string   `json:"contract_check"`
 }
 
 type ExcludedEvidence struct {
@@ -111,6 +113,7 @@ type sample struct {
 	operation, request, response string
 	problem                      string
 	schema                       *artifact.SchemaRef
+	schemaProblem                string
 }
 
 // Check verifies the same consumer-to-provider obligation from either viewpoint.
@@ -148,7 +151,7 @@ func Check(ctx context.Context, options Options) (*Report, error) {
 	sort.Strings(ignored)
 	ignored = unique(ignored)
 	report := &Report{ReportVersion: "1.0", RulesVersion: RulesVersion, Mode: options.Mode,
-		Scope: "observed_mock_examples", Dependency: dependency, Binding: "explicit_inputs",
+		Scope: "observed_mock_examples_and_exercised_contracts", Dependency: dependency, Binding: "explicit_inputs",
 		Consumer: consumer.source(options.ConsumerCollections), Provider: provider.source(options.ProviderCollections),
 		IgnoredHeaders: ignored, Matches: []Match{}, Findings: []Finding{}, ExcludedProviderEvidence: []ExcludedEvidence{}}
 	for _, entry := range []struct {
@@ -191,6 +194,7 @@ func Check(ctx context.Context, options Options) (*Report, error) {
 	index := map[string][]sample{}
 	byOperation := map[string][]Evidence{}
 	var wire wireVerifier
+	var httpContracts httpContractVerifier
 	for _, candidate := range providers {
 		if err := ctx.Err(); err != nil {
 			return nil, err
@@ -209,6 +213,7 @@ func Check(ctx context.Context, options Options) (*Report, error) {
 		index[candidate.request] = append(index[candidate.request], candidate)
 		byOperation[candidate.operation] = append(byOperation[candidate.operation], candidate.evidence)
 	}
+	unavailableConsumers := 0
 	for _, assumption := range consumers {
 		if err := ctx.Err(); err != nil {
 			return nil, err
@@ -221,6 +226,7 @@ func Check(ctx context.Context, options Options) (*Report, error) {
 			}
 		}
 		if problem != "" {
+			unavailableConsumers++
 			report.add(Finding{Kind: "unverified", Code: "consumer_evidence_unavailable", Operation: assumption.operation, Message: problem, Consumer: &assumption.evidence})
 			continue
 		}
@@ -231,8 +237,10 @@ func Check(ctx context.Context, options Options) (*Report, error) {
 		}
 		matched := false
 		wireProblem := ""
+		var contractProblem *contractCheckProblem
 		for _, candidate := range candidates {
 			if candidate.response == assumption.response {
+				contractCheck := "unavailable"
 				if assumption.flow.Protocol == "grpc" {
 					if err := wire.verify(assumption.flow.Request.GRPC, candidate.flow.Request.GRPC, candidate.schema, false); err != nil {
 						wireProblem = "consumer request wire is incompatible with the provider contract: " + err.Error()
@@ -242,8 +250,25 @@ func Check(ctx context.Context, options Options) (*Report, error) {
 						wireProblem = "provider response wire is incompatible with the consumer contract: " + err.Error()
 						continue
 					}
+					differences, err := wire.rulesMatch(assumption, candidate)
+					if err != nil {
+						contractProblem = &contractCheckProblem{"unverified", "protobuf_contract_unavailable", "protobuf declarations cannot be compared reliably: " + err.Error(), []string{"protobuf/contract"}}
+						continue
+					}
+					if len(differences) > 0 {
+						contractProblem = &contractCheckProblem{"mismatch", "protobuf_contract_mismatch", "consumer and provider protobuf declarations differ for this exercised method, including its reachable message fields and enum values", differences}
+						continue
+					}
+					contractCheck = "protobuf_rules_and_observed_wire"
+				} else if assumption.flow.Protocol == "http" {
+					var problem *contractCheckProblem
+					contractCheck, problem = verifyHTTPContracts(ctx, &httpContracts, assumption, candidate)
+					if problem != nil {
+						contractProblem = problem
+						continue
+					}
 				}
-				report.Matches = append(report.Matches, Match{assumption.evidence, candidate.evidence})
+				report.Matches = append(report.Matches, Match{assumption.evidence, candidate.evidence, contractCheck})
 				report.Counts.Verified++
 				matched = true
 				break
@@ -259,6 +284,9 @@ func Check(ctx context.Context, options Options) (*Report, error) {
 				finding.Code = "provider_wire_mismatch"
 				finding.Message = wireProblem
 				finding.Differences = []string{"protobuf/wire"}
+			} else if contractProblem != nil {
+				finding.Kind, finding.Code, finding.Message = contractProblem.kind, contractProblem.code, contractProblem.message
+				finding.Differences = contractProblem.differences
 			}
 			report.add(finding)
 		}
@@ -266,7 +294,7 @@ func Check(ctx context.Context, options Options) (*Report, error) {
 	// Entirely unavailable consumer evidence may not have an exportable
 	// collection at all. Preserve its useful unverified verdict instead of
 	// replacing it with a secondary missing-projection error.
-	if report.Counts.Unverified == report.Counts.Assumptions && report.Counts.Assumptions > 0 {
+	if unavailableConsumers == len(consumers) && len(consumers) > 0 {
 		return report, nil
 	}
 	// Verify the complete selected Postman projections, including examples in
@@ -444,6 +472,7 @@ func (s *snapshot) samples(channel, dependency string) []sample {
 				continue
 			}
 			var schema *artifact.SchemaRef
+			schemaProblem := ""
 			if flow.Request.GRPC != nil {
 				for i := range capture.Schemas {
 					ref := &capture.Schemas[i]
@@ -452,8 +481,20 @@ func (s *snapshot) samples(channel, dependency string) []sample {
 						break
 					}
 				}
+			} else if flow.Request.HTTP != nil {
+				for i := range capture.Schemas {
+					ref := &capture.Schemas[i]
+					if ref.Type != "openapi" || !(channel == "test_to_sut" && (ref.Role == "sut" || ref.Role == "provided" && ref.AssetID == flow.AssetID) || channel == "sut_to_dependency" && ref.Role == "dependency" && ref.AssetID == dependency) {
+						continue
+					}
+					if schema != nil {
+						schemaProblem = "multiple OpenAPI contracts apply to this HTTP boundary"
+						break
+					}
+					schema = ref
+				}
 			}
-			out = append(out, sample{flow: flow, operation: operation(flow), problem: problem, schema: schema, evidence: Evidence{
+			out = append(out, sample{flow: flow, operation: operation(flow), problem: problem, schema: schema, schemaProblem: schemaProblem, evidence: Evidence{
 				RunID: s.run.RunID, AttemptID: capture.TestCase.ID, TestName: capture.TestCase.Name, TestIdentity: capture.TestCase.Identity,
 				FlowID: flow.ID, EvidencePath: refs[capture.TestCase.ID] + "#/capture/traffic/" + strconv.Itoa(index), TestOutcome: capture.TestCase.Status,
 			}})
@@ -538,6 +579,10 @@ func headerName(name string) bool {
 }
 
 func differencePaths(expected, actual string) []string {
+	return jsonDifferencePaths(expected, actual, "response")
+}
+
+func jsonDifferencePaths(expected, actual, root string) []string {
 	var left, right any
 	decode := func(data string, result *any) error {
 		decoder := json.NewDecoder(bytes.NewBufferString(data))
@@ -545,7 +590,7 @@ func differencePaths(expected, actual string) []string {
 		return decoder.Decode(result)
 	}
 	if decode(expected, &left) != nil || decode(actual, &right) != nil {
-		return []string{"response"}
+		return []string{root}
 	}
 	var paths []string
 	var walk func(any, any, string)
@@ -590,9 +635,9 @@ func differencePaths(expected, actual string) []string {
 		}
 		paths = append(paths, path)
 	}
-	walk(left, right, "response")
+	walk(left, right, root)
 	if len(paths) == 0 {
-		return []string{"response"}
+		return []string{root}
 	}
 	return paths
 }

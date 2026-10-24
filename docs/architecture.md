@@ -98,7 +98,12 @@ identity without claiming agreement. The offline
 [assumption checker](assumption-checks.md) verifies exported collections against
 their archives and compares selected mock scenarios with complete passing
 provider service tests. It requires request and response agreement within the
-same exchange and reports missing evidence as a failure.
+same exchange and reports missing evidence as a failure. For supported frozen
+OpenAPI 3.0 contracts it compares the exercised validation rules and validates
+each side's relevant messages under its own schema. Native gRPC cross-decodes
+observed messages with opposite descriptors and compares the selected method's
+reachable message and enum declarations. HTTP with both schemas absent can
+only earn a marked example-only match.
 Wiretap does not execute or generate tests.
 
 HTTP and native gRPC support capture, validation and coverage, including all four

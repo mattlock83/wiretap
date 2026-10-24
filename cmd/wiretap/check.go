@@ -36,11 +36,11 @@ func checkCommand(ctx context.Context, args []string) (int, error) {
 	flags.StringVar(&options.Dependency, "dependency", "", "consumer's local mock dependency ID (inferred when unambiguous)")
 	flags.Var(&consumerCollections, "consumer-collection", "consumer Postman collection file or directory; repeatable (default: <consumer>/exports/postman)")
 	flags.Var(&providerCollections, "provider-collection", "provider Postman collection file or directory; repeatable (default: <provider>/exports/postman)")
-	flags.Var(&ignored, "ignore-header", "explicitly ignore another HTTP header or gRPC metadata field in both directions; repeatable")
+	flags.Var(&ignored, "ignore-header", "ignore another captured HTTP header or gRPC metadata field; declared HTTP header rules still apply; repeatable")
 	flags.StringVar(&format, "format", "text", "report format: text or json")
 	flags.StringVar(&output, "output", "", "write report outside input archives (default: stdout)")
 	flags.Usage = func() {
-		fmt.Fprintln(flags.Output(), "Usage: wiretap check consumer --consumer <capture> --provider <capture> [options]\n       wiretap check provider --provider <capture> --consumer <capture> [options]\n\nVerify recorded mock request/response examples against complete passing provider tests.\nBoth viewpoints enforce the same consumer-to-provider obligation. No traffic is replayed.")
+		fmt.Fprintln(flags.Output(), "Usage: wiretap check consumer --consumer <capture> --provider <capture> [options]\n       wiretap check provider --provider <capture> --consumer <capture> [options]\n\nVerify mock request/response examples and exercised contract rules against complete passing provider tests.\nBoth viewpoints enforce the same consumer-to-provider obligation. No traffic is replayed.")
 		flags.PrintDefaults()
 	}
 	if len(args) == 1 && (args[0] == "--help" || args[0] == "-h") {
@@ -113,6 +113,11 @@ func writeCheckText(out io.Writer, report *assumptions.Report) error {
 	fmt.Fprintf(&text, "%s: check %s — %d of %d mock examples verified\n", status, report.Mode, report.Counts.Verified, report.Counts.Assumptions)
 	fmt.Fprintf(&text, "Consumer: %s (%s)\nProvider: %s (%s)\nMock dependency: %s; binding: %s\n", report.Consumer.BundlePath, report.Consumer.RunID, report.Provider.BundlePath, report.Provider.RunID, report.Dependency, report.Binding)
 	fmt.Fprintf(&text, "Uncovered: %d; mismatched: %d; unverified: %d\n", report.Counts.Uncovered, report.Counts.Mismatched, report.Counts.Unverified)
+	contracts := map[string]int{}
+	for _, match := range report.Matches {
+		contracts[match.ContractCheck]++
+	}
+	fmt.Fprintf(&text, "Contracts: %d HTTP validation-rule checks; %d protobuf declaration and wire checks; %d example-only matches (schemas unavailable)\n", contracts["openapi_3_0_validation_rules"], contracts["protobuf_rules_and_observed_wire"], contracts["unavailable"])
 	for _, finding := range report.Findings {
 		fmt.Fprintf(&text, "\n[%s] %s", finding.Kind, finding.Operation)
 		if finding.Operation != "" {
@@ -135,7 +140,7 @@ func writeCheckText(out io.Writer, report *assumptions.Report) error {
 			fmt.Fprintf(&text, "  Test %q, flow %s: %s\n", excluded.Evidence.TestName, excluded.Evidence.FlowID, excluded.Reason)
 		}
 	}
-	fmt.Fprintf(&text, "\nPolicy: %s; exact retained examples after endpoint/header normalization.\n", report.RulesVersion)
+	fmt.Fprintf(&text, "\nPolicy: %s; exact retained examples and exercised contract rules after endpoint/header normalization.\n", report.RulesVersion)
 	_, err := io.WriteString(out, text.String())
 	return err
 }

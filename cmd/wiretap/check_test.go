@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,6 +17,11 @@ import (
 )
 
 func cliCheckArchive(t *testing.T, consumer bool, path string, status int, response string, states ...string) string {
+	t.Helper()
+	return cliCheckArchiveWithContracts(t, consumer, path, status, response, nil, states...)
+}
+
+func cliCheckArchiveWithContracts(t *testing.T, consumer bool, path string, status int, response string, schemas []artifact.SchemaRef, states ...string) string {
 	t.Helper()
 	writer, err := bundle.New(t.TempDir())
 	if err != nil {
@@ -35,7 +41,8 @@ func cliCheckArchive(t *testing.T, consumer bool, path string, status int, respo
 		Request:  artifact.Message{HTTP: &artifact.HttpMessage{Method: "GET", URL: "http://local.test" + path, Headers: artifact.Headers{"Accept": {"application/json"}}}},
 		Response: artifact.Message{HTTP: &artifact.HttpMessage{Status: status, Headers: artifact.Headers{"Content-Type": {"application/json"}}, Body: &artifact.Body{Text: response}}},
 	}}}
-	if _, err := writer.Register(capture.TestCase, nil); err != nil {
+	capture.Schemas, err = writer.Register(capture.TestCase, schemas)
+	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := writer.Commit(capture); err != nil {
@@ -68,6 +75,43 @@ func cliCheckArchive(t *testing.T, consumer bool, path string, status int, respo
 		}
 	}
 	return writer.Path()
+}
+
+func TestCLIAssumptionCheckRejectsDeclaredRuleDifferences(t *testing.T) {
+	for _, scenario := range []struct {
+		name, consumer, provider, value, keyword string
+	}{
+		{"type", `{"type":"integer"}`, `{"type":"number"}`, `7`, "type"},
+		{"enum", `{"type":"string","enum":["ready","done"]}`, `{"type":"string","enum":["ready"]}`, `"ready"`, "enum"},
+		{"length", `{"type":"string","maxLength":10}`, `{"type":"string","maxLength":20}`, `"ready"`, "maxLength"},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			archive := func(consumer bool, schema string) string {
+				role, asset := "sut", ""
+				if consumer {
+					role, asset = "dependency", "stock"
+				}
+				spec := fmt.Sprintf(`{"openapi":"3.0.3","info":{"title":"Inventory","version":"1"},"paths":{"/items":{"get":{"responses":{"200":{"description":"OK","content":{"application/json":{"schema":{"type":"object","properties":{"value":%s}}}}}}}}}}`, schema)
+				return cliCheckArchiveWithContracts(t, consumer, "/items", 200, `{"value":`+scenario.value+`}`, []artifact.SchemaRef{{ID: "inventory", Role: role, AssetID: asset, Type: "openapi", Source: artifact.SchemaSource{Type: "inline", Content: spec}}})
+			}
+			consumer, provider := archive(true, scenario.consumer), archive(false, scenario.provider)
+			for _, mode := range []string{"consumer", "provider"} {
+				args := []string{"check", mode, "--consumer", consumer, "--provider", provider}
+				code, output := executeCapturingStdout(t, append(args, "--format", "json"))
+				var report assumptions.Report
+				if err := json.Unmarshal(output, &report); err != nil {
+					t.Fatalf("invalid report: %v\n%s", err, output)
+				}
+				if code != 1 || report.Compatible || len(report.Findings) != 1 || report.Findings[0].Code != "http_contract_mismatch" || !strings.Contains(strings.Join(report.Findings[0].Differences, " "), scenario.keyword) {
+					t.Fatalf("expected %s error in %s mode, exit %d: %s", scenario.keyword, mode, code, output)
+				}
+				code, output = executeCapturingStdout(t, args)
+				if code != 1 || !strings.Contains(string(output), "validation rules differ") || !strings.Contains(string(output), scenario.keyword) {
+					t.Fatalf("missing useful text diagnostic, exit %d: %s", code, output)
+				}
+			}
+		})
+	}
 }
 
 func TestCLIAssumptionCheckBothViewpoints(t *testing.T) {

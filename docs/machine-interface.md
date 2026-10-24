@@ -95,12 +95,16 @@ evidence is unverified.
 `wiretap check consumer` and `wiretap check provider` read two archives and their
 Postman collections. A passing result requires collections verified against
 archive-derived projections and selected mock scenarios supported by complete
-passing provider service tests. Coverage reports and condition fingerprints do not
-replace concrete request/response evidence for this check.
+passing provider service tests. With available frozen OpenAPI 3.0 contracts, it
+also requires conservative equality of exercised validation rules and checks
+each side's relevant message values under its own schema. Coverage reports and
+condition fingerprints do not replace concrete request/response evidence.
+gRPC matches require selected-method declaration equality and observed wire
+cross-decoding.
 
 Use `--format json` for the versioned result, and `--output <file>` to save it.
 The envelope has `report_version: "1.0"`,
-`rules_version: "wiretap-assumptions-1"` and `scope: "observed_mock_examples"`.
+`rules_version: "wiretap-assumptions-2"` and `scope: "observed_mock_examples_and_exercised_contracts"`.
 Consumers should check these versions before interpreting a result.
 
 | Field | Meaning |
@@ -111,7 +115,7 @@ Consumers should check these versions before interpreting a result.
 | `dependency`, `binding` | Selected consumer mock ID and `declared_mapping` or `explicit_inputs` relationship. |
 | `ignored_headers` | Effective header exclusion policy, including explicit additions. |
 | `counts` | Selected exchange count in `assumptions`, matched exchange count in `verified`, and finding counts in `uncovered`, `mismatched` and `unverified`. |
-| `matches` | Consumer/provider evidence reference pairs supporting agreement. |
+| `matches` | Consumer/provider evidence reference pairs supporting agreement, with a `contract_check` assurance marker. |
 | `findings` | `uncovered`, `mismatch` or `unverified` findings with diagnostic code, message and applicable operation, evidence references and differences. |
 | `excluded_provider_evidence` | Provider evidence that could not qualify, with a reason for each exclusion. |
 
@@ -128,16 +132,34 @@ unverified independently of the number of selected exchanges. The finding
 counts therefore need not partition `assumptions`. A reported match preserves
 one qualifying witness; it is not a list of every possible provider match.
 
+Each match's `contract_check` is one of:
+
+| Value | Assurance |
+| --- | --- |
+| `openapi_3_0_validation_rules` | Exercised HTTP request/response rules agree; each response and each request associated with a status below `400` validates against its own frozen schema. |
+| `protobuf_rules_and_observed_wire` | Selected gRPC input/output declarations agree, including full reachable enum sets, and observed values survive cross-decoding under the opposite descriptors. |
+| `unavailable` | Both HTTP schemas are absent or explicitly omitted, so this is an example-only match. |
+
+The text report states how many verified matches are example-only. JSON
+consumers can count `matches` whose `contract_check` is `unavailable` when their
+policy requires contract assurance. A single available HTTP schema or an
+unsupported required check is an unverified finding, not an example-only match.
+
 ### Finding codes
 
 `kind` is the broad classification. Use `code` for the specific diagnostic
-under `wiretap-assumptions-1`:
+under `wiretap-assumptions-2`:
 
 | Code | Kind | Meaning |
 | --- | --- | --- |
 | `provider_request_uncovered` | `uncovered` | No complete passing provider example matches this concrete request. This does not prove the request would fail at runtime. |
 | `provider_response_mismatch` | `mismatch` | Matching requests exist, but none has the mock's full response under the comparison policy. |
 | `provider_wire_mismatch` | `mismatch` | A prospective gRPC match fails request or response cross-decoding under the other side's frozen descriptor. |
+| `protobuf_contract_mismatch` | `mismatch` | Selected-method message or enum declarations differ after observed wire cross-decoding passes. |
+| `protobuf_contract_unavailable` | `unverified` | Required Protobuf declaration comparison is unavailable or cannot be completed reliably. |
+| `http_contract_mismatch` | `mismatch` | Declared validation rules differ on the exercised HTTP operation, selected status or media types, even if both examples satisfy them. |
+| `http_contract_violation` | `mismatch` | A checked HTTP response or qualifying request violates its own frozen schema. |
+| `http_contract_unavailable` | `unverified` | Required HTTP schemas/rules are unavailable, unsupported or cannot be checked reliably. |
 | `consumer_evidence_unavailable` | `unverified` | A selected consumer exchange cannot be checked because its attempt or retained evidence does not qualify. |
 | `consumer_run_incomplete`, `provider_run_incomplete` | `unverified` | A source run is not complete or still has pending attempts. |
 | `provider_not_service` | `unverified` | The supplied provider SUT is not declared as a service. |
@@ -145,14 +167,55 @@ under `wiretap-assumptions-1`:
 | `provider_version_unverified` | `unverified` | The provider's captured `sut_source.version` does not establish the mapped version. |
 | `no_consumer_assumptions` | `unverified` | The selected mock has no observed exchanges, so compatibility cannot be established. |
 
-`differences` identifies response paths or the `protobuf/wire` marker to inspect;
-it does not classify a change as behaviorally breaking. Extra optional response
-fields can differ even when a consumer tolerates them. Findings retain up to ten
-provider evidence references, and response differences are bounded to twenty
-paths against the first candidate. Follow the raw exchanges for the full context. See
+`differences` identifies response paths, exercised rules under
+`contract/request/...` or `contract/response/...`, `contract/validation` for a
+value-validation failure, `contract` for unavailable HTTP assurance,
+`protobuf/contract` for Protobuf declarations, or `protobuf/wire`. It does not
+classify a change as behaviorally breaking.
+Extra optional response fields, enum additions or relaxed bounds can fail this
+strict policy even when a consumer tolerates them. Findings retain up to ten
+provider evidence references, and differing paths are bounded to twenty against
+a candidate. Follow the raw exchanges for the full context. See
 [issues the check finds](assumption-checks.md#issues-the-check-will-find) and
 [what it cannot establish](assumption-checks.md#what-the-check-will-not-establish)
 before using these diagnostics as a release policy.
+
+HTTP rule comparison resolves references and retains nested constraints,
+optional properties and composition under the exercised operation. It ignores
+documentation, examples, defaults and enum/required ordering. It is neither a
+whole-document hash check nor a proof that alternate schema expressions are
+semantically equivalent. Unexercised operations, unselected media and other
+statuses receive no static comparison.
+The loader first checks the full frozen document graph for validity and reliable
+precision. Malformed, unsupported or precision-unsafe rules outside the
+exercised selection can therefore cause `http_contract_unavailable` before
+selected-rule comparison.
+Explicit media-type `encoding` rules, unsupported schema dialects and exhausted
+rule-projection budgets are unverified rather than ignored. Explicit
+discriminator mappings are retained conservatively, including their declared
+schema target identities.
+OpenAPI `content`-encoded parameters/response headers, complex numeric object
+parameter/header serialization and path/operation-level server overrides also
+remain unsupported required checks. Nullable schemas combined with enum,
+`not` or composition are unverified because of validator ambiguity for null.
+
+Protobuf declaration comparison follows only the exercised method's static
+input/output graphs. It compares field kinds/numbers, cardinality, presence,
+oneofs, maps,
+defaults and full enum name/number sets, including unobserved fields and values.
+Syntax and enum open/closed semantics also participate. Ordinary declaration
+order is normalized, while a changed preferred alias label for a numeric enum
+value remains drift because it affects canonical ProtoJSON names. References
+are resolved. Declaration paths identify message names and field numbers under
+`protobuf/contract/messages/.../fields/...`, or enum names under
+`protobuf/contract/enums/...`; request/response entries link to message names.
+Unrelated services,
+methods and message definitions are not diffed. Custom option declarations are
+compared as opaque bytes; validation annotations are not executed against
+values. Dynamically referenced `Any` or rich-status-detail types need not be
+reached by the declaration traversal; this is not an entire-descriptor diff.
+Safe additive declarations or differently encoded equivalent custom
+options can therefore fail conservatively without proving a runtime break.
 
 ### Input errors and report files
 

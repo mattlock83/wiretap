@@ -117,8 +117,11 @@ verified against the raw archive. See [assumption checks](docs/assumption-checks
 for dependency mapping, limits, custom collection paths and CI output.
 
 The checker finds changed mock responses, request scenarios absent from provider
-tests, and incompatible gRPC wire examples. Its strict comparison can also flag
-an extra optional response field that a running consumer would tolerate. Read
+tests, drift in exercised OpenAPI 3.0 rules or Protobuf message/enum declarations,
+and incompatible gRPC wire examples. It catches changed enums or HTTP limits
+even when the recorded values satisfy both contracts. Its strict comparison can
+also flag an extra optional response field or a relaxed rule that a running
+consumer would tolerate. Read
 [which issues it finds](docs/assumption-checks.md#issues-the-check-will-find),
 [what it cannot establish](docs/assumption-checks.md#what-the-check-will-not-establish)
 and [how to interpret failures](docs/assumption-checks.md#interpreting-results)
@@ -128,8 +131,9 @@ calls remain part of your tests.
 ## Product scope and documentation
 
 Wiretap captures existing tests, exports their evidence and verifies concrete
-consumer/provider examples offline. A passing check covers the supplied
-examples; it does not prove arbitrary business behavior. Wiretap does not
+consumer/provider examples and exercised contract rules offline. A passing
+check covers those examples and supported rules; it does not prove arbitrary
+business behavior. Wiretap does not
 generate or execute additional tests.
 
 Start with the [documentation index](docs/README.md) for setup, CI, formats and

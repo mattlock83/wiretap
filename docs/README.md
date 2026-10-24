@@ -31,7 +31,7 @@ data and dummy secrets: retained traffic is unchanged.
 | Guide | Use it to |
 | --- | --- |
 | [Capture artifacts and exports](artifacts.md) | Read raw artifacts, a text summary, JSON/YAML coverage and Postman collections. |
-| [Assumption checks](assumption-checks.md) | Verify consumer mocks against provider tests, or check whether provider tests still support consumers. |
+| [Assumption checks](assumption-checks.md) | Verify consumer examples and exercised HTTP/Protobuf declarations against provider tests, or check whether provider tests still support consumers. |
 | [Contract coverage rules](contract-coverage-rules.md) | Understand condition keys, counts, evidence quality and measurement limits. |
 | [Bundle format](bundle-evidence.md) | Parse API inventories, test recordings, contracts and payloads. |
 | [Machine-readable evidence and coverage](machine-interface.md) | Consume versioned reports, stable identities, provenance, provider mappings and payload availability. |
@@ -51,8 +51,8 @@ collection and evidence failures.
 ## Product scope
 
 Wiretap captures and exports evidence from existing tests and checks concrete
-consumer/provider examples offline. It does not generate or execute tests, or
-claim agreement beyond the supplied examples. See the
+consumer/provider examples and exercised contract rules offline. It does
+not generate or execute tests, or claim arbitrary behavioral agreement. See the
 [product scope and completion criteria](roadmap.md).
 
 A run contains test attempts. Each attempt contains exchanges or RPC messages.

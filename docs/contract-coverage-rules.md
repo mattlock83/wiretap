@@ -37,7 +37,9 @@ The JSON separates `origin` (`provided` or `dependency`) and `target_kind`
 provider coverage identify evidence gaps, not automatic incompatibilities.
 The separate [assumption checker](assumption-checks.md) uses concrete request and
 paired response evidence rather than equating coverage keys. It fails when a
-selected mock scenario is unsupported by qualifying provider tests.
+selected mock scenario is unsupported by qualifying provider tests. When both
+sides have supported frozen OpenAPI 3.0 contracts, it additionally compares the
+validation rules for the exercised operation, status and media types.
 
 ### Coverage and assumption checks answer different questions
 
@@ -47,6 +49,17 @@ provider tested the consumer's concrete request and produced the response its
 mock supplied. Two messages can cover the same conditions while carrying
 different application values. Equal coverage percentages or condition keys do
 not satisfy an assumption check.
+
+The HTTP rule check includes declared enum sets, requiredness and bounds even
+when the observed value fits both contracts. An enum addition or a relaxed
+limit is therefore drift under its conservative equality policy. This does not
+establish a runtime break or prove every declared value was tested. Unused
+operations, other response statuses and unselected media receive no static
+comparison. With both HTTP schemas absent, a passing check is explicitly
+example-only. gRPC compares the selected method's reachable message/enum
+declarations alongside observed wire compatibility. Equal full enum sets do not
+prove the tests executed every value, and custom validation annotations are
+compared as opaque declarations rather than executed predicates.
 
 An uncovered assumption means no qualifying provider example matches that
 request; it does not prove the provider would reject it. A response mismatch

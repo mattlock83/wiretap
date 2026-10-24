@@ -20,6 +20,10 @@ in isolated test environments with synthetic data and dummy secrets.
   checks and clear replay limitations.
 - Check selected consumer mock requests and paired responses against complete
   passing provider service tests, with explicit uncovered and unverified results.
+- Compare supported frozen HTTP validation rules on exercised operations and
+  selected statuses/media, even when the recorded values satisfy both contracts.
+- Compare exercised Protobuf method input/output declarations, including full
+  reachable enum sets, alongside mandatory observed wire cross-decoding.
 - Verify supplied Postman collections against their source archives before
   accepting them as part of an assumption check.
 - Keep installation local, document the supported setup and test it across
@@ -40,7 +44,13 @@ invalid configuration still fail integration cleanup or setup.
 The offline [assumption checker](assumption-checks.md) requires provider test
 evidence for each selected concrete mock request and paired response. It fails
 for incompatible, uncovered or unverified assumptions. A passing result supports
-those examples, not arbitrary values, business behavior or a live deployment.
+those examples and the recorded contract-check assurance, not arbitrary business
+behavior or a live deployment. HTTP rule equality is conservative: enum
+additions or relaxed limits can fail without proving a runtime break. Only
+exercised operations and selected statuses/media receive that HTTP comparison.
+gRPC checks the selected method's reachable declarations and observed wire
+compatibility, without executing custom validation annotations. Both omitted
+HTTP schemas allow an explicitly marked example-only match.
 Test generation, dependency simulation, hosted registries and managed test
 execution are outside Wiretap's scope. Capturing a mock response alone does not
 establish provider agreement.

@@ -6,8 +6,11 @@ archives and their Postman collections. It does not start servers, replay
 requests, execute collection scripts or generate tests.
 
 **A pass means every selected captured mock exchange has at least one complete,
-passing provider test exchange that supports that concrete request and response.**
-The scope is the supplied examples and recorded values.
+passing provider test exchange that supports that concrete request and response,
+with agreement on supported frozen contract rules where available.**
+HTTP matches with both schemas absent or explicitly omitted are example-only;
+the report identifies them. Native gRPC checks the exercised method's declared
+message graphs and observed wire compatibility.
 
 - [What a passing result establishes](#what-a-passing-result-establishes)
 - [Issues the check will find](#issues-the-check-will-find)
@@ -55,9 +58,13 @@ For each captured call to the selected mock, Wiretap:
 1. Requires a complete consumer exchange from a passing test attempt.
 2. Finds complete passing provider exchanges with the same normalized request.
 3. Looks for the mocked response in one of those **same exchanges**.
-4. For native gRPC, also checks that the observed request and response bytes
-   can be understood using the opposite side's frozen protobuf descriptors.
-5. Checks that the supplied Postman examples agree with their own archives.
+4. For HTTP with frozen OpenAPI 3.0 contracts, compares the validation rules
+   for the exercised operation, selected status and media types, and validates
+   each side's response and qualifying request against its own contract.
+5. For native gRPC, checks that the observed request and response bytes
+   can be understood using the opposite side's frozen protobuf descriptors,
+   then compares the exercised method's input/output message declarations.
+6. Checks that the supplied Postman examples agree with their own archives.
 
 All selected consumer exchanges must succeed. An empty selection cannot pass.
 Provider tests need not share the consumer's test names, files or attempt IDs.
@@ -108,8 +115,64 @@ other qualifying provider exchange supplies the mocked response.
 
 HTTP error responses can be valid supporting examples. A passing test that
 intentionally receives `400`, `404` or `500` can support a mock returning the
-same complete response. A connection failure recorded as a transport error
-cannot establish agreement merely because Wiretap also recorded a `502`.
+same complete response. With available HTTP contracts, the error response must
+validate; intentional negative requests skip request-value validation, while
+their declared request rules are still compared. A connection failure recorded
+as a transport error cannot establish agreement merely because Wiretap also
+recorded a `502`.
+
+### HTTP contract rules that differ despite equal examples
+
+Equal examples are insufficient when the two sides supply frozen OpenAPI 3.0
+contracts. For a prospective match, Wiretap compares declared validation rules
+for all request parameters, the selected request body/media type, and the
+selected response status, media type, body schema and declared headers.
+Nested properties participate even if they are optional or absent from the
+observed example. References are resolved; moving a schema to a different file
+does not itself create drift.
+Compared rules include types and formats, enum sets, required properties,
+nullability, numeric bounds, string lengths/patterns, collection sizes,
+object/property constraints, nested schemas and composition/discriminator rules.
+
+| Issue | Example with the same captured values | Result |
+| --- | --- | --- |
+| Enum set changes | Both return `status: "ready"`; one contract also permits `"pending"`. | Contract mismatch, including enum additions. |
+| Numeric, string or collection bounds change | Both return a three-item array; contracts declare `maxItems: 5` and `maxItems: 10`. | Contract mismatch, including a relaxed bound. |
+| Requiredness, nullable or type changes | Both include `quantity: 3`; one contract makes `quantity` optional or nullable. | Contract mismatch. |
+| Nested constraints or composition change | An unused optional property, format, pattern, discriminator mapping or composed schema differs under the exercised operation. | Conservative contract mismatch. |
+| Equal examples violate a supplied contract | Both return a value excluded by their own matching enum, or a successful request omits a required parameter. | Contract violation; passing framework tests do not override it. |
+| Only one side has a usable HTTP contract | Consumer omitted its schema; provider supplies OpenAPI 3.0. | Unverified, rather than an example-only pass. |
+
+The comparison preserves declared rules rather than proving their semantic
+equivalence. A harmless relaxation or a structurally different but equivalent
+schema expression can therefore fail. Documentation, titles, descriptions,
+examples and defaults are ignored; reordering enum values or required names
+does not create drift. Unused operations, other response statuses and unselected
+media types do not receive a static comparison.
+Explicit discriminator mappings are preserved conservatively; renaming their
+declared schema targets can fail even when the resolved schemas are equivalent.
+
+Each side's response is revalidated against its own frozen schema. A request
+is also revalidated when that exchange's response status is below `400`;
+`400` and higher permit deliberate negative request examples, so request-value
+validation is skipped while request-rule comparison remains active.
+
+When both HTTP schemas are absent or explicitly omitted, matching examples may
+pass with `contract_check: "unavailable"`. This is visible example-only
+assurance. One-sided availability, unsupported OpenAPI 3.1, unreadable contracts
+or rules whose precision cannot be checked reliably leave the comparison
+unverified. Unsupported examples also include media-type `encoding` rules,
+OpenAPI `content`-encoded parameters or response-header definitions, complex
+numeric object parameter/header serialization, and path/operation-level server
+overrides. `nullable` combined with enum, `not` or composition is also
+unavailable because the underlying validator cannot establish those null cases
+reliably. Scalar and array numeric parameters are supported. Rule projection
+is bounded, so schemas exceeding its depth or node budget remain
+unverified. These cases do not silently downgrade to example-only agreement.
+Before selecting exercised rules, the loader checks the full frozen document
+graph for validity and reliable numeric precision. Malformed, unsupported or
+precision-unsafe rules elsewhere in those documents can prevent loading and
+produce `http_contract_unavailable`, even when their operation is unexercised.
 
 ### Native gRPC disagreements
 
@@ -124,11 +187,30 @@ cannot establish agreement merely because Wiretap also recorded a `502`.
 | Observed message interleaving differs | A bidirectional conversation records a different order of complete request and response messages. | Mismatch under the recorded conversation policy. |
 | JSON looks equal but exercised wire fields are incompatible | Both examples show `quantity: 3`, but that value uses a different protobuf field number. | Wire mismatch when cross-decoding cannot reproduce the opposite side's recorded value. |
 | Source bytes contain fields unknown to the target descriptor | An observed message includes an unknown nested field or an unpacked `Any` the target cannot understand. | Conservative wire mismatch. |
+| Unobserved enum names or numbers change | Both examples use `READY = 1`, but the provider adds `PENDING = 2` or renumbers another enum value. | Protobuf contract mismatch. |
+| Reachable field declarations change | An unused optional field, field kind/number, cardinality, presence, oneof, map or default differs in the selected method's message graph. | Protobuf contract mismatch when observed wire checks pass. |
+| Custom validation option declarations change | A custom max-length annotation carries different option bytes despite equal observed strings. | Conservative protobuf contract mismatch; the annotation is not executed. |
 
 Nonzero terminal gRPC statuses can support intentional negative tests when
 the test passed and the request, response and terminal status were captured
 completely. An incomplete deadline or cancellation capture is not promoted
 to complete evidence just because its test expected cancellation.
+
+The declared-rule comparison follows the exercised method's static request and
+response message graphs, including recursive references, full enum name/number
+sets, syntax and enum open/closed semantics. Ordinary declaration order is
+normalized and references are resolved. A changed preferred label among aliases
+for the same number remains drift because it affects canonical ProtoJSON names;
+unrelated services, methods and message definitions are not statically diffed.
+Adding a reachable field or enum value can fail even if it is absent from every
+observed message. This is conservative declaration equality, so a safe additive
+change can still need investigation.
+
+Custom validation annotations are compared as opaque option declaration bytes.
+Their predicates are not evaluated against values. Plain Protobuf does not
+declare string or collection length bounds; captured length/value changes
+still fail the ordinary example comparison. Missing or unusable declarations
+needed for the check are unverified rather than omitted from assurance.
 
 ### Missing or unsuitable evidence and inputs
 
@@ -196,14 +278,33 @@ field values occurred somewhere, but no exchange supplies the consumer's
 combination. The check fails with a mismatch. Coverage percentages or separate
 field hits cannot substitute for the missing paired example.
 
+### Worked example: an enum changes without changing the example
+
+Both mock and provider return `{"status":"ready"}` for the same request.
+The consumer's frozen response schema declares
+`enum: [ready]`; the provider declares `enum: [ready, pending]`. Both observed
+responses satisfy their own schema, but the allowed sets differ.
+
+The check fails with `http_contract_mismatch` and a contract difference such as
+`contract/response/body/properties/status/enum`. The provider's added value may
+be a safe change for this consumer. The failure establishes declared-rule drift,
+not that `pending` occurred, that the consumer cannot handle it, or that a
+runtime break occurred. Align the intended contracts or investigate the change
+and recapture the relevant suites. The same conservative rule applies to a
+relaxed limit, such as increasing `maxLength` while the observed string remains
+short enough for both versions.
+
 ## What the check will not establish
 
 ### That every request, state or outcome is compatible
 
-Only recorded concrete examples participate. A supported example does not
-generalize to other IDs, quantities, tenants, enum values, boundaries, error
-branches or future API versions. An operation can have one supported example
-and still have many untested cases. Use the separate
+Recorded examples identify the operation, status and media types whose HTTP
+rules are compared. Those declared rules can expose drift in enum values or
+bounds not reached by the example, but agreement does not prove that those
+other values behave correctly. A supported example does not generalize to
+other IDs, quantities, tenants, error branches or future API versions. An
+operation can have one supported example and matching rules while still having
+many untested cases. Use the separate
 [contract coverage report](contract-coverage-rules.md) to inspect declared
 cases and their measurement limits.
 
@@ -240,24 +341,55 @@ of a runtime breaking change. Update unrealistic or outdated mocks when that
 is the right resolution, then regenerate evidence; editing a collection to
 hide the difference does not change the raw capture.
 
-### That the API matches its specification or its business meaning
+### That the entire API or every schema rule is compatible
 
-The HTTP comparison does not diff OpenAPI revisions, generalize route templates,
-or prove declared requiredness, enum membership, numeric bounds or every other
-schema rule. It does not use recorded schema-validation outcomes as its pass
-gate. Two passing test suites can agree on an example that violates a supplied
-contract. Deliberately invalid requests paired with expected error responses
-can also be legitimate comparison examples.
+With supported frozen OpenAPI 3.0 contracts, the check compares declared rules
+on the exercised operation and revalidates each side's relevant messages under
+its own schema. It does not statically diff unexercised routes, other response
+statuses or unselected media alternatives. A new route or a changed unused
+error response may therefore remain undetected.
+The full frozen document graph must still load reliably: invalid, unsupported
+or precision-unsafe rules outside the exercised selection can make the required
+contract unverified, even though those rules are not diffed.
 
-Keep schema validation and coverage checks alongside this command. The
-assumption check can compare HTTP captures whose schema was explicitly omitted;
-that does not create knowledge of an API contract.
+Declared-rule comparison is conservative equality, not a proof of schema
+subtyping or semantic equivalence. Enum additions, relaxed limits and
+structurally different equivalent schema expressions can fail without proving
+a breaking change. Conversely, equal rules do not establish business behavior
+for every value those rules allow. Descriptions, examples and defaults are not
+validation rules in this comparison.
 
-For gRPC, cross-decoding checks the **observed message values** against the
-opposite frozen descriptor. It is not an exhaustive protobuf schema-evolution
-analysis. A changed field that neither suite exercises can remain undetected.
-Conversely, the verifier rejects observed unknown fields even where a
-particular protobuf client would tolerate them; that is a conservative failure.
+Successful and redirect exchanges revalidate request values; error responses
+with status `400` or higher permit deliberately invalid requests, so those
+request values are not required to validate. Their request rules are still
+compared, and every response is validated. This does not establish that a
+negative test asserted the rejection or that all invalid requests are rejected.
+
+When both HTTP schemas are absent or explicitly omitted, the check can only
+support example agreement. `contract_check: "unavailable"` makes this weaker
+result explicit. One missing schema, unsupported OpenAPI 3.1 or rules that
+cannot be checked reliably produce an unverified result. Keep contract coverage
+alongside the check to see which declared cases have actually been exercised.
+
+For gRPC, the selected method's statically reachable input/output declarations
+are compared
+even when a field or enum value did not occur in the example. Unrelated methods,
+services and message graphs are not diffed. This conservative equality is not
+an exhaustive schema-evolution or client-compatibility proof: safe additions can
+fail, and observed unknown fields are rejected even where a particular client
+would tolerate them. Observed wire cross-decoding remains mandatory.
+Types referenced only dynamically through `google.protobuf.Any` or rich status
+details need not be reached by this declaration traversal. Their observed
+values still participate in example checks, with existing `Any` wire checks
+where applicable. The entire frozen descriptor's enum inventory is not diffed.
+
+Custom validation annotations are compared as opaque declaration bytes, not
+executed. Equal option declarations do not prove the observed values satisfy a
+custom length limit or another predicate. Plain Protobuf has no such length
+rules to infer. Both suites can record the same value that violates an identical
+custom length annotation and still agree under these checks. Keep the
+application's validation assertions and tests for the
+other permitted enum values and boundaries alongside the assumption check.
 
 Matching values also do not prove business semantics. Two suites can both
 record `price: 100` while interpreting the units differently if no visible
@@ -305,7 +437,9 @@ ignored headers, including `grpc-timeout`, are outside that comparison.
 
 Authorization and business headers are significant unless ignored, but
 matching dummy credentials does not test authentication or authorization
-policy. Tests must exercise the appropriate allowed and denied cases.
+policy. OpenAPI security requirements are outside the validation-rule
+comparison and do not execute authentication checks. Tests must exercise the
+appropriate allowed and denied cases.
 
 The provider identity, target kind `service`, version and source metadata are
 declarations in the capture. Integrity hashes detect inconsistent or changed
@@ -431,7 +565,8 @@ must establish that version; a missing version leaves the check unverified.
 
 ## What agreement means
 
-The check compares concrete examples. A consumer request needs a provider
+The check first compares concrete examples; prospective matches must also meet
+the contract checks described above. A consumer request needs a provider
 request with the same relevant method, path, parameters, headers and body, or
 the same gRPC procedure and ordered request messages. That provider exchange
 must also have the response the mock supplied: HTTP status or gRPC terminal
@@ -487,6 +622,8 @@ wiretap check consumer --consumer ./consumer-run --provider ./provider-run \
 Repeat `--ignore-header` as needed. Ignoring a header removes it from both
 request and response comparison; use this only when that value is irrelevant to
 the assumption being checked. Payload fields are never silently ignored.
+These exclusions apply to captured header values. Declared OpenAPI request or
+response header rules still participate in contract comparison.
 For gRPC, excluding a header such as `grpc-status` or `grpc-status-details-bin`
 does not exclude the separately recorded terminal status, status message or
 rich-error details.
@@ -501,15 +638,16 @@ checks the recorded response rather than guessing a smaller required subset.
 
 | Result | What the evidence establishes | Next action |
 | --- | --- | --- |
-| Verified | At least one complete passing provider exchange supports this consumer request and response. | Retain the referenced archives; keep testing additional scenarios separately. |
+| Verified | At least one complete passing provider exchange supports this consumer request and response, with the recorded `contract_check` assurance. | Retain the referenced archives; inspect example-only matches and keep testing additional scenarios separately. |
 | Uncovered | No qualifying provider request matches the concrete normalized consumer request. | Inspect exact paths, query values, payloads and significant headers; add the provider case or align fixtures. |
-| Mismatch | Provider examples cover the request but none supports the mocked response, or observed gRPC bytes fail the cross-contract check. | Investigate the linked response/wire difference, then correct the mock, provider or intended scenario. |
-| Unverified | The selection or evidence cannot establish agreement. | Resolve the capture, identity, target-kind or test-outcome problem and recapture as needed. |
+| Mismatch | Examples or exercised HTTP/Protobuf declarations disagree, a checked HTTP message violates its schema, or observed gRPC bytes fail cross-decoding. | Investigate the linked example/contract difference, then correct the mock, provider or intended scenario. |
+| Unverified | The selection, evidence or required contract checks cannot establish agreement. | Resolve the capture, identity, contract, target-kind or test-outcome problem and recapture as needed. |
 | Input error | Supplied archives, collections or flags cannot form a valid comparison. | Read stderr, supply intact matching inputs and rerun. |
 
 Uncovered is a test-evidence gap, not a statement that the provider would reject
-the request. Mismatch is an observed example disagreement, not an automatic
-determination that one repository is wrong. Unverified is a failure to establish
+the request. Mismatch is an example, rule or validation disagreement, not an
+automatic determination that one repository is wrong or a runtime break
+occurred. Unverified is a failure to establish
 compatibility; it is not treated as a pass.
 
 ### Diagnostic codes
@@ -519,6 +657,11 @@ compatibility; it is not treated as a pass.
 | `provider_request_uncovered` | No eligible provider exchange matches this request scenario. |
 | `provider_response_mismatch` | Candidate provider exchanges do not supply the mocked response. |
 | `provider_wire_mismatch` | A prospective gRPC example match fails decoding under the opposite descriptor. |
+| `protobuf_contract_mismatch` | The selected method's declared input/output graph differs after observed wire checks pass. |
+| `protobuf_contract_unavailable` | Required Protobuf declarations cannot support a reliable comparison. |
+| `http_contract_mismatch` | Exercised HTTP validation rules differ, including conservative enum-set or bound drift. |
+| `http_contract_violation` | A response or qualifying request violates that side's own frozen HTTP contract. |
+| `http_contract_unavailable` | Required HTTP contracts or rules are unavailable, unsupported or cannot be checked reliably. |
 | `consumer_evidence_unavailable` | A selected consumer exchange is failed, incomplete, unsupported or otherwise unusable. |
 | `consumer_run_incomplete` / `provider_run_incomplete` | The archive is not complete or has pending attempts. |
 | `no_consumer_assumptions` | No recorded exchange was selected for the mock. |
@@ -533,14 +676,15 @@ result of the current command; use its exit status as well.
 
 ### Read the exact evidence
 
-An abbreviated JSON result for the inventory type mismatch above could contain:
+An abbreviated example-only JSON result for the inventory type mismatch above,
+when both sides omitted their HTTP schemas, could contain:
 
 ```json
 {
   "report_version": "1.0",
-  "rules_version": "wiretap-assumptions-1",
+  "rules_version": "wiretap-assumptions-2",
   "mode": "consumer",
-  "scope": "observed_mock_examples",
+  "scope": "observed_mock_examples_and_exercised_contracts",
   "compatible": false,
   "counts": {
     "assumptions": 1,
@@ -585,11 +729,22 @@ to its source archive; the fragment selects the recorded flow in the attempt
 file. Consumer and provider attempt IDs need not match each other.
 
 `matches` records the provider witness chosen for each verified consumer
-exchange. `excluded_provider_evidence` explains why other provider exchanges
+exchange. Its `contract_check` is `openapi_3_0_validation_rules` for exercised
+HTTP rule/value checks, `protobuf_rules_and_observed_wire` for selected gRPC
+declaration equality plus observed cross-decoding,
+or `unavailable` for an example-only HTTP match with both schemas absent or
+omitted. The text summary calls out the example-only match count.
+`excluded_provider_evidence` explains why other provider exchanges
 could not serve as witnesses. Its presence alone does not fail a comparison.
 
 The report is a diagnostic summary rather than an exhaustive diff. A finding
-includes at most ten provider references and twenty differing paths. For a
+includes at most ten provider references and twenty differing paths. HTTP rule
+differences are under `contract/request/...` or `contract/response/...`;
+`contract/validation` identifies a value-validation failure. Protobuf
+declaration differences use paths such as
+`protobuf/contract/messages/<full-message-name>/fields/<field-number>/...` or
+`protobuf/contract/enums/<full-enum-name>/...`; request/response entries link to
+the message names. For a
 response mismatch, paths compare the consumer response with the first candidate
 provider response; they do not identify the closest candidate or enumerate
 every disagreement across every candidate. Open the referenced captures for
@@ -610,7 +765,7 @@ both input archives and any supplied Postman input directory; an output cannot
 replace a collection input.
 
 The JSON result uses `report_version: "1.0"` and
-`rules_version: "wiretap-assumptions-1"`. `compatible` is the verdict;
+`rules_version: "wiretap-assumptions-2"`. `compatible` is the verdict;
 `counts` separates verified, uncovered, mismatched and unverified assumptions.
 Unverified counts can also include comparison-level blockers, such as an
 interrupted archive or conflicting provider identity.

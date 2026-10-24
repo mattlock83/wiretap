@@ -179,6 +179,20 @@ needed; those exclusions affect requests and responses and are reported in
 field can therefore fail this strict example comparison without proving a
 runtime break.
 
+Keep the frozen OpenAPI 3.0 contracts with HTTP evidence when gating on contract
+agreement. Rules on exercised operations and selected statuses/media are
+compared even when both recorded values are valid: an added enum value or a
+relaxed limit can fail as declared-rule drift. Inspect those changes rather
+than assuming every mismatch is behaviorally breaking. A passing match with
+both HTTP schemas absent is marked `contract_check: "unavailable"`; the text
+report counts these example-only matches. One missing or unsupported required
+contract leaves the comparison unverified instead of silently reducing assurance.
+Native gRPC also requires equal declarations in the selected method's reachable
+message and enum graphs, plus successful observed wire cross-decoding. This can
+catch a newly allowed enum value even when no example returns it. Custom
+validation options are compared as opaque declarations, so retain tests that
+assert their actual validation behavior.
+
 Read [issues the check finds](assumption-checks.md#issues-the-check-will-find),
 [what it cannot establish](assumption-checks.md#what-the-check-will-not-establish)
 and [interpreting results](assumption-checks.md#interpreting-results) before

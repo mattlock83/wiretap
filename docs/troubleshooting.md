@@ -205,6 +205,76 @@ complete archive. An interrupted run itself is unverified even when a few
 completed attempts remain available. A selected consumer example from a failed
 or incomplete attempt is also unverified.
 
+### The captured JSON is equal, but HTTP contract rules differ
+
+`http_contract_mismatch` reports declared-rule drift on an exercised operation.
+Both suites can return `{"status":"ready"}` while one schema permits only
+`ready` and the other permits `ready` plus `pending`. Likewise, the same short
+string can satisfy two different `maxLength` rules. Requiredness, nullability,
+nested optional properties, response-header rules and composition also
+participate, even when the specific property is absent from the example.
+
+Inspect the `contract/request/...` or `contract/response/...` difference and the
+frozen contracts. This is conservative rule equality: an added enum value,
+relaxed bound or equivalent schema expressed differently can fail without
+proving a runtime break. Align the intended contracts and recapture after the
+change is resolved. Descriptions, examples, defaults and enum/required ordering
+are ignored; unused operations, statuses and media alternatives are not diffed.
+
+`http_contract_violation` instead means a checked message violates its own
+schema. Each response is validated, and requests are validated when their
+response status is below `400`. Intentional negative request examples with
+status `400` or higher skip request-value validation, while their request rules
+and response values remain checked. A passing framework test does not override
+these contract findings.
+
+### The HTTP contract check is unavailable
+
+`http_contract_unavailable` means a required contract or rule cannot support
+assurance, for example one missing schema, OpenAPI 3.1, or numeric rules that
+cannot be evaluated reliably. Supply supported frozen OpenAPI 3.0 evidence on
+both sides and recapture if necessary. Restore corrupt or missing archive
+attachments from the original run when archive loading reports an input error.
+Other unsupported examples include media-type `encoding`, OpenAPI
+`content`-encoded parameters or response headers, complex numeric object
+parameter/header serialization, and path/operation-level server overrides.
+Nullable schemas combined with enum, `not` or composition are also unverified
+because the validator cannot establish those null cases reliably.
+The loader checks the full frozen document graph, so malformed, unsupported or
+precision-unsafe rules on an unexercised operation can also prevent loading.
+Those unused rules are not statically diffed between the two contracts.
+
+When both HTTP schemas are absent or explicitly omitted, matching examples can
+pass with `contract_check: "unavailable"` in `matches`. That marker describes
+example-only assurance rather than a successful schema check; the text report
+states the example-only count.
+
+### The gRPC examples agree, but Protobuf declarations differ
+
+`protobuf_contract_mismatch` means observed wire checks passed but the selected
+method's input/output declarations disagree. Both examples can use `READY = 1`
+while one enum also declares `PENDING = 2`. An unused reachable field can also
+change its kind, number, cardinality, presence, oneof, map or default without
+changing the captured JSON. Full reachable enum sets and field rules are
+compared, so those changes can fail conservatively.
+
+Inspect the selected method's frozen request/response graphs. Unrelated
+services, methods and messages are not diffed; declaration order is normalized.
+Changing the preferred enum label among aliases for one numeric value remains
+drift, as do syntax or enum open/closed semantics.
+A safe addition may still require investigation under this equality policy.
+`provider_wire_mismatch` instead identifies an observed cross-decoding failure;
+`protobuf_contract_unavailable` identifies a declaration comparison that cannot
+be completed reliably.
+
+A verified gRPC match has
+`contract_check: "protobuf_rules_and_observed_wire"`. Custom validation options
+are compared as opaque declaration bytes, not executed. Equal custom max-length
+annotations do not prove the observed string satisfies them, and plain Protobuf
+does not declare string or collection length bounds. Keep validation assertions
+in the test suites; captured length/value differences still fail the ordinary
+example comparison.
+
 ### A collection is stale or does not match its archive
 
 The checker verifies collection attempt IDs and saved interactions against the

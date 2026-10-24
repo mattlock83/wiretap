@@ -41,7 +41,12 @@ Use `wiretap check consumer` or `wiretap check provider` with both complete
 archives and their Postman collections. The checker verifies the collections
 against their raw evidence, then requires each selected mock request and paired
 response to have compatible evidence from a passing provider service test.
-Uncovered scenarios fail the check. See [assumption checks](assumption-checks.md)
+Supported frozen OpenAPI 3.0 contracts also contribute exercised validation-rule
+and message-value checks. Native gRPC also compares the selected method's
+reachable message/enum declarations and cross-decodes observed wire messages.
+With both HTTP schemas absent or omitted, the report
+marks a verified match as example-only. Uncovered scenarios fail the check.
+See [assumption checks](assumption-checks.md)
 for command examples, dependency selection, JSON results and limits.
 
 ## Generate coverage
