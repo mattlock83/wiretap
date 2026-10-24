@@ -17,7 +17,7 @@ func TestProjectDefaultsAndPerAPISchemaException(t *testing.T) {
 	optional := false
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte(`{"value":true}`)) }))
 	defer upstream.Close()
-	instance.project = &project.Config{SUT: project.API{URL: upstream.URL, SchemaRequired: &optional}, Dependencies: map[string]project.API{"inventory": {URL: upstream.URL, SchemaRequired: &optional, Kind: "mock"}}}
+	instance.project = &project.Config{SUT: project.API{URL: upstream.URL, SchemaRequired: &optional}, Dependencies: map[string]project.API{"inventory": {URL: upstream.URL, Kind: "mock"}}}
 	start := postDependencyJSON(t, control.URL, "/v1/startRun", map[string]any{})
 	if start["defaults"] == nil {
 		t.Fatal("project defaults not returned")
@@ -56,15 +56,15 @@ func TestProjectDefaultsAndPerAPISchemaException(t *testing.T) {
 }
 
 func TestSchemaExceptionDoesNotWeakenOtherAPIsOrIgnoreInvalidSpecs(t *testing.T) {
-	optional := false
-	deps, schemas, err := normalizeDependencies([]dependencyRegistration{{AssetID: "optional", UpstreamURL: "http://dep", SchemaRequired: &optional}, {AssetID: "strict", UpstreamURL: "http://dep", Schema: permissiveDependencySchema()}})
+	required := true
+	deps, schemas, err := normalizeDependencies([]dependencyRegistration{{AssetID: "optional", UpstreamURL: "http://dep"}, {AssetID: "strict", UpstreamURL: "http://dep", Schema: permissiveDependencySchema()}})
 	if err != nil || len(deps) != 2 {
 		t.Fatal(err)
 	}
-	if _, _, err := normalizeDependencies([]dependencyRegistration{{AssetID: "required", UpstreamURL: "http://dep"}}); err == nil {
+	if _, _, err := normalizeDependencies([]dependencyRegistration{{AssetID: "required", UpstreamURL: "http://dep", SchemaRequired: &required}}); err == nil {
 		t.Fatal("schema requirement lost")
 	}
-	if _, _, err := normalizeDependencies([]dependencyRegistration{{AssetID: "invalid", UpstreamURL: "http://dep", SchemaRequired: &optional, Schema: &artifact.SchemaRef{Type: "openapi", Source: artifact.SchemaSource{Type: "inline", Content: "bad schema"}}}}); err == nil {
+	if _, _, err := normalizeDependencies([]dependencyRegistration{{AssetID: "invalid", UpstreamURL: "http://dep", Schema: &artifact.SchemaRef{Type: "openapi", Source: artifact.SchemaSource{Type: "inline", Content: "bad schema"}}}}); err == nil {
 		t.Fatal("invalid supplied schema ignored")
 	}
 	art := &artifact.Artifact{TestCase: artifact.TestCase{Status: "pass"}, Schemas: schemas, Traffic: []artifact.Flow{
@@ -79,5 +79,19 @@ func TestSchemaExceptionDoesNotWeakenOtherAPIsOrIgnoreInvalidSpecs(t *testing.T)
 		if issue.FlowID != "strict" || strings.Contains(issue.Message, "optional") {
 			t.Fatalf("wrong API validation: %#v", issue)
 		}
+	}
+}
+
+func TestHTTPDependencyDefaultsDoNotDisableGRPCContractAcquisition(t *testing.T) {
+	registered, schemas, err := normalizeDependencies([]dependencyRegistration{{AssetID: "health", UpstreamURL: "http://grpc.test", Protocol: "grpc"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(schemas) != 0 || len(registered["health"].Schemas) != 0 {
+		t.Fatal("gRPC reflection boundary was replaced by an omitted HTTP schema")
+	}
+	optional := false
+	if _, _, err := normalizeDependencies([]dependencyRegistration{{AssetID: "health", UpstreamURL: "http://grpc.test", Protocol: "grpc", SchemaRequired: &optional}}); err == nil || !strings.Contains(err.Error(), "gRPC requires a contract") {
+		t.Fatalf("gRPC contract opt-out was accepted: %v", err)
 	}
 }

@@ -95,16 +95,17 @@ evidence is unverified.
 `wiretap check consumer` and `wiretap check provider` read two archives and their
 Postman collections. A passing result requires collections verified against
 archive-derived projections and selected mock scenarios supported by complete
-passing provider service tests. With available frozen OpenAPI 3.0 contracts, it
-also requires conservative equality of exercised validation rules and checks
-each side's relevant message values under its own schema. Coverage reports and
+passing provider service tests. With only the provider's frozen OpenAPI 3.0
+contract it validates both concrete exchanges under that schema. With both
+contracts it also requires conservative equality of exercised validation rules
+and checks each exchange under its own schema. Coverage reports and
 condition fingerprints do not replace concrete request/response evidence.
 gRPC matches require selected-method declaration equality and observed wire
 cross-decoding.
 
 Use `--format json` for the versioned result, and `--output <file>` to save it.
 The envelope has `report_version: "1.0"`,
-`rules_version: "wiretap-assumptions-2"` and `scope: "observed_mock_examples_and_exercised_contracts"`.
+`rules_version: "wiretap-assumptions-3"` and `scope: "observed_mock_examples_and_exercised_contracts"`.
 Consumers should check these versions before interpreting a result.
 
 | Field | Meaning |
@@ -137,18 +138,27 @@ Each match's `contract_check` is one of:
 | Value | Assurance |
 | --- | --- |
 | `openapi_3_0_validation_rules` | Exercised HTTP request/response rules agree; each response and each request associated with a status below `400` validates against its own frozen schema. |
+| `openapi_3_0_provider_contract` | Consumer dependency schema is absent; both actual exchanges validate under the provider's frozen OpenAPI 3.0 contract, with the same negative-request exception. No independent consumer declarations are compared. |
 | `protobuf_rules_and_observed_wire` | Selected gRPC input/output declarations agree, including full reachable enum sets, and observed values survive cross-decoding under the opposite descriptors. |
 | `unavailable` | Both HTTP schemas are absent or explicitly omitted, so this is an example-only match. |
 
 The text report states how many verified matches are example-only. JSON
 consumers can count `matches` whose `contract_check` is `unavailable` when their
-policy requires contract assurance. A single available HTTP schema or an
-unsupported required check is an unverified finding, not an example-only match.
+policy requires contract assurance. An available consumer schema without a
+provider schema, or an unsupported required check, is unverified. A provider
+schema without a consumer dependency schema instead uses
+`openapi_3_0_provider_contract`.
+
+HTTP dependencies are schema-optional by default. Their consumer archive may
+therefore have unknown contract coverage while a later check successfully
+validates the examples under the provider's contract. That result neither
+changes the original coverage nor supplies missing provider test evidence:
+matching complete passing provider examples remain mandatory.
 
 ### Finding codes
 
 `kind` is the broad classification. Use `code` for the specific diagnostic
-under `wiretap-assumptions-2`:
+under `wiretap-assumptions-3`:
 
 | Code | Kind | Meaning |
 | --- | --- | --- |
@@ -158,7 +168,7 @@ under `wiretap-assumptions-2`:
 | `protobuf_contract_mismatch` | `mismatch` | Selected-method message or enum declarations differ after observed wire cross-decoding passes. |
 | `protobuf_contract_unavailable` | `unverified` | Required Protobuf declaration comparison is unavailable or cannot be completed reliably. |
 | `http_contract_mismatch` | `mismatch` | Declared validation rules differ on the exercised HTTP operation, selected status or media types, even if both examples satisfy them. |
-| `http_contract_violation` | `mismatch` | A checked HTTP response or qualifying request violates its own frozen schema. |
+| `http_contract_violation` | `mismatch` | A checked HTTP response or qualifying request violates the applicable own or provider frozen schema. |
 | `http_contract_unavailable` | `unverified` | Required HTTP schemas/rules are unavailable, unsupported or cannot be checked reliably. |
 | `consumer_evidence_unavailable` | `unverified` | A selected consumer exchange cannot be checked because its attempt or retained evidence does not qualify. |
 | `consumer_run_incomplete`, `provider_run_incomplete` | `unverified` | A source run is not complete or still has pending attempts. |

@@ -141,10 +141,15 @@ clients at those URLs in your shared test setup; declaring a dependency does not
 reroute an application's existing clients. Managed runtimes choose available
 ports, so read the returned URLs instead of assuming a fixed proxy port. HTTP's
 `/__wiretap/dep/<asset-id>` routes remain stable for traced sessions in that run;
-native gRPC uses the returned direct origin without a gateway path. Each HTTP
-API requires its spec unless its `SchemaRequired` pointer is explicitly false;
-supplied specs always validate. gRPC boundaries always require their configured
-Protobuf contracts and cannot be created or retargeted per test. See
+native gRPC uses the returned direct origin without a gateway path. The main
+HTTP API requires a spec by default; its `TestOptions.SchemaRequired` pointer
+can explicitly opt out. HTTP dependencies need no spec or opt-out flag. Add
+`Dependency.Schema`/`Schemas` to opt into validation and coverage, or set its
+`SchemaRequired` pointer to true to enforce availability. A nil pointer uses
+the boundary default; explicit true and false are preserved. Supplied specs
+always validate. An omitted dependency spec leaves its contract coverage
+unknown while calls and Postman examples remain captured. gRPC boundaries
+always require their configured Protobuf contracts and cannot be created or retargeted per test. See
 [boundary configuration](../../../docs/configuration.md).
 
 If your application must receive dynamic gRPC dependency listener URLs before

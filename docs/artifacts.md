@@ -41,13 +41,17 @@ Use `wiretap check consumer` or `wiretap check provider` with both complete
 archives and their Postman collections. The checker verifies the collections
 against their raw evidence, then requires each selected mock request and paired
 response to have compatible evidence from a passing provider service test.
-Supported frozen OpenAPI 3.0 contracts also contribute exercised validation-rule
-and message-value checks. Native gRPC also compares the selected method's
-reachable message/enum declarations and cross-decodes observed wire messages.
-With both HTTP schemas absent or omitted, the report
-marks a verified match as example-only. Uncovered scenarios fail the check.
-See [assumption checks](assumption-checks.md)
-for command examples, dependency selection, JSON results and limits.
+The provider's frozen OpenAPI 3.0 contract can validate both concrete exchanges
+without a consumer dependency spec; that match is marked
+`openapi_3_0_provider_contract`. With both contracts present, exercised rules
+must also agree and each exchange validates under its own schema. Native gRPC
+also compares the selected method's reachable message/enum declarations and
+cross-decodes observed wire messages. With both HTTP schemas absent or omitted,
+the report marks a verified match as example-only. Uncovered scenarios fail the
+check. See [assumption checks](assumption-checks.md) for command examples,
+dependency selection, JSON results and limits.
+Provider-contract validation does not rewrite the consumer archive's original
+unknown contract coverage. A matching passing provider test is still required.
 
 ## Generate coverage
 

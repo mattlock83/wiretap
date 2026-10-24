@@ -16,6 +16,8 @@ export interface Dependency {
   protocol?: 'http' | 'grpc';
   schema?: Schema;
   schemas?: Schema[];
+  /** HTTP dependency schemas are optional by default. True requires one;
+   * supplied schemas are always validated. gRPC still requires a contract. */
   schemaRequired?: boolean;
 }
 export interface TestIdentity { id: string; variant?: string; attemptOrdinal?: number; }
@@ -26,6 +28,7 @@ export interface TestOptions {
   tags?: string[];
   meta?: Record<string, unknown>;
   schemas?: Schema[];
+  /** The HTTP SUT schema remains required by default. */
   schemaRequired?: boolean;
   sutBaseUrl?: string;
   sutProtocol?: 'http' | 'grpc';

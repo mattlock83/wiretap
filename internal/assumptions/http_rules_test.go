@@ -188,9 +188,13 @@ func TestCheckHTTPContractAvailability(t *testing.T) {
 				t.Run(mode, func(t *testing.T) {
 					options.Mode = mode
 					report := mustCheck(t, options)
-					if kind == "both absent" {
-						if !report.Compatible || len(report.Matches) != 1 || report.Matches[0].ContractCheck != "unavailable" {
-							t.Fatalf("schema-free example match failed or falsely claimed contract agreement: %+v", report)
+					if kind == "both absent" || kind == "consumer absent" {
+						marker := "unavailable"
+						if kind == "consumer absent" {
+							marker = "openapi_3_0_provider_contract"
+						}
+						if !report.Compatible || len(report.Matches) != 1 || report.Matches[0].ContractCheck != marker {
+							t.Fatalf("example match failed or claimed the wrong contract assurance: %+v", report)
 						}
 					} else if report.Compatible || report.Counts.Unverified != 1 || !findingCode(report, "http_contract_unavailable") {
 						t.Fatalf("unavailable contract comparison was certified: %+v", report)
@@ -198,6 +202,105 @@ func TestCheckHTTPContractAvailability(t *testing.T) {
 				})
 			}
 		})
+	}
+}
+
+func TestCheckHTTPProviderContractSupportsAbsentAndOmittedConsumerSchema(t *testing.T) {
+	for _, omitted := range []bool{false, true} {
+		name := "absent"
+		if omitted {
+			name = "explicitly omitted"
+		}
+		t.Run(name, func(t *testing.T) {
+			consumer := httpRulesCapture(t, false, nil, `"shared"`)
+			if omitted {
+				consumer.Schemas = []artifact.SchemaRef{{ID: "stock", Type: "openapi", Role: "dependency", AssetID: "stock", Source: artifact.SchemaSource{Type: "omitted"}}}
+			}
+			provider := httpRulesCapture(t, true, httpRulesDocument("response", map[string]any{"type": "string", "enum": []any{"shared", "other"}, "minLength": 2, "maxLength": 10}), `"shared"`)
+			options := checkHTTPPair(t, []*artifact.Artifact{consumer}, []*artifact.Artifact{provider})
+			for _, mode := range []string{"consumer", "provider"} {
+				t.Run(mode, func(t *testing.T) {
+					options.Mode = mode
+					report := mustCheck(t, options)
+					if !report.Compatible || report.Counts.Verified != 1 || len(report.Matches) != 1 || report.Matches[0].ContractCheck != "openapi_3_0_provider_contract" {
+						t.Fatalf("optional consumer schema prevented provider-backed comparison or claimed independent consumer rules: %+v", report)
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestCheckHTTPProviderOnlyContractRejectsObservedConstraintViolations(t *testing.T) {
+	for _, tc := range []struct {
+		name, phase, value string
+		rule               map[string]any
+	}{
+		{"response type", "response", `"3"`, map[string]any{"type": "integer"}},
+		{"response enum", "response", `"other"`, map[string]any{"type": "string", "enum": []any{"ready"}}},
+		{"response length", "response", `"long"`, map[string]any{"type": "string", "maxLength": 2}},
+		{"response array count", "response", `[1,2]`, map[string]any{"type": "array", "items": map[string]any{"type": "integer"}, "maxItems": 1}},
+		{"request type", "request", `"3"`, map[string]any{"type": "integer"}},
+		{"request enum", "request", `"other"`, map[string]any{"type": "string", "enum": []any{"ready"}}},
+		{"request length", "request", `"x"`, map[string]any{"type": "string", "minLength": 2}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			options := httpRulesPair(t, nil, httpRulesDocument(tc.phase, tc.rule), tc.value)
+			for _, mode := range []string{"consumer", "provider"} {
+				t.Run(mode, func(t *testing.T) {
+					options.Mode = mode
+					report := mustCheck(t, options)
+					if report.Compatible || report.Counts.Verified != 0 || report.Counts.Mismatched != 1 || !findingCode(report, "http_contract_violation") {
+						t.Fatalf("equal captured values violating provider constraints were certified: %+v", report)
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestCheckHTTPProviderContractValidatesEachActualExchange(t *testing.T) {
+	for _, invalidSide := range []string{"consumer", "provider"} {
+		t.Run(invalidSide, func(t *testing.T) {
+			document := httpRulesDocument("response", map[string]any{"type": "string"})
+			httpRulesOperation(document)["parameters"] = []any{map[string]any{"name": "X-Tenant", "in": "header", "required": true, "schema": map[string]any{"type": "string", "minLength": 3}}}
+			consumer, provider := httpRulesCapture(t, false, nil, `"shared"`), httpRulesCapture(t, true, document, `"shared"`)
+			invalid := consumer
+			if invalidSide == "provider" {
+				invalid = provider
+			}
+			invalid.Traffic[0].Request.HTTP.Headers["X-Tenant"] = []string{"x"}
+			options := checkHTTPPair(t, []*artifact.Artifact{consumer}, []*artifact.Artifact{provider})
+			// Explicit normalization exceptions do not excuse a declared rule
+			// violation in either original, complete recorded exchange.
+			options.IgnoreHeaders = []string{"x-tenant"}
+			for _, mode := range []string{"consumer", "provider"} {
+				t.Run(mode, func(t *testing.T) {
+					options.Mode = mode
+					report := mustCheck(t, options)
+					if report.Compatible || report.Counts.Mismatched != 1 || !findingCode(report, "http_contract_violation") || !strings.HasPrefix(report.Findings[0].Message, invalidSide+" captured exchange") {
+						t.Fatalf("%s values were not independently checked against provider rules: %+v", invalidSide, report)
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestCheckHTTPProviderOnlyContractAllowsIntentionalInvalidRequestError(t *testing.T) {
+	document := httpRulesDocument("request", map[string]any{"type": "integer"})
+	responses := httpRulesOperation(document)["responses"].(map[string]any)
+	responses["400"] = responses["200"]
+	delete(responses, "200")
+	consumer, provider := httpRulesCapture(t, false, nil, `"invalid request"`), httpRulesCapture(t, true, document, `"invalid request"`)
+	consumer.Traffic[0].Response.HTTP.Status, provider.Traffic[0].Response.HTTP.Status = 400, 400
+	options := checkHTTPPair(t, []*artifact.Artifact{consumer}, []*artifact.Artifact{provider})
+	for _, mode := range []string{"consumer", "provider"} {
+		options.Mode = mode
+		report := mustCheck(t, options)
+		if !report.Compatible || len(report.Matches) != 1 || report.Matches[0].ContractCheck != "openapi_3_0_provider_contract" {
+			t.Fatalf("provider-only fallback rejected a valid intentional 400 exchange: %+v", report)
+		}
 	}
 }
 

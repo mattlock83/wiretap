@@ -307,12 +307,13 @@ func TestDependencySchemaViolationsPreserveTheOwningTestOutcome(t *testing.T) {
 	}
 }
 
-func TestDependencyCaptureAlwaysRequiresItsOwnReadableSchema(t *testing.T) {
+func TestDependencyCaptureRequiresSchemaWhenExplicitlyRequested(t *testing.T) {
 	control, _ := dependencyCaptureRuntime(t)
 	postDependencyJSON(t, control.URL, "/v1/startRun", map[string]any{})
+	required := true
 	payload, _ := json.Marshal(map[string]any{
 		"name": "missing dependency schema", "schema_required": false,
-		"dependencies": []dependencyRegistration{{AssetID: "inventory", UpstreamURL: "http://127.0.0.1:9090"}},
+		"dependencies": []dependencyRegistration{{AssetID: "inventory", UpstreamURL: "http://127.0.0.1:9090", SchemaRequired: &required}},
 	})
 	response, err := http.Post(control.URL+"/v1/setupTest", "application/json", bytes.NewReader(payload))
 	if err != nil {

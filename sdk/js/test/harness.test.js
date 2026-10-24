@@ -148,19 +148,19 @@ test("declared external dependencies retain strict schemas and session-scoped ca
   }
 });
 
-test("external dependencies require their own schema by default", async () => {
+test("external dependency schemas are required only when explicitly requested", async () => {
   await assert.rejects(
     () => startCapture({
       baseUrl: "http://127.0.0.1:1",
       schemas: [{ id: "sut-api" }],
-      dependencies: [{ assetId: "inventory", upstreamUrl: "http://wiremock.test" }]
+      dependencies: [{ assetId: "inventory", upstreamUrl: "http://wiremock.test", schemaRequired: true }]
     }),
     /dependency "inventory" requires an OpenAPI schema/
   );
   assert.throws(
     () => createNodeTestSuite({
       schemaRequired: false,
-      dependencies: [{ assetId: "inventory", upstreamUrl: "http://wiremock.test" }]
+      dependencies: [{ assetId: "inventory", upstreamUrl: "http://wiremock.test", schemaRequired: true }]
     }),
     /dependency "inventory" requires an OpenAPI schema/
   );
@@ -171,6 +171,50 @@ test("external dependencies require their own schema by default", async () => {
     }),
     /valid assetId/
   );
+  assert.throws(
+    () => createNodeTestSuite({ schemas: [{ id: "sut-api" }], dependencies: {
+      inventory: { upstreamUrl: "http://wiremock.test", schemaRequired: "true" }
+    } }),
+    /schemaRequired must be a boolean/
+  );
+});
+
+test("HTTP dependencies need no spec by default and preserve explicit schema requirements", async () => {
+  const calls = [];
+  const server = await controlServer((path, body) => {
+    calls.push({ path, body });
+    if (path === "/v1/startRun") return { sut_url: "http://127.0.0.1:20010" };
+    if (path === "/v1/setupTest") return { session_id: `session-${calls.length}`, name: body.name };
+    return {};
+  });
+  try {
+    const dependencies = Object.fromEntries(["mock", "service", "unknown"].map(kind => [kind, {
+      upstreamUrl: `http://${kind}.test`, upstreamKind: kind
+    }]));
+    const runtime = await startCapture({ baseUrl: server.baseUrl, schemas: [{ id: "sut-api" }], dependencies });
+    await runtime.setupTest({ name: "records consumed APIs" });
+    const setup = calls.find(call => call.path === "/v1/setupTest").body;
+    assert.deepEqual(setup.schemas, [{ id: "sut-api" }]);
+    assert.deepEqual(setup.dependencies, ["mock", "service", "unknown"].map(kind => ({
+      asset_id: kind, upstream_kind: kind, upstream_url: `http://${kind}.test`
+    })));
+    await runtime.teardownTest({ status: "pass" });
+
+    const schema = { id: "inventory", type: "openapi", source: { type: "file", path: "inventory.yaml" } };
+    await runtime.setupTest({ name: "opts in to dependency validation", dependencies: {
+      strict: { upstreamUrl: "http://strict.test", schemaRequired: true, schema },
+      optional: { upstreamUrl: "http://optional.test", schemaRequired: false }
+    } });
+    const strictSetup = calls.filter(call => call.path === "/v1/setupTest").at(-1).body;
+    assert.equal(strictSetup.dependencies[0].schema_required, true);
+    assert.deepEqual(strictSetup.dependencies[0].schemas, [schema]);
+    assert.equal(strictSetup.dependencies[1].schema_required, false);
+    await runtime.teardownTest({ status: "pass" });
+    await runtime.finishRun();
+    assert.throws(() => createNodeTestSuite({ schemas: [{ id: "sut" }], dependencies: {
+      grpc: { upstreamUrl: "http://grpc.test", protocol: "grpc", schemaRequired: false }
+    } }), /requires a Protobuf contract/);
+  } finally { await server.close(); }
 });
 
 test("createNodeTestSuite exposes capture, dependency forwarding, and reporting", () => {

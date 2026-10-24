@@ -180,18 +180,32 @@ field can therefore fail this strict example comparison without proving a
 runtime break.
 
 Keep the frozen OpenAPI 3.0 contracts with HTTP evidence when gating on contract
-agreement. Rules on exercised operations and selected statuses/media are
-compared even when both recorded values are valid: an added enum value or a
+agreement. When both HTTP contracts are supplied, rules on exercised operations
+and selected statuses/media are compared even when both recorded values are
+valid: an added enum value or a
 relaxed limit can fail as declared-rule drift. Inspect those changes rather
 than assuming every mismatch is behaviorally breaking. A passing match with
 both HTTP schemas absent is marked `contract_check: "unavailable"`; the text
-report counts these example-only matches. One missing or unsupported required
-contract leaves the comparison unverified instead of silently reducing assurance.
+report counts these example-only matches. Consumer HTTP dependency schemas are
+optional: when only the provider's schema is present, both actual exchanges
+validate under it and the match is marked `openapi_3_0_provider_contract`.
+Independent consumer/provider rule drift is checked only when both schemas are
+present. A provider schema missing while the consumer supplies one, or an
+unsupported required contract, leaves the comparison unverified.
 Native gRPC also requires equal declarations in the selected method's reachable
 message and enum graphs, plus successful observed wire cross-decoding. This can
 catch a newly allowed enum value even when no example returns it. Custom
 validation options are compared as opaque declarations, so retain tests that
 assert their actual validation behavior.
+
+Retrieve provider snapshots with your existing CI artifact tooling before this
+step. Keep stable application/API IDs and pin the intended tested revision,
+run and manifest identity; avoid display-name matching or a moving `latest`
+artifact. The CLI reads downloaded local archives and does not fetch from a
+remote store. See [sharing provider snapshots](assumption-checks.md#share-provider-snapshots)
+for a suggested layout. Provider-contract validation of a schema-free consumer
+capture does not retroactively give that archive contract coverage, and a spec
+without a matching passing provider test still leaves the scenario uncovered.
 
 Read [issues the check finds](assumption-checks.md#issues-the-check-will-find),
 [what it cannot establish](assumption-checks.md#what-the-check-will-not-establish)

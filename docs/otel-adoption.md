@@ -64,9 +64,10 @@ timing-based parent inferences and ambiguity.
 5. **Await the test's work before teardown.** Wait for HTTP calls and any expected
    background dependency activity. Closing the test early cannot establish the
    ownership of later work reliably.
-6. **Supply schemas.** Configure specs in `.wiretap.yaml`. An individual API
-   can explicitly omit an HTTP spec with `schema_required: false`; its coverage
-   denominator remains unknown. gRPC always requires a contract. See
+6. **Configure schemas.** The main HTTP API requires its OpenAPI spec by default.
+   HTTP dependency specs are opt-in; without one, capture still works and its
+   contract-coverage denominator is unknown. Supplied specs always validate.
+   gRPC always needs a descriptor, using reflection when no file is supplied. See
    [configuration](configuration.md).
 
 Managed Go, Jest, Mocha and Playwright integrations start Wiretap, finalize

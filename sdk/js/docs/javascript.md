@@ -172,9 +172,7 @@ const capture = await startCapture({
   schemas: [{ id: "orders", type: "openapi",
     source: { type: "file", path: "/project/schemas/orders.yaml" } }],
   dependencies: {
-    inventory: { upstreamUrl: "http://127.0.0.1:9090", upstreamKind: "mock",
-      schema: { id: "inventory", type: "openapi",
-        source: { type: "file", path: "/project/schemas/inventory.yaml" } } }
+    inventory: { upstreamUrl: "http://127.0.0.1:9090", upstreamKind: "mock" }
   }
 });
 ```
@@ -197,10 +195,13 @@ loaded; `startCapture({ instrumentation: false })` reuses that existing setup.
 The gRPC packages stay in the example, outside the SDK's dependencies. No
 Wiretap-specific RPC client, collector or reflection service is required.
 
-API-provided file paths resolve on the runtime host. HTTP schemas are required by
-default. Set `schemaRequired: false` only on an API whose spec is intentionally
-absent; supplied specs still validate strictly. Dependencies retain this same
-per-API requirement.
+API-provided file paths resolve on the runtime host. The main HTTP API requires
+OpenAPI by default; `schemaRequired: false` is its explicit opt-out. Consumed
+HTTP dependencies, including mocks, need no schema or opt-out flag. Add a
+dependency's `schema` or `schemas` to opt into validation and coverage, or set
+`schemaRequired: true` to require a spec. Supplied schemas always validate,
+including when `schemaRequired: false` is set. Omitted dependency schemas leave
+contract coverage unknown while calls and Postman examples remain available.
 
 ## Lower-level integration
 

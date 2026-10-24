@@ -72,10 +72,13 @@ function normalizeDependencies(value) {
     }
     const schemas = Array.isArray(dependency.schemas) ? [...dependency.schemas] : [];
     if (dependency.schema) schemas.push(dependency.schema);
+    if (dependency.schemaRequired != null && typeof dependency.schemaRequired !== "boolean") {
+      throw new Error(`dependency "${assetId}" schemaRequired must be a boolean`);
+    }
     if (protocol === "grpc" && dependency.schemaRequired === false) {
       throw new Error(`dependency "${assetId}" requires a Protobuf contract`);
     }
-    if (protocol === "http" && schemas.length === 0 && dependency.schemaRequired !== false) {
+    if (protocol === "http" && schemas.length === 0 && dependency.schemaRequired === true) {
       throw new Error(`dependency "${assetId}" requires an OpenAPI schema`);
     }
     const assetName = pickFirstString(dependency.assetName);
@@ -88,7 +91,7 @@ function normalizeDependencies(value) {
       ...(assetName ? { asset_name: assetName } : {}),
       upstream_kind: upstreamKind,
       ...(protocol === "grpc" ? { protocol } : {}),
-      ...(dependency.schemaRequired === false ? { schema_required: false } : {}),
+      ...(typeof dependency.schemaRequired === "boolean" ? { schema_required: dependency.schemaRequired } : {}),
       upstream_url: upstreamUrl,
       ...(schemas.length > 0 ? { schemas } : {})
     };

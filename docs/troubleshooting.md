@@ -129,10 +129,12 @@ configure local `.proto` files or a descriptor set as shown in the
 [gRPC guide](grpc-user-guide.md). Every gRPC boundary requires a contract;
 `schema_required: false` applies only to HTTP.
 
-Set `schema` in `.wiretap.yaml`, or supply the schema through the SDK/API.
-For an API with no spec, explicitly set `schema_required: false` on that API.
-Supplied specs still validate, even with this setting. Omitted schemas leave
-coverage unknown.
+Set the main HTTP API's `schema` in `.wiretap.yaml`, or supply it through the
+SDK/API. Its explicit `schema_required: false` opt-out remains available. HTTP
+dependencies need no spec by default: add one to opt into validation and
+coverage, or set `schema_required: true` to enforce availability. Supplied specs
+still validate even with `schema_required: false`. Omitted schemas leave
+contract coverage unknown while calls and Postman examples remain captured.
 
 ### Bodies are truncated in a bundle
 
@@ -214,6 +216,7 @@ string can satisfy two different `maxLength` rules. Requiredness, nullability,
 nested optional properties, response-header rules and composition also
 participate, even when the specific property is absent from the example.
 
+This declaration comparison applies when both sides supplied HTTP contracts.
 Inspect the `contract/request/...` or `contract/response/...` difference and the
 frozen contracts. This is conservative rule equality: an added enum value,
 relaxed bound or equivalent schema expressed differently can fail without
@@ -221,19 +224,23 @@ proving a runtime break. Align the intended contracts and recapture after the
 change is resolved. Descriptions, examples, defaults and enum/required ordering
 are ignored; unused operations, statuses and media alternatives are not diffed.
 
-`http_contract_violation` instead means a checked message violates its own
-schema. Each response is validated, and requests are validated when their
-response status is below `400`. Intentional negative request examples with
+`http_contract_violation` instead means a checked message violates the
+applicable schema. With only a provider schema, both exchanges use that
+contract; with both schemas, each exchange uses its own. Each response is
+validated, and requests are validated when their response status is below
+`400`. Intentional negative request examples with
 status `400` or higher skip request-value validation, while their request rules
-and response values remain checked. A passing framework test does not override
+are compared when both contracts are supplied. Response values remain checked.
+A passing framework test does not override
 these contract findings.
 
 ### The HTTP contract check is unavailable
 
 `http_contract_unavailable` means a required contract or rule cannot support
-assurance, for example one missing schema, OpenAPI 3.1, or numeric rules that
-cannot be evaluated reliably. Supply supported frozen OpenAPI 3.0 evidence on
-both sides and recapture if necessary. Restore corrupt or missing archive
+assurance, for example a missing provider schema while the consumer supplies
+one, OpenAPI 3.1, or numeric rules that cannot be evaluated reliably. Supply a
+supported frozen OpenAPI 3.0 provider contract; a consumer dependency spec is
+optional. Recapture if necessary. Restore corrupt or missing archive
 attachments from the original run when archive loading reports an input error.
 Other unsupported examples include media-type `encoding`, OpenAPI
 `content`-encoded parameters or response headers, complex numeric object
@@ -248,6 +255,13 @@ When both HTTP schemas are absent or explicitly omitted, matching examples can
 pass with `contract_check: "unavailable"` in `matches`. That marker describes
 example-only assurance rather than a successful schema check; the text report
 states the example-only count.
+
+A consumer HTTP dependency needs no schema by default. If the provider supplies
+OpenAPI 3.0, a verified match uses `openapi_3_0_provider_contract`: both concrete
+exchanges validate under the provider's schema, with no independent consumer
+declaration comparison. The original consumer archive still has unknown
+contract coverage. A provider spec without a matching passing provider test
+cannot turn an uncovered request into a verified one.
 
 ### The gRPC examples agree, but Protobuf declarations differ
 

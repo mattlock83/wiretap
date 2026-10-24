@@ -21,7 +21,7 @@ func TestMockCapturePreservesContractValidationAndFrameworkOutcome(t *testing.T)
 			}))
 			defer mock.Close()
 			control, _ := dependencyCaptureRuntime(t)
-			dependency := dependencyRegistration{AssetID: "inventory", UpstreamKind: "mock", UpstreamURL: mock.URL, SchemaRequired: new(bool)}
+			dependency := dependencyRegistration{AssetID: "inventory", UpstreamKind: "mock", UpstreamURL: mock.URL}
 			if supplied {
 				dependency.Schema = &artifact.SchemaRef{ID: "inventory", Type: "openapi", Source: artifact.SchemaSource{Type: "inline", Content: `openapi: 3.0.0
 info: {title: Inventory, version: "1"}
@@ -57,6 +57,17 @@ paths:
 			}
 			if len(capture.Traffic) != 1 || capture.Traffic[0].Response.HTTP == nil || capture.Traffic[0].Response.HTTP.Body == nil || capture.Traffic[0].Response.HTTP.Body.Text != `{"value":42}` {
 				t.Fatalf("archive lost actual mock response: %+v", capture.Traffic)
+			}
+			if !supplied {
+				foundOmission := false
+				for _, schema := range capture.Schemas {
+					if schema.Role == "dependency" && schema.AssetID == "inventory" && schema.Source.Type == "omitted" {
+						foundOmission = true
+					}
+				}
+				if !foundOmission {
+					t.Fatal("default optional dependency lost its explicit contract omission marker")
+				}
 			}
 
 			postDependencyJSON(t, control.URL, "/v1/finishRun", map[string]any{})

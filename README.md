@@ -64,9 +64,12 @@ Contract mismatches are recorded separately, so a test deliberately sending an
 invalid request can assert its rejection and pass. Setup and capture failures
 still surface through cleanup.
 
-HTTP requires an OpenAPI spec by default; individual APIs can explicitly opt
-out. gRPC requires Protobuf contracts from reflection, `.proto` files or a
-descriptor set. Unary and all three streaming shapes are supported. See the
+The main HTTP API under test requires OpenAPI by default. Consumed HTTP APIs
+and mocks need only their URLs; add specs to opt into their validation and
+contract coverage. Supplied specs always validate. gRPC requires Protobuf
+descriptors, discovered through reflection when no file is supplied, or loaded
+from `.proto` files or a descriptor set. Unary and all three streaming shapes
+are supported. See the
 [gRPC guide](docs/grpc-user-guide.md).
 
 For parallel tests sharing one application, propagate W3C trace context through
@@ -117,10 +120,12 @@ verified against the raw archive. See [assumption checks](docs/assumption-checks
 for dependency mapping, limits, custom collection paths and CI output.
 
 The checker finds changed mock responses, request scenarios absent from provider
-tests, drift in exercised OpenAPI 3.0 rules or Protobuf message/enum declarations,
-and incompatible gRPC wire examples. It catches changed enums or HTTP limits
-even when the recorded values satisfy both contracts. Its strict comparison can
-also flag an extra optional response field or a relaxed rule that a running
+tests, drift in exercised OpenAPI 3.0 rules when both contracts are supplied,
+Protobuf message/enum declaration changes, and incompatible gRPC wire examples.
+Without a consumer dependency spec, the provider's frozen HTTP contract still
+validates both captured exchanges. With both HTTP contracts, it catches changed
+enums or limits even when the recorded values satisfy both. Its strict comparison
+can also flag an extra optional response field or a relaxed rule that a running
 consumer would tolerate. Read
 [which issues it finds](docs/assumption-checks.md#issues-the-check-will-find),
 [what it cannot establish](docs/assumption-checks.md#what-the-check-will-not-establish)

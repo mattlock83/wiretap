@@ -27,7 +27,6 @@ dependencies:
     name: Inventory Service
     url: ${INVENTORY_MOCK_URL}
     kind: mock
-    schema: schemas/inventory.openapi.yaml
 ```
 
 `schema`, `output_dir`, and optional `ca_dir` paths are relative to the
@@ -136,37 +135,54 @@ Without a configuration file, supply schemas, addresses, and dependencies
 through the SDK or API. Wiretap process usage/configuration errors return `2` and
 runtime failures return `1`; those are independent of the test command's status.
 
-## Specs remain required
+## Schema defaults by boundary
 
-HTTP SUTs and dependencies require an OpenAPI spec by default. For gRPC,
-`protocol: grpc` requires a Protobuf contract. Omitting `schema` chooses server
-reflection; local `.proto` sources and descriptor sets are alternatives. gRPC
-does not allow `schema_required: false`. See the [gRPC guide](grpc-user-guide.md)
-for listener, service selection, TLS and lifecycle examples.
-
-For an API without a spec, make the exception explicit on that API:
+The main HTTP API under test (`sut`) requires an OpenAPI spec by default. Its
+existing explicit `schema_required: false` opt-out remains available when that
+spec is intentionally absent. Consumed HTTP dependencies, whether mocks,
+services or unknown targets, do not require a spec by default:
 
 ```yaml
+sut:
+  id: orders
+  url: ${SUT_BASE_URL}
+  schema: schemas/orders.openapi.yaml
 dependencies:
   inventory:
     url: ${INVENTORY_MOCK_URL}
     kind: mock
-    schema_required: false
 ```
 
-Traffic is still captured. Its evidence records an omitted schema, skipped
-validation, and an unknown coverage denominator. Concrete observed paths and
-payloads remain available; they are not inferred contract operations. Other
-APIs remain strict. A supplied schema is always loaded and validated, even with
-`schema_required: false`; missing files and invalid specs remain errors.
+Add `schema: schemas/inventory.openapi.yaml` to a dependency to opt into its
+validation and contract coverage. Set dependency `schema_required: true` when
+setup must fail if no spec is available. No `schema_required: false` flag is
+needed for ordinary schema-free dependency capture. A supplied schema is always
+loaded and validated, including when `schema_required: false`; missing files
+and invalid supplied specs remain errors.
 
-The HTTP API spelling is also `schema_required`; JavaScript uses
-`schemaRequired` and Go uses `SchemaRequired *bool`. An attempt's validation
-status is `partial` when some APIs have specs and others explicitly omit them, `skipped` when all omit
-them, and `fail` if any supplied schema fails. `skipped` lists the omitted API
-schema IDs. Validation status is independent of the framework outcome: contract
-violations stay visible while a deliberate negative test can pass its assertions.
-Setup and incomplete-capture failures still fail the integration.
+Without a dependency spec, traffic and Postman examples are still captured.
+The consumer archive records an omitted schema, skipped validation and an
+unknown contract-coverage denominator. A later assumption check can validate
+those examples against the provider's own frozen OpenAPI contract, but it does
+not retroactively create consumer contract coverage. It still needs a matching
+complete passing provider test; a provider spec alone is insufficient. See
+[assumption checks](assumption-checks.md).
+
+For gRPC, `protocol: grpc` always requires a Protobuf descriptor. Omitting
+`schema` chooses server reflection, so a local file is optional when reflection
+is available; local `.proto` sources and descriptor sets are alternatives.
+gRPC does not allow `schema_required: false`. See the [gRPC
+guide](grpc-user-guide.md) for listener, service selection, TLS and lifecycle
+examples.
+
+The HTTP API spelling is `schema_required`; JavaScript uses `schemaRequired`
+and Go uses `SchemaRequired *bool`. Omission delegates to the boundary defaults
+above. An attempt's validation status is `partial` when some APIs have specs and
+others omit them, `skipped` when all omit them, and `fail` if any supplied schema
+fails. `skipped` lists omitted API schema IDs. Validation is independent of the
+framework outcome: contract violations stay visible while a deliberate negative
+test can pass its assertions. Setup and incomplete-capture failures still fail
+the integration.
 
 ## Capture and proxy settings
 
@@ -217,11 +233,13 @@ That guide separates [issues the check finds](assumption-checks.md#issues-the-ch
 from [claims it cannot establish](assumption-checks.md#what-the-check-will-not-establish)
 and explains [result interpretation](assumption-checks.md#interpreting-results).
 An equal coverage condition is insufficient: the checker requires the same
-concrete request and a compatible response from one provider exchange. With
-frozen OpenAPI 3.0 contracts, it also compares rules for the exercised operation,
-selected response status and media types, then validates each side's qualifying
-messages against its own schema. Both omitted HTTP schemas allow a reported
-example-only match; one-sided or unsupported contract availability is unverified.
+concrete request and a compatible response from one provider exchange. With only
+the provider's frozen OpenAPI 3.0 contract, it validates both exchanges under
+that schema and marks the match `openapi_3_0_provider_contract`. With both
+contracts, it also compares exercised rules and validates each exchange under
+its own schema. Both omitted HTTP schemas allow an example-only match. A
+consumer contract without a provider contract, or unsupported required checks,
+is unverified.
 Native gRPC also compares the selected method's reachable message/enum
 declarations after observed wire cross-decoding. Custom validation options are
 compared as opaque declarations and are not executed.

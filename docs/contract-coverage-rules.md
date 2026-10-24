@@ -37,9 +37,10 @@ The JSON separates `origin` (`provided` or `dependency`) and `target_kind`
 provider coverage identify evidence gaps, not automatic incompatibilities.
 The separate [assumption checker](assumption-checks.md) uses concrete request and
 paired response evidence rather than equating coverage keys. It fails when a
-selected mock scenario is unsupported by qualifying provider tests. When both
-sides have supported frozen OpenAPI 3.0 contracts, it additionally compares the
-validation rules for the exercised operation, status and media types.
+selected mock scenario is unsupported by qualifying provider tests. With only
+the provider's frozen OpenAPI 3.0 contract, it validates both actual exchanges
+under that schema. When both sides have contracts, it additionally compares
+the validation rules for the exercised operation, status and media types.
 
 ### Coverage and assumption checks answer different questions
 
@@ -50,14 +51,17 @@ mock supplied. Two messages can cover the same conditions while carrying
 different application values. Equal coverage percentages or condition keys do
 not satisfy an assumption check.
 
-The HTTP rule check includes declared enum sets, requiredness and bounds even
-when the observed value fits both contracts. An enum addition or a relaxed
+With both HTTP contracts present, the rule check includes declared enum sets,
+requiredness and bounds even when the observed value fits both contracts. An enum addition or a relaxed
 limit is therefore drift under its conservative equality policy. This does not
 establish a runtime break or prove every declared value was tested. Unused
 operations, other response statuses and unselected media receive no static
-comparison. With both HTTP schemas absent, a passing check is explicitly
-example-only. gRPC compares the selected method's reachable message/enum
-declarations alongside observed wire compatibility. Equal full enum sets do not
+comparison. A schema-free consumer dependency can instead earn
+`openapi_3_0_provider_contract` assurance from provider-schema value checks;
+there is no independent consumer declaration to diff. This does not
+retroactively create consumer contract coverage. With both HTTP schemas absent,
+a passing check is explicitly example-only. gRPC compares the selected method's
+reachable message/enum declarations alongside observed wire compatibility. Equal full enum sets do not
 prove the tests executed every value, and custom validation annotations are
 compared as opaque declarations rather than executed predicates.
 

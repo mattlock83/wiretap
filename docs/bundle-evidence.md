@@ -212,9 +212,10 @@ field in a mock response does not mean the consumer required it.
 The offline [assumption checker](assumption-checks.md) writes a separate result;
 it does not mutate the captured assumption or its original `not_checked` state.
 
-An HTTP API explicitly configured with `schema_required: false` and no supplied spec
-has a schema reference with `source.type: omitted` and no source bytes. This is
-a declared exception. Validation
+An HTTP API captured without a spec has a schema reference with
+`source.type: omitted` and no source bytes. This is the default for HTTP
+dependencies; the main SUT API requires an explicit `schema_required: false`
+opt-out. Validation
 lists its ID in `schema_validation.skipped`; mixed attempts have status `partial`
 unless an enforced schema fails. Coverage remains unknown for the omitted API,
 while concrete observed paths and exchanges remain browsable.

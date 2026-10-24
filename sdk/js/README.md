@@ -52,6 +52,12 @@ For downstream mock capture, gRPC and tracing, see
 [boundary configuration](https://github.com/mattlock83/wiretap/blob/main/docs/configuration.md)
 and the [plain JavaScript guide](docs/javascript.md).
 
+The main HTTP API requires its OpenAPI spec by default. HTTP dependencies and
+mocks need only their URL and kind; add a dependency `schema` to opt into
+validation and contract coverage. No opt-out flag is needed for schema-free
+dependency capture. Supplied specs always validate. gRPC still needs a Protobuf
+descriptor, discovered through reflection when no source file is supplied.
+
 ## Jest
 
 ```js

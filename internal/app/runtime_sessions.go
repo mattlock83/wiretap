@@ -89,11 +89,12 @@ func normalizeDependencies(dependencies []dependencyRegistration) (map[string]de
 		if dependency.Protocol == "grpc" && !requiresSchema(dependency.SchemaRequired) {
 			return nil, nil, fmt.Errorf("dependency %q: gRPC requires a contract", dependency.AssetID)
 		}
-		if dependency.Protocol == "http" && len(selectedSchemas) == 0 && requiresSchema(dependency.SchemaRequired) {
+		httpSchemaRequired := dependency.SchemaRequired != nil && *dependency.SchemaRequired
+		if dependency.Protocol == "http" && len(selectedSchemas) == 0 && httpSchemaRequired {
 			return nil, nil, fmt.Errorf("dependency %q requires an OpenAPI schema; supply schema or schemas", dependency.AssetID)
 		}
 		if dependency.Protocol == "http" {
-			if err := validateSchemaSetup(selectedSchemas, !requiresSchema(dependency.SchemaRequired)); err != nil {
+			if err := validateSchemaSetup(selectedSchemas, !httpSchemaRequired); err != nil {
 				return nil, nil, fmt.Errorf("dependency %q: %w", dependency.AssetID, err)
 			}
 		}

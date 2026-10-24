@@ -79,10 +79,12 @@ offline without the original workspace or servers.
 `POST /v1/report` exposes JSON coverage through the control API. See the
 [format reference](bundle-evidence.md) and [artifact/export guide](artifacts.md).
 
-OpenAPI is required for HTTP by default. An API can explicitly permit an absent
-spec with `schema_required: false`; the artifact records skipped validation and
-an unknown denominator. Supplied specs always validate. gRPC requires contracts
-from reflection, local sources or descriptor sets and cannot opt out.
+OpenAPI is required for the main HTTP API under test by default; its explicit
+`schema_required: false` opt-out remains available. HTTP dependencies require no
+spec unless `schema_required: true` is set. Adding one opts into validation and
+contract coverage; an omitted one records skipped validation and an unknown
+denominator. Supplied specs always validate. gRPC requires descriptors from
+reflection, local sources or descriptor sets and cannot opt out.
 
 ## Meaning and limits
 
@@ -98,9 +100,10 @@ identity without claiming agreement. The offline
 [assumption checker](assumption-checks.md) verifies exported collections against
 their archives and compares selected mock scenarios with complete passing
 provider service tests. It requires request and response agreement within the
-same exchange and reports missing evidence as a failure. For supported frozen
-OpenAPI 3.0 contracts it compares the exercised validation rules and validates
-each side's relevant messages under its own schema. Native gRPC cross-decodes
+same exchange and reports missing evidence as a failure. The provider's frozen
+OpenAPI 3.0 contract can validate both exchanges without a consumer dependency
+spec. With both contracts present, it additionally compares exercised rules
+and validates each exchange under its own schema. Native gRPC cross-decodes
 observed messages with opposite descriptors and compares the selected method's
 reachable message and enum declarations. HTTP with both schemas absent can
 only earn a marked example-only match.

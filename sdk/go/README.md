@@ -40,6 +40,12 @@ parent containing `.wiretap.yaml`. Schema and output paths are relative to that
 file. Use synthetic data and dummy credentials; captured traffic is retained
 unchanged.
 
+The main HTTP API requires its OpenAPI spec by default. HTTP dependencies and
+mocks need only their URL and kind; add a dependency `schema` when you want
+validation and contract coverage. No opt-out flag is needed for schema-free
+dependency capture. Supplied specs always validate. gRPC still needs a Protobuf
+descriptor, discovered through reflection when no source file is supplied.
+
 ## Connect your tests
 
 Add the suite hook to your existing test package:

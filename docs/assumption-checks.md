@@ -9,13 +9,15 @@ requests, execute collection scripts or generate tests.
 passing provider test exchange that supports that concrete request and response,
 with agreement on supported frozen contract rules where available.**
 HTTP matches with both schemas absent or explicitly omitted are example-only;
-the report identifies them. Native gRPC checks the exercised method's declared
-message graphs and observed wire compatibility.
+the report identifies them. With only the provider's HTTP schema, the check
+validates both captured exchanges against that provider contract. Native gRPC
+checks the exercised method's declared message graphs and observed wire compatibility.
 
 - [What a passing result establishes](#what-a-passing-result-establishes)
 - [Issues the check will find](#issues-the-check-will-find)
 - [What the check will not establish](#what-the-check-will-not-establish)
 - [Keep the evidence together](#keep-the-evidence-together)
+- [Share provider snapshots](#share-provider-snapshots)
 - [Select the dependency and provider](#select-the-dependency-and-provider)
 - [What agreement means](#what-agreement-means)
 - [Interpreting results](#interpreting-results)
@@ -35,6 +37,9 @@ examples covered by the inventory provider's tests?** Every observed request
 scenario to the selected mock needs a matching request and compatible response
 from the provider's complete passing tests. An untested request scenario fails
 the check, even if it would be valid under the provider's schema.
+An HTTP dependency needs no consumer-owned copy of the provider spec: capture
+the mock without one, then use the provider archive's frozen contract. The
+consumer's own main HTTP API still requires its spec by default.
 
 From the provider repository, use the other viewpoint:
 
@@ -58,9 +63,10 @@ For each captured call to the selected mock, Wiretap:
 1. Requires a complete consumer exchange from a passing test attempt.
 2. Finds complete passing provider exchanges with the same normalized request.
 3. Looks for the mocked response in one of those **same exchanges**.
-4. For HTTP with frozen OpenAPI 3.0 contracts, compares the validation rules
-   for the exercised operation, selected status and media types, and validates
-   each side's response and qualifying request against its own contract.
+4. For HTTP with only a provider contract, validates both exchanges under that
+   frozen OpenAPI 3.0 contract. With both contracts, validates each exchange
+   against its own schema and compares exercised validation rules. If both
+   schemas are absent, explicitly marks an example-only match instead.
 5. For native gRPC, checks that the observed request and response bytes
    can be understood using the opposite side's frozen protobuf descriptors,
    then compares the exercised method's input/output message declarations.
@@ -116,15 +122,22 @@ other qualifying provider exchange supplies the mocked response.
 HTTP error responses can be valid supporting examples. A passing test that
 intentionally receives `400`, `404` or `500` can support a mock returning the
 same complete response. With available HTTP contracts, the error response must
-validate; intentional negative requests skip request-value validation, while
-their declared request rules are still compared. A connection failure recorded
-as a transport error cannot establish agreement merely because Wiretap also
+validate; intentional negative requests skip request-value validation. Their
+declared request rules are still compared when both schemas are supplied. A
+connection failure recorded as a transport error cannot establish agreement merely because Wiretap also
 recorded a `502`.
 
 ### HTTP contract rules that differ despite equal examples
 
-Equal examples are insufficient when the two sides supply frozen OpenAPI 3.0
-contracts. For a prospective match, Wiretap compares declared validation rules
+The provider's frozen OpenAPI 3.0 contract validates the concrete mocked
+request/response even when the consumer dependency has no spec. It also
+validates the provider exchange. This can catch invalid mocked values without
+requiring a consumer-owned copy of the provider contract. A matching complete
+passing provider test remains mandatory; the specification alone is not test
+coverage.
+
+If both sides supply frozen OpenAPI 3.0 contracts, equal examples are
+insufficient. For a prospective match, Wiretap compares declared validation rules
 for all request parameters, the selected request body/media type, and the
 selected response status, media type, body schema and declared headers.
 Nested properties participate even if they are optional or absent from the
@@ -141,7 +154,8 @@ object/property constraints, nested schemas and composition/discriminator rules.
 | Requiredness, nullable or type changes | Both include `quantity: 3`; one contract makes `quantity` optional or nullable. | Contract mismatch. |
 | Nested constraints or composition change | An unused optional property, format, pattern, discriminator mapping or composed schema differs under the exercised operation. | Conservative contract mismatch. |
 | Equal examples violate a supplied contract | Both return a value excluded by their own matching enum, or a successful request omits a required parameter. | Contract violation; passing framework tests do not override it. |
-| Only one side has a usable HTTP contract | Consumer omitted its schema; provider supplies OpenAPI 3.0. | Unverified, rather than an example-only pass. |
+| Consumer has no dependency contract | Provider supplies OpenAPI 3.0 and matching passing evidence. | Can verify concrete examples under the provider contract, without comparing independent consumer declarations. |
+| Provider has no HTTP contract | Consumer supplies a dependency schema, but provider omitted its schema. | Unverified; a consumer-owned spec cannot replace provider contract evidence. |
 
 The comparison preserves declared rules rather than proving their semantic
 equivalence. A harmless relaxation or a structurally different but equivalent
@@ -152,15 +166,18 @@ media types do not receive a static comparison.
 Explicit discriminator mappings are preserved conservatively; renaming their
 declared schema targets can fail even when the resolved schemas are equivalent.
 
-Each side's response is revalidated against its own frozen schema. A request
-is also revalidated when that exchange's response status is below `400`;
+With only the provider contract, both exchanges are revalidated against it.
+With both contracts, each exchange is revalidated against its own schema and
+their exercised declarations are compared. Every response is checked; a
+request is also checked when that exchange's response status is below `400`;
 `400` and higher permit deliberate negative request examples, so request-value
-validation is skipped while request-rule comparison remains active.
+validation is skipped. Request-rule comparison remains active when both
+contracts are supplied.
 
 When both HTTP schemas are absent or explicitly omitted, matching examples may
 pass with `contract_check: "unavailable"`. This is visible example-only
-assurance. One-sided availability, unsupported OpenAPI 3.1, unreadable contracts
-or rules whose precision cannot be checked reliably leave the comparison
+assurance. A missing provider schema when a consumer schema is supplied,
+unsupported OpenAPI 3.1, unreadable contracts or rules whose precision cannot be checked reliably leave the comparison
 unverified. Unsupported examples also include media-type `encoding` rules,
 OpenAPI `content`-encoded parameters or response-header definitions, complex
 numeric object parameter/header serialization, and path/operation-level server
@@ -343,10 +360,14 @@ hide the difference does not change the raw capture.
 
 ### That the entire API or every schema rule is compatible
 
-With supported frozen OpenAPI 3.0 contracts, the check compares declared rules
-on the exercised operation and revalidates each side's relevant messages under
-its own schema. It does not statically diff unexercised routes, other response
-statuses or unselected media alternatives. A new route or a changed unused
+With a provider-only frozen OpenAPI 3.0 contract, the check validates the
+concrete mock and provider exchanges under that contract. It has no independent
+consumer declaration to compare, so an unobserved enum addition or relaxed
+provider limit need not fail. The `openapi_3_0_provider_contract` marker makes
+this assurance explicit. If both sides supplied contracts, the check also
+compares declared rules on the exercised operation and validates each side
+under its own schema. Neither path statically diffs unexercised routes, other
+response statuses or unselected media alternatives. A new route or a changed unused
 error response may therefore remain undetected.
 The full frozen document graph must still load reliably: invalid, unsupported
 or precision-unsafe rules outside the exercised selection can make the required
@@ -361,19 +382,19 @@ validation rules in this comparison.
 
 Successful and redirect exchanges revalidate request values; error responses
 with status `400` or higher permit deliberately invalid requests, so those
-request values are not required to validate. Their request rules are still
-compared, and every response is validated. This does not establish that a
-negative test asserted the rejection or that all invalid requests are rejected.
+request values are not required to validate. Request rules are still compared
+when both contracts are supplied, and every response is validated. This does
+not establish that a negative test asserted the rejection or that all invalid requests are rejected.
 
 When both HTTP schemas are absent or explicitly omitted, the check can only
 support example agreement. `contract_check: "unavailable"` makes this weaker
-result explicit. One missing schema, unsupported OpenAPI 3.1 or rules that
-cannot be checked reliably produce an unverified result. Keep contract coverage
+result explicit. A missing provider schema when only the consumer supplies one,
+unsupported OpenAPI 3.1 or rules that cannot be checked reliably produce an
+unverified result. Keep contract coverage
 alongside the check to see which declared cases have actually been exercised.
 
 For gRPC, the selected method's statically reachable input/output declarations
-are compared
-even when a field or enum value did not occur in the example. Unrelated methods,
+are compared even when a field or enum value did not occur in the example. Unrelated methods,
 services and message graphs are not diffed. This conservative equality is not
 an exhaustive schema-evolution or client-compatibility proof: safe additions can
 fail, and observed unknown fields are rejected even where a particular client
@@ -523,6 +544,36 @@ selection or entirely unusable consumer evidence fails before collections are
 required. For an otherwise eligible comparison, missing, invalid or stale
 collections are invalid inputs.
 
+## Share provider snapshots
+
+Keep each complete provider run under stable application/API identities and a
+known tested revision and run ID. For example, an existing CI artifact store
+could retain this directory layout:
+
+```text
+api-evidence/
+  inventory-service/
+    inventory-http/
+      <sut-revision>/
+        <run-id>/
+          bundle.json
+          tests/
+          contracts/
+          payloads/
+          exports/postman/
+```
+
+Use your existing artifact upload/download tooling. Download the complete run
+before invoking `wiretap check`; the CLI accepts local archives and implements
+no remote store discovery or fetching. The layout is a convention for your
+pipeline, not a hosted Wiretap registry.
+
+Pin the intended provider application/API, tested revision and run. Retain the
+manifest digest and use a declared provider mapping/version where appropriate.
+Display names and a moving `latest` directory do not establish the intended
+provider build. A capture's Wiretap producer commit identifies the recorder,
+not the SUT revision; use the recorded SUT source provenance for the latter.
+
 ## Select the dependency and provider
 
 `--dependency` is the consumer's local mock ID, such as `inventory` in
@@ -543,7 +594,6 @@ dependencies:
   inventory:
     kind: mock
     url: ${INVENTORY_MOCK_URL}
-    schema: schemas/inventory.openapi.yaml
 ```
 
 ```yaml
@@ -562,6 +612,12 @@ Choose the intended application and test revisions explicitly. Wiretap checks
 the files you supplied and does not discover the latest build of another repo.
 If a mapping declares `version`, the provider's captured `sut_source.version`
 must establish that version; a missing version leaves the check unverified.
+
+The HTTP inventory mock needs no schema or opt-out flag. Its captured contract
+coverage is unknown when no dependency spec was recorded. The later provider-contract
+check does not rewrite that archive or invent consumer coverage. It still
+requires an actual matching passing provider test. Add a dependency `schema`
+when you also want independent consumer/provider declaration comparison.
 
 ## What agreement means
 
@@ -660,7 +716,7 @@ compatibility; it is not treated as a pass.
 | `protobuf_contract_mismatch` | The selected method's declared input/output graph differs after observed wire checks pass. |
 | `protobuf_contract_unavailable` | Required Protobuf declarations cannot support a reliable comparison. |
 | `http_contract_mismatch` | Exercised HTTP validation rules differ, including conservative enum-set or bound drift. |
-| `http_contract_violation` | A response or qualifying request violates that side's own frozen HTTP contract. |
+| `http_contract_violation` | A response or qualifying request violates the applicable own or provider frozen HTTP contract. |
 | `http_contract_unavailable` | Required HTTP contracts or rules are unavailable, unsupported or cannot be checked reliably. |
 | `consumer_evidence_unavailable` | A selected consumer exchange is failed, incomplete, unsupported or otherwise unusable. |
 | `consumer_run_incomplete` / `provider_run_incomplete` | The archive is not complete or has pending attempts. |
@@ -682,7 +738,7 @@ when both sides omitted their HTTP schemas, could contain:
 ```json
 {
   "report_version": "1.0",
-  "rules_version": "wiretap-assumptions-2",
+  "rules_version": "wiretap-assumptions-3",
   "mode": "consumer",
   "scope": "observed_mock_examples_and_exercised_contracts",
   "compatible": false,
@@ -730,7 +786,10 @@ file. Consumer and provider attempt IDs need not match each other.
 
 `matches` records the provider witness chosen for each verified consumer
 exchange. Its `contract_check` is `openapi_3_0_validation_rules` for exercised
-HTTP rule/value checks, `protobuf_rules_and_observed_wire` for selected gRPC
+HTTP rule equality and own-schema value checks,
+`openapi_3_0_provider_contract` for validating both HTTP examples with the
+provider's schema when the consumer omitted one,
+`protobuf_rules_and_observed_wire` for selected gRPC
 declaration equality plus observed cross-decoding,
 or `unavailable` for an example-only HTTP match with both schemas absent or
 omitted. The text summary calls out the example-only match count.
@@ -765,7 +824,7 @@ both input archives and any supplied Postman input directory; an output cannot
 replace a collection input.
 
 The JSON result uses `report_version: "1.0"` and
-`rules_version: "wiretap-assumptions-2"`. `compatible` is the verdict;
+`rules_version: "wiretap-assumptions-3"`. `compatible` is the verdict;
 `counts` separates verified, uncovered, mismatched and unverified assumptions.
 Unverified counts can also include comparison-level blockers, such as an
 interrupted archive or conflicting provider identity.

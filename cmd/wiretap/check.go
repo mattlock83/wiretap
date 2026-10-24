@@ -117,7 +117,7 @@ func writeCheckText(out io.Writer, report *assumptions.Report) error {
 	for _, match := range report.Matches {
 		contracts[match.ContractCheck]++
 	}
-	fmt.Fprintf(&text, "Contracts: %d HTTP validation-rule checks; %d protobuf declaration and wire checks; %d example-only matches (schemas unavailable)\n", contracts["openapi_3_0_validation_rules"], contracts["protobuf_rules_and_observed_wire"], contracts["unavailable"])
+	fmt.Fprintf(&text, "Contracts: %d HTTP declaration and value checks; %d HTTP provider-spec checks; %d protobuf declaration and wire checks; %d example-only matches (schemas unavailable)\n", contracts["openapi_3_0_validation_rules"], contracts["openapi_3_0_provider_contract"], contracts["protobuf_rules_and_observed_wire"], contracts["unavailable"])
 	for _, finding := range report.Findings {
 		fmt.Fprintf(&text, "\n[%s] %s", finding.Kind, finding.Operation)
 		if finding.Operation != "" {

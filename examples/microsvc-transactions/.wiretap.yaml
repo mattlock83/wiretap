@@ -11,4 +11,5 @@ dependencies:
   accounts:
     url: http://accounts:8080
     kind: mock
+    # Optional: this demo opts in to mock validation and coverage.
     schema: schemas/accounts.yaml

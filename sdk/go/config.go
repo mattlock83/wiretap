@@ -21,12 +21,14 @@ type SchemaSource struct {
 	Content string `json:"content,omitempty"`
 }
 type Dependency struct {
-	AssetID        string   `json:"asset_id"`
-	AssetName      string   `json:"asset_name,omitempty"`
-	UpstreamURL    string   `json:"upstream_url"`
-	UpstreamKind   string   `json:"upstream_kind,omitempty"`
-	Protocol       string   `json:"protocol,omitempty"`
-	Schema         *Schema  `json:"schema,omitempty"`
-	Schemas        []Schema `json:"schemas,omitempty"`
-	SchemaRequired *bool    `json:"schema_required,omitempty"`
+	AssetID      string   `json:"asset_id"`
+	AssetName    string   `json:"asset_name,omitempty"`
+	UpstreamURL  string   `json:"upstream_url"`
+	UpstreamKind string   `json:"upstream_kind,omitempty"`
+	Protocol     string   `json:"protocol,omitempty"`
+	Schema       *Schema  `json:"schema,omitempty"`
+	Schemas      []Schema `json:"schemas,omitempty"`
+	// HTTP dependency schemas are optional by default. True requires one;
+	// supplied schemas always validate. gRPC still requires a contract.
+	SchemaRequired *bool `json:"schema_required,omitempty"`
 }

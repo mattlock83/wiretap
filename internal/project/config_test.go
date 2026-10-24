@@ -46,6 +46,49 @@ func TestLoadRejectsMistakesAndKeepsSpecsRequired(t *testing.T) {
 	}
 }
 
+func TestHTTPDependencySchemasAreOptionalWithoutWeakeningProvidedAPI(t *testing.T) {
+	root := t.TempDir()
+	cfg, err := Decode([]byte(`version: 1
+sut: {url: http://orders.test, schema: orders.yaml}
+dependencies:
+  inventory: {url: http://inventory.test, kind: mock}
+  sut: {url: http://another.test, kind: service}
+  supplied: {url: http://supplied.test, schema: supplied.yaml}
+  strict: {url: http://strict.test, schema: strict.yaml, schema_required: true}
+  grpc: {url: http://grpc.test, protocol: grpc}
+`), filepath.Join(root, ".wiretap.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.SUT.RequiresSchema() || cfg.SUT.SchemaRequired != nil {
+		t.Fatal("main SUT schema default changed")
+	}
+	for _, id := range []string{"inventory", "sut", "supplied"} {
+		api := cfg.Dependencies[id]
+		if api.RequiresSchema() || api.SchemaRequired == nil {
+			t.Fatalf("HTTP dependency %q did not resolve to optional: %+v", id, api)
+		}
+	}
+	if cfg.Dependencies["supplied"].Schema != filepath.Join(root, "supplied.yaml") || len(cfg.Dependencies["supplied"].Schemas("supplied", "dependency")) != 1 {
+		t.Fatal("optional mode discarded a supplied specification")
+	}
+	if !cfg.Dependencies["strict"].RequiresSchema() {
+		t.Fatal("explicit dependency requirement was ignored")
+	}
+	if !cfg.Dependencies["grpc"].RequiresSchema() || cfg.Dependencies["grpc"].SchemaRequired != nil {
+		t.Fatal("gRPC contract/reflection default changed")
+	}
+	for _, document := range []string{
+		"version: 1\nsut: {url: http://orders.test}\ndependencies:\n  inventory: {url: http://inventory.test}\n",
+		"version: 1\nsut: {schema: orders.yaml}\ndependencies:\n  inventory: {url: http://inventory.test, schema_required: true}\n",
+		"version: 1\nsut: {schema: orders.yaml}\ndependencies:\n  grpc: {url: http://grpc.test, protocol: grpc, schema_required: false}\n",
+	} {
+		if _, err := Decode([]byte(document), filepath.Join(root, ".wiretap.yaml")); err == nil {
+			t.Fatalf("accepted missing required contract: %s", document)
+		}
+	}
+}
+
 func TestApplicationConfiguration(t *testing.T) {
 	for _, identity := range []string{
 		`{name: Orders, id: orders-app, description: "Order processing"}`,

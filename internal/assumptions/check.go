@@ -24,7 +24,7 @@ import (
 	"github.com/mattlock83/wiretap/internal/postman"
 )
 
-const RulesVersion = "wiretap-assumptions-2"
+const RulesVersion = "wiretap-assumptions-3"
 
 // ErrInput identifies invalid, corrupt or inconsistent comparison inputs.
 var ErrInput = errors.New("invalid assumption-check input")

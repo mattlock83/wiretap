@@ -29,31 +29,41 @@ func verifyHTTPContracts(ctx context.Context, verifier *httpContractVerifier, co
 		return unavailable("provider " + provider.schemaProblem)
 	}
 	available := func(ref *artifact.SchemaRef) bool { return ref != nil && ref.Source.Type != "omitted" }
-	if !available(consumer.schema) && !available(provider.schema) {
+	consumerDeclared, providerDeclared := available(consumer.schema), available(provider.schema)
+	if !consumerDeclared && !providerDeclared {
 		return "unavailable", nil
 	}
-	if !available(consumer.schema) || !available(provider.schema) {
-		return unavailable("both consumer and provider frozen OpenAPI contracts are required when either side declares one; cannot compare validation rules")
+	if !providerDeclared {
+		return unavailable("the provider frozen OpenAPI contract is required to check the consumer's declared validation rules")
 	}
 	var rules [2]string
 	for i, entry := range []struct {
 		role string
 		item sample
 	}{{"consumer", consumer}, {"provider", provider}} {
-		contract, err := verifier.load(ctx, entry.item.schema)
+		ref, owner := entry.item.schema, entry.role
+		if !consumerDeclared {
+			// Dependency schemas are optional. The provider's contract validates
+			// both recorded examples without inventing consumer declarations.
+			ref, owner = provider.schema, "provider"
+		}
+		contract, err := verifier.load(ctx, ref)
 		if err != nil {
-			return unavailable(entry.role + " OpenAPI contract: " + err.Error())
+			return unavailable(owner + " OpenAPI contract: " + err.Error())
 		}
 		if err := contract.validate(ctx, entry.item.flow); err != nil {
 			if errors.Is(err, errHTTPContractUnavailable) {
 				return unavailable(entry.role + " OpenAPI validation: " + err.Error())
 			}
-			return "", &contractCheckProblem{"mismatch", "http_contract_violation", entry.role + " captured exchange violates its frozen OpenAPI contract: " + err.Error(), []string{"contract/validation"}}
+			return "", &contractCheckProblem{"mismatch", "http_contract_violation", entry.role + " captured exchange violates the " + owner + "'s frozen OpenAPI contract: " + err.Error(), []string{"contract/validation"}}
 		}
 		rules[i], err = contract.rules(entry.item.flow)
 		if err != nil {
 			return unavailable(entry.role + " OpenAPI rules: " + err.Error())
 		}
+	}
+	if !consumerDeclared {
+		return "openapi_3_0_provider_contract", nil
 	}
 	if rules[0] != rules[1] {
 		return "", &contractCheckProblem{"mismatch", "http_contract_mismatch", "consumer and provider OpenAPI validation rules differ for this exercised operation; rule drift is an error even when the captured values satisfy both contracts", jsonDifferencePaths(rules[0], rules[1], "contract")}

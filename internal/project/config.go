@@ -262,7 +262,7 @@ func Decode(raw []byte, path string) (*Config, error) {
 			return nil, err
 		}
 	}
-	resolveAPI := func(id string, a API) (API, error) {
+	resolveAPI := func(id string, a API, dependency bool) (API, error) {
 		a.URL, err = expand(a.URL)
 		if err != nil {
 			return a, err
@@ -272,6 +272,11 @@ func Decode(raw []byte, path string) (*Config, error) {
 		}
 		if a.Protocol != "http" && a.Protocol != "grpc" {
 			return a, fmt.Errorf("%s: protocol must be http or grpc", id)
+		}
+		// The provider owns the HTTP contract. Consumer captures can record
+		// mocks without copying it; the SUT's own specification stays required.
+		if dependency && a.Protocol == "http" && a.SchemaRequired == nil {
+			a.SchemaRequired = new(bool)
 		}
 		a.CaptureListen, err = expand(a.CaptureListen)
 		if err != nil {
@@ -377,12 +382,12 @@ func Decode(raw []byte, path string) (*Config, error) {
 			cfg.Outputs.PostmanOptions.GRPC[id] = target
 		}
 	}
-	cfg.SUT, err = resolveAPI("sut", cfg.SUT)
+	cfg.SUT, err = resolveAPI("sut", cfg.SUT, false)
 	if err != nil {
 		return nil, err
 	}
 	for _, id := range cfg.DependencyIDs() {
-		a, e := resolveAPI(id, cfg.Dependencies[id])
+		a, e := resolveAPI(id, cfg.Dependencies[id], true)
 		if e != nil {
 			return nil, e
 		}

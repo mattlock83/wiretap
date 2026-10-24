@@ -72,13 +72,14 @@ dependencies:
   inventory:
     url: http://127.0.0.1:9090
     kind: mock
-    schema: schemas/inventory.openapi.yaml
 ```
 
 The SUT is the system under test. Schema paths resolve relative to this file.
-OpenAPI is required per HTTP API; set `schema_required: false` only where a spec
-is deliberately absent. Such an API has unknown contract coverage. A supplied
-invalid spec fails setup. Omit `dependencies` for inbound-only capture.
+The main HTTP API requires OpenAPI by default. HTTP dependencies need no spec
+or opt-out flag; add `schema` to opt into their validation and contract coverage,
+or `schema_required: true` to require one. Without a dependency spec, calls and
+Postman examples are retained with unknown contract coverage. A supplied invalid
+spec fails setup. Omit `dependencies` for inbound-only capture.
 Use stable API IDs for later comparison across repositories.
 
 The managed runner adapters and Go's `Run` discover this configuration and

@@ -11,4 +11,5 @@ dependencies:
   inventory-service:
     url: ${DEPENDENCY_UPSTREAM_URL}
     kind: mock
+    # Optional: enable mock validation and coverage during capture.
     schema: schemas/inventory-openapi.yaml

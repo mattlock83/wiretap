@@ -114,6 +114,63 @@ func TestCLIAssumptionCheckRejectsDeclaredRuleDifferences(t *testing.T) {
 	}
 }
 
+func TestCLIAssumptionCheckUsesProviderSpecWithoutConsumerCopy(t *testing.T) {
+	spec := `openapi: 3.0.3
+info: {title: Inventory, version: '1'}
+paths:
+  /items:
+    get:
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [state, count, name, tags]
+                properties:
+                  state: {type: string, enum: [ready, pending]}
+                  count: {type: integer, minimum: 1, maximum: 5}
+                  name: {type: string, minLength: 2, maxLength: 5}
+                  tags: {type: array, minItems: 1, maxItems: 2, items: {type: string}}
+`
+	for _, scenario := range []struct {
+		name, body string
+		valid      bool
+	}{
+		{"valid", `{"state":"ready","count":3,"name":"item","tags":["a"]}`, true},
+		{"wrong type", `{"state":"ready","count":"3","name":"item","tags":["a"]}`, false},
+		{"enum", `{"state":"unknown","count":3,"name":"item","tags":["a"]}`, false},
+		{"string length", `{"state":"ready","count":3,"name":"toolong","tags":["a"]}`, false},
+		{"array length", `{"state":"ready","count":3,"name":"item","tags":[]}`, false},
+		{"numeric bound", `{"state":"ready","count":6,"name":"item","tags":["a"]}`, false},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			consumer := cliCheckArchive(t, true, "/items", 200, scenario.body)
+			provider := cliCheckArchiveWithContracts(t, false, "/items", 200, scenario.body, []artifact.SchemaRef{{ID: "inventory", Role: "sut", Type: "openapi", Source: artifact.SchemaSource{Type: "inline", Content: spec}}})
+			for _, mode := range []string{"consumer", "provider"} {
+				args := []string{"check", mode, "--consumer", consumer, "--provider", provider}
+				code, output := executeCapturingStdout(t, append(args, "--format", "json"))
+				var report assumptions.Report
+				if err := json.Unmarshal(output, &report); err != nil {
+					t.Fatalf("invalid report: %v\n%s", err, output)
+				}
+				if scenario.valid {
+					if code != 0 || !report.Compatible || len(report.Matches) != 1 || report.Matches[0].ContractCheck != "openapi_3_0_provider_contract" || report.RulesVersion != assumptions.RulesVersion {
+						t.Fatalf("provider-owned spec was not used, exit %d: %s", code, output)
+					}
+					code, output = executeCapturingStdout(t, args)
+					if code != 0 || !strings.Contains(string(output), "1 HTTP provider-spec checks") {
+						t.Fatalf("text report hides provider-spec assurance, exit %d: %s", code, output)
+					}
+				} else if code != 1 || report.Compatible || len(report.Findings) != 1 || report.Findings[0].Code != "http_contract_violation" {
+					t.Fatalf("provider contract violation passed in %s mode, exit %d: %s", mode, code, output)
+				}
+			}
+		})
+	}
+}
+
 func TestCLIAssumptionCheckBothViewpoints(t *testing.T) {
 	consumer := cliCheckArchive(t, true, "/items?limit=1", 200, `{"stock":3}`)
 	provider := cliCheckArchive(t, false, "/items?limit=1", 200, `{"stock":3.0}`)

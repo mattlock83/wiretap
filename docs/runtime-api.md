@@ -111,9 +111,10 @@ target cannot be changed while sessions are active.
 if needed, so lower-level consumers do not have to call `startRun` first.
 
 Omitted fields inherit project defaults. Supplied arrays replace the defaults.
-OpenAPI specs are required and validated for HTTP before the session starts; an API can
-explicitly allow an absent spec with `schema_required: false`. An invalid
-supplied spec always fails. gRPC boundaries require a Protobuf contract,
+The main HTTP API's OpenAPI spec is required by default; its explicit
+`schema_required: false` opt-out remains available. HTTP dependencies need no
+spec unless `schema_required: true` is set. Supplying one opts into validation
+and contract coverage; an invalid supplied spec always fails. gRPC boundaries require a Protobuf contract,
 configured with `protocol: grpc` and normally discovered through reflection.
 The `sut_protocol` and dependency `protocol` fields can be carried through
 the setup payload when inheriting project defaults. Capture uses synthetic data
@@ -139,12 +140,7 @@ and dummy secrets; retained traffic is unchanged.
     "asset_id": "inventory",
     "asset_name": "Inventory Service",
     "upstream_kind": "mock",
-    "upstream_url": "http://127.0.0.1:9090",
-    "schema": {
-      "id": "inventory-openapi",
-      "type": "openapi",
-      "source": {"type": "file", "path": "schemas/inventory.openapi.yaml"}
-    }
+    "upstream_url": "http://127.0.0.1:9090"
   }]
 }
 ```
@@ -168,8 +164,10 @@ Requests to `/__wiretap/dep/inventory/products/123` are forwarded to
 `http://127.0.0.1:9090/products/123`. Request methods, headers, bodies, query
 parameters, responses, and trailers retain the existing proxy's bounded-capture
 semantics. Wiretap does not start, configure, stub, or verify the upstream.
-Every HTTP dependency requires a readable, valid OpenAPI schema unless that
-dependency explicitly sets `schema_required: false`. Ordinary instrumented
+HTTP dependencies can capture without a schema or opt-out flag. Add `schema`
+or `schemas` to enable validation and contract coverage, or `schema_required: true`
+to require a spec. An omitted dependency schema produces skipped validation
+and unknown contract coverage. Ordinary instrumented
 clients use W3C trace context; custom clients can select an explicit session
 with `X-Wiretap-Session-Id` on requests to Wiretap.
 
@@ -256,7 +254,7 @@ Supply schemas at test setup so they are registered with the
 attempt before traffic is captured. The dependency gateway forwards traffic on
 the capture listener; your mock server owns response configuration and verification.
 
-With explicitly omitted schemas, `capture.schema_validation.status` is `partial` if
+With omitted schemas, `capture.schema_validation.status` is `partial` if
 other APIs were validated or `skipped` if all omitted their schemas. `skipped`
 lists the omitted schema IDs. Contract violations produce validation status
 `fail` without overwriting the recorded framework outcome.
