@@ -2,10 +2,24 @@ package main
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/mattlock83/wiretap/internal/core"
 )
+
+func TestApplyEnvRuntimeReadiness(t *testing.T) {
+	cfg := core.DefaultConfig()
+	path := filepath.Join(t.TempDir(), "ready.json")
+	t.Setenv("WIRETAP_HTTP_LISTEN", "127.0.0.1:0")
+	t.Setenv("WIRETAP_READY_FILE", path)
+	if err := applyEnv(&cfg); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.HTTP.ListenAddr != "127.0.0.1:0" || cfg.HTTP.ReadyFile != path {
+		t.Fatalf("managed runtime settings lost: %+v", cfg.HTTP)
+	}
+}
 
 func TestApplyEnvProxySettings(t *testing.T) {
 	cfg := core.DefaultConfig()

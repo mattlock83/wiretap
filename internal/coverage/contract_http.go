@@ -15,6 +15,7 @@ import (
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/getkin/kin-openapi/openapi3filter"
 	"github.com/mattlock83/wiretap/internal/artifact"
+	"github.com/mattlock83/wiretap/internal/openapivalidation"
 )
 
 type contractHTTPPlan struct {
@@ -306,7 +307,7 @@ func (b *contractBuilder) measureHTTP(spec *openapiSpec, plans map[string]*contr
 		}
 		var validationErr error
 		if phase == "request" {
-			validationErr = openapi3filter.ValidateRequest(context.Background(), input)
+			validationErr = openapivalidation.ValidateRequest(context.Background(), input)
 		} else {
 			validationErr = validateContractResponse(input, msg)
 		}
@@ -483,7 +484,7 @@ func validateContractResponse(input *openapi3filter.RequestValidationInput, msg 
 	if noBody && len(messageBytes(msg)) > 0 {
 		return fmt.Errorf("Response must not contain a body for HEAD or status 204/304")
 	}
-	return openapi3filter.ValidateResponse(context.Background(), &openapi3filter.ResponseValidationInput{RequestValidationInput: validationInput, Status: status, Header: contractHeaders(msg.Headers), Body: io.NopCloser(bytes.NewReader(messageBytes(msg))), Options: opts})
+	return openapivalidation.ValidateResponse(context.Background(), &openapi3filter.ResponseValidationInput{RequestValidationInput: validationInput, Status: status, Header: contractHeaders(msg.Headers), Body: io.NopCloser(bytes.NewReader(messageBytes(msg))), Options: opts})
 }
 func selectedMedia(media map[string]*ContractTarget, raw string) string {
 	mime := strings.TrimSpace(strings.SplitN(raw, ";", 2)[0])

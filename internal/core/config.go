@@ -17,6 +17,7 @@ type Config struct {
 
 type HTTPConfig struct {
 	ListenAddr   string
+	ReadyFile    string // Optional file publishing the bound control URL and PID.
 	ReadTimeout  time.Duration
 	WriteTimeout time.Duration
 	IdleTimeout  time.Duration

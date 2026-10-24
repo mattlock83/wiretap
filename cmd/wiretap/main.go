@@ -27,6 +27,9 @@ func applyEnv(cfg *core.Config) error {
 	if v := strings.TrimSpace(os.Getenv("WIRETAP_HTTP_LISTEN")); v != "" {
 		cfg.HTTP.ListenAddr = v
 	}
+	if v := strings.TrimSpace(os.Getenv("WIRETAP_READY_FILE")); v != "" {
+		cfg.HTTP.ReadyFile = v
+	}
 	if v := strings.TrimSpace(os.Getenv("WIRETAP_LOG_FORMAT")); v != "" {
 		cfg.Log.Format = strings.ToLower(v)
 	}

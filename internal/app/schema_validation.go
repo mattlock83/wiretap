@@ -19,6 +19,7 @@ import (
 	"github.com/getkin/kin-openapi/routers/legacy"
 	"github.com/mattlock83/wiretap/internal/artifact"
 	"github.com/mattlock83/wiretap/internal/grpccontract"
+	"github.com/mattlock83/wiretap/internal/openapivalidation"
 )
 
 type openapiSpec struct {
@@ -365,7 +366,7 @@ func validateHTTPAgainstSpec(flow artifact.Flow, spec openapiSpec) (error, error
 			ExcludeRequestBody: msg.Body != nil && msg.Body.Truncated,
 		},
 	}
-	requestErr := openapi3filter.ValidateRequest(context.Background(), input)
+	requestErr := openapivalidation.ValidateRequest(context.Background(), input)
 
 	respBody := bodyBytes(respMsg.Body)
 	resp := &openapi3filter.ResponseValidationInput{
@@ -379,7 +380,7 @@ func validateHTTPAgainstSpec(flow artifact.Flow, spec openapiSpec) (error, error
 			ExcludeResponseBody:   respMsg.Body != nil && respMsg.Body.Truncated,
 		},
 	}
-	return requestErr, openapi3filter.ValidateResponse(context.Background(), resp)
+	return requestErr, openapivalidation.ValidateResponse(context.Background(), resp)
 }
 
 func loadOpenAPISpec(ref artifact.SchemaRef) (openapiSpec, error) {

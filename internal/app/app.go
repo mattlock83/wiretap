@@ -194,7 +194,7 @@ func New(deps Deps) (*App, error) {
 	return app, nil
 }
 
-func (a *App) Run(ctx context.Context) error {
+func (a *App) Run(ctx context.Context) (runErr error) {
 	if a == nil || a.server == nil {
 		return errors.New("app not initialized")
 	}
@@ -202,9 +202,15 @@ func (a *App) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	defer listener.Close()
+	removeReadiness, err := publishReadiness(a.cfg.HTTP.ReadyFile, listener.Addr())
+	if err != nil {
+		return err
+	}
+	defer func() { runErr = errors.Join(runErr, removeReadiness()) }()
 	errCh := make(chan error, 1)
 	go func() {
-		a.logger.Info("http server starting", "addr", a.server.Addr)
+		a.logger.Info("http server starting", "addr", listener.Addr().String())
 		errCh <- a.server.Serve(listener)
 	}()
 

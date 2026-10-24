@@ -45,6 +45,13 @@ relative to the process's working directory. Additional capture and proxy
 settings are listed below. Per-test SDK/API values override project test
 defaults; an explicitly supplied dependency list replaces that list.
 
+`WIRETAP_READY_FILE` optionally publishes the bound control address and process
+ID as JSON (`control_url` and `pid`). This supports starting the control listener
+on `127.0.0.1:0` without reserving a port first. Supply a path in a private,
+existing directory owned by the launching harness. Wiretap atomically creates
+the file with mode `0600`, fails startup if it cannot publish it, and removes it
+on shutdown.
+
 Optional `application` metadata records the SUT's human-readable `name`, stable
 `id` and optional `description` in the capture bundle. For example, the
 application above exports a Postman collection named `Orders - orders-app`.
