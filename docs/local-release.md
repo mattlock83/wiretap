@@ -72,7 +72,9 @@ registry/cache; nothing is published.
 
 The runner smoke additionally installs the packed SDK with Jest, Playwright Test
 and Mocha in a clean project. It checks retries, failing cleanup hooks, preserved
-user fixtures, coverage and Postman parsing with the official Node library.
+user fixtures, coverage and Postman conformance to the pinned official HTTP
+schema. Exported request/response content is compared with raw archive records
+and retained payload files.
 It also type-checks CommonJS and ESM consumers with strict TypeScript settings.
 Playwright API tests do not need a browser installation. The Linux CI lane
 additionally runs the [browser example](../examples/playwright-runner/README.md)

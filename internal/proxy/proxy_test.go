@@ -59,6 +59,41 @@ func TestHTTPPassthrough(t *testing.T) {
 	}
 }
 
+func TestReverseProxyPreservesEscapedPathsAndQueries(t *testing.T) {
+	for _, tc := range []struct {
+		name, target, request, want string
+	}{
+		{"base path and query", "/base?fixed=yes", "/items%2Fidentifier?expand=true", "/base/items%2Fidentifier?fixed=yes&expand=true"},
+		{"escaped base path", "/base%2Fprefix?tag=a", "/items%2Fidentifier?tag=b&tag=c", "/base%2Fprefix/items%2Fidentifier?tag=a&tag=b&tag=c"},
+		{"escaped base suffix", "/base%2F", "/items%2Fidentifier", "/base%2F/items%2Fidentifier"},
+		{"trailing separator", "/base/", "/items%2Fidentifier", "/base/items%2Fidentifier"},
+		{"root target", "", "/items%2Fidentifier?expand=true", "/items%2Fidentifier?expand=true"},
+		{"target query only", "/base?fixed=yes", "/items", "/base/items?fixed=yes"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_, _ = io.WriteString(w, r.RequestURI)
+			}))
+			defer upstream.Close()
+			recorder := &recordingRecorder{exchanges: make(chan HTTPExchange, 1)}
+			server := NewServer(Config{Mode: ModePassthrough, ReverseTarget: upstream.URL + tc.target, Recorder: recorder})
+			response := httptest.NewRecorder()
+			server.ServeHTTP(response, httptest.NewRequest(http.MethodGet, tc.request, nil))
+			if response.Code != http.StatusOK || response.Body.String() != tc.want {
+				t.Fatalf("upstream request = %q (status %d), want %q", response.Body.String(), response.Code, tc.want)
+			}
+			select {
+			case exchange := <-recorder.exchanges:
+				if exchange.URL != upstream.URL+tc.want {
+					t.Fatalf("recorded URL = %q, want %q", exchange.URL, upstream.URL+tc.want)
+				}
+			default:
+				t.Fatal("forwarded request was not recorded")
+			}
+		})
+	}
+}
+
 func TestHTTPProxyCaptureLimitForwardsCompleteBodies(t *testing.T) {
 	requestBody := []byte("request-body-is-larger-than-the-cap")
 	responseBody := []byte("response-body-is-also-larger-than-the-cap")

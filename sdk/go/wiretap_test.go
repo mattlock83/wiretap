@@ -46,6 +46,57 @@ func TestApplicationMetadataIsForwardedOrLeftToRuntimeDefaults(t *testing.T) {
 	}
 }
 
+func TestStartTestPreservesNilEmptyAndPopulatedOverrides(t *testing.T) {
+	setups := make(chan map[string]json.RawMessage, 1)
+	core := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/setupTest" {
+			var payload map[string]json.RawMessage
+			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+				t.Error(err)
+			}
+			setups <- payload
+			fmt.Fprint(w, `{"session_id":"overrides-test"}`)
+			return
+		}
+		fmt.Fprint(w, `{"capture":{"testcase":{"status":"pass"}}}`)
+	}))
+	defer core.Close()
+	runtime := Runtime{BaseURL: core.URL}
+	schema := Schema{ID: "orders", Type: "openapi", Source: SchemaSource{Type: "file", Path: "orders.yaml"}}
+	dependency := Dependency{AssetID: "inventory", UpstreamURL: "http://inventory"}
+	for _, tc := range []struct {
+		name    string
+		options TestOptions
+		present bool
+		length  int
+	}{
+		{name: "nil inherits"},
+		{name: "empty clears", options: TestOptions{Schemas: []Schema{}, Dependencies: []Dependency{}}, present: true},
+		{name: "populated replaces", options: TestOptions{Schemas: []Schema{schema}, Dependencies: []Dependency{dependency}}, present: true, length: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			runtime.StartTest(t, tc.options)
+			payload := <-setups
+			for _, key := range []string{"schemas", "dependencies"} {
+				value, present := payload[key]
+				if present != tc.present {
+					t.Fatalf("%s presence = %v, want %v: %s", key, present, tc.present, value)
+				}
+				if !present {
+					continue
+				}
+				var list []json.RawMessage
+				if err := json.Unmarshal(value, &list); err != nil || list == nil || len(list) != tc.length {
+					t.Fatalf("%s should contain %d entries: %s (%v)", key, tc.length, value, err)
+				}
+			}
+			if len(payload["name"]) == 0 || len(payload["trace_context"]) == 0 {
+				t.Fatalf("setup payload lost test identity or tracing: %#v", payload)
+			}
+		})
+	}
+}
+
 func TestParallelTestsUseExistingClientsWithSeparateRoots(t *testing.T) {
 	var mu sync.Mutex
 	roots := map[string]string{}

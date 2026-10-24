@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/mattlock83/wiretap/internal/archiveoutput"
 	"github.com/mattlock83/wiretap/internal/postman"
 )
 
@@ -88,8 +89,17 @@ func exportPostmanWithOptions(bundlePath, sutName, outputPath, outputDir string,
 		}
 		files = append(files, outputFile{path: filepath.Join(base, "wiretap-postman-diagnostics.json"), relative: "wiretap-postman-diagnostics.json", data: append(data, '\n')})
 	}
+	guard, err := archiveoutput.New(bundlePath)
+	if err != nil {
+		return err
+	}
 	seen := map[string]bool{}
-	for _, file := range files {
+	for i := range files {
+		file := &files[i]
+		file.path, err = archiveOutputDestination(guard, file.path)
+		if err != nil {
+			return err
+		}
 		key := strings.ToLower(filepath.Clean(file.path))
 		if seen[key] {
 			return fmt.Errorf("%w: Postman output filename collision: %s", errUsage, file.path)

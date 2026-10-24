@@ -13,6 +13,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/http/httputil"
 	"net/url"
 	"strings"
 	"sync"
@@ -362,23 +363,8 @@ func (s *Server) handleHTTP(w http.ResponseWriter, r *http.Request) {
 		sessionID = route.SessionID
 		channel = "sut_to_dependency"
 		assetID = route.AssetID
-		req.URL.Scheme = parsed.Scheme
-		req.URL.Host = parsed.Host
-		req.URL.Path = strings.TrimSuffix(parsed.Path, "/") + route.Path
-		req.URL.RawPath = ""
-		if route.RawPath != "" {
-			joinedRawPath := strings.TrimSuffix(parsed.EscapedPath(), "/") + route.RawPath
-			if joinedRawPath != (&url.URL{Path: req.URL.Path}).EscapedPath() {
-				req.URL.RawPath = joinedRawPath
-			}
-		}
-		if parsed.RawQuery != "" {
-			if req.URL.RawQuery == "" {
-				req.URL.RawQuery = parsed.RawQuery
-			} else {
-				req.URL.RawQuery = parsed.RawQuery + "&" + req.URL.RawQuery
-			}
-		}
+		req.URL.Path, req.URL.RawPath = route.Path, route.RawPath
+		(&httputil.ProxyRequest{Out: req}).SetURL(parsed)
 		req.Host = parsed.Host
 	}
 
@@ -395,9 +381,7 @@ func (s *Server) handleHTTP(w http.ResponseWriter, r *http.Request) {
 			writeProxyError(w, http.StatusBadGateway, err)
 			return
 		}
-		req.URL.Scheme = parsed.Scheme
-		req.URL.Host = parsed.Host
-		req.URL.Path = strings.TrimSuffix(parsed.Path, "/") + req.URL.Path
+		(&httputil.ProxyRequest{Out: req}).SetURL(parsed)
 		req.Host = parsed.Host
 	}
 	req.RequestURI = ""

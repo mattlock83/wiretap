@@ -9,6 +9,7 @@ import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createHTTPValidator, assertCapturedHTTP } from '../tests/postman-compat/http-validation.cjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 assert.ok(process.argv.length === 2 || (process.argv.length === 4 && process.argv[2] === '--binary'),
@@ -204,12 +205,12 @@ try {
   await fs.mkdir(consumer);
   await fs.writeFile(path.join(consumer, 'package.json'), JSON.stringify({ name: 'wiretap-runner-consumer', version: '1.0.0', private: true }));
   await mustRun('npm', ['install', '--ignore-scripts', '--no-audit', '--no-fund', path.join(scratch, packed.filename),
-    'jest@30.5.2', 'mocha@12.0.3', '@playwright/test@1.64.1', 'postman-collection@5.3.1',
+    'jest@30.5.2', 'mocha@12.0.3', '@playwright/test@1.64.1', 'ajv@8.20.0',
     'typescript@7.0.2', '@types/node@26.6.5', '@types/mocha@10.0.10'],
   { cwd: consumer, env: { ...process.env, PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1' } });
   const require = createRequire(path.join(consumer, 'package.json'));
   const installation = await fs.realpath(path.join(consumer, 'node_modules'));
-  for (const module of ['@wiretap/sdk', '@wiretap/sdk/jest', '@wiretap/sdk/mocha', '@wiretap/sdk/playwright', 'jest', 'mocha', '@playwright/test']) {
+  for (const module of ['@wiretap/sdk', '@wiretap/sdk/jest', '@wiretap/sdk/mocha', '@wiretap/sdk/playwright', 'jest', 'mocha', '@playwright/test', 'ajv']) {
     // Resolve junctions and compare path components; Windows paths can differ
     // in drive-letter or directory casing while identifying the same install.
     const resolved = await fs.realpath(require.resolve(module));
@@ -246,7 +247,7 @@ try {
   const compiler = path.resolve(path.dirname(typescriptPackage), (await readJSON(typescriptPackage)).bin.tsc);
   await mustRun(process.execPath, [compiler, '--project', 'tsconfig.json'], { cwd: consumer });
   console.log('Clean CommonJS/ESM TypeScript consumers passed strict NodeNext checks; plain JavaScript loads no optional runners.');
-  const { Collection } = require('postman-collection');
+  const validateHTTP = createHTTPValidator(require('ajv'));
   for (const runner of ['jest', 'mocha', 'playwright']) {
     const directory = path.join(consumer, runner);
     await fs.mkdir(directory);
@@ -373,18 +374,16 @@ try {
     let requests = 0;
     assert.equal(receipt.outputs.postman.length, 1);
     for (const filename of receipt.outputs.postman) {
-      const original = await readJSON(filename);
-      const imported = new Collection(original);
-      for (const folder of original.item) {
-        const parsed = imported.items.one(folder.id);
-        assert.equal(parsed.items.count(), folder.item.length);
-        for (const [index, item] of folder.item.entries()) {
-          const roundTrip = parsed.items.idx(index);
-          assert.equal(roundTrip.request.method, item.request.method);
-          assert.equal(roundTrip.request.url.toString(), item.request.url);
-          assert.deepEqual(roundTrip.request.body?.toJSON(), item.request.body);
-          assert.deepEqual(roundTrip.responses.all().map(response => [response.code, response.body]), item.response.map(response => [response.code, response.body]));
-          requests++;
+      const collection = validateHTTP(await readJSON(filename));
+      requests += assertCapturedHTTP(collection, attempts, receipt.bundle_path);
+      for (const folder of collection.item) {
+        for (const item of folder.item) {
+          assert.equal(item.request.method, 'GET');
+          assert.equal(item.response[0].code, 200);
+          const id = new URL(item.request.url).pathname.split('/').at(-1);
+          const response = JSON.parse(item.response[0].body);
+          assert.equal(response.id, id);
+          assert.equal(response.label, `Item ${id}`);
         }
       }
     }

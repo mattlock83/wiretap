@@ -118,7 +118,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Compare unchanged external Jest 29 tests and parse their Postman export
+      - name: Compare unchanged external Jest 29 tests and validate their Postman export
         run: node examples/existing-jest/run.mjs artifacts/existing-jest
       - uses: actions/upload-artifact@v4
         if: always()

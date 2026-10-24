@@ -20,7 +20,7 @@ See [schema defaults](../docs/configuration.md#schema-defaults-by-boundary).
 
 | Example | Demonstrates | Requirements |
 | --- | --- | --- |
-| [Existing Jest suite](existing-jest/README.md) | Pinned external Express API, 120 unchanged tests, automatic SDK setup and Postman parser checks. | Git, Go 1.26+, Node.js 22+. |
+| [Existing Jest suite](existing-jest/README.md) | Pinned external Express API, 120 unchanged tests, automatic SDK setup and Postman schema/content checks. | Git, Go 1.26+, Node.js 22+. |
 | [Mocha](mocha-runner/README.md) | Config wrapper, ordinary tests/hooks and an existing shared client; automatic coverage and Postman exports. | Go 1.26+, Node.js 22.12+. |
 | [Playwright Test](playwright-runner/README.md) | Copyable Todo API suite with managed capture, ordinary request fixtures and coverage exports. | Go 1.26+, Node.js 22+, Playwright Test 1.64.1+ within 1.x. |
 | [Go test suite](go-suite/README.md) | Two lifecycle hooks, an existing HTTP handler/client, final test outcomes and automatic exports. | Go 1.26+. |

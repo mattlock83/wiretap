@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { createHTTPValidator, assertCapturedHTTP } from '../../tests/postman-compat/http-validation.cjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '../..');
@@ -51,7 +52,7 @@ assert.equal(baseline.code, 1, 'the pinned upstream has known failing assertions
 
 await run('go', ['build', '-mod=readonly', '-o', binary, './cmd/wiretap']);
 const packed = JSON.parse((await run('npm', ['pack', '--ignore-scripts', '--json', '--pack-destination', directory], { cwd: path.join(root, 'sdk/js') })).stdout)[0];
-await run('npm', ['install', '--save-dev', '--ignore-scripts', '--no-audit', '--no-fund', path.join(directory, packed.filename), 'postman-collection@5.3.1'],
+await run('npm', ['install', '--save-dev', '--ignore-scripts', '--no-audit', '--no-fund', path.join(directory, packed.filename), 'ajv@8.20.0'],
   { cwd: project, log: 'sdk-install.log' });
 await fs.cp(path.join(here, 'overlay'), project, { recursive: true });
 const clientPath = path.join(project, 'utils/apiUtility.js');
@@ -81,26 +82,14 @@ assert.equal(new Set(attempts.map(test => test.capture.testcase.identity.id)).si
 const summary = await fs.readFile(receipt.outputs.coverage.text, 'utf8');
 assert.match(summary, /property-api: 10\/10 operations exercised/);
 const require = createRequire(path.join(project, 'package.json'));
-const { Collection } = require('postman-collection');
+const validateHTTP = createHTTPValidator(require('ajv'));
 let requestCount = 0;
 for (const file of receipt.outputs.postman) {
-  const original = await readJSON(file);
-  const collection = new Collection(original);
-  for (const folder of original.item) {
-    const importedFolder = collection.items.one(folder.id);
-    assert.equal(importedFolder.items.count(), folder.item.length);
-    for (const [index, item] of folder.item.entries()) {
-      const imported = importedFolder.items.idx(index);
-      assert.equal(imported.request.method, item.request.method);
-      assert.equal(imported.request.url.toString(), item.request.url);
-      assert.deepEqual(imported.request.body?.toJSON(), item.request.body);
-      assert.deepEqual(imported.responses.all().map(response => [response.code, response.body]), item.response.map(response => [response.code, response.body]));
-      requestCount++;
-    }
-  }
+  const collection = validateHTTP(await readJSON(file));
+  requestCount += assertCapturedHTTP(collection, attempts, receipt.bundle_path);
 }
 assert.ok(requestCount >= 120);
 console.log(`Unchanged: 120 tests, 63 passed, 57 upstream failures. All 10 API operations captured.`);
-console.log(`Official Postman SDK parsed ${requestCount} requests with request/response data preserved.`);
+console.log(`Official Postman schema validated ${requestCount} requests; content matches captured requests and responses.`);
 console.log(`Receipt: ${path.join(project, 'artifacts/wiretap/last-run.json')}`);
 console.log(summary);

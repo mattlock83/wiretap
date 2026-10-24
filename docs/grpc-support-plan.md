@@ -57,8 +57,8 @@ Postman exports use native gRPC v3 JSON for all four RPC shapes. Complete error
 responses remain examples; transport/capture gaps fail strict export or appear
 as explicit omissions when requested. The
 [compatibility harness](../tests/postman-compat/README.md) verifies generated JSON
-and round trips. Desktop import and imported-collection invocation remain
-unverified. See the [export guide](artifacts.md).
+and captured-content preservation. Desktop import and imported-collection
+invocation remain unverified. See the [export guide](artifacts.md).
 
 ## Verification and limits
 

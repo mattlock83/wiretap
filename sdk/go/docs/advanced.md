@@ -137,7 +137,11 @@ See the [gRPC guide](../../../docs/grpc-user-guide.md).
 ### HTTP dependency schema options
 
 For HTTP, `TestOptions.Schemas` and `TestOptions.Dependencies` accept typed
-`Schema` and `Dependency` overrides. `SchemaSource` supports file, URL and inline content. The
+`Schema` and `Dependency` overrides. Nil slices inherit the project's defaults;
+non-nil empty slices (`[]wiretap.Schema{}` or `[]wiretap.Dependency{}`) clear them
+for that test. Clearing the SUT schemas also requires `SchemaRequired` set to
+false when the project requires a schema. `SchemaSource` supports file, URL and
+inline content. The
 returned `Dependencies` map contains capture URLs. Point the SUT's downstream
 clients at those URLs in your shared test setup; declaring a dependency does not
 reroute an application's existing clients. Managed runtimes choose available

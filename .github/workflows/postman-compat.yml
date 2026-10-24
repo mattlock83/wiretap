@@ -2,10 +2,10 @@ name: Postman export compatibility
 
 on:
   pull_request:
-    paths: ['.github/workflows/postman-compat.yml', 'go.mod', 'go.sum', 'internal/postman/**', 'internal/bundle/**', 'internal/artifact/**', 'internal/grpccontract/**', 'examples/grpc-streaming/fixture/**', 'tests/postman-compat/**']
+    paths: ['.github/workflows/postman-compat.yml', 'go.mod', 'go.sum', 'internal/postman/**', 'internal/bundle/**', 'internal/artifact/**', 'internal/grpccontract/**', 'examples/grpc-streaming/fixture/**', 'tests/postman-compat/**', 'scripts/runner-smoke.mjs', 'examples/existing-jest/**']
   push:
     branches: [main]
-    paths: ['.github/workflows/postman-compat.yml', 'go.mod', 'go.sum', 'internal/postman/**', 'internal/bundle/**', 'internal/artifact/**', 'internal/grpccontract/**', 'examples/grpc-streaming/fixture/**', 'tests/postman-compat/**']
+    paths: ['.github/workflows/postman-compat.yml', 'go.mod', 'go.sum', 'internal/postman/**', 'internal/bundle/**', 'internal/artifact/**', 'internal/grpccontract/**', 'examples/grpc-streaming/fixture/**', 'tests/postman-compat/**', 'scripts/runner-smoke.mjs', 'examples/existing-jest/**']
   workflow_dispatch:
 
 permissions:
@@ -26,4 +26,5 @@ jobs:
           cache: npm
           cache-dependency-path: tests/postman-compat/package-lock.json
       - run: npm ci --prefix tests/postman-compat
+      - run: npm audit --prefix tests/postman-compat --audit-level=low
       - run: npm test --prefix tests/postman-compat

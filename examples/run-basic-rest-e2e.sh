@@ -40,7 +40,14 @@ SUT_PORT="${SUT_PORT:-$(pick_unique_port "${USED_PORTS}")}"
 USED_PORTS="${USED_PORTS} ${SUT_PORT}"
 DEPENDENCY_PORT="${DEPENDENCY_PORT:-$(pick_unique_port "${USED_PORTS}")}"
 
-BUILD_DIR="${BUILD_DIR:-$(mktemp -d)}"
+# An inherited build directory belongs to the caller. Only remove the temporary
+# child created for this run, including when a build fails.
+if [[ -n "${BUILD_DIR:-}" ]]; then
+  mkdir -p "$BUILD_DIR"
+  BUILD_DIR="$(mktemp -d "$(cd "$BUILD_DIR" && pwd)/wiretap-basic-rest.XXXXXX")"
+else
+  BUILD_DIR="$(mktemp -d)"
+fi
 
 cleanup() {
   if [[ -n "${WIRETAP_PID:-}" ]]; then

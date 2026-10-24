@@ -189,3 +189,66 @@ service Health {rpc Check(HealthCheckRequest) returns (HealthCheckResponse);}
 		t.Fatalf("Postman flag accepted for JSON, got %d", code)
 	}
 }
+
+func TestCLIPostmanProtectsCompanionsAndDiagnosticsBeforeWriting(t *testing.T) {
+	for _, target := range []string{"companion", "diagnostics"} {
+		for _, kind := range []string{"symlink", "hardlink"} {
+			t.Run(target+"/"+kind, func(t *testing.T) {
+				root := postmanGRPCBundleFixture(t, target == "diagnostics", target == "diagnostics")
+				options := postman.Options{OmitIncomplete: target == "diagnostics"}
+				relative := "wiretap-postman-diagnostics.json"
+				if target == "companion" {
+					protoRoot := t.TempDir()
+					source := `syntax = "proto3";
+package grpc.health.v1;
+message HealthCheckRequest {string service=1;}
+message HealthCheckResponse {enum ServingStatus {UNKNOWN=0; SERVING=1; NOT_SERVING=2; SERVICE_UNKNOWN=3;} ServingStatus status=1;}
+service Health {rpc Check(HealthCheckRequest) returns (HealthCheckResponse);}
+`
+					if err := os.WriteFile(filepath.Join(protoRoot, "health.proto"), []byte(source), 0600); err != nil {
+						t.Fatal(err)
+					}
+					options.GRPC = map[string]postman.GRPCTarget{"sut": {ProtoRoot: protoRoot, ProtoFile: "health.proto"}}
+				}
+				generated, err := postman.GenerateAllWithOptions(root, "", options)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if target == "companion" {
+					if len(generated.Exports[0].Files) == 0 {
+						t.Fatal("fixture did not produce a proto companion")
+					}
+					relative = generated.Exports[0].Files[0].Path
+				}
+				directory := t.TempDir()
+				for _, export := range generated.Exports {
+					if err := os.WriteFile(filepath.Join(directory, export.Filename), []byte("keep"), 0644); err != nil {
+						t.Fatal(err)
+					}
+				}
+				output := filepath.Join(directory, filepath.FromSlash(relative))
+				if err := os.MkdirAll(filepath.Dir(output), 0755); err != nil {
+					t.Fatal(err)
+				}
+				link := os.Symlink
+				if kind == "hardlink" {
+					link = os.Link
+				}
+				if err := link(filepath.Join(root, "bundle.json"), output); err != nil {
+					t.Skip(err)
+				}
+				if err := exportPostmanWithOptions(root, "", "", directory, options); err == nil {
+					t.Fatal("accepted linked source destination")
+				}
+				for _, export := range generated.Exports {
+					if data, err := os.ReadFile(filepath.Join(directory, export.Filename)); err != nil || string(data) != "keep" {
+						t.Fatalf("changed collection before validating companion/diagnostics: %q %v", data, err)
+					}
+				}
+				if _, _, err := bundle.Load(root); err != nil {
+					t.Fatalf("changed source archive: %v", err)
+				}
+			})
+		}
+	}
+}

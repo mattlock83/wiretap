@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"flag"
@@ -9,6 +10,7 @@ import (
 	"strings"
 
 	"encoding/json"
+	"github.com/mattlock83/wiretap/internal/archiveoutput"
 	"github.com/mattlock83/wiretap/internal/coverage"
 	"github.com/mattlock83/wiretap/internal/postman"
 	"github.com/mattlock83/wiretap/internal/runoutput"
@@ -93,20 +95,20 @@ func reportCommand(args []string) error {
 	if err != nil {
 		return err
 	}
-	var out *os.File
 	if outputPath == "" {
-		out = os.Stdout
-	} else {
-		file, err := os.Create(outputPath)
-		if err != nil {
-			return err
-		}
-		defer file.Close()
-		out = file
+		return coverage.WriteReport(os.Stdout, report, format)
 	}
-
-	if err := coverage.WriteReport(out, report, format); err != nil {
+	guard, err := archiveoutput.New(bundlePath)
+	if err != nil {
 		return err
 	}
-	return nil
+	outputPath, err = archiveOutputDestination(guard, outputPath)
+	if err != nil {
+		return err
+	}
+	var data bytes.Buffer
+	if err := coverage.WriteReport(&data, report, format); err != nil {
+		return err
+	}
+	return writeArchiveReport(outputPath, data.Bytes())
 }

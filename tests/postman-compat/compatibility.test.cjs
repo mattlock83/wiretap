@@ -4,8 +4,8 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { before, after, test } = require('node:test');
-const { Collection } = require('postman-collection');
 const Ajv = require('ajv');
+const { createHTTPValidator, headerValues } = require('./http-validation.cjs');
 
 const root = path.resolve(__dirname, '../..');
 const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'wiretap-postman-compat-'));
@@ -19,56 +19,42 @@ before(() => {
 });
 after(() => fs.rmSync(temporary, { recursive: true, force: true }));
 
-const headers = entries => entries.map(({ key, value }) => ({ key, value }));
-function httpProjection(collection) {
-  const sdk = new Collection(collection);
-  return {
-    name: sdk.name,
-    behavior: sdk.toJSON().protocolProfileBehavior,
-    folders: sdk.items.all().map(folder => ({
-      id: folder.id, name: folder.name,
-      requests: folder.items.all().map(item => ({
-        method: item.request.method,
-        url: item.request.url.toString(),
-        body: item.request.body?.toJSON(),
-        headers: headers(item.request.headers.toJSON()),
-        examples: item.responses.all().map(response => ({
-          code: response.code, body: response.body, headers: headers(response.headers.toJSON()),
-          requestURL: response.originalRequest.url.toString(),
-          requestBody: response.originalRequest.body?.toJSON(),
-        })),
-        scripts: item.events.toJSON().map(event => ({ listen: event.listen, exec: event.script.exec })),
-      })),
-    })),
-  };
-}
-
-test('official Postman SDK parses and round-trips actual Go HTTP exports without changing replay data', () => {
-  const sdk = new Collection(http);
-  const projection = httpProjection(http);
-  assert.deepEqual(httpProjection(sdk.toJSON()), projection);
-  const source = http.item.find(folder => folder.id === 'attempt-http').item[0];
-  const imported = projection.folders.find(folder => folder.id === 'attempt-http').requests[0];
-  assert.equal(imported.method, source.request.method);
-  assert.equal(imported.url, source.request.url);
-  assert.deepEqual(imported.body, source.request.body);
-  assert.deepEqual(imported.headers, source.request.header);
-  assert.equal(imported.examples[0].code, 201);
-  assert.equal(imported.examples[0].body, source.response[0].body);
-  assert.deepEqual(imported.examples[0].headers, source.response[0].header);
-  assert.deepEqual(imported.examples[0].requestBody, source.request.body);
-  assert.equal(imported.examples[0].requestURL, source.request.url);
-  assert.deepEqual(Buffer.from(imported.body.file.content, 'base64'), Buffer.from([0, 255, 1, 128]));
-  assert.deepEqual(Buffer.from(imported.examples[0].body, 'base64'), Buffer.from([255, 0, 1]));
-  assert.match(imported.scripts[0].exec.join('\n'), /pm.response.to.have.status\(201\)/);
-  assert.deepEqual(projection.behavior, http.protocolProfileBehavior);
+test('actual Go HTTP export satisfies the official v2.1 schema and preserves known fixture data', () => {
+  createHTTPValidator(Ajv)(http);
+  assert.equal(http.info.name, 'Compatibility - compat');
+  assert.deepEqual(http.item.map(folder => folder.id).sort(), [
+    'attempt-Chat', 'attempt-Collect', 'attempt-Echo', 'attempt-Watch', 'attempt-error', 'attempt-http', 'attempt-retry',
+  ]);
+  assert.equal(new Set(http.item.map(folder => folder.name)).size, 7);
+  for (const folder of http.item) assert.equal(folder.item.length, folder.id === 'attempt-http' ? 1 : 0);
+  const item = http.item.find(folder => folder.id === 'attempt-http').item[0];
+  assert.equal(item.request.method, 'POST');
+  assert.equal(item.request.url, 'http://sut:8080/bytes?x=a&x=b&encoded=%2F');
+  assert.deepEqual(item.request.body, { mode: 'file', file: { src: null, content: 'AP8BgA==' } });
+  assert.deepEqual(Buffer.from(item.request.body.file.content, 'base64'), Buffer.from([0, 255, 1, 128]));
+  assert.deepEqual(headerValues(item.request.header), {
+    'content-type': ['application/octet-stream'], 'x-repeated': ['one', 'two'],
+  });
+  assert.equal(item.response.length, 1);
+  const response = item.response[0];
+  assert.equal(response.code, 201);
+  assert.equal(response.body, '/wAB');
+  assert.deepEqual(Buffer.from(response.body, 'base64'), Buffer.from([255, 0, 1]));
+  assert.deepEqual(headerValues(response.header), { 'set-cookie': ['a=1', 'b=2'] });
+  assert.deepEqual(response.originalRequest, item.request);
+  assert.deepEqual(item.event, [{ listen: 'test', script: { type: 'text/javascript', exec: [
+    'pm.test("Status code is 201", function () {', '    pm.response.to.have.status(201);', '});',
+  ] } }]);
+  assert.deepEqual(http.protocolProfileBehavior.disabledSystemHeaders, {
+    'accept': true, 'accept-encoding': true, 'cache-control': true, 'content-type': true,
+    'postman-token': true, 'user-agent': true,
+  });
 });
 
-test('native gRPC v3 passes the pinned official schema and lossless JSON round-trip (SDK supports v2.1 only)', () => {
+test('native gRPC v3 passes the pinned official schema and preserves known fixture data', () => {
   const schema = JSON.parse(fs.readFileSync(path.join(root, 'internal/postman/testdata/postman-v3.0.0.schema.json'), 'utf8'));
   const validate = new Ajv({ strict: false, validateFormats: false, allErrors: true }).compile(schema);
   assert.equal(validate(grpc), true, JSON.stringify(validate.errors));
-  assert.deepEqual(JSON.parse(JSON.stringify(grpc)), grpc);
   const folders = grpc.items;
   assert.equal(new Set(folders.map(folder => folder.id)).size, 6);
   assert.equal(new Set(folders.map(folder => folder.name)).size, 6);

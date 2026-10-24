@@ -124,6 +124,54 @@ func TestOutputDirectorySymlinkCannotWriteOutsideArchive(t *testing.T) {
 	}
 }
 
+func TestAutomaticOutputsProtectSourceBackedByExports(t *testing.T) {
+	for _, target := range []string{"coverage", "postman", "receipt"} {
+		for _, alias := range []string{"source symlink", "output hardlink"} {
+			t.Run(target+"/"+alias, func(t *testing.T) {
+				root := failedRun(t)
+				outputs, err := Generate(t.Context(), root, Defaults())
+				if err != nil {
+					t.Fatal(err)
+				}
+				output := outputs.Coverage["json"]
+				switch target {
+				case "postman":
+					output = outputs.Postman[0]
+				case "receipt":
+					output = filepath.Join(root, "exports", "result.json")
+				}
+				source := filepath.Join(root, "tests", "attempt-1.json")
+				before, err := os.ReadFile(source)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Remove(output); err != nil {
+					t.Fatal(err)
+				}
+				if alias == "source symlink" {
+					if err := os.Rename(source, output); err != nil {
+						t.Fatal(err)
+					}
+					if err := os.Symlink(output, source); err != nil {
+						t.Skip(err)
+					}
+				} else if err := os.Link(source, output); err != nil {
+					t.Skip(err)
+				}
+				if _, err := Generate(t.Context(), root, Defaults()); err == nil {
+					t.Fatal("accepted export that aliases capture evidence")
+				}
+				if after, err := os.ReadFile(source); err != nil || string(after) != string(before) {
+					t.Fatalf("export changed source capture: %v", err)
+				}
+				if _, _, err := bundle.Load(root); err != nil {
+					t.Fatalf("export changed source archive: %v", err)
+				}
+			})
+		}
+	}
+}
+
 func TestAutomaticPostmanOmissionPolicyRetainsExactDiagnostics(t *testing.T) {
 	root := failedRun(t, func(c *artifact.Artifact) {
 		incomplete := c.Traffic[0]

@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/mattlock83/wiretap/internal/archiveoutput"
 	"github.com/mattlock83/wiretap/internal/bundle"
 	"github.com/mattlock83/wiretap/internal/coverage"
 	"github.com/mattlock83/wiretap/internal/postman"
@@ -63,6 +64,16 @@ func Generate(ctx context.Context, archive string, cfg Config) (*Result, error) 
 	if _, _, err := bundle.Load(root); err != nil {
 		return nil, err
 	}
+	guard, err := archiveoutput.New(root)
+	if err != nil {
+		return nil, err
+	}
+	writeOutput := func(path string, data []byte) error {
+		if _, err := guard.Destination(path); err != nil {
+			return err
+		}
+		return writeFile(ctx, root, path, data)
+	}
 	result := &Result{BundlePath: root, Coverage: map[string]string{}, Postman: []string{}, Errors: []Diagnostic{}}
 	var failures []error
 	fail := func(format string, err error) {
@@ -83,7 +94,7 @@ func Generate(ctx context.Context, archive string, cfg Config) (*Result, error) 
 				}
 				path := filepath.Join(root, "exports", "coverage."+extension)
 				if err == nil {
-					err = writeFile(ctx, root, path, data.Bytes())
+					err = writeOutput(path, data.Bytes())
 				}
 				if err != nil {
 					fail("coverage."+format, err)
@@ -125,7 +136,7 @@ func Generate(ctx context.Context, archive string, cfg Config) (*Result, error) 
 						companions := []string{}
 						for _, companion := range export.Files {
 							path := filepath.Join(root, "exports", "postman", filepath.FromSlash(companion.Path))
-							if err = writeFile(ctx, root, path, companion.Data); err != nil {
+							if err = writeOutput(path, companion.Data); err != nil {
 								break
 							}
 							companions = append(companions, path)
@@ -135,7 +146,7 @@ func Generate(ctx context.Context, archive string, cfg Config) (*Result, error) 
 							break
 						}
 						path := filepath.Join(root, "exports", "postman", export.Filename)
-						if err := writeFile(ctx, root, path, encoded[i]); err != nil {
+						if err := writeOutput(path, encoded[i]); err != nil {
 							fail("postman", err)
 							break
 						}
@@ -150,7 +161,7 @@ func Generate(ctx context.Context, archive string, cfg Config) (*Result, error) 
 	// use these exact paths instead of guessing the newest run or scanning a dir.
 	data, err := json.MarshalIndent(result, "", "  ")
 	if err == nil {
-		err = writeFile(ctx, root, filepath.Join(root, "exports", "result.json"), append(data, '\n'))
+		err = writeOutput(filepath.Join(root, "exports", "result.json"), append(data, '\n'))
 	}
 	if err != nil {
 		fail("receipt", err)

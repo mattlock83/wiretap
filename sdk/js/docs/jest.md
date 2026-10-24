@@ -129,4 +129,5 @@ the automatic adapter above supports Jest's existing callback forms.
 
 The [pinned external Express/Jest demo](https://github.com/mattlock83/wiretap/tree/main/examples/existing-jest)
 verifies all 120 existing outcomes before and after capture, API coverage and
-Postman parsing with the official Node library.
+Postman conformance to its pinned official HTTP schema, with exported
+request/response content compared against raw archive records and payload files.

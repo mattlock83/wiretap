@@ -66,9 +66,11 @@ left unchanged so capture cannot hide these existing issues.
 
 The checks also require a finalized archive containing 120 distinct test
 identities, all **10 API operations exercised**, coverage JSON/text and a Postman
-collection with no export errors. The official `postman-collection` Node library
-parses the exported requests and verifies their methods, URLs, bodies and saved
-response data. Desktop import remains a separate manual check.
+collection with no export errors. Ajv validates the exported collection against
+Postman's pinned official v2.1 schema. The harness compares attempt identities,
+methods, URLs, headers, bodies and saved responses with raw archive records and
+retained payload files. It does not exercise the Postman SDK parser; desktop
+import remains a separate manual check.
 
 Read `demo/artifacts/wiretap/last-run.json` for exact output paths. Upload the
 complete `demo/artifacts/wiretap/` directory in CI, including failing runs. API

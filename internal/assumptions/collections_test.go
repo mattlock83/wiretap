@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -183,7 +184,7 @@ func TestVerifyCollectionsRejectsChangedHTTPAssumptions(t *testing.T) {
 			mutate(object)
 			file := writeCollectionObject(t, t.TempDir(), "edited.json", object)
 			err := VerifyCollections([]string{file}, []postman.Export{export})
-			if err == nil || !strings.Contains(err.Error(), file) {
+			if err == nil || !strings.Contains(err.Error(), strconv.Quote(file)) {
 				t.Fatalf("wanted path-qualified rejection, got %v", err)
 			}
 		})
@@ -330,7 +331,7 @@ func TestVerifyCollectionsBoundsAndAmbiguousJSON(t *testing.T) {
 			if err := os.WriteFile(file, []byte(data), 0o644); err != nil {
 				t.Fatal(err)
 			}
-			if err := VerifyCollections([]string{file}, []postman.Export{export}); err == nil || !strings.Contains(err.Error(), file) {
+			if err := VerifyCollections([]string{file}, []postman.Export{export}); err == nil || !strings.Contains(err.Error(), strconv.Quote(file)) {
 				t.Fatalf("wanted path-qualified limit error, got %v", err)
 			}
 		})

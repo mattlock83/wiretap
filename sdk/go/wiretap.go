@@ -90,6 +90,9 @@ type TestIdentity struct {
 	Variant        string `json:"variant,omitempty"`
 	AttemptOrdinal *int   `json:"attempt_ordinal,omitempty"`
 }
+
+// TestOptions overrides project defaults for one capture attempt. Nil Schemas
+// and Dependencies inherit defaults; non-nil empty slices clear them.
 type TestOptions struct {
 	Identity        *TestIdentity  `json:"test_identity,omitempty"`
 	Application     *Application   `json:"application,omitempty"`
@@ -100,8 +103,8 @@ type TestOptions struct {
 	SUTSource       map[string]any `json:"sut_source,omitempty"`
 	SUTBaseURL      string         `json:"sut_base_url,omitempty"`
 	SUTProtocol     string         `json:"sut_protocol,omitempty"`
-	Schemas         []Schema       `json:"schemas,omitempty"`
-	Dependencies    []Dependency   `json:"dependencies,omitempty"`
+	Schemas         []Schema       `json:"schemas,omitzero"`
+	Dependencies    []Dependency   `json:"dependencies,omitzero"`
 	ExplicitSession bool           `json:"explicit_session,omitempty"`
 	Tags            []string       `json:"tags,omitempty"`
 	Meta            map[string]any `json:"meta,omitempty"`

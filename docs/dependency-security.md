@@ -48,3 +48,13 @@ Verification on 24 October 2026: govulncheck 1.9.0 source/symbol scan with Go
 1.26.10 completed with no findings; npm audit reported zero vulnerabilities for
 both the JavaScript SDK and native Node gRPC example. These results describe the
 committed dependency graphs, not a permanent vulnerability-free guarantee.
+
+On 25 October 2026, the Postman compatibility fixture and smoke harnesses stopped
+installing `postman-collection` 5.3.1, whose pinned Faker 5.5.3 and UUID 8.3.2
+dependencies remained affected by
+[GHSA-qxc2-j82w-r537](https://github.com/faker-js/faker/security/advisories/GHSA-qxc2-j82w-r537)
+and [GHSA-w5hq-g745-h8pq](https://github.com/uuidjs/uuid/security/advisories/GHSA-w5hq-g745-h8pq).
+They now use exact-pinned Ajv 8.20.0 with the official HTTP v2.1 and gRPC v3
+schemas and independent captured-content assertions. A clean fixture install
+and `npm audit --audit-level=low` reported zero vulnerabilities. The compatibility
+workflow audits this fixture on each relevant change.

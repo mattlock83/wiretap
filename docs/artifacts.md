@@ -73,6 +73,13 @@ validation diagnostics and detailed condition results under `contract_coverage`.
 These reports are derived from the raw artifact and never become evidence inputs.
 `POST /v1/report` exposes the same JSON coverage calculation through the runtime.
 
+Save output files outside the capture archive or under its `exports/` directory.
+Reports and Postman exports reject destinations that replace raw recordings,
+contracts, retained payloads or the manifest, including symlink and hardlink
+aliases. The archive's `exports/` directory must be a real directory; a source
+file stored there through an archive alias remains protected. These checks also
+apply to automatic exports and `--format all` regeneration.
+
 The text summary keeps operation counts and condition families separate. For
 example, this illustrative excerpt makes an untested operation visible without
 reading a full JSON report:
@@ -299,13 +306,15 @@ explicit regeneration with these settings.
 ### Compatibility checks
 
 The exporter emits Postman's official single-document JSON representation rather
-than the native Git YAML directory layout. HTTP exports are parsed and
-round-tripped with the official Postman Collection SDK. Native gRPC v3 is checked
-against the [official JSON schema](https://schema.postman.com/collection/json/v3.0.0/draft-07/collection.json)
-and a lossless JSON round trip because the published SDK supports v2.1 only.
+than the native Git YAML directory layout. HTTP v2.1 and native gRPC v3 exports
+are checked against their pinned official
+[HTTP](https://schema.postman.com/collection/json/v2.1.0/draft-07/collection.json) and
+[gRPC](https://schema.postman.com/collection/json/v3.0.0/draft-07/collection.json)
+JSON schemas, with concrete expectations for captured request/response content.
 The [compatibility harness](../tests/postman-compat/README.md) covers RPC shapes,
 binary data, rich errors and retries using actual exporter output. It does not
-claim desktop import/export or server invocation has been verified. The available
+exercise the Postman SDK parser or claim desktop import/export or server invocation
+has been verified. The available
 Postman 12.30 desktop scratchpad blocked collection import pending sign-in on
 24 October 2026, so imported-collection invocation was not verified. Automated
 compatibility checks are the acceptance path.
