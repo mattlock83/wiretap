@@ -15,6 +15,7 @@ import (
 	"github.com/mattlock83/wiretap/internal/bundle"
 	"github.com/mattlock83/wiretap/internal/coverage"
 	"github.com/mattlock83/wiretap/internal/postman"
+	"github.com/mattlock83/wiretap/internal/version"
 )
 
 type Config struct {
@@ -43,6 +44,8 @@ type Diagnostic struct {
 	Message string `json:"message"`
 }
 type Result struct {
+	ReportVersion    string               `json:"report_version"`
+	Producer         version.Producer     `json:"producer"`
 	BundlePath       string               `json:"bundle_path"`
 	Coverage         map[string]string    `json:"coverage"`
 	Postman          []string             `json:"postman"`
@@ -74,7 +77,7 @@ func Generate(ctx context.Context, archive string, cfg Config) (*Result, error) 
 		}
 		return writeFile(ctx, root, path, data)
 	}
-	result := &Result{BundlePath: root, Coverage: map[string]string{}, Postman: []string{}, Errors: []Diagnostic{}}
+	result := &Result{ReportVersion: "1.0", Producer: version.Current(), BundlePath: root, Coverage: map[string]string{}, Postman: []string{}, Errors: []Diagnostic{}}
 	var failures []error
 	fail := func(format string, err error) {
 		result.Errors = append(result.Errors, Diagnostic{format, err.Error()})

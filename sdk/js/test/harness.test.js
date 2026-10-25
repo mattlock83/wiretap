@@ -19,6 +19,28 @@ async function controlServer(handler) {
   };
 }
 
+test('attempt.secondary_cleanup: preserve the original throw and report teardown failure', async t => {
+  const diagnostics = [];
+  t.mock.method(console, 'error', (...args) => diagnostics.push(args));
+  const server = await controlServer((path, body) => {
+    if (path === '/v1/setupTest') return { session_id: body.name, name: body.name };
+    if (path === '/v1/teardownTest') return { capture: { capture_incomplete: true, capture_diagnostics: ['secondary cleanup failure'] } };
+    return {};
+  });
+  t.after(() => server.close());
+  const runtime = await startCapture({ baseUrl: server.baseUrl, schemaRequired: false, manageRuntime: false });
+  const original = new Error('original test failure');
+  await assert.rejects(runtime.runTest('ordinary error', () => { throw original; }), error => error === original);
+  assert.match(original.cleanupError.message, /secondary cleanup failure/);
+  assert.deepEqual(original.cleanupErrors, [original.cleanupError]);
+  for (const failure of [Object.freeze(new Error('frozen original')), 'primitive original']) {
+    await assert.rejects(runtime.runTest('caller-owned error', () => { throw failure; }), error => error === failure);
+  }
+  assert.equal(diagnostics.length, 2);
+  assert.ok(diagnostics.every(args => args[0] === 'Wiretap cleanup also failed:' && args[1].message === 'secondary cleanup failure'));
+  await runtime.finishRun();
+});
+
 test("removed redaction options fail clearly before creating capture state", async () => {
   const calls = [];
   const server = await controlServer((path) => {

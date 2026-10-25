@@ -10,10 +10,10 @@ Wiretap process. With a project-owned runtime, one suite owner calls
 `/v1/finishRun` after every worker finishes. Keep the complete directory when sharing it or
 uploading it to CI so its contracts and payload references remain valid. Managed
 runs also write `last-run.json` with exact archive/export paths and a bounded
-`wiretap.log`. Go keeps those files inside each package's run directory.
-JavaScript keeps the latest receipt and log in the output parent beside its
-run directories; independent concurrent JavaScript suites need separate output
-parents. Preserve the full configured output directory in either case.
+`wiretap.log` inside each run directory. This isolates receipts for concurrent
+Go packages, JavaScript owners and Python workers. JavaScript also writes an
+advisory latest receipt in the output parent; use the archive-local receipt
+when selecting a particular run. Preserve the complete run directory.
 
 ```text
 artifacts/<run-id>/
@@ -39,7 +39,8 @@ scope; they do not prove that no other APIs or dependencies exist.
 
 Use `wiretap check consumer` or `wiretap check provider` with a local run and
 `--artifacts <root>` to discover mapped peers beneath application folders. You
-can also select an explicit pair with `--consumer` and `--provider`. Every run
+can also select an explicit pair with `--consumer` and `--provider`, or explicit
+[same-build run sets](run-sets.md) with `--consumer-set` and `--provider-set`. Every run
 needs its complete archive and Postman exports. The checker verifies the collections
 against their raw evidence, then requires each selected mock request and paired
 response to have compatible evidence from a passing provider service test.
@@ -86,6 +87,7 @@ reading a full JSON report:
 
 ```text
 Attempts: 2 (2 passed, 0 failed, 0 skipped)
+Captured interactions: 2 (2 HTTP, 0 gRPC, 0 other)
 
 Provided APIs
   orders: 1/2 operations exercised
@@ -96,12 +98,18 @@ Contract conditions (covered / gaps / unknown / unsupported / excluded)
     enum: 1 / 1 / 0 / 0 / 0
 ```
 
+The summary warns when recorded tests captured no network traffic and points to
+client routing and trace propagation. This is a diagnostic, not a new test
+failure. If attempt details are missing, the count is explicitly unavailable.
+
 The JSON report retains all details behind those counts. A condition gap means
 no qualifying observation was found; an unknown means the evidence could not
 support a decision. The summary does not collapse them into one percentage.
 
 Offline loading uses finite [archive loading budgets](archive-loading.md),
 including limits on individual files, cumulative bytes and file reads.
+[Coverage policies and comparisons](report-policies.md) provide explicit CI gates
+and baseline diffs; [run sets](run-sets.md) group shards from the same build.
 
 Operation coverage shows which declared operations were observed. Contract
 coverage measures finite, supported cases from supplied specs, such as an enum
@@ -314,7 +322,5 @@ JSON schemas, with concrete expectations for captured request/response content.
 The [compatibility harness](../tests/postman-compat/README.md) covers RPC shapes,
 binary data, rich errors and retries using actual exporter output. It does not
 exercise the Postman SDK parser or claim desktop import/export or server invocation
-has been verified. The available
-Postman 12.30 desktop scratchpad blocked collection import pending sign-in on
-24 October 2026, so imported-collection invocation was not verified. Automated
-compatibility checks are the acceptance path.
+has been verified. Desktop import and imported-collection invocation are outside
+the automated compatibility checks.

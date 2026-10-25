@@ -30,7 +30,9 @@ func checkCommand(ctx context.Context, args []string) (int, error) {
 	flags := flag.NewFlagSet("wiretap check", flag.ContinueOnError)
 	options := assumptions.Options{}
 	var consumerCollections, providerCollections, ignored checkValues
-	var format, output, artifacts string
+	var format, output, artifacts, consumerSet, providerSet string
+	flags.StringVar(&consumerSet, "consumer-set", "", "consumer run set manifest (use with --provider-set)")
+	flags.StringVar(&providerSet, "provider-set", "", "provider run set manifest (use with --consumer-set)")
 	flags.StringVar(&options.Consumer, "consumer", "", "consumer run directory or bundle.json")
 	flags.StringVar(&options.Provider, "provider", "", "provider run directory or bundle.json")
 	flags.StringVar(&artifacts, "artifacts", "", "local shared artifact root, grouped by application ID; discovers peers for the supplied run")
@@ -38,7 +40,7 @@ func checkCommand(ctx context.Context, args []string) (int, error) {
 	flags.Var(&consumerCollections, "consumer-collection", "consumer Postman file or directory for explicit pairs; repeatable (default: <consumer>/exports/postman)")
 	flags.Var(&providerCollections, "provider-collection", "provider Postman file or directory for explicit pairs; repeatable (default: <provider>/exports/postman)")
 	flags.Var(&ignored, "ignore-header", "ignore another captured HTTP header or gRPC metadata field; declared HTTP header rules still apply; repeatable")
-	flags.StringVar(&format, "format", "text", "report format: text or json")
+	flags.StringVar(&format, "format", "text", "report format: text, json, markdown or junit")
 	flags.StringVar(&output, "output", "", "write report outside input archives and artifact root (default: stdout)")
 	flags.Usage = func() {
 		fmt.Fprintln(flags.Output(), "Usage: wiretap check consumer --consumer <capture> --artifacts <directory> [options]\n       wiretap check provider --provider <capture> --artifacts <directory> [options]\n       wiretap check <consumer|provider> --consumer <capture> --provider <capture> [options]\n\nConsumer checks discover mapped providers; provider checks discover mapped consumers.\nThe artifact root contains application folders with complete runs and exports/postman.\nSelections must be unambiguous; historical snapshots are never merged.\nExplicit pairs check one mock boundary. No traffic is replayed.")
@@ -61,14 +63,18 @@ func checkCommand(ctx context.Context, args []string) (int, error) {
 	if len(flags.Args()) != 0 {
 		return 2, fmt.Errorf("%w: unexpected arguments: %v", errUsage, flags.Args())
 	}
-	if artifacts == "" && (options.Consumer == "" || options.Provider == "") {
+	sets := consumerSet != "" || providerSet != ""
+	if sets && (consumerSet == "" || providerSet == "" || options.Consumer != "" || options.Provider != "" || artifacts != "" || len(consumerCollections)+len(providerCollections) > 0) {
+		return 2, fmt.Errorf("%w: use both --consumer-set and --provider-set without individual archives, artifact discovery or collection overrides", errUsage)
+	}
+	if !sets && artifacts == "" && (options.Consumer == "" || options.Provider == "") {
 		return 2, fmt.Errorf("%w: supply --consumer and --provider, or the local --%s capture with --artifacts", errUsage, options.Mode)
 	}
 	if artifacts != "" && (len(consumerCollections) > 0 || len(providerCollections) > 0) {
 		return 2, fmt.Errorf("%w: --artifacts uses each run's exports/postman; collection overrides require an explicit consumer/provider pair", errUsage)
 	}
-	if format != "text" && format != "json" {
-		return 2, fmt.Errorf("%w: --format must be text or json", errUsage)
+	if format != "text" && format != "json" && format != "markdown" && format != "junit" {
+		return 2, fmt.Errorf("%w: --format must be text, json, markdown or junit", errUsage)
 	}
 	options.ConsumerCollections = consumerCollections
 	options.ProviderCollections = providerCollections
@@ -79,7 +85,18 @@ func checkCommand(ctx context.Context, args []string) (int, error) {
 	var sources []assumptions.Source
 	var roots []string
 	var err error
-	if artifacts != "" {
+	if sets {
+		var report *assumptions.SetReport
+		report, err = assumptions.CheckRunSets(ctx, consumerSet, providerSet, options.Mode, options.Dependency, ignored)
+		if err == nil {
+			result, compatible = report, report.Compatible
+			sources = append(append(sources, report.Consumers...), report.Providers...)
+			roots = []string{consumerSet, providerSet}
+			if format == "text" {
+				err = writeCheckText(&data, &assumptions.Report{Mode: report.Mode, Compatible: report.Compatible, RulesVersion: report.RulesVersion, Dependency: report.Dependency, Binding: "same_build_run_sets", Consumer: assumptions.Source{BundlePath: consumerSet, RunID: "run set"}, Provider: assumptions.Source{BundlePath: providerSet, RunID: "run set"}, Counts: report.Counts, Matches: report.Matches, Findings: report.Findings})
+			}
+		}
+	} else if artifacts != "" {
 		var report *assumptions.StoreReport
 		report, err = assumptions.CheckStore(ctx, assumptions.StoreOptions{
 			Mode: options.Mode, Consumer: options.Consumer, Provider: options.Provider,
@@ -110,6 +127,9 @@ func checkCommand(ctx context.Context, args []string) (int, error) {
 		encoder := json.NewEncoder(&data)
 		encoder.SetIndent("", "  ")
 		err = encoder.Encode(result)
+	}
+	if err == nil && (format == "markdown" || format == "junit") {
+		err = writeCheckFormat(&data, result, format)
 	}
 	if err != nil {
 		if errors.Is(err, assumptions.ErrInput) {
@@ -142,6 +162,13 @@ func writeStoreCheckText(out io.Writer, report *assumptions.StoreReport) error {
 	if _, err := fmt.Fprintf(out, "%s: check %s — %d comparisons; %d of %d mock examples verified\nArtifacts: %s\n", status, report.Mode, len(report.Comparisons), report.Counts.Verified, report.Counts.Assumptions, report.ArtifactsPath); err != nil {
 		return err
 	}
+	var assurance checkAssurance
+	for _, comparison := range report.Comparisons {
+		assurance.add(comparison.Matches)
+	}
+	if _, err := fmt.Fprintln(out, assurance); err != nil {
+		return err
+	}
 	for _, comparison := range report.Comparisons {
 		if _, err := fmt.Fprintln(out); err != nil {
 			return err
@@ -162,11 +189,9 @@ func writeCheckText(out io.Writer, report *assumptions.Report) error {
 	fmt.Fprintf(&text, "%s: check %s — %d of %d mock examples verified\n", status, report.Mode, report.Counts.Verified, report.Counts.Assumptions)
 	fmt.Fprintf(&text, "Consumer: %s (%s)\nProvider: %s (%s)\nMock dependency: %s; binding: %s\n", report.Consumer.BundlePath, report.Consumer.RunID, report.Provider.BundlePath, report.Provider.RunID, report.Dependency, report.Binding)
 	fmt.Fprintf(&text, "Uncovered: %d; mismatched: %d; unverified: %d\n", report.Counts.Uncovered, report.Counts.Mismatched, report.Counts.Unverified)
-	contracts := map[string]int{}
-	for _, match := range report.Matches {
-		contracts[match.ContractCheck]++
-	}
-	fmt.Fprintf(&text, "Contracts: %d HTTP declaration and value checks; %d HTTP provider-spec checks; %d protobuf declaration and wire checks; %d example-only matches (schemas unavailable)\n", contracts["openapi_3_0_validation_rules"], contracts["openapi_3_0_provider_contract"], contracts["protobuf_rules_and_observed_wire"], contracts["unavailable"])
+	var assurance checkAssurance
+	assurance.add(report.Matches)
+	fmt.Fprintln(&text, assurance)
 	for _, finding := range report.Findings {
 		fmt.Fprintf(&text, "\n[%s] %s: %s", finding.Kind, finding.Code, finding.Operation)
 		if finding.Operation != "" {
@@ -181,6 +206,9 @@ func writeCheckText(out io.Writer, report *assumptions.Report) error {
 		}
 		for _, path := range finding.Differences {
 			fmt.Fprintf(&text, "  Different: %s\n", path)
+		}
+		for _, excerpt := range finding.Excerpts {
+			fmt.Fprintf(&text, "  %s: expected %s; actual %s (first provider candidate)\n", excerpt.Path, excerpt.Expected, excerpt.Actual)
 		}
 	}
 	if len(report.ExcludedProviderEvidence) > 0 {
@@ -245,32 +273,14 @@ func writeCheckOutput(path string, sources []assumptions.Source, roots []string,
 			}
 		}
 	}
-	mode := os.FileMode(0o644)
 	if info, err := os.Lstat(absolute); err == nil {
 		if !info.Mode().IsRegular() {
 			return fmt.Errorf("%w: --output must be a regular file", errUsage)
 		}
-		mode = info.Mode().Perm()
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	file, err := os.CreateTemp(parent, ".wiretap-check-*")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(file.Name())
-	if err := file.Chmod(mode); err != nil {
-		_ = file.Close()
-		return err
-	}
-	if _, err := file.Write(data); err != nil {
-		_ = file.Close()
-		return err
-	}
-	if err := file.Close(); err != nil {
-		return err
-	}
-	return os.Rename(file.Name(), absolute)
+	return writeArchiveReport(absolute, data)
 }
 
 func withinCheckPath(root, path string) bool {

@@ -30,6 +30,19 @@ func writeTextReport(w io.Writer, report *Report) error {
 	if report.ArtifactCount == 0 {
 		out.WriteString("No test attempts were recorded; declared operations below remain untested.\n")
 	}
+	if traffic, known := capturedTraffic(report); known {
+		fmt.Fprintf(&out, "Captured interactions: %d (%d HTTP, %d gRPC, %d other)\n", traffic.http+traffic.grpc+traffic.other, traffic.http, traffic.grpc, traffic.other)
+		if report.ArtifactCount > 0 && traffic.http+traffic.grpc+traffic.other == 0 {
+			if outcomes["pass"] == report.ArtifactCount {
+				out.WriteString("WARNING: Tests passed, but no network traffic was captured.\n")
+			} else {
+				out.WriteString("WARNING: Test attempts were recorded, but no network traffic was captured.\n")
+			}
+			out.WriteString("Check that clients use Wiretap's SUT URL, dependency calls use its proxy URLs, and requests carry the test trace context.\n")
+		}
+	} else {
+		out.WriteString("Captured interactions: unavailable (attempt details are incomplete).\n")
+	}
 	if report.Contracts != nil && !report.Contracts.Complete {
 		out.WriteString("Capture is incomplete; the available evidence cannot establish final run coverage.\n")
 	}
@@ -125,6 +138,32 @@ func writeTextReport(w io.Writer, report *Report) error {
 	out.WriteString("\nExercised operations show observed traffic. Contract coverage requires qualifying evidence.\nMock replies are test assumptions; provider agreement is not verified.\n")
 	_, err := io.WriteString(w, out.String())
 	return err
+}
+
+// Traffic is recorded once per attempt here, including exchanges that have no
+// matching schema. Operation/condition samples can repeat or omit exchanges,
+// so those samples cannot establish a captured-interaction count.
+func capturedTraffic(report *Report) (counts struct{ http, grpc, other int }, known bool) {
+	attempts := map[string]bool{}
+	for _, test := range report.TestCases {
+		for _, attempt := range test.Attempts {
+			if attempt.ID == "" {
+				return counts, false
+			}
+			attempts[attempt.ID] = true
+		}
+		for _, flow := range test.Traffic {
+			switch flow.Protocol {
+			case "http":
+				counts.http++
+			case "grpc":
+				counts.grpc++
+			default:
+				counts.other++
+			}
+		}
+	}
+	return counts, len(attempts) == report.ArtifactCount
 }
 
 // Captured labels can contain newlines or terminal control bytes. A summary

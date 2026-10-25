@@ -29,9 +29,13 @@ func DefaultLoadLimits() LoadLimits {
 	return LoadLimits{MaxFileBytes: 64 << 20, MaxTotalBytes: 512 << 20, MaxFileReads: 100_000}
 }
 
-// Load uses explicit positive environment overrides so the binary's report,
-// export and finalization paths can handle larger trusted archives. Explicit
-// LoadWithLimits calls remain independent of process environment.
+// ConfiguredLoadLimits returns the default budgets with explicit positive
+// environment overrides, shared by archive loading and output inventories.
+// Explicit LoadWithLimits calls remain independent of process environment.
+func ConfiguredLoadLimits() (LoadLimits, error) {
+	return loadLimitsFromEnv()
+}
+
 func loadLimitsFromEnv() (LoadLimits, error) {
 	limits := DefaultLoadLimits()
 	for _, setting := range []struct {

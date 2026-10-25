@@ -1,0 +1,88 @@
+{
+  "contract_version": "1.0",
+  "capability_probe": {
+    "method": "GET",
+    "path": "/v1/capabilities",
+    "api_version": "1.0",
+    "capabilities": ["capture.http", "capture.grpc", "outputs.coverage", "outputs.postman", "test.identity", "run.finalize"],
+    "required_for_existing_clients": false
+  },
+  "invalid_receipts": {
+    "readiness": [
+      {"id": "wrong_pid", "set": {"pid": -1}},
+      {"id": "external_control", "set": {"control_url": "http://example.com:12345"}},
+      {"id": "control_credentials", "set": {"control_url": "http://user@127.0.0.1:12345"}},
+      {"id": "control_path", "set": {"control_url": "http://127.0.0.1:12345/control"}},
+      {"id": "control_query", "set": {"control_url": "http://127.0.0.1:12345?x=1"}},
+      {"id": "control_fragment", "set": {"control_url": "http://127.0.0.1:12345#fragment"}},
+      {"id": "control_without_port", "set": {"control_url": "http://127.0.0.1"}}
+    ],
+    "start": [
+      {"id": "empty_run_id", "set": {"run_id": ""}},
+      {"id": "relative_bundle", "set": {"bundle_path": "relative/run"}},
+      {"id": "external_capture", "set": {"sut_url": "http://example.com:12345"}}
+    ],
+    "finish": [
+      {"id": "incomplete_status", "set": {"status": "interrupted"}},
+      {"id": "different_run", "set": {"run_id": "another-run"}},
+      {"id": "different_bundle", "set": {"bundle_path": "another-archive"}}
+    ]
+  },
+  "scenarios": [
+    {
+      "id": "owner.readiness",
+      "applies_to": ["managed_owner"],
+      "expect": {"private_readiness_directory": true, "matching_child_pid": true, "loopback_http_control": true, "explicit_valid_port": true, "credentials_query_fragment_or_nonroot_path": false, "startup_deadline": true, "startup_failure_stops_child": true}
+    },
+    {
+      "id": "owner.start_identity",
+      "applies_to": ["managed_owner"],
+      "expect": {"nonempty_run_id": true, "absolute_existing_bundle_directory": true, "loopback_http_or_https_capture": true, "invalid_start_does_not_write_receipt": true}
+    },
+    {
+      "id": "owner.finalize_once",
+      "applies_to": ["managed_owner"],
+      "expect": {"finish_after_attempt_cleanup": true, "finish_calls_per_owner": 1, "repeated_close_returns_same_result": true, "successful_status": "complete", "finish_identity_matches_start": true}
+    },
+    {
+      "id": "owner.partial_export",
+      "applies_to": ["managed_owner", "control_client"],
+      "expect": {"http_error_fails_cleanup": true, "available_output_paths_retained": true, "owned_process_stopped": true, "primary_test_failure_preserved": true}
+    },
+    {
+      "id": "owner.exit_failure",
+      "applies_to": ["managed_owner"],
+      "expect": {"nonzero_child_exit_fails_cleanup": true, "signal_child_exit_fails_cleanup": true, "forced_kill_fails_cleanup": true, "shutdown_deadline": true}
+    },
+    {
+      "id": "owner.receipt_isolation",
+      "applies_to": ["managed_owner"],
+      "expect": {"canonical_receipt": "<bundle_path>/last-run.json", "canonical_log": "<bundle_path>/wiretap.log", "log_retention_bytes": 65536, "shared_root_latest_authoritative": false, "concurrent_runs_preserve_each_receipt": true}
+    },
+    {
+      "id": "attempt.identity",
+      "applies_to": ["framework_adapter"],
+      "expect": {"stable_id_and_variant_across_retries": true, "first_attempt_ordinal": 1, "increasing_retry_ordinals": true, "duplicate_registered_tests_distinct": true, "parallel_attempts_distinct_traces": true}
+    },
+    {
+      "id": "attempt.final_outcome",
+      "applies_to": ["framework_adapter"],
+      "expect": {"pass": "pass", "assertion_failure": "fail", "fixture_failure": "fail", "timeout": "fail", "dynamic_skip": "skip", "negative_schema_validation_alone": "pass", "capture_teardown_after_user_cleanup": true, "late_callbacks_cannot_acquire_next_attempt": true}
+    },
+    {
+      "id": "attempt.secondary_cleanup",
+      "applies_to": ["framework_adapter", "control_client"],
+      "expect": {"original_failure_preserved": true, "secondary_cleanup_failure_reported": true, "capture_failure_fails_otherwise_passing_test": true}
+    },
+    {
+      "id": "owner.interruption",
+      "applies_to": ["managed_owner", "framework_adapter"],
+      "expect": {"active_attempt_not_successful": true, "bounded_cleanup": true, "owned_process_stopped": true, "parent_stdin_eof_lifeline": true, "interrupted_exit_preserved": true}
+    },
+    {
+      "id": "config.explicit_overrides",
+      "applies_to": ["control_client"],
+      "expect": {"omitted_lists_inherit": true, "empty_lists_clear": true, "explicit_false_preserved": true, "project_configuration_is_authoritative_for_grpc_contracts": true}
+    }
+  ]
+}

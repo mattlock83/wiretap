@@ -31,19 +31,26 @@ using `Run` and `StartTest`. It finalizes JSON/text coverage and Postman collect
 automatically under `examples/go-suite/artifacts/<run-id>/`. See the
 [Go example](examples/go-suite/README.md) for Windows commands and the two hooks.
 
+For Python tests, use the [Python SDK and pytest fixture](sdk/python/README.md)
+with the [runnable pytest suite](examples/pytest-suite/README.md).
+
 For existing JavaScript tests, choose the [Jest, Playwright Test or Mocha adapter](sdk/js/README.md).
 Each manages Wiretap startup and exports around your normal test command. The
 [plain JavaScript API and Node harness](sdk/js/docs/javascript.md) remain available
 for custom setups. [More examples](examples/README.md) cover existing external
-tests, native gRPC, streaming, real clients and mocks. The
-[Mocha suite](examples/mocha-runner/README.md) is a small JavaScript example with
-ordinary fixture hooks and automatic exports.
+tests, native gRPC, streaming, real clients and mocks.
 
 ## Add it to your suite
 
 Follow the [getting started guide](docs/getting-started-existing-tests.md) for the
 complete workflow: integrate your tests, understand the artifacts, share them
 under application folders, and check consumer/provider assumptions.
+
+Use [`wiretap init` and `wiretap doctor`](docs/setup.md) to create a small
+configuration and check local contracts before running the suite.
+
+For prepared binary archives and SDK tarballs, use
+[local release installation](docs/install-local-release.md).
 
 For Jest, Playwright Test and Mocha, follow the [SDK setup guide](sdk/js/README.md):
 configure the contract, add the runner wrapper and route your shared client
@@ -62,7 +69,7 @@ For a custom harness:
 4. Use an SDK adapter to record each test's final outcome.
 5. Finalize once after all workers finish and retain the complete run directory.
 
-Use the [JavaScript](sdk/js/README.md), [Go](sdk/go/README.md), or
+Use the [Python](sdk/python/README.md), [JavaScript](sdk/js/README.md), [Go](sdk/go/README.md), or
 [HTTP API](docs/runtime-api.md) integration. Your framework owns pass/fail.
 Contract mismatches are recorded separately, so a test deliberately sending an
 invalid request can assert its rejection and pass. Setup and capture failures
@@ -110,6 +117,11 @@ For tools consuming the results, use the versioned
 
 ## Check assumptions across applications
 
+The runnable [consumer/provider example](examples/consumer-provider/README.md)
+captures both applications, verifies agreement, introduces a provider change
+that fails the check, and restores compatibility. It uses the same SDK, CLI and
+Postman exports as an ordinary project.
+
 Upload complete runs and Postman exports to a shared artifact store, grouped
 by application ID. Restore the selected snapshots locally, then check your run
 against the other teams' evidence:
@@ -132,6 +144,10 @@ For a single pair, supply `--consumer ./orders-run --provider ./inventory-run`
 in either mode, with `--dependency inventory` if needed. See
 [assumption checks](docs/assumption-checks.md) for mappings, folder layout,
 selection rules and CI output.
+
+For tests split across packages or CI workers, use an explicit [same-build run
+set](docs/run-sets.md). [Coverage policies and baseline reports](docs/report-policies.md)
+provide optional CI gates; assumption reports also support Markdown and JUnit XML.
 
 The checker finds changed mock responses, request scenarios absent from provider
 tests, drift in exercised OpenAPI 3.0 rules when both contracts are supplied,
@@ -161,6 +177,8 @@ business behavior. Wiretap does not
 generate or execute additional tests.
 
 Start with the [documentation index](docs/README.md) for setup, CI, formats and
-troubleshooting. The [product scope](docs/roadmap.md) describes the completion
-criteria. [Local packages](docs/local-release.md) can be built and installed
-without publishing anything externally.
+troubleshooting. The [architecture](docs/architecture.md) describes the components
+and their responsibilities; the [support matrix](docs/support.md) states integration
+and format compatibility. [Local packages](docs/local-release.md) can be built and
+installed without publishing anything externally. Future work is tracked only in
+the [roadmap](docs/roadmap.md).

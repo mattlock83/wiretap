@@ -3,24 +3,33 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
-	"encoding/json"
 	"github.com/mattlock83/wiretap/internal/archiveoutput"
+	"github.com/mattlock83/wiretap/internal/assumptions"
 	"github.com/mattlock83/wiretap/internal/coverage"
 	"github.com/mattlock83/wiretap/internal/postman"
 	"github.com/mattlock83/wiretap/internal/runoutput"
+	"github.com/mattlock83/wiretap/internal/runset"
+	"github.com/mattlock83/wiretap/internal/schemajson"
 )
 
 var errUsage = errors.New("usage")
+var errCheckIncompatible = errors.New("policy or baseline check failed")
 
 func reportCommand(args []string) error {
 	flags := flag.NewFlagSet("wiretap report", flag.ContinueOnError)
 	var bundlePath string
+	var runSetPath string
+	var policyPath string
+	flags.StringVar(&policyPath, "policy", "", "optional coverage policy JSON for one archive; failures return exit 1")
+	flags.StringVar(&runSetPath, "run-set", "", "same-build run set manifest (JSON coverage)")
 	var sutName string
 	var outputPath string
 	var outputDir string
@@ -46,10 +55,39 @@ func reportCommand(args []string) error {
 		return fmt.Errorf("%w: unexpected arguments: %v", errUsage, flags.Args())
 	}
 	format = strings.ToLower(strings.TrimSpace(format))
+	if policyPath != "" && (runSetPath != "" || format == "all" || format == "postman") {
+		return fmt.Errorf("%w: --policy requires one --bundle and json, yaml or text coverage", errUsage)
+	}
+	if policyPath != "" && outputPath != "" && sameCheckFile(policyPath, outputPath) {
+		return fmt.Errorf("%w: output must not replace the coverage policy", errUsage)
+	}
 	switch format {
 	case "json", "yaml", "text", "postman", "all":
 	default:
 		return fmt.Errorf("%w: unsupported format: %s", errUsage, format)
+	}
+	if runSetPath != "" {
+		if bundlePath != "" || format != "json" || outputDir != "" || postmanConfig != "" || omitIncomplete || sutName != "" || includeArtifacts {
+			return fmt.Errorf("%w: --run-set supports JSON coverage with optional --output; export executable Postman collections from each original archive", errUsage)
+		}
+		set, err := runset.Load(context.Background(), runSetPath)
+		if err != nil {
+			return err
+		}
+		data, err := json.MarshalIndent(set.Coverage(), "", "  ")
+		if err != nil {
+			return err
+		}
+		data = append(data, '\n')
+		if outputPath == "" {
+			_, err = os.Stdout.Write(data)
+			return err
+		}
+		sources := []assumptions.Source{}
+		for _, archive := range set.Archives {
+			sources = append(sources, assumptions.Source{BundlePath: archive.Path})
+		}
+		return writeCheckOutput(outputPath, sources, []string{runSetPath}, data)
 	}
 	if bundlePath == "" {
 		return fmt.Errorf("%w: --bundle is required", errUsage)
@@ -95,8 +133,25 @@ func reportCommand(args []string) error {
 	if err != nil {
 		return err
 	}
+	var verdict error
+	if policyPath != "" {
+		policy, err := readCoveragePolicy(policyPath)
+		if err != nil {
+			return fmt.Errorf("%w: coverage policy: %v", errUsage, err)
+		}
+		result, err := coverage.EvaluatePolicy(report, policy)
+		if err != nil {
+			return fmt.Errorf("%w: coverage policy: %v", errUsage, err)
+		}
+		for _, finding := range result.Findings {
+			fmt.Fprintf(os.Stderr, "Policy %s: %s %s %s %s: %s\n", finding.Code, finding.Origin, finding.APIID, finding.Operation, finding.Family, finding.Message)
+		}
+		if !result.Passed {
+			verdict = errCheckIncompatible
+		}
+	}
 	if outputPath == "" {
-		return coverage.WriteReport(os.Stdout, report, format)
+		return errors.Join(coverage.WriteReport(os.Stdout, report, format), verdict)
 	}
 	guard, err := archiveoutput.New(bundlePath)
 	if err != nil {
@@ -110,5 +165,47 @@ func reportCommand(args []string) error {
 	if err := coverage.WriteReport(&data, report, format); err != nil {
 		return err
 	}
-	return writeArchiveReport(outputPath, data.Bytes())
+	return errors.Join(writeArchiveReport(outputPath, data.Bytes()), verdict)
+}
+
+func readCoveragePolicy(path string) (coverage.Policy, error) {
+	var policy coverage.Policy
+	info, err := os.Stat(path)
+	if err != nil {
+		return policy, err
+	}
+	if !info.Mode().IsRegular() || info.Size() > 1<<20 {
+		return policy, errors.New("policy must be a regular JSON file of at most 1 MiB")
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return policy, err
+	}
+	defer file.Close()
+	info, err = file.Stat()
+	if err != nil {
+		return policy, err
+	}
+	if !info.Mode().IsRegular() || info.Size() > 1<<20 {
+		return policy, errors.New("policy must be a regular JSON file of at most 1 MiB")
+	}
+	data, err := io.ReadAll(io.LimitReader(file, (1<<20)+1))
+	if err != nil {
+		return policy, err
+	}
+	if len(data) > 1<<20 {
+		return policy, errors.New("policy exceeds 1 MiB")
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&policy); err != nil {
+		return policy, err
+	}
+	if err := decoder.Decode(new(any)); err != io.EOF {
+		return policy, errors.New("policy must contain one JSON document")
+	}
+	if _, err := schemajson.Decode(data); err != nil {
+		return policy, err
+	}
+	return policy, nil
 }

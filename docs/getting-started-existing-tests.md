@@ -34,6 +34,10 @@ while retaining evidence of its deliberately invalid request.
 
 ## 1. Install the runtime and SDK
 
+If you already have prepared binary archives and an SDK tarball, follow
+[local release installation](install-local-release.md), then continue with
+configuration below. To prepare them yourself, use the checkout instructions here.
+
 Build the executable from the Wiretap checkout with Go 1.26+:
 
 ```sh
@@ -67,14 +71,26 @@ go mod edit -replace=github.com/mattlock83/wiretap=/absolute/path/to/wiretap
 go mod tidy
 ```
 
+For Python 3.9+, install the local SDK with the optional pytest integration into
+your test project's virtual environment:
+
+```sh
+python -m pip install "/absolute/path/to/wiretap/sdk/python[pytest]"
+```
+
+The [Python SDK guide](../sdk/python/README.md) covers fixture setup and explicit
+client routing. The SDK uses the same local `wiretap` executable.
+
 See [local installation](local-release.md) for versioned binary archives and
 package checks, and the [JavaScript SDK](../sdk/js/README.md) for supported runner
 versions. These installation steps require no package publication.
 
 To try a complete suite first, choose the [Go example](../examples/go-suite/README.md),
 [existing Express/Jest suite](../examples/existing-jest/README.md),
-[Playwright Todo API](../examples/playwright-runner/README.md) or
-[Mocha example](../examples/mocha-runner/README.md).
+[Playwright Todo API](../examples/playwright-runner/README.md),
+or [pytest suite](../examples/pytest-suite/README.md). The
+[consumer/provider example](../examples/consumer-provider/README.md) demonstrates
+the complete capture, passing check, provider breakage and repair workflow.
 
 ## 2. Configure your application and mocks
 
@@ -138,6 +154,7 @@ record test outcomes, finalize exports and stop it around your usual command.
 | [Jest](../sdk/js/docs/jest.md) | Wrap the config with `withWiretap`; point the shared client at `WIRETAP_SUT_URL`. |
 | [Playwright Test](../sdk/js/docs/playwright.md) | Wrap the config and use the supplied `test` fixture; keep relative API requests and existing server fixtures. |
 | [Mocha](../sdk/js/docs/mocha.md) | Wrap the config; point the shared client at `WIRETAP_SUT_URL`. |
+| [Python / pytest](../sdk/python/README.md) | Use the `wiretap` fixture or stdlib context managers with explicit capture URLs and trace headers. |
 | [Plain JavaScript / Node](../sdk/js/docs/javascript.md) | Use the lifecycle API and a project-owned parent harness; the [complete Node example](../examples/node-suite/README.md) handles startup, tracing and multi-file cleanup. |
 | [Go `testing`](../sdk/go/README.md) | Add `wiretap.Run(m)` in `TestMain` and `wiretap.StartTest(t)` in each test or shared setup helper. |
 
@@ -196,7 +213,7 @@ Run the selected integration-test package with `go test -count=1` for fresh
 artifacts. The [Go guide](../sdk/go/README.md) also shows how Wiretap can host your
 `http.Handler`. Each package creates its own archive; `go test -count=1 ./...`
 does not combine them. Start with one integration-test package for the workflow
-below. For multiple packages, arrange comparisons for each relevant archive.
+below. Use explicit [run sets](run-sets.md) to group packages from the same build.
 
 ### Route downstream calls too
 
@@ -208,6 +225,7 @@ Configure its Inventory client to call the dependency capture URL:
 | JavaScript runner session | `session.dependencyUrls.inventory` |
 | Plain JavaScript capture handle | `capture.dependencyUrl('inventory')` |
 | Go session | `session.Dependencies["inventory"]` |
+| Python attempt | `attempt.dependencies["inventory"]` |
 
 Apply that URL through the runner's session setup hook or fixture before the
 test makes requests; Jest provides an
@@ -230,15 +248,16 @@ Begin with sequential tests. For parallel tests sharing one application, enable
 explicit sessions and propagate W3C trace context through its server and outbound
 clients; see [tracing and concurrency](otel-adoption.md). Await requests and
 expected dependency work before the attempt ends, and keep fixtures available
-through capture cleanup. Managed adapters handle tracing setup and finalization;
-a custom harness must do both explicitly.
+through capture cleanup. Managed adapters own finalization. Python callers pass
+the attempt's `headers` explicitly; JavaScript and Go provide the tracing
+helpers described in their SDK guides. A custom harness owns both steps.
 
 ## 4. Read the artifacts
 
 Use the exact run path returned by finalization or recorded in `last-run.json`.
-Managed JavaScript runners put the latest receipt and `wiretap.log` beside the
-run directories under `artifacts/wiretap/`; Go puts them inside each package's
-archive. Forced termination may leave no new receipt or completed exports, so
+Managed Go, JavaScript and Python owners put the canonical receipt and bounded
+`wiretap.log` inside each run archive. JavaScript also retains an advisory
+root-level latest receipt for compatibility; it can race between concurrent suites. Forced termination may leave no new receipt or completed exports, so
 check the current command's outcome before using those paths.
 
 A normally finalized run contains these artifacts, with contract and payload

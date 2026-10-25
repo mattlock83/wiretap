@@ -1,0 +1,17 @@
+openapi: 3.0.3
+info: {title: Inventory example, version: '1.0'}
+paths:
+  /stock/widget-1:
+    get:
+      operationId: getStock
+      responses:
+        '200':
+          description: Available inventory
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [quantity]
+                additionalProperties: false
+                properties:
+                  quantity: {type: integer, minimum: 0}

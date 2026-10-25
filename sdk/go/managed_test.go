@@ -2,6 +2,7 @@ package wiretap
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -46,6 +47,17 @@ func TestManagedHelperProcess(t *testing.T) {
 		return
 	}
 	mode := os.Args[marker+1]
+	mutate := func(stage string, receipt map[string]any) {
+		prefix := "conformance:" + stage + ":"
+		if strings.HasPrefix(mode, prefix) {
+			data, _ := base64.StdEncoding.DecodeString(strings.TrimPrefix(mode, prefix))
+			var overlay map[string]any
+			_ = json.Unmarshal(data, &overlay)
+			for key, value := range overlay {
+				receipt[key] = value
+			}
+		}
+	}
 	if mode == "exit" {
 		fmt.Fprint(os.Stderr, strings.Repeat("x", managedLogLimit*2)+"startup diagnostic tail")
 		os.Exit(7)
@@ -67,6 +79,7 @@ func TestManagedHelperProcess(t *testing.T) {
 	output, _ = filepath.Abs(output)
 	bundle, _ := os.MkdirTemp(output, "run-managed-")
 	ready := map[string]any{"control_url": address, "pid": os.Getpid()}
+	mutate("readiness", ready)
 	switch mode {
 	case "wrong-pid":
 		ready["pid"] = os.Getpid() + 1
@@ -93,7 +106,9 @@ func TestManagedHelperProcess(t *testing.T) {
 			_, _ = io.WriteString(w, "null")
 			return
 		}
-		_ = json.NewEncoder(w).Encode(map[string]any{"run_id": "run-managed", "bundle_path": bundle, "sut_url": address})
+		result := map[string]any{"run_id": "run-managed", "bundle_path": bundle, "sut_url": address}
+		mutate("start", result)
+		_ = json.NewEncoder(w).Encode(result)
 	})
 	mux.HandleFunc("/v1/finishRun", func(w http.ResponseWriter, r *http.Request) {
 		finishCount++
@@ -108,6 +123,7 @@ func TestManagedHelperProcess(t *testing.T) {
 		var payload map[string]any
 		_ = json.NewDecoder(r.Body).Decode(&payload)
 		result := map[string]any{"status": "complete", "run_id": "run-managed", "bundle_path": bundle, "finish_count": finishCount, "requested": payload}
+		mutate("finish", result)
 		if mode == "finish-error" {
 			result["error"] = strings.Repeat("export failure detail ", 1200)
 			result["outputs"] = map[string]any{"bundle_path": bundle, "coverage": map[string]string{"json": filepath.Join(bundle, "coverage.json")}, "postman": []string{filepath.Join(bundle, "postman.json")}}

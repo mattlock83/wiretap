@@ -1,6 +1,7 @@
 const { AsyncLocalStorage } = require("node:async_hooks");
 const tracing = require("./tracing");
 const { CoreClient } = require("./control-client");
+const { retainCleanupError } = require("./cleanup-error");
 
 function rejectRemovedRedactions(options) {
   if (options && (Object.hasOwn(options, "redactions") ||
@@ -183,7 +184,10 @@ class Runtime {
     try { result = await attempt.run(fn); }
     catch (err) { failed = true; failure = err; }
     try { await attempt.finish({ status: failed ? "fail" : "pass", error: failure }); }
-    catch (err) { if (!failed) { failed = true; failure = err; } }
+    catch (err) {
+      if (failed) retainCleanupError(failure, err);
+      else { failed = true; failure = err; }
+    }
     if (failed) throw failure;
     return result;
   }

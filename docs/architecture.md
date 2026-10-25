@@ -13,14 +13,16 @@ incomplete-capture errors still fail integration setup or cleanup.
 
 | Component | Responsibility |
 | --- | --- |
-| `cmd/wiretap` | Host the control service; offline coverage/Postman exports and CA utilities. |
-| `sdk/js`, `sdk/go` | Runner integration, owned or external runtime lifecycle, standard trace context and artifact locations. |
+| `cmd/wiretap` | Host the control service; local setup checks, offline reports/checks, exports and CA utilities. |
+| `sdk/js`, `sdk/go`, `sdk/python` | Runner integration, owned or external runtime lifecycle, standard trace context and artifact locations. |
 | `internal/app` | Run/test sessions, dependency routes, draining and schema validation. |
 | `internal/proxy`, `internal/capture` | Forward traffic and retain bounded evidence. |
 | `internal/tracecontext` | W3C context parsing and propagation. |
 | `internal/artifact` | Shared in-memory capture model. |
 | `internal/bundle` | Run inventory, immutable attempt JSON, frozen contracts, payloads and integrity checks. |
-| `internal/coverage` | Operation/contract-condition coverage from verified evidence. |
+| `internal/coverage` | Operation/contract-condition coverage from verified evidence, explicit gates and baseline diffs. |
+| `internal/assumptions` | Verify mock exchanges and exercised rules against provider tests and Postman projections. |
+| `internal/runset` | Pin and validate same-build archive groups while preserving per-run evidence. |
 | `internal/postman` | HTTP v2.1 and native gRPC v3 collection exports. |
 | `internal/project` | Discover and resolve `.wiretap.yaml` for the runtime. |
 | `internal/core` | Runtime configuration and component lifecycle. |
@@ -113,5 +115,5 @@ Wiretap does not execute or generate tests.
 
 HTTP and native gRPC support capture, validation and coverage, including all four
 RPC shapes. Connect wire format, gRPC-Web, messaging and GraphQL capture adapters
-are not supported. See the [gRPC support record](grpc-support-plan.md) and
+are not supported. See the [gRPC support record](grpc-support.md) and
 [HTTPS trust guide](https-trust.md).

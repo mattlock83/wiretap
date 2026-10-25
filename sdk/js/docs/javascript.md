@@ -136,18 +136,32 @@ async function runSuite() {
 
 Call `runSuite()` from the harness and surface its rejection. The managed owner
 reads `.wiretap.yaml`, resolves relative `config` and `outputDir` from `cwd`, and
-selects available local ports. Its `close()` is idempotent and saves the latest
-`last-run.json` and `wiretap.log` in the output directory beside the run archives.
-Use a distinct `outputDir` for independent concurrent harnesses.
+selects available local ports. Its `close()` is idempotent and saves the canonical
+`last-run.json` and bounded `wiretap.log` inside `owner.runtimeInfo.bundle_path`.
+Concurrent harnesses keep separate records. The output-root `last-run.json` is
+an advisory latest snapshot for compatibility. An invalid run receipt, failed
+export, unsuccessful process exit or forced kill rejects `close()`.
 
 A single suite can call `startCapture` in suite setup and `finishRun` in suite
 cleanup. When multiple suites/workers share a run, set `manageRuntime: false`
 in worker integrations. Their `finishRun` calls check local cleanup but leave
 the shared capture running. One global suite owner calls `/v1/finishRun` after
 all workers have completed. Jest test workers always use this shared
-mode. `withWiretap` supplies the global owner automatically; for an externally
-managed runtime, configure global teardown as shown in the
-[example](https://github.com/mattlock83/wiretap/blob/main/examples/basic-rest/jest-teardown.cjs).
+mode. `withWiretap` supplies the global owner automatically. For an externally
+managed runtime, set Jest's `globalTeardown` to a module that finalizes after
+every worker has finished:
+
+```js
+module.exports = async () => {
+  const response = await fetch(`${process.env.WIRETAP_BASE_URL}/v1/finishRun`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: '{}',
+    signal: AbortSignal.timeout(30000),
+  });
+  if (!response.ok) throw new Error(`Wiretap finalization failed: ${await response.text()}`);
+};
+```
 
 `finishRun` finalizes the bundle and stops the capture proxy. It does not stop
 the HTTP control process. Your harness owns that process and the SUT/mocks.
@@ -259,7 +273,10 @@ the recorded JSON evidence. Capture drains accepted requests
 for five seconds by default; `drainTimeoutMs` selects 0–60000ms. Incomplete
 capture fails cleanup; schema mismatches are retained as validation evidence
 without changing the framework outcome. An original callback error
-is preserved if cleanup also fails. Omitted schemas show skipped or
+is preserved if cleanup also fails; secondary errors are available as
+`error.cleanupError` and `error.cleanupErrors`. For a frozen error or a primitive
+thrown value, cleanup emits a diagnostic while preserving that original value.
+Omitted schemas show skipped or
 partial validation without changing validation findings for supplied schemas.
 
 ### Generate suite outputs

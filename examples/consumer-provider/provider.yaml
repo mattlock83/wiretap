@@ -1,0 +1,7 @@
+version: 1
+application: {id: inventory-example}
+outputs: {coverage: [json, text], postman: true}
+sut:
+  id: inventory-http
+  kind: service
+  schema: ${INVENTORY_SCHEMA}

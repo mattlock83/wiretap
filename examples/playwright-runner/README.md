@@ -14,8 +14,10 @@ go build -o dist/wiretap ./cmd/wiretap
 WIRETAP_BINARY="$PWD/dist/wiretap" node sdk/js/node_modules/@playwright/test/cli.js test --config examples/playwright-runner/playwright.config.cjs
 ```
 
-The run creates `artifacts/last-run.json`, a Wiretap artifact, JSON/text API
-coverage reports, and a Postman collection inside this example directory.
+The run creates an archive under this example's `artifacts/` directory containing
+its canonical `last-run.json`, bounded `wiretap.log`, JSON/text API coverage
+reports, and a Postman collection. `artifacts/last-run.json` is an advisory latest
+snapshot; retain the archive-local receipt when runs share an output directory.
 Both tests pass. The deliberately invalid request remains visible as a request
 schema mismatch, separately from the test's passing outcome.
 
@@ -36,6 +38,6 @@ WIRETAP_BINARY="$PWD/dist/wiretap" WIRETAP_PLAYWRIGHT_BROWSER=chromium WIRETAP_P
 
 Use `WIRETAP_PLAYWRIGHT_BROWSER=chrome` to use an installed Google Chrome instead.
 The check requires three passing tests, matching trace headers in both the API
-and browser responses, and a completed `artifacts/last-run.json` with no output
-errors. The parallel example explicitly enables traced sessions; its API has no
+and browser responses, and a completed run receipt with no output errors.
+The parallel example explicitly enables traced sessions; its API has no
 downstream HTTP calls requiring additional propagation.

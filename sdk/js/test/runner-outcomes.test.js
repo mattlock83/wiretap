@@ -20,9 +20,10 @@ for (const runner of ['node', 'jest']) test(`${runner} final outcomes include ti
   // result and capture lifecycle, without introducing failures in npm test.
   const env = { ...process.env, WIRETAP_REVIEW_RESULT: resultPath };
   delete env.NODE_TEST_CONTEXT;
+  let runnerFailure;
   await assert.rejects(execute(process.execPath, args, {
     env, timeout: 20000
-  }), error => error.code === 1);
+  }), error => { runnerFailure = error; return error.code === 1; });
   const result = JSON.parse(fs.readFileSync(resultPath, 'utf8'));
   const setups = result.calls.filter(call => call.path === '/v1/setupTest');
   const teardowns = result.calls.filter(call => call.path === '/v1/teardownTest');
@@ -42,6 +43,9 @@ for (const runner of ['node', 'jest']) test(`${runner} final outcomes include ti
     for (const name of ['hook failure', 'subtest failure', 'timeout']) assert.equal(spans[name], 2, name);
     assert.equal(spans.validation, 1);
   } else {
+    assert.equal(outcomes['test and capture cleanup fail'], 'fail');
+    assert.match(runnerFailure.stderr, /original test failure retained/);
+    assert.match(runnerFailure.stderr, /secondary capture cleanup failed/);
     assert.equal(outcomes['never settles'], 'fail');
     assert.equal(outcomes['assertion count'], 'fail');
     assert.equal(outcomes['hooks hook failure'], 'fail');

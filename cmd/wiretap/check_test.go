@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -253,6 +255,59 @@ func TestCLIAssumptionCheckProtectsInputsAndExistingReports(t *testing.T) {
 	data, err := os.ReadFile(output)
 	if err != nil || string(data) != "keep existing" {
 		t.Fatal("invalid input changed existing report")
+	}
+}
+
+func TestCLIAssumptionCheckOutputRespectsUmask(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("requires POSIX file permissions")
+	}
+	if os.Getenv("WIRETAP_TEST_CHECK_UMASK") != "child" {
+		command := exec.Command("sh", "-c", `umask 077; exec "$@"`, "sh", os.Args[0], "-test.run=^TestCLIAssumptionCheckOutputRespectsUmask$")
+		command.Env = append(os.Environ(), "WIRETAP_TEST_CHECK_UMASK=child")
+		if output, err := command.CombinedOutput(); err != nil {
+			t.Fatalf("check with restrictive umask: %v\n%s", err, output)
+		}
+		return
+	}
+	consumer := cliCheckArchive(t, true, "/items", 200, `{"ok":true}`)
+	provider := cliCheckArchive(t, false, "/items", 200, `{"ok":true}`)
+	for _, format := range []string{"json", "text"} {
+		for _, existing := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/existing=%t", format, existing), func(t *testing.T) {
+				output := filepath.Join(t.TempDir(), "report")
+				mode := os.FileMode(0600)
+				if existing {
+					if err := os.WriteFile(output, []byte("old report"), 0600); err != nil {
+						t.Fatal(err)
+					}
+					mode = 0640
+					if err := os.Chmod(output, mode); err != nil {
+						t.Fatal(err)
+					}
+				}
+				args := []string{"check", "consumer", "--consumer", consumer, "--provider", provider, "--format", format, "--output", output}
+				if code := execute(context.Background(), args); code != 0 {
+					t.Fatalf("check exit %d", code)
+				}
+				info, err := os.Stat(output)
+				if err != nil || info.Mode().Perm() != mode {
+					t.Fatalf("wrong check report permissions: %v, %v; want %v", info, err, mode)
+				}
+				data, err := os.ReadFile(output)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if format == "json" {
+					var report assumptions.Report
+					if err := json.Unmarshal(data, &report); err != nil || !report.Compatible {
+						t.Fatalf("invalid check report: %s, %v", data, err)
+					}
+				} else if !strings.HasPrefix(string(data), "PASS: check consumer") {
+					t.Fatalf("invalid check report: %s", data)
+				}
+			})
+		}
 	}
 }
 

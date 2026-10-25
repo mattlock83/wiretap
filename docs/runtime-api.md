@@ -2,7 +2,8 @@
 
 The SDK calls this HTTP API from your existing test framework's lifecycle.
 The [JavaScript runner adapters](../sdk/js/README.md) and
-[Go `Run`/`StartTest` hooks](../sdk/go/README.md) manage the lifecycle for ordinary
+[Go `Run`/`StartTest` hooks](../sdk/go/README.md) and
+[Python/pytest integration](../sdk/python/README.md) manage the lifecycle for ordinary
 suites. Use this reference for another language or an externally managed runtime.
 
 For direct integration, start the control process with
@@ -17,6 +18,7 @@ Wiretap and does not itself establish that authentication was tested.
 | Method | Endpoint | Purpose |
 | --- | --- | --- |
 | GET | `/healthz` | Check that the control service is available. |
+| GET | `/v1/capabilities` | Read the API version, producer and supported capabilities. |
 | POST | `/v1/startRun` | Start capture and create/reuse the run bundle. |
 | POST | `/v1/setupTest` | Register a test attempt, trace and schemas. |
 | POST | `/v1/teardownTest` | Drain, validate, and commit an attempt. |
@@ -258,3 +260,17 @@ With omitted schemas, `capture.schema_validation.status` is `partial` if
 other APIs were validated or `skipped` if all omitted their schemas. `skipped`
 lists the omitted schema IDs. Contract violations produce validation status
 `fail` without overwriting the recorded framework outcome.
+
+## Discover capabilities
+
+`GET /v1/capabilities` returns `api_version: "1.0"`, `producer` and a
+`capabilities` array containing `capture.http`, `capture.grpc`, `outputs.coverage`,
+`outputs.postman`, `test.identity` and `run.finalize`. This read starts no run and
+does not wait for capture control operations. Other methods return 405. Existing
+clients can continue without probing; adapters supporting older binaries may
+treat 404 as unavailable discovery.
+
+Successful finish responses and export receipts include `report_version: "1.0"`
+and `producer`. Fields are additive; existing lifecycle behavior is unchanged.
+See the [control response schemas](control-api.schema.json),
+[SDK lifecycle contract](sdk-authoring.md) and [format compatibility](support.md#format-compatibility).

@@ -1,0 +1,15 @@
+version: 1
+application: {id: orders-example}
+outputs: {coverage: [json, text], postman: true}
+sut:
+  id: orders-http
+  kind: service
+  schema: orders.openapi.yaml
+dependencies:
+  inventory:
+    kind: mock
+    url: ${INVENTORY_MOCK_URL}
+provider_mappings:
+  inventory:
+    application_id: inventory-example
+    api_id: inventory-http

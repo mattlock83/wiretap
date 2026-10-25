@@ -141,11 +141,11 @@ Ctrl+C and SIGTERM use Playwright's cancellation and cleanup path. Completed
 cleanup records the interrupted test outcome and finalizes exports before the
 owned process stops; forced process termination cannot complete that cleanup.
 
-Managed JavaScript runs write the latest `last-run.json` receipt and
-`wiretap.log` beside their unique run archive directories. The receipt contains
-the exact archive, coverage and Postman paths. Keep the complete output directory
-in CI, including failed runs, and give independent concurrent runs different
-`outputDir` values.
+Each managed run writes its canonical `last-run.json` receipt and bounded
+`wiretap.log` inside its unique archive directory. The receipt contains the exact
+archive, coverage and Postman paths. Keep the complete output directory in CI,
+including failed runs. The output-root `last-run.json` is an advisory latest
+snapshot; archive-local receipts remain independent when owners run concurrently.
 
 Only isolated synthetic test data and dummy secrets belong in these captures.
 The SDK stores the captured traffic unchanged.

@@ -34,7 +34,7 @@
       <div class="hero-copy">
         <p class="eyebrow product-eyebrow"><svg class="wiretap-icon product-symbol" viewBox="0 0 64 48" fill="none" aria-hidden="true" focusable="false"><use href="./wiretap-icon.svg#mark"/></svg> Wiretap</p>
         <h1 id="hero-title">Know what your<br class="wide-break"> tests <span>really cover.</span></h1>
-        <p class="hero-description">Turn existing HTTP and gRPC tests into portable evidence, Postman collections and API coverage. Inspect captured calls, check mock assumptions and find untested contract conditions.</p>
+        <p class="hero-description">Capture the HTTP and gRPC traffic from your existing tests. Measure coverage against your specs, check mock assumptions against provider evidence, and keep executable Postman collections.</p>
         <div class="hero-actions">
           <a class="button button-primary" href="#get-started">Try Wiretap</a>
           <a class="text-link" href="#how-it-works">See how it works</a>
@@ -43,7 +43,7 @@
       </div>
 
       <div class="evidence-demo" aria-label="Interactive example of Wiretap evidence">
-        <div class="demo-topbar"><div><svg class="wiretap-icon demo-logomark" viewBox="0 0 64 48" fill="none" aria-hidden="true" focusable="false"><use href="./wiretap-icon.svg#mark"/></svg><strong>orders</strong><span class="demo-slash">/</span><span>raw capture</span></div><span class="demo-example">Example</span></div>
+        <div class="demo-topbar"><div><svg class="wiretap-icon demo-logomark" viewBox="0 0 64 48" fill="none" aria-hidden="true" focusable="false"><use href="./wiretap-icon.svg#mark"/></svg><strong>orders</strong><span class="demo-slash">/</span><span>raw capture</span></div><span class="demo-example">Illustration</span></div>
         <div class="demo-heading"><span class="eyebrow">One test. More to learn.</span><h2>Customer places an order</h2><p><span class="status-dot" aria-hidden="true"></span> Test passed <span class="middot">·</span> 2 captured exchanges</p></div>
         <div class="demo-tabs" role="tablist" aria-label="Explore the example" hidden>
           <button id="tab-traffic" type="button" role="tab" aria-selected="true" aria-controls="panel-traffic" tabindex="0">Test traffic</button>
@@ -74,7 +74,7 @@
       </div>
     </section>
 
-    <div class="container"><div class="compatibility"><p>Fits around the way you test.</p><div><span>HTTP and native gRPC</span><span>OpenAPI and Protobuf</span><span>OpenTelemetry</span><span>JSON and Postman</span></div></div></div>
+    <div class="container"><div class="compatibility"><p>Fits around the way you test.</p><div><span>Go, JavaScript and Python</span><span>HTTP and native gRPC</span><span>OpenAPI 3.0 and Protobuf</span><span>JSON and Postman</span></div></div></div>
 
     <section class="section container" id="how-it-works" aria-labelledby="how-title">
       <div class="section-heading"><p class="eyebrow">Keep the tests. Add the evidence.</p><h2 id="how-title">A small addition to<br>your existing test setup.</h2><p>Run Wiretap alongside your application. It watches the HTTP and gRPC requests and responses that pass through it, while your tests and mocks keep doing their jobs.</p></div>
@@ -108,7 +108,7 @@
       </div>
       <div class="steps">
         <article><span class="step-number">01</span><h3>Connect the boundaries</h3><p>Supply your application's API spec and route calls through Wiretap. HTTP dependency specs are optional.</p></article>
-        <article><span class="step-number">02</span><h3>Run your tests</h3><p>Add the Jest, Playwright Test or Mocha adapter, or Go’s Run and StartTest hooks. Keep your existing assertions.</p></article>
+        <article><span class="step-number">02</span><h3>Run your tests</h3><p>Use the pytest, Jest, Playwright Test or Mocha integration, or Go’s Run and StartTest hooks. Keep your existing assertions.</p></article>
         <article><span class="step-number">03</span><h3>Keep the conversation</h3><p>Keep raw API traffic and frozen contracts, with JSON coverage tied to named tests.</p></article>
       </div>
     </section>
@@ -138,15 +138,15 @@ note:     { type: string } # optional</code></pre><div class="case-heading"><spa
         <div class="artifacts-copy">
           <p class="eyebrow">Raw artifacts and coverage</p>
           <h2 id="artifacts-title">Keep the evidence.<br>Use it in your own tools.</h2>
-          <p>Every run preserves structured test attempts, captured API traffic and supplied contracts. Export coverage as JSON or YAML, or captured HTTP and gRPC exchanges as Postman collections.</p>
+          <p>Each run keeps named test attempts, captured traffic and frozen contracts together. Read coverage as text, JSON or YAML. Export HTTP exchanges as Postman v2.1 collections and native gRPC exchanges as v3 collections.</p>
           <ul class="artifacts-benefits">
             <li><strong>Files you can inspect.</strong> Keep the capture with your build and review the requests and responses behind each test.</li>
-            <li><strong>Coverage you can process.</strong> Use structured output in CI or feed it into your own analysis tools.</li>
+            <li><strong>Evidence you can check.</strong> Apply coverage policies, compare coverage reports and check consumer/provider assumptions in CI.</li>
             <li><strong>Contracts kept with the run.</strong> Rebuild coverage from the captured evidence and frozen specs after your application has stopped.</li>
           </ul>
           <div class="artifacts-links">
             <a class="text-link" href="https://github.com/mattlock83/wiretap/blob/main/docs/artifacts.md">Explore the raw artifacts</a>
-            <a class="text-link" href="https://github.com/mattlock83/wiretap/blob/main/docs/contract-coverage-rules.md">Read the coverage rules</a>
+            <a class="text-link" href="https://github.com/mattlock83/wiretap/blob/main/docs/report-policies.md">Use reports in CI</a>
           </div>
         </div>
         <div class="bundle-files" aria-label="Contents of a Wiretap raw capture and coverage export">
@@ -156,19 +156,20 @@ note:     { type: string } # optional</code></pre><div class="case-heading"><spa
           <div><code>contracts/</code><span>Frozen OpenAPI and Protobuf specs</span></div>
           <div><code>payloads/</code><span>Captured request and response bodies</span></div>
           <div><code>exports/coverage.json</code><span>Exported contract coverage</span></div>
+          <div><code>exports/postman/</code><span>Executable exchanges and evidence</span></div>
         </div>
       </div>
     </section>
 
     <section class="section container questions-section" aria-labelledby="questions-title"><div><p class="eyebrow">A few practical details</p><h2 id="questions-title">Fits your tests.<br>Keeps its promises clear.</h2></div><div class="questions">
-      <details><summary>Do I need to change my test framework?</summary><p>No. Jest, Playwright Test and Mocha use a configuration wrapper. Go uses Run in TestMain and StartTest in a test or shared helper. These integrations handle Wiretap startup, cleanup and exports. Plain JavaScript and the HTTP API support custom harnesses. Your framework owns the tests and assertions.</p></details>
+      <details><summary>Do I need to change my test framework?</summary><p>Use the integration for your existing runner: the pytest fixture, the Jest or Mocha configuration wrapper, the Playwright Test wrapper and fixture, or Go’s Run and StartTest hooks. They handle Wiretap startup, cleanup and exports. Python, JavaScript and the HTTP API also support custom harnesses. Your framework owns the tests and assertions. See the <a href="https://github.com/mattlock83/wiretap/blob/main/docs/support.md">support matrix</a> for versions and scope.</p></details>
       <details><summary>Does my application need Wiretap-specific code?</summary><p>Configure your test environment's URLs so traffic passes through Wiretap. For parallel tests sharing one application, reuse working OpenTelemetry/W3C trace propagation. Without it, run sequentially or isolate workers. There is no Wiretap-specific ID to propagate through the application.</p></details>
       <details><summary>Do I need a spec?</summary><p>Your main HTTP API under test requires OpenAPI by default, with an explicit opt-out when needed. Consumed or mocked HTTP dependencies need no spec unless you opt into their validation and contract coverage. Without one, Wiretap still captures traffic and Postman examples; dependency contract coverage remains unknown. Native gRPC still requires Protobuf descriptors from reflection or local files for message decoding and coverage.</p></details>
       <details><summary>Can I check my mocks against provider tests?</summary><p>Keep complete runs and Postman exports under application folders in your shared artifact store. Restore selected snapshots locally and use <code>wiretap check consumer --consumer ./my-run --artifacts ./api-evidence</code> to find mapped providers. Use <code>check provider</code> with <code>--provider</code> to find mapped consumers. Every selected mock scenario needs supporting evidence from the provider's passing tests; uncovered scenarios fail. The provider owns the frozen HTTP contract, so HTTP consumers need no copied spec. With both contracts, the check also compares supported validation rules. <a href="https://github.com/mattlock83/wiretap/blob/main/docs/assumption-checks.md">Read the checking guide and its limits</a>.</p></details>
       <details><summary>What data should I use?</summary><p>Use isolated test environments with synthetic data and dummy secrets. Wiretap retains the traffic you send, including payloads and credentials. Captured traffic is retained unchanged.</p></details>
     </div></section>
 
-    <section class="get-started-section" id="get-started" aria-labelledby="start-title"><div class="container start-layout"><div><p class="eyebrow">Put your existing tests to work</p><h2 id="start-title">Same tests.<br>A lot more insight.</h2><p>Follow the getting started guide to integrate your tests, understand the artifacts, share them by application and check consumer/provider assumptions.</p><a class="button button-primary" href="https://github.com/mattlock83/wiretap/blob/main/docs/getting-started-existing-tests.md">Read the getting started guide</a></div><div class="quickstart"><div class="quickstart-heading"><strong>Try the Go example</strong><button class="copy-button" type="button" data-copy="quickstart-code" hidden>Copy commands</button></div><pre><code id="quickstart-code">git clone https://github.com/mattlock83/wiretap.git
+    <section class="get-started-section" id="get-started" aria-labelledby="start-title"><div class="container start-layout"><div><p class="eyebrow">Put your existing tests to work</p><h2 id="start-title">Same tests.<br>A lot more insight.</h2><p>Follow the getting started guide to integrate your tests, understand the artifacts and check consumer/provider assumptions. Runnable examples cover <a href="https://github.com/mattlock83/wiretap/blob/main/examples/pytest-suite/README.md">pytest</a>, <a href="https://github.com/mattlock83/wiretap/blob/main/examples/README.md">JavaScript runners and Go</a>.</p><a class="button button-primary" href="https://github.com/mattlock83/wiretap/blob/main/docs/getting-started-existing-tests.md">Read the getting started guide</a></div><div class="quickstart"><div class="quickstart-heading"><strong>Try the Go example</strong><button class="copy-button" type="button" data-copy="quickstart-code" hidden>Copy commands</button></div><pre><code id="quickstart-code">git clone https://github.com/mattlock83/wiretap.git
 cd wiretap
 go build -o dist/wiretap ./cmd/wiretap
 WIRETAP_BINARY="$PWD/dist/wiretap" go -C examples/go-suite test -count=1 ./...</code></pre><p>Requires Go 1.26+. Commands shown for macOS/Linux; see the <a href="https://github.com/mattlock83/wiretap/blob/main/examples/go-suite/README.md">example guide</a> for Windows.</p><span class="copy-status" role="status" aria-live="polite"></span></div></div></section>

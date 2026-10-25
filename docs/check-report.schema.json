@@ -1,0 +1,466 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "check-report.schema.json",
+  "title": "Wiretap assumption check report 1.0",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/pair"
+    },
+    {
+      "$ref": "#/$defs/store"
+    },
+    {
+      "$ref": "#/$defs/set"
+    }
+  ],
+  "$defs": {
+    "producer": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "const": "wiretap"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "commit": {
+          "type": "string"
+        },
+        "dirty": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name",
+        "version"
+      ]
+    },
+    "evidence": {
+      "type": "object",
+      "properties": {
+        "run_id": {
+          "type": "string"
+        },
+        "attempt_id": {
+          "type": "string"
+        },
+        "test_name": {
+          "type": "string"
+        },
+        "flow_id": {
+          "type": "string"
+        },
+        "evidence_path": {
+          "type": "string"
+        },
+        "test_outcome": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "run_id",
+        "attempt_id",
+        "test_name",
+        "flow_id",
+        "evidence_path",
+        "test_outcome"
+      ]
+    },
+    "source": {
+      "type": "object",
+      "properties": {
+        "bundle_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "run_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "snapshot_revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "run_state": {
+          "enum": [
+            "open",
+            "complete",
+            "interrupted"
+          ]
+        },
+        "manifest_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "collections": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "application_id": {
+          "type": "string"
+        },
+        "api_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "bundle_path",
+        "run_id",
+        "snapshot_revision",
+        "run_state",
+        "manifest_sha256",
+        "collections"
+      ]
+    },
+    "counts": {
+      "type": "object",
+      "properties": {
+        "assumptions": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "verified": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "uncovered": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "mismatched": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unverified": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "assumptions",
+        "verified",
+        "uncovered",
+        "mismatched",
+        "unverified"
+      ]
+    },
+    "finding": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "enum": [
+            "uncovered",
+            "mismatch",
+            "unverified"
+          ]
+        },
+        "code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "message": {
+          "type": "string"
+        },
+        "operation": {
+          "type": "string"
+        },
+        "consumer": {
+          "$ref": "#/$defs/evidence"
+        },
+        "provider": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/evidence"
+          }
+        },
+        "differences": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "excerpts": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "expected": {
+                "type": "string",
+                "maxLength": 257
+              },
+              "actual": {
+                "type": "string",
+                "maxLength": 257
+              }
+            },
+            "required": [
+              "path",
+              "expected",
+              "actual"
+            ]
+          }
+        }
+      },
+      "required": [
+        "kind",
+        "code",
+        "message"
+      ]
+    },
+    "match": {
+      "type": "object",
+      "properties": {
+        "consumer": {
+          "$ref": "#/$defs/evidence"
+        },
+        "provider": {
+          "$ref": "#/$defs/evidence"
+        },
+        "contract_check": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "consumer",
+        "provider",
+        "contract_check"
+      ]
+    },
+    "pair": {
+      "type": "object",
+      "properties": {
+        "report_version": {
+          "const": "1.0"
+        },
+        "rules_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "producer": {
+          "$ref": "#/$defs/producer"
+        },
+        "mode": {
+          "enum": [
+            "consumer",
+            "provider"
+          ]
+        },
+        "compatible": {
+          "type": "boolean"
+        },
+        "counts": {
+          "$ref": "#/$defs/counts"
+        },
+        "scope": {
+          "const": "observed_mock_examples_and_exercised_contracts"
+        },
+        "consumer": {
+          "$ref": "#/$defs/source"
+        },
+        "provider": {
+          "$ref": "#/$defs/source"
+        },
+        "dependency": {
+          "type": "string",
+          "minLength": 1
+        },
+        "binding": {
+          "type": "string"
+        },
+        "ignored_headers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "matches": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/match"
+          }
+        },
+        "findings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/finding"
+          }
+        },
+        "excluded_provider_evidence": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "evidence": {
+                "$ref": "#/$defs/evidence"
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "evidence",
+              "reason"
+            ]
+          }
+        }
+      },
+      "required": [
+        "report_version",
+        "rules_version",
+        "producer",
+        "mode",
+        "compatible",
+        "counts",
+        "scope",
+        "consumer",
+        "provider",
+        "dependency",
+        "binding",
+        "ignored_headers",
+        "matches",
+        "findings",
+        "excluded_provider_evidence"
+      ]
+    },
+    "store": {
+      "type": "object",
+      "properties": {
+        "report_version": {
+          "const": "1.0"
+        },
+        "rules_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "producer": {
+          "$ref": "#/$defs/producer"
+        },
+        "mode": {
+          "enum": [
+            "consumer",
+            "provider"
+          ]
+        },
+        "compatible": {
+          "type": "boolean"
+        },
+        "counts": {
+          "$ref": "#/$defs/counts"
+        },
+        "scope": {
+          "const": "discovered_consumer_provider_relationships"
+        },
+        "artifacts_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "comparisons": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/pair"
+          }
+        }
+      },
+      "required": [
+        "report_version",
+        "rules_version",
+        "producer",
+        "mode",
+        "compatible",
+        "counts",
+        "scope",
+        "artifacts_path",
+        "comparisons"
+      ]
+    },
+    "set": {
+      "type": "object",
+      "properties": {
+        "report_version": {
+          "const": "1.0"
+        },
+        "rules_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "producer": {
+          "$ref": "#/$defs/producer"
+        },
+        "mode": {
+          "enum": [
+            "consumer",
+            "provider"
+          ]
+        },
+        "compatible": {
+          "type": "boolean"
+        },
+        "counts": {
+          "$ref": "#/$defs/counts"
+        },
+        "scope": {
+          "const": "same_build_run_sets"
+        },
+        "dependency": {
+          "type": "string",
+          "minLength": 1
+        },
+        "consumers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/source"
+          }
+        },
+        "providers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/source"
+          }
+        },
+        "matches": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/match"
+          }
+        },
+        "findings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/finding"
+          }
+        },
+        "ignored_headers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "report_version",
+        "rules_version",
+        "producer",
+        "mode",
+        "compatible",
+        "counts",
+        "scope",
+        "dependency",
+        "consumers",
+        "providers",
+        "matches",
+        "findings",
+        "ignored_headers"
+      ]
+    }
+  }
+}

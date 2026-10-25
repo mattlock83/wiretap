@@ -50,14 +50,44 @@ func execute(ctx context.Context, args []string) int {
 		}
 		return code
 	}
+	if command == "run-set" {
+		if err := runSetCommand(ctx, args); err != nil {
+			if errors.Is(err, flag.ErrHelp) {
+				return 0
+			}
+			fmt.Fprintln(os.Stderr, err)
+			return 2
+		}
+		return 0
+	}
+	if command == "doctor" || command == "init" || command == "compare" {
+		var err error
+		switch command {
+		case "doctor":
+			err = doctorCommand(ctx, args)
+		case "init":
+			err = initCommand(args)
+		case "compare":
+			err = compareCommand(ctx, args)
+		}
+		if err == nil || errors.Is(err, flag.ErrHelp) {
+			return 0
+		}
+		fmt.Fprintln(os.Stderr, err)
+		if errors.Is(err, errUsage) {
+			return 2
+		}
+		return 1
+	}
 	if command != "" && command != "ca" {
-		fmt.Fprintf(os.Stderr, "unknown command %q; use wiretap, report, export, check, version, or ca\n", command)
+		fmt.Fprintf(os.Stderr, "unknown command %q; use wiretap, init, doctor, report, export, check, run-set, compare, version, or ca\n", command)
 		return 2
 	}
 	flags := flag.NewFlagSet("wiretap "+command, flag.ContinueOnError)
 	configPath := flags.String("config", "", "project configuration (default: discover .wiretap.yaml)")
 	flags.Usage = func() {
 		fmt.Fprintln(flags.Output(), "Usage: wiretap [--config path]\n  wiretap ca [--config path]\n  wiretap version [--json]\n  wiretap report --bundle <directory> [--format json|yaml|text|all]\n  wiretap export --bundle <directory> --format json --output coverage.json\n  wiretap export --bundle <directory> --format postman --output-dir postman\n  wiretap check consumer --consumer <capture> --artifacts <directory>\n  wiretap check provider --provider <capture> --artifacts <directory>\n  wiretap check <consumer|provider> --consumer <capture> --provider <capture> [--dependency <id>]")
+		fmt.Fprintln(flags.Output(), "  wiretap init --sut-url <url> --schema <file> --application <id>\n  wiretap doctor [--config path] [--format text|json]\n  wiretap run-set --bundle <archive> --bundle <archive> --output run-set.json\n  wiretap report --run-set run-set.json [--output coverage.json]\n  wiretap report --bundle <archive> --policy coverage-policy.json\n  wiretap compare --baseline before.json --current after.json\n  wiretap check <consumer|provider> --consumer-set consumers.json --provider-set providers.json")
 		flags.PrintDefaults()
 	}
 	if err := flags.Parse(args); err != nil {

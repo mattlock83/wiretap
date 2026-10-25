@@ -3,19 +3,22 @@ package assumptions
 import (
 	"context"
 	"fmt"
+
+	"github.com/mattlock83/wiretap/internal/version"
 )
 
 // StoreReport retains the full pair reports so every discovered relationship
 // has its own verdict, selected snapshots and evidence references.
 type StoreReport struct {
-	ReportVersion string    `json:"report_version"`
-	RulesVersion  string    `json:"rules_version"`
-	Mode          string    `json:"mode"`
-	Scope         string    `json:"scope"`
-	ArtifactsPath string    `json:"artifacts_path"`
-	Compatible    bool      `json:"compatible"`
-	Counts        Counts    `json:"counts"`
-	Comparisons   []*Report `json:"comparisons"`
+	Producer      version.Producer `json:"producer"`
+	ReportVersion string           `json:"report_version"`
+	RulesVersion  string           `json:"rules_version"`
+	Mode          string           `json:"mode"`
+	Scope         string           `json:"scope"`
+	ArtifactsPath string           `json:"artifacts_path"`
+	Compatible    bool             `json:"compatible"`
+	Counts        Counts           `json:"counts"`
+	Comparisons   []*Report        `json:"comparisons"`
 }
 
 // CheckStore checks every relationship selected by declared mappings. Each
@@ -27,6 +30,7 @@ func CheckStore(ctx context.Context, options StoreOptions, ignoreHeaders []strin
 		return nil, err
 	}
 	report := &StoreReport{
+		Producer:      version.Current(),
 		ReportVersion: "1.0", RulesVersion: RulesVersion, Mode: options.Mode,
 		Scope: "discovered_consumer_provider_relationships", ArtifactsPath: plan.Root,
 		Compatible: len(plan.Checks) > 0, Comparisons: []*Report{},

@@ -10,24 +10,31 @@ const { startManagedRuntime } = require('../src/managed-runtime');
 const { withWiretap } = require('../src/jest-config');
 const setup = require('../src/jest-global-setup');
 const teardown = require('../src/jest-global-teardown');
+const conformance = require('../../conformance/scenarios.json');
 
 async function fixture(t, behavior = {}) {
   const outputDir = await fs.mkdtemp(path.join(os.tmpdir(), 'wiretap-managed-test-'));
   t.after(() => fs.rm(outputDir, { recursive: true, force: true }));
   const calls = [], signals = [];
   let spawned;
+  const receipts = [], runs = new Map();
   const receipt = { status: 'complete', run_id: 'run-1', bundle_path: path.join(outputDir, 'run-1'), outputs: { coverage: { json: path.join(outputDir, 'run-1', 'coverage.json') }, errors: [] } };
   t.mock.method(childProcess, 'spawn', (binary, args, options) => {
     const child = new EventEmitter();
     let exited = false;
     child.pid = 10101;
+    const index = receipts.length;
+    const currentReceipt = index === 0 ? receipt : { ...receipt, run_id: `run-${index + 1}`, bundle_path: path.join(outputDir, `run-${index + 1}`) };
+    receipts.push(currentReceipt);
+    const controlURL = `http://127.0.0.1:${12345 + index}`;
+    runs.set(new URL(controlURL).port, currentReceipt);
     child.stdin = new PassThrough();
     child.stdout = new PassThrough();
     child.stderr = new PassThrough();
     child.once('exit', () => { exited = true; });
     child.once('error', () => { exited = true; });
     child.stdin.once('close', () => {
-      if (!exited && !behavior.ignoreEOF) child.emit('exit', 0, null);
+      if (!exited && !behavior.ignoreEOF) child.emit('exit', behavior.exitCode ?? 0, behavior.exitSignal ?? null);
     });
     child.kill = signal => {
       signals.push(signal);
@@ -43,19 +50,21 @@ async function fixture(t, behavior = {}) {
         return child.emit('exit', 1, null);
       }
       if (behavior.neverReady) return;
-      await fs.writeFile(options.env.WIRETAP_READY_FILE, JSON.stringify({ control_url: 'http://127.0.0.1:12345', pid: child.pid }));
+      await fs.mkdir(currentReceipt.bundle_path, { recursive: true });
+      await fs.writeFile(options.env.WIRETAP_READY_FILE, JSON.stringify({ control_url: controlURL, pid: child.pid, ...behavior.ready }));
     });
     return child;
   });
   t.mock.method(global, 'fetch', async (url, options) => {
     calls.push({ path: url.pathname, body: JSON.parse(options.body) });
+    const currentReceipt = runs.get(url.port);
     if (url.pathname === '/v1/startRun') {
-      return Response.json({ sut_url: 'http://127.0.0.1:23456', run_id: 'run-1', bundle_path: receipt.bundle_path });
+      return Response.json({ sut_url: 'http://127.0.0.1:23456', run_id: currentReceipt.run_id, bundle_path: currentReceipt.bundle_path, ...behavior.startReceipt });
     }
-    if (behavior.finishError) return Response.json({ ...receipt, error: 'export failed' }, { status: 500 });
-    return Response.json(receipt);
+    if (behavior.finishError) return Response.json({ ...currentReceipt, error: 'export failed' }, { status: 500 });
+    return Response.json({ ...currentReceipt, ...behavior.finishReceipt });
   });
-  return { outputDir, calls, signals, receipt, get spawned() { return spawned; } };
+  return { outputDir, calls, signals, receipt, receipts, get spawned() { return spawned; } };
 }
 
 test('managed runtime uses owned ephemeral listeners and returns the exact once-only receipt', async t => {
@@ -79,6 +88,9 @@ test('managed runtime uses owned ephemeral listeners and returns the exact once-
   assert.equal(f.spawned.child.stdin.destroyed, true);
   assert.deepEqual(f.signals, []);
   assert.deepEqual(JSON.parse(await fs.readFile(path.join(f.outputDir, 'last-run.json'))), f.receipt);
+  assert.deepEqual(JSON.parse(await fs.readFile(path.join(f.receipt.bundle_path, 'last-run.json'))), f.receipt);
+  await fs.access(path.join(f.receipt.bundle_path, 'wiretap.log'));
+  await assert.rejects(fs.stat(path.join(f.outputDir, 'wiretap.log')), { code: 'ENOENT' });
   await assert.rejects(fs.stat(f.spawned.options.env.WIRETAP_READY_FILE), { code: 'ENOENT' });
 });
 
@@ -93,6 +105,73 @@ test('export failure preserves partial receipt and force kills a child that igno
   assert.equal(f.spawned.child.stdin.destroyed, true);
   assert.deepEqual(f.signals, ['SIGKILL']);
   assert.equal(JSON.parse(await fs.readFile(path.join(f.outputDir, 'last-run.json'))).error, 'export failed');
+  assert.equal(JSON.parse(await fs.readFile(path.join(f.receipt.bundle_path, 'last-run.json'))).error, 'export failed');
+});
+
+test('concurrent owners retain independent canonical receipts and logs', async t => {
+  const f = await fixture(t);
+  const first = await startManagedRuntime({ outputDir: f.outputDir });
+  const firstChild = f.spawned.child;
+  const second = await startManagedRuntime({ outputDir: f.outputDir });
+  firstChild.stderr.write('first owner log');
+  f.spawned.child.stderr.write('second owner log');
+  await Promise.all([first.close(), second.close()]);
+  for (const [index, receipt] of f.receipts.entries()) {
+    assert.deepEqual(JSON.parse(await fs.readFile(path.join(receipt.bundle_path, 'last-run.json'))), receipt);
+    assert.equal(await fs.readFile(path.join(receipt.bundle_path, 'wiretap.log'), 'utf8'), index ? 'second owner log' : 'first owner log');
+  }
+  const latest = JSON.parse(await fs.readFile(path.join(f.outputDir, 'last-run.json')));
+  assert.ok(f.receipts.some(receipt => receipt.run_id === latest.run_id));
+});
+
+test('owner.receipt_isolation: process log retains at most 64 KiB of bytes', async t => {
+  const f = await fixture(t);
+  const owner = await startManagedRuntime({ outputDir: f.outputDir });
+  const bytes = Buffer.from('multibyte log: ☃\n'.repeat(6000));
+  f.spawned.child.stderr.write(bytes);
+  await owner.close();
+  const log = await fs.readFile(path.join(f.receipt.bundle_path, 'wiretap.log'));
+  assert.equal(log.length, 65536);
+  assert.deepEqual(log, bytes.subarray(-65536));
+});
+
+for (const { id, set } of conformance.invalid_receipts.readiness) test(`owner.readiness: rejects ${id} before contacting the runtime`, async t => {
+  const f = await fixture(t, { ready: set });
+  await assert.rejects(startManagedRuntime(), /readiness file did not identify/);
+  assert.deepEqual(f.calls, []);
+  assert.equal(f.spawned.child.stdin.destroyed, true);
+});
+
+for (const { id, set } of [...conformance.invalid_receipts.start,
+  { id: 'missing_directory', set: { bundle_path: path.join(os.tmpdir(), `wiretap-missing-${process.pid}`) } },
+]) test(`owner.start_identity: rejects ${id} and cannot write a receipt`, async t => {
+  const f = await fixture(t, { startReceipt: set });
+  await assert.rejects(startManagedRuntime({ outputDir: f.outputDir }), /startRun returned/);
+  assert.deepEqual(f.calls.map(call => call.path), ['/v1/startRun']);
+  await assert.rejects(fs.stat(path.join(f.outputDir, 'last-run.json')), { code: 'ENOENT' });
+  assert.equal(f.spawned.child.stdin.destroyed, true);
+});
+
+for (const { id, set } of conformance.invalid_receipts.finish) test(`owner.finalize_once: rejects ${id} and still stops the child`, async t => {
+  const f = await fixture(t, { finishReceipt: set });
+  const owner = await startManagedRuntime({ outputDir: f.outputDir });
+  await assert.rejects(owner.close(), /finishRun returned an incomplete or mismatched/);
+  assert.equal(f.spawned.child.stdin.destroyed, true);
+  await fs.access(path.join(f.receipt.bundle_path, 'last-run.json'));
+});
+
+for (const behavior of [{ exitCode: 7 }, { exitSignal: 'SIGTERM' }]) test(`unsuccessful child exit fails close: ${JSON.stringify(behavior)}`, async t => {
+  const f = await fixture(t, behavior);
+  const owner = await startManagedRuntime({ outputDir: f.outputDir });
+  await assert.rejects(owner.close(), /process exited unsuccessfully/);
+  assert.deepEqual(JSON.parse(await fs.readFile(path.join(f.receipt.bundle_path, 'last-run.json'))), f.receipt);
+});
+
+test('a forced kill after a successful export fails close', async t => {
+  const f = await fixture(t, { ignoreEOF: true });
+  const owner = await startManagedRuntime({ outputDir: f.outputDir, shutdownTimeoutMs: 5 });
+  await assert.rejects(owner.close(), /exceeded its shutdown timeout and was killed/);
+  assert.deepEqual(f.signals, ['SIGKILL']);
 });
 
 for (const [name, behavior, expected] of [

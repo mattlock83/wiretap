@@ -60,7 +60,8 @@ the inventory mock above exports as `Inventory Service - inventory`.
 
 ## Start the runtime
 
-Use the managed [Jest, Playwright Test or Mocha adapter](../sdk/js/README.md),
+Use the [Python/pytest adapter](../sdk/python/README.md), managed
+[Jest, Playwright Test or Mocha adapter](../sdk/js/README.md),
 Go's [`wiretap.Run(m)`](../sdk/go/README.md), or the JavaScript
 [`startManagedRuntime` helper](../sdk/js/docs/javascript.md). They start Wiretap
 on available local ports, discover the configuration, finalize outputs and stop
@@ -82,7 +83,7 @@ Wiretap has one reverse SUT target per runtime.
 
 For an externally managed runtime, set `WIRETAP_BASE_URL` in the test process
 when the control API is not at its default `http://127.0.0.1:18000`. The plain
-JavaScript API and Go's `Runtime` connect to that process and read configuration
+JavaScript API, Go's `Runtime` and Python's `Runtime` connect to that process and read configuration
 defaults over HTTP. Startup/session responses give the actual
 `sut_url` and dependency capture addresses. A proxy listener ending in `:0`
 allocates a free port; your harness must pass its returned addresses to the
@@ -119,7 +120,7 @@ control process stays available for another run. The harness stops that process
 when it is no longer needed. Stopping it with unfinished capture preserves an
 interrupted bundle and pending attempts. SDK cleanup failures should fail the
 owning test or suite; the test framework controls the test process exit code.
-Managed Go and JavaScript SDKs keep an open stdin pipe as a parent lifeline.
+Managed Go, JavaScript and Python SDKs keep an open stdin pipe as a parent lifeline.
 They set the internal `WIRETAP_EXIT_ON_STDIN_EOF=1` switch so EOF requests graceful
 shutdown when the owning test process crashes, times out or is killed. This
 preserves an interrupted raw archive and pending attempts when shutdown can
@@ -217,16 +218,24 @@ through the [HTTP API](runtime-api.md), usually via an SDK.
 | --- | --- |
 | `wiretap [--config path]` | Start the HTTP control service; wait for capture lifecycle calls. |
 | `wiretap version [--json]` | Show producer version and source commit; `--version` is an alias. |
+| `wiretap init --sut-url <url> --schema <path> --application <id>` | Create a minimal HTTP project configuration without overwriting an existing file; see [setup checks](setup.md). |
+| `wiretap doctor [--config path]` | Check local project configuration, contracts and output paths without starting capture. |
 | `wiretap report --bundle <path>` | Print a JSON coverage report from verified raw artifacts; `--format yaml` and `--output <file>` are supported. |
+| `wiretap report --bundle <path> --policy <file>` | Apply opt-in per-API coverage gates while writing the ordinary JSON, YAML or text report. |
+| `wiretap run-set --bundle <run-a> --bundle <run-b> --output <file>` | Pin explicitly selected archives from the same build; see [run sets](run-sets.md). |
+| `wiretap report --run-set <file>` | Write a JSON aggregate retaining each member's report and combined condition evidence. |
+| `wiretap compare --baseline <report> --current <report>` | Compare two single-archive JSON coverage reports; see [coverage policies and comparison](report-policies.md). |
 | `wiretap export --bundle <path> --format json` | Export a diagnostic coverage report to stdout; `--format yaml` and `--output <file>` are also supported. |
 | `wiretap export --bundle <path> --format postman --output-dir <directory>` | Export HTTP v2.1 and gRPC v3 JSON collections for the SUT and mocked dependencies, with test folders and saved interactions. |
 | `wiretap check consumer --consumer <run> --artifacts <root>` | Find mapped providers beneath shared application folders and check all local mock dependencies. |
 | `wiretap check provider --provider <run> --artifacts <root>` | Find mapped consumers beneath shared application folders and check that local provider tests support their mocks. |
 | `wiretap check <consumer\|provider> --consumer <run> --provider <run>` | Compare one explicitly selected consumer/provider pair. |
+| `wiretap check <consumer\|provider> --consumer-set <file> --provider-set <file>` | Check consumer/provider evidence across explicit same-build run sets. |
 | `wiretap ca [--config path]` | Print the public proxy CA certificate, creating the local CA if needed. |
 
-`report` and `export` support `json`, `yaml`, `text`, `postman` and `all`;
-JSON is the default. `--format text` prints the compact coverage summary.
+For a single archive without a policy, `report` and `export` support `json`,
+`yaml`, `text`, `postman` and `all`; JSON is the default. `--format text` prints
+the compact coverage summary.
 They work offline from complete capture directories and do not execute tests.
 See [capture artifacts and exports](artifacts.md) for examples.
 
@@ -246,7 +255,9 @@ explicit pair mode permits repeatable `--consumer-collection <file-or-dir>` and
 `--provider-collection <file-or-dir>` overrides.
 
 `--ignore-header <name>` is repeatable and applies to every selected comparison.
-`--format text|json` and `--output <file>` control the result. Exit statuses are
+`--format text|json|markdown|junit` and `--output <file>` control the result. JSON
+retains complete diagnostics; Markdown and JUnit XML are bounded presentations
+for reviews and CI. Exit statuses are
 `0` for agreement, `1` for incompatible/uncovered/unverified assumptions, and
 `2` for invalid inputs. The output's parent must exist. Keep output outside the
 artifact root, all input archives and Postman input directories, and do not

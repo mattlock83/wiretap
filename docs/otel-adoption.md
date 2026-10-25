@@ -70,13 +70,13 @@ timing-based parent inferences and ambiguity.
    gRPC always needs a descriptor, using reflection when no file is supplied. See
    [configuration](configuration.md).
 
-Managed Go, Jest, Mocha and Playwright integrations start Wiretap, finalize
+Managed Go, Jest, Mocha, Playwright and pytest integrations start Wiretap, finalize
 capture/exports after user cleanup, and stop their owned process. They choose
 available local ports and expose the capture URLs to the test setup. Keep the
 existing SUT and mock lifecycle, or configure supported HTTP handler hosting.
 The runner guides linked below describe those choices.
 
-For a project-owned process, the plain JavaScript and Go `Runtime` APIs connect
+For a project-owned process, the JavaScript, Go and Python `Runtime` APIs connect
 to the running control service. Set `WIRETAP_BASE_URL` or the SDK's explicit
 address. One suite owner finalizes after all workers finish; individual workers
 must not finalize each other's shared run.
@@ -194,6 +194,21 @@ loads as a root-hook plugin. It activates capture for per-test setup, the test
 callback and cleanup, then finalizes the owned runtime after suite cleanup.
 Mocha capture supports serial runs. Both adapters retain the runner's final
 outcome, including failed fixtures and retries, independently of API validation.
+
+### Python and pytest
+
+Use the [Python SDK and pytest plugin](../sdk/python/README.md) with the existing
+HTTP or gRPC client. The `wiretap` fixture captures the attempt through fixture
+cleanup and exposes `url`, `dependencies` and `headers`. Pass those headers to
+HTTP clients or as gRPC metadata; Python does not install client instrumentation
+or an OTel provider. The `trace_headers()` helper reads the current attempt's
+headers inside its context.
+
+Each pytest process owns an independent runtime. With pytest-xdist, give each
+worker its own application and mock routing when those depend on its capture
+addresses. Application outbound calls still need W3C propagation to correlate
+with the same test; passing headers on the test's inbound call alone cannot
+instrument the application.
 
 ### Go tests and `httptest`
 

@@ -3,7 +3,7 @@
 Copy this directory into an existing test project to get a working starting
 point. It uses the plain JavaScript SDK's Node test adapter, two test files and
 one parent harness. Prefer the [Jest](../existing-jest/README.md),
-[Mocha](../mocha-runner/README.md) or [Playwright](../playwright-runner/README.md)
+[Mocha](../../sdk/js/docs/mocha.md) or [Playwright](../playwright-runner/README.md)
 adapter when your suite uses that runner. All traffic is synthetic; Wiretap stores payloads and dummy
 credentials unchanged.
 
@@ -36,14 +36,17 @@ Each file uses `manageRuntime: false`. Worker cleanup closes its own attempts;
 only `run-tests.mjs` finalizes the shared run after the test process exits.
 `startManagedRuntime` chooses available control and proxy ports, waits for
 readiness, and starts capture. Its `close()` method finalizes configured exports,
-saves `last-run.json` and `wiretap.log`, and stops the owned runtime even when an
-export fails. The harness keeps its application alive until that completes.
+saves `last-run.json` and `wiretap.log` inside that run's archive, and stops the
+owned runtime even when an export fails. The harness keeps its application alive
+until that completes.
 Sequential file execution works with an uninstrumented SUT. Parallel workers
 need [W3C context propagation or isolated services](../../docs/otel-adoption.md).
 
-The finalization receipt is `artifacts/last-run.json`, and the complete run is
-`artifacts/<run-id>/`. The receipt contains exact raw, coverage and Postman paths;
-`exports/result.json` inside the run also records any export failures.
+Use the printed raw capture path to find the complete run at
+`artifacts/<run-id>/`. Its `last-run.json` is the canonical finalization receipt
+with exact raw, coverage and Postman paths; `exports/result.json` also records
+any export failures. `artifacts/last-run.json` is an advisory latest snapshot
+that can be replaced by another run.
 `WIRETAP_OUTPUT_DIR` selects an absolute artifact root for CI.
 See the [plain JavaScript guide](../../sdk/js/docs/javascript.md) for custom
 test frameworks and an already-running Wiretap process.

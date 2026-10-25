@@ -220,7 +220,7 @@ lists its ID in `schema_validation.skipped`; mixed attempts have status `partial
 unless an enforced schema fails. Coverage remains unknown for the omitted API,
 while concrete observed paths and exchanges remain browsable.
 
-## Streams, messaging and additional protocols
+## Generic event records
 
 A flow has exactly one representation: the existing HTTP/gRPC `request` and
 `response` pair, or an `interaction` containing ordered events. The event form
@@ -310,8 +310,8 @@ This envelope represents these protocols; it does not enable their live capture,
 semantic validation, replay or coverage adapters. Live capture and contract
 measurement currently cover HTTP/OpenAPI and native gRPC/Protobuf, including
 all four RPC shapes. Execution adapters are outside the local capture tool.
-Generic event recordings remain visible as unsupported for measurement/execution
-until the relevant adapter is implemented. Native gRPC uses its typed RPC record
+Generic event recordings remain visible as unsupported for measurement and
+execution. Native gRPC uses its typed RPC record
 and the observation fields below; it does not duplicate payloads into generic events.
 GraphQL `errors` can coexist with `data` and HTTP 200; Kafka acknowledgement does
 not prove downstream processing; a complete stream does not prove every message

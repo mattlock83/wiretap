@@ -50,8 +50,9 @@ archive.
 For Jest, Playwright Test or Mocha, use the corresponding
 [runner adapter](../sdk/js/README.md), set `WIRETAP_BINARY`, run your ordinary
 test command, and upload its configured output directory unconditionally.
-Use a separate output root for independent concurrent JavaScript suites because
-their `last-run.json` and `wiretap.log` describe the latest run in that root.
+Independent suites retain their own `last-run.json` and bounded `wiretap.log`
+inside each archive. The JavaScript root-level latest receipt is advisory; use
+the exact run receipt when suites share an output root.
 
 The workflow below runs the [plain Node example](../examples/node-suite/README.md)
 from a Wiretap checkout. In your project, install your locally built binary and
@@ -91,8 +92,9 @@ jobs:
           if-no-files-found: error
 ```
 
-The harness writes `artifacts/last-run.json` with exact `bundle_path` and `outputs`
-paths. Each `artifacts/<run-id>/` contains raw recordings, contracts, payloads,
+The managed owner writes `<bundle_path>/last-run.json` with exact `bundle_path`
+and `outputs` paths. The Node example also writes an advisory
+`artifacts/last-run.json` for its single-suite harness. Each `artifacts/<run-id>/` contains raw recordings, contracts, payloads,
 coverage, Postman collections and `exports/result.json`. Keep the whole directory
 so another tool can verify and export it offline. Do not select the newest
 folder by timestamp when the finalization response already identifies the run.
@@ -238,3 +240,16 @@ Read [issues the check finds](assumption-checks.md#issues-the-check-will-find),
 and [interpreting results](assumption-checks.md#interpreting-results) before
 setting the gate's release policy. The check complements your suite's assertions
 and its expected-call checks; it cannot infer those from captured traffic.
+
+## Python and split CI jobs
+
+Install the local Python SDK with its pytest extra, set `WIRETAP_BINARY`, and run
+`python -m pytest` with the `wiretap` fixture. The [pytest example](../examples/pytest-suite/README.md)
+includes a real local application and its configuration. Upload complete archives
+on failed jobs as well as successful jobs. Each xdist worker owns an independent
+runtime; [run sets](run-sets.md) group completed members from the same build.
+
+Use [coverage policies and baseline comparison](report-policies.md) for explicit
+measurement gates. `wiretap check ... --format junit --output assumptions.xml`
+produces a CI test report; `--format markdown` produces a review summary. Both
+preserve the underlying check verdict. JSON retains the complete diagnostics.

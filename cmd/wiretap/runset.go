@@ -1,0 +1,48 @@
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"flag"
+	"fmt"
+	"os"
+	"path/filepath"
+
+	"github.com/mattlock83/wiretap/internal/assumptions"
+	"github.com/mattlock83/wiretap/internal/runset"
+)
+
+func runSetCommand(ctx context.Context, args []string) error {
+	flags := flag.NewFlagSet("wiretap run-set", flag.ContinueOnError)
+	var paths checkValues
+	flags.Var(&paths, "bundle", "archive to include; repeat once per package or shard")
+	output := flags.String("output", "", "new run set JSON manifest")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if flags.NArg() != 0 || *output == "" || len(paths) == 0 {
+		return fmt.Errorf("%w: run-set requires --bundle <archive> (repeatable) and --output <manifest.json>", errUsage)
+	}
+	manifest, err := runset.Create(ctx, paths, *output)
+	if err != nil {
+		return fmt.Errorf("%w: %v", errUsage, err)
+	}
+	data, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		return err
+	}
+	// The same output protection as checks keeps the manifest outside all
+	// input archives and rejects aliases, symlinks and hard links to evidence.
+	sources := make([]assumptions.Source, 0, len(paths))
+	for _, path := range paths {
+		if filepath.Base(path) == "bundle.json" {
+			path = filepath.Dir(path)
+		}
+		sources = append(sources, assumptions.Source{BundlePath: path})
+	}
+	if err := writeCheckOutput(*output, sources, nil, append(data, '\n')); err != nil {
+		return err
+	}
+	fmt.Fprintln(os.Stdout, *output)
+	return nil
+}

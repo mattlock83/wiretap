@@ -16,6 +16,7 @@ import (
 	"github.com/mattlock83/wiretap/internal/proxy"
 	"github.com/mattlock83/wiretap/internal/runoutput"
 	"github.com/mattlock83/wiretap/internal/tracecontext"
+	"github.com/mattlock83/wiretap/internal/version"
 
 	"go.opentelemetry.io/otel/trace"
 )
@@ -516,7 +517,7 @@ func (a *App) handleFinishRun(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusConflict, response)
 		return
 	}
-	response := map[string]any{"status": "complete"}
+	response := map[string]any{"status": "complete", "report_version": "1.0", "producer": version.Current()}
 	if archivePath != "" {
 		response["bundle_path"] = archivePath
 		response["run_id"] = runID

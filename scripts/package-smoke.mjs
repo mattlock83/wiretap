@@ -216,7 +216,10 @@ try {
       env: { ...process.env, WIRETAP_OUTPUT_DIR: artifactRoot, WIRETAP_EXAMPLE_FAIL: failure ? '1' : '0' }
     });
     assert.equal(result.code, failure ? 1 : 0, `test exit status changed: ${result.stdout}\n${result.stderr}`);
-    const receipt = JSON.parse(await fs.readFile(path.join(artifactRoot, 'last-run.json'), 'utf8'));
+    const latest = JSON.parse(await fs.readFile(path.join(artifactRoot, 'last-run.json'), 'utf8'));
+    const receipt = JSON.parse(await fs.readFile(path.join(latest.bundle_path, 'last-run.json'), 'utf8'));
+    assert.deepEqual(receipt, latest, 'the latest snapshot must reference an archive-local receipt');
+    await fs.access(path.join(receipt.bundle_path, 'wiretap.log'));
     assert.equal(receipt.status, 'complete');
     assert.deepEqual(receipt.outputs.errors, []);
     assert.equal(receipt.outputs.postman.length, 1);

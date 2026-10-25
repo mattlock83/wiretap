@@ -355,7 +355,10 @@ try {
     assert.equal(markers[0], 'setup');
     assert.ok(markers.includes('teardown'), `${runner} lost the user's teardown`);
     if (runner === 'playwright') assert.ok(markers.includes('returned cleanup'));
-    const receipt = await readJSON(path.join(directory, 'artifacts', 'last-run.json'));
+    const latest = await readJSON(path.join(directory, 'artifacts', 'last-run.json'));
+    const receipt = await readJSON(path.join(latest.bundle_path, 'last-run.json'));
+    assert.deepEqual(receipt, latest, 'the latest snapshot must reference an archive-local receipt');
+    await fs.access(path.join(receipt.bundle_path, 'wiretap.log'));
     assert.equal(receipt.status, 'complete', `${runner}: ${JSON.stringify(receipt)}`);
     assert.deepEqual(receipt.outputs.errors, []);
     const bundle = await readJSON(path.join(receipt.bundle_path, 'bundle.json'));

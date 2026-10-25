@@ -70,6 +70,11 @@ enforce the same consumer-to-provider relationship. This form also supports
 older captures without declared mappings; the supplied pair establishes the
 relationship. A declared mapping, when present, must still agree.
 
+For package or CI shards of the same build, use explicit
+[run-set manifests](run-sets.md) with `--consumer-set` and `--provider-set`.
+A matching request and response must still come from one provider exchange;
+separate shards cannot supply half of a match each.
+
 ## What a passing result establishes
 
 For each captured call to the selected mock, Wiretap:
@@ -334,7 +339,7 @@ Recorded examples identify the operation, status and media types whose HTTP
 rules are compared. Those declared rules can expose drift in enum values or
 bounds not reached by the example, but agreement does not prove that those
 other values behave correctly. A supported example does not generalize to
-other IDs, quantities, tenants, error branches or future API versions. An
+other IDs, quantities, tenants, error branches or untested API versions. An
 operation can have one supported example and matching rules while still having
 many untested cases. Use the separate
 [contract coverage report](contract-coverage-rules.md) to inspect declared
@@ -991,12 +996,16 @@ declaration differences use paths such as
 the message names. For a
 response mismatch, paths compare the consumer response with the first candidate
 provider response; they do not identify the closest candidate or enumerate
-every disagreement across every candidate. Open the referenced captures for
-the complete retained data.
+every disagreement across every candidate. Response mismatches also include
+bounded expected/actual excerpts for those paths. Open the referenced captures
+for the complete retained data.
 
 ## Use the result in CI
 
-Text is the default. For a machine-readable result, select JSON and optionally
+Text is the default. Use `--format markdown` for review artifacts or
+`--format junit` for CI import, preserving the same verdict and exit status.
+See [CI report formats](report-policies.md#send-assumption-checks-to-ci) for their
+presentation limits. For a machine-readable result, select JSON and optionally
 save it to a file:
 
 ```sh
@@ -1009,7 +1018,7 @@ the entire `--artifacts` root and local input archive. In explicit pair mode,
 keep it outside both archives and any supplied Postman input directory; an
 output cannot replace a collection input.
 
-Both result shapes use `report_version: "1.0"` and
+Pair, discovered-artifact and run-set results use `report_version: "1.0"` and
 `rules_version: "wiretap-assumptions-4"`. `compatible` is the verdict, and
 `counts` separates verified, uncovered, mismatched and unverified assumptions.
 With `--artifacts`, the outer report uses
@@ -1024,7 +1033,7 @@ as an interrupted archive or conflicting provider identity; they need not
 partition the assumption count. Invalid discovery or pair inputs produce
 stderr and no new JSON report. Keep the input archives alongside the result.
 See the [machine interface](machine-interface.md#assumption-check-results) for
-both envelopes and the [CI example](ci-example.md#gate-consumerprovider-assumptions-offline)
+the result envelopes and the [CI example](ci-example.md#gate-consumerprovider-assumptions-offline)
 for preserving the exit status and diagnostics.
 
 | Exit status | Meaning |

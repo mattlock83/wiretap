@@ -25,6 +25,8 @@ func TestFinishRunProducesOutputsAndPreservesFailedAttempts(t *testing.T) {
 	response.Body.Close()
 	attempt := postDependencyJSON(t, control.URL, "/v1/teardownTest", map[string]any{"session_id": session["session_id"], "status": "fail"})
 	finished := postDependencyJSON(t, control.URL, "/v1/finishRun", map[string]any{"outputs": runoutput.Defaults()})
+	validateControlResponse(t, "finish", finished)
+	validateControlResponse(t, "exports", finished["outputs"])
 	if finished["bundle_path"] != attempt["bundle_path"] {
 		t.Fatal("wrong archive")
 	}

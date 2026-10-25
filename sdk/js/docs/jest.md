@@ -77,12 +77,14 @@ module.exports = withWiretap(existingConfig);
 
 ## Results and lifecycle
 
-The output directory contains the latest `last-run.json` receipt, a bounded
-`wiretap.log` and unique run archive directories. The receipt gives the exact
-archive, coverage report and Postman collection paths. Keep the complete
-directory in CI, including failed runs; give independent concurrent runs
-different `outputDir` values.
+Each unique run archive contains its canonical `last-run.json` receipt and a
+bounded `wiretap.log`. The receipt gives the exact archive, coverage report and
+Postman collection paths. Keep the complete output directory in CI, including
+failed runs. The output-root `last-run.json` remains an advisory latest snapshot;
+concurrent owners retain independent records inside their archives.
 Framework results and API contract violations are reported separately.
+If capture cleanup also fails after a test failure, Jest reports both errors
+while retaining the original framework failure first.
 
 Capture includes ordinary `beforeEach`/`afterEach` work. Sync, async, `done`,
 generator, parameterized and retry callbacks retain their Jest outcomes.

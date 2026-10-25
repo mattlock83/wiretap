@@ -1,65 +1,49 @@
-# Wiretap product scope
+# Roadmap
 
-Wiretap makes existing HTTP and native gRPC API tests portable and comparable:
-capture evidence, export Postman collections and API-level coverage, and verify
-consumer mock examples against provider tests. It runs locally
-in isolated test environments with synthetic data and dummy secrets.
+This is the only place for proposed work and deferred release steps. These items
+are not shipped features or delivery commitments. See the
+[support matrix](support.md) and [documentation index](README.md) for what exists.
 
-## Completion criteria
+Keep changes focused on capturing traffic from existing tests, measuring supplied
+contracts, and checking mock accuracy and consumer compatibility using evidence
+embedded in executable Postman collections. Prefer small adapters and offline
+tools that preserve the original evidence.
 
-- Keep existing test frameworks, clients, assertions and mocks. Framework
-  outcomes and contract validation are separate evidence.
-- Make one ordinary suite command handle startup, readiness, all test workers,
-  finalization, exports and cleanup, including failed tests.
-- Capture inbound and dependency traffic with explicit test ownership. Support
-  native unary and streaming gRPC alongside HTTP.
-- Freeze declared contracts and report untested operations even in empty runs.
-- Retain raw evidence, stable identities, build provenance and explicit limits
-  so checks and downstream tools can compare runs without the original environment.
-- Produce Postman HTTP v2.1 and gRPC v3 exports with automated compatibility
-  checks and clear replay limitations.
-- Check selected consumer mock requests and paired responses against complete
-  passing provider service tests, with explicit uncovered and unverified results.
-- When both HTTP contracts are supplied, compare supported frozen validation
-  rules on exercised operations and selected statuses/media, even when the
-  recorded values satisfy both contracts.
-- Compare exercised Protobuf method input/output declarations, including full
-  reachable enum sets, alongside mandatory observed wire cross-decoding.
-- Verify supplied Postman collections against their source archives before
-  accepting them as part of an assumption check.
-- Keep installation local, document the supported setup and test it across
-  Linux, macOS and Windows.
+## Verification and distribution
 
-The [quickstart](getting-started-existing-tests.md) and [examples](../examples/README.md)
-show the supported workflow. The [machine interface](machine-interface.md)
-defines the outputs available to downstream tools. Current protocol and coverage
-limits are documented in the [gRPC guide](grpc-user-guide.md) and
-[coverage rules](contract-coverage-rules.md).
+- Complete manual Postman desktop acceptance for HTTP and native gRPC collection
+  import and execution, including descriptor attachment and streaming behavior.
+  Automated schema/content checks do not establish desktop execution behavior.
+- Choose the public website URL and add canonical and Open Graph URL metadata
+  when hosting is configured.
+- Package registry publication, release tags, public binary releases and image
+  uploads remain on hold until explicitly requested. This includes npm, PyPI and
+  Go module release distribution.
 
-## Boundaries
+## Deferred integrations
 
-Captures retain synthetic test data as sent. Contract mismatches
-are recorded without replacing the framework's outcome. Capture failures and
-invalid configuration still fail integration cleanup or setup.
+- Java/JUnit SDK, explicitly deferred from the Python integration work.
+- Other small runner adapters, such as Vitest or .NET test integrations, only
+  where existing lifecycle hooks can supply reliable test ownership and outcomes.
+- Connect wire protocol, gRPC-Web and mutual TLS, subject to concrete capture
+  requirements and protocol-specific evidence tests.
 
-The offline [assumption checker](assumption-checks.md) requires provider test
-evidence for each selected concrete mock request and paired response. It fails
-for incompatible, uncovered or unverified assumptions. Consumer HTTP dependency
-specs are optional; the provider's contract can validate both concrete examples
-without one. That does not provide an independent consumer declaration to diff
-or create missing consumer contract coverage. A passing result supports
-those examples and the recorded contract-check assurance, not arbitrary business
-behavior or a live deployment. When both HTTP contracts are present, rule
-equality is conservative: enum additions or relaxed limits can fail without proving a runtime break. Only
-exercised operations and selected statuses/media receive that HTTP comparison.
-gRPC checks the selected method's reachable declarations and observed wire
-compatibility, without executing custom validation annotations. Both omitted
-HTTP schemas allow an explicitly marked example-only match.
+## Coverage and comparison candidates
+
+- Extend supported contract semantics, including OpenAPI 3.1 and condition
+  targets for `const`, `if`/`then`/`else`, format predicates, recursive schemas and
+  other unsupported keywords. Define finite targets and explicit measurement
+  limits before claiming coverage.
+- Explore cross-revision condition mapping. Preserve distinct contract and rule
+  identities; a changed schema must not silently inherit coverage.
+- Explore explicit expected-negative annotations and evidence that the test
+  asserted the rejection. A status code, validation error or test name alone
+  cannot establish that assurance.
+- Consider selected or pairwise combination targets with an explicit policy and
+  denominator. Observed conditions in the same message alone do not establish
+  coverage of all combinations.
+- Consider a small offline HTML report viewer only if existing text, JSON,
+  Markdown and CI reports leave a concrete inspection need.
+
 Test generation, dependency simulation, hosted registries and managed test
-execution are outside Wiretap's scope. Capturing a mock response alone does not
-establish provider agreement.
-
-Supported integrations are Jest, Playwright Test, Mocha, plain JavaScript and
-Go's standard `testing` package. Other runners and languages can use the
-[runtime HTTP API](runtime-api.md). Each integration keeps the framework's own
-assertions and final result while recording capture and export failures.
+execution remain outside the product scope.

@@ -67,11 +67,11 @@ the owned server and Wiretap runtime. On Linux and macOS, SIGINT and SIGTERM
 finalize active capture and use the normal interrupted exit codes. Forced
 process termination cannot run asynchronous cleanup.
 
-The managed adapter writes the latest `last-run.json` and `wiretap.log` beside
-the unique run archive directories in the output directory. The receipt gives
-the exact archive, coverage report and Postman export paths. Keep the complete
-output directory in CI and use a different `outputDir` for each independent
-concurrent run. User
+The managed adapter writes its canonical `last-run.json` and bounded
+`wiretap.log` inside each unique run archive. The receipt gives the exact archive,
+coverage report and Postman export paths. Keep the complete output directory in
+CI. Its root `last-run.json` is an advisory latest snapshot; independent owners
+retain their own archive-local receipts and logs. User
 `after` hooks and global teardown fixtures complete before Wiretap shuts down
 the owned server and finalizes the run, including when a fixture fails.
 

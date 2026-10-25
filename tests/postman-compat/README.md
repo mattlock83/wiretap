@@ -26,16 +26,10 @@ Concrete fixture expectations cover all four RPC shapes,
 ordered messages, metadata/trailers, binary values, rich errors, source schema and
 endpoint references, and retries.
 
-Compatibility acceptance is automated: these checks prove the exported document
-shape and preserved content, not execution inside the Postman application.
-On 24 October 2026, the available Postman 12.30 desktop scratchpad blocked
-collection import pending sign-in, so imported-collection invocation was not
-verified. The project does not claim desktop replay interoperability from
-JSON/schema validation alone.
+These automated checks verify the exported document shape and preserved
+content. They do not exercise the Postman SDK parser or import and execution
+inside the Postman application. See [supported behavior and verification
+limits](../../docs/support.md).
 
 Ajv is exact-pinned and this package is private test tooling. It is not a runtime
-dependency or part of the JavaScript SDK package. The unpatched
-`postman-collection` SDK is no longer installed: version 5.3.1 pins vulnerable
-Faker and UUID versions, and a patched Faker override is API incompatible.
-These checks establish official schema conformance and preservation of captured
-content; they do not exercise the Postman SDK parser or desktop replay.
+dependency or part of the JavaScript SDK package.

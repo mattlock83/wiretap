@@ -17,8 +17,9 @@ export interface ManagedRuntimeOptions {
 export interface ManagedRuntime {
   readonly baseUrl: string;
   readonly sutUrl: string;
-  readonly runtimeInfo: CaptureResponse;
-  /** Finalize once, save the runtime receipt and stop the owned process, including on failure. */
-  close(): Promise<CaptureResponse>;
+  readonly runtimeInfo: CaptureResponse & { run_id: string; bundle_path: string; sut_url: string };
+  /** Finalize once and stop the owned process, including on failure. The canonical
+   * receipt and bounded process log are saved inside runtimeInfo.bundle_path. */
+  close(): Promise<CaptureResponse & { status: 'complete'; run_id: string; bundle_path: string }>;
 }
 export function startManagedRuntime(options?: ManagedRuntimeOptions): Promise<ManagedRuntime>;

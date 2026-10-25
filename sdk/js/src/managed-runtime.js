@@ -2,7 +2,43 @@ const childProcess = require('node:child_process');
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
+const net = require('node:net');
 const { CoreClient } = require('./control-client');
+const { retainCleanupError } = require('./cleanup-error');
+
+function localURL(value, allowTLS = false) {
+  if (typeof value !== 'string') return false;
+  let url;
+  try { url = new URL(value); } catch { return false; }
+  const host = url.hostname.replace(/^\[|\]$/g, '');
+  const port = value.match(/^[a-z]+:\/\/[^/?#]*:(\d+)(?:[/?#]|$)/i)?.[1];
+  return (url.protocol === 'http:' || allowTLS && url.protocol === 'https:') &&
+    !url.username && !url.password && !url.search && !url.hash && url.pathname === '/' &&
+    (host === 'localhost' || host === '::1' || net.isIP(host) === 4 && host.startsWith('127.')) &&
+    port !== undefined && Number(port) > 0 && Number(port) <= 65535;
+}
+
+async function validateStart(info) {
+  if (!info || typeof info.run_id !== 'string' || !info.run_id.trim() ||
+      typeof info.bundle_path !== 'string' || !path.isAbsolute(info.bundle_path) || !localURL(info.sut_url, true)) {
+    throw new Error('Wiretap startRun returned an incomplete or invalid run receipt');
+  }
+  try { if ((await fs.stat(info.bundle_path)).isDirectory()) return; } catch { /* Diagnostic below. */ }
+  throw new Error('Wiretap startRun returned a missing or invalid bundle directory');
+}
+
+function sameRun(receipt, info) {
+  return receipt && receipt.run_id === info.run_id && receipt.bundle_path === info.bundle_path;
+}
+
+async function writeArtifact(directory, name, data) {
+  const staging = await fs.mkdtemp(path.join(directory, '.wiretap-sdk-'));
+  try {
+    const file = path.join(staging, name);
+    await fs.writeFile(file, data, { flag: 'wx', mode: 0o644 });
+    await fs.rename(file, path.join(directory, name));
+  } finally { await fs.rm(staging, { recursive: true, force: true }); }
+}
 
 function duration(value, fallback, name) {
   value ??= fallback;
@@ -33,11 +69,14 @@ async function startManagedRuntime(options = {}) {
     WIRETAP_EXIT_ON_STDIN_EOF: '1',
     WIRETAP_HTTP_LISTEN: '127.0.0.1:0', WIRETAP_PROXY_LISTEN: '127.0.0.1:0',
     ...(outputDir ? { WIRETAP_OUTPUT_DIR: outputDir } : {}) };
-  let child, exited = false, exitDescription, logs = '', baseUrl, runtimeInfo, closing, client;
+  let child, exited = false, exitDescription, exitFailure, logs = Buffer.alloc(0), baseUrl, runtimeInfo, closing, client;
   let resolveExit;
   const exit = new Promise(resolve => { resolveExit = resolve; });
   // Keep useful startup diagnostics bounded even if a failing process is noisy.
-  const appendLog = data => { logs = (logs + data.toString()).slice(-65536); };
+  const appendLog = data => {
+    const bytes = Buffer.isBuffer(data) ? data : Buffer.from(data);
+    logs = Buffer.concat([logs, bytes.subarray(-65536)]).subarray(-65536);
+  };
   // The OS also closes this pipe if the owner is killed without running exit hooks.
   const onExit = () => { child?.stdin.destroy(); };
   const onAbort = () => { void close().catch(() => {}); };
@@ -49,33 +88,50 @@ async function startManagedRuntime(options = {}) {
   }
   async function stop() {
     onExit();
-    if (!child || exited) return;
-    await waitForExit();
+    if (!child) return;
+    if (!exited) await waitForExit();
     if (!exited) {
       child.kill('SIGKILL');
       await waitForExit();
       if (!exited) throw new Error('Wiretap process did not exit after SIGKILL');
+      throw new Error('Wiretap process exceeded its shutdown timeout and was killed');
     }
+    if (exitFailure) throw exitFailure;
   }
   function close() {
     if (!closing) closing = (async () => {
       let receipt, failure;
+      const fail = error => { if (failure) retainCleanupError(failure, error); else failure = error; };
       try {
-        if (runtimeInfo) receipt = await client.finishRun({ outputs: options.outputs });
-      } catch (error) { failure = error; receipt = error.body; }
-      try { await stop(); } catch (error) { failure ??= error; }
+        if (runtimeInfo) {
+          receipt = await client.finishRun({ outputs: options.outputs });
+          if (receipt?.status !== 'complete' || !sameRun(receipt, runtimeInfo)) {
+            throw new Error('Wiretap finishRun returned an incomplete or mismatched run receipt');
+          }
+        }
+      } catch (error) { fail(error); if (error.body !== undefined) receipt = error.body; }
+      try { await stop(); } catch (error) { fail(error); }
       process.removeListener('exit', onExit);
       options.signal?.removeEventListener('abort', onAbort);
       try {
-        const artifactDir = outputDir || (runtimeInfo?.bundle_path && path.dirname(runtimeInfo.bundle_path));
-        if (artifactDir) {
-          await fs.mkdir(artifactDir, { recursive: true });
-          await fs.writeFile(path.join(artifactDir, 'wiretap.log'), logs);
-          if (receipt) await fs.writeFile(path.join(artifactDir, 'last-run.json'), `${JSON.stringify(receipt, null, 2)}\n`);
+        if (runtimeInfo) {
+          const artifactDir = runtimeInfo.bundle_path;
+          await writeArtifact(artifactDir, 'wiretap.log', logs);
+          if (receipt !== undefined) {
+            const data = `${JSON.stringify(receipt, null, 2)}\n`;
+            await writeArtifact(artifactDir, 'last-run.json', data);
+            // Compatibility discovery snapshot only. Each run's authoritative
+            // receipt and log stay inside its own archive and cannot collide.
+            if (sameRun(receipt, runtimeInfo)) {
+              const latestDir = outputDir || path.dirname(artifactDir);
+              await fs.mkdir(latestDir, { recursive: true });
+              await writeArtifact(latestDir, 'last-run.json', data);
+            }
+          }
         }
-      } catch (error) { failure ??= error; }
+      } catch (error) { fail(error); }
       try { await fs.rm(directory, { recursive: true, force: true }); }
-      catch (error) { failure ??= error; }
+      catch (error) { fail(error); }
       if (failure) throw failure;
       return receipt;
     })();
@@ -90,19 +146,20 @@ async function startManagedRuntime(options = {}) {
     child.stdin.on('error', () => {});
     child.stdout.on('data', appendLog);
     child.stderr.on('data', appendLog);
-    child.once('error', error => { exited = true; exitDescription = error.message; resolveExit(); });
+    child.once('error', error => { exited = true; exitDescription = error.message; exitFailure = error; resolveExit(); });
     child.once('exit', (code, signal) => {
       exited = true; exitDescription = signal ? `signal ${signal}` : `exit code ${code}`; resolveExit();
+      if (code !== 0 || signal) exitFailure = new Error(`Wiretap process exited unsuccessfully: ${exitDescription}`);
     });
     process.once('exit', onExit);
     const deadline = Date.now() + startupTimeoutMs;
     while (!baseUrl) {
       if (options.signal?.aborted) throw abortError(options.signal);
-      if (exited) throw new Error(`Wiretap exited before becoming ready: ${exitDescription}${logs ? `\n${logs}` : ''}`);
+      if (exited) throw new Error(`Wiretap exited before becoming ready: ${exitDescription}${logs.length ? `\n${logs}` : ''}`);
       try {
         const ready = JSON.parse(await fs.readFile(readyFile, 'utf8'));
         const url = new URL(ready.control_url);
-        if (ready.pid !== child.pid || url.protocol !== 'http:' || !['127.0.0.1', '[::1]', 'localhost'].includes(url.hostname)) {
+        if (ready.pid !== child.pid || !localURL(ready.control_url)) {
           throw new Error('Wiretap readiness file did not identify the owned local process');
         }
         baseUrl = url.href;
@@ -110,17 +167,19 @@ async function startManagedRuntime(options = {}) {
         if (error.code !== 'ENOENT' && !(error instanceof SyntaxError)) throw error;
       }
       if (!baseUrl) {
-        if (Date.now() >= deadline) throw new Error(`Wiretap did not become ready within ${startupTimeoutMs}ms${logs ? `\n${logs}` : ''}`);
+        if (Date.now() >= deadline) throw new Error(`Wiretap did not become ready within ${startupTimeoutMs}ms${logs.length ? `\n${logs}` : ''}`);
         await Promise.race([exit, wait(Math.min(25, Math.max(1, deadline - Date.now())))]);
       }
     }
     client = new CoreClient({ baseUrl, timeoutMs, requireJSON: true });
-    runtimeInfo = await client.startRun({}, { signal: options.signal });
+    const started = await client.startRun({}, { signal: options.signal });
+    await validateStart(started);
+    runtimeInfo = started;
     if (options.signal?.aborted) throw abortError(options.signal);
     options.signal?.addEventListener('abort', onAbort, { once: true });
     return { baseUrl, sutUrl: runtimeInfo.sut_url, runtimeInfo, close };
   } catch (error) {
-    try { await close(); } catch (cleanupError) { error.cleanupError = cleanupError; }
+    try { await close(); } catch (cleanupError) { retainCleanupError(error, cleanupError); }
     throw error;
   }
 }

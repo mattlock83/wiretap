@@ -1,0 +1,163 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "control-api.schema.json",
+  "title": "Wiretap control responses 1.0",
+  "description": "Select #/$defs/capabilities, #/$defs/finish or #/$defs/exports. Error-only HTTP responses are outside these success shapes.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/capabilities"
+    },
+    {
+      "$ref": "#/$defs/finish"
+    },
+    {
+      "$ref": "#/$defs/exports"
+    }
+  ],
+  "$defs": {
+    "producer": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "const": "wiretap"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "commit": {
+          "type": "string"
+        },
+        "dirty": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name",
+        "version"
+      ]
+    },
+    "capabilities": {
+      "type": "object",
+      "properties": {
+        "api_version": {
+          "const": "1.0"
+        },
+        "producer": {
+          "$ref": "#/$defs/producer"
+        },
+        "capabilities": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "required": [
+        "api_version",
+        "producer",
+        "capabilities"
+      ]
+    },
+    "finish": {
+      "type": "object",
+      "properties": {
+        "report_version": {
+          "const": "1.0"
+        },
+        "producer": {
+          "$ref": "#/$defs/producer"
+        },
+        "status": {
+          "const": "complete"
+        },
+        "run_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "bundle_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "outputs": {
+          "$ref": "#/$defs/exports"
+        },
+        "error": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "report_version",
+        "producer",
+        "status"
+      ]
+    },
+    "exports": {
+      "type": "object",
+      "properties": {
+        "report_version": {
+          "const": "1.0"
+        },
+        "producer": {
+          "$ref": "#/$defs/producer"
+        },
+        "bundle_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "coverage": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "postman": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "errors": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "format": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "format",
+              "message"
+            ]
+          }
+        },
+        "postman_files": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "postman_omissions": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        }
+      },
+      "required": [
+        "report_version",
+        "producer",
+        "bundle_path",
+        "coverage",
+        "postman",
+        "errors"
+      ]
+    }
+  }
+}

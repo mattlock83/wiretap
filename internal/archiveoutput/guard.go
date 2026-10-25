@@ -4,6 +4,7 @@ package archiveoutput
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,12 +21,22 @@ var ErrDestination = errors.New("unsafe archive output destination")
 type Guard struct {
 	root, exports string
 	exportsOK     bool
+	rootInfo      os.FileInfo
+	exportsInfo   os.FileInfo
 	files         []os.FileInfo
-	directories   []string
+	directories   []directory
+}
+
+type directory struct {
+	path string
+	info os.FileInfo
 }
 
 // New verifies the archive and inventories source identities. The inventory is
-// reused for all generated files, including sources stored in exports.
+// reused for all generated files, including sources stored in exports. Its raw
+// directory scan has a separate entry budget equal to WIRETAP_MAX_ARCHIVE_FILES;
+// files, directories and symlinks each consume one entry, whether referenced or
+// not. The four fixed raw roots do not consume that budget.
 func New(archive string) (*Guard, error) {
 	root, err := filepath.Abs(archive)
 	if err != nil {
@@ -35,62 +46,46 @@ func New(archive string) (*Guard, error) {
 	if err != nil {
 		return nil, err
 	}
+	limits, err := bundle.ConfiguredLoadLimits()
+	if err != nil {
+		return nil, err
+	}
 	sources, err := bundle.EvidencePaths(root)
 	if err != nil {
 		return nil, err
 	}
 	guard := &Guard{root: root, exports: filepath.Join(root, "exports"), exportsOK: true}
+	guard.rootInfo, err = os.Stat(root)
+	if err != nil {
+		return nil, err
+	}
 	if info, err := os.Lstat(guard.exports); err == nil {
 		guard.exportsOK = info.IsDir() && info.Mode()&os.ModeSymlink == 0
+		if guard.exportsOK {
+			guard.exportsInfo = info
+		}
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return nil, err
 	}
-	visited := map[string]bool{}
-	var collect func(string) error
-	collect = func(path string) error {
-		info, err := os.Stat(path)
-		if err != nil {
-			// A verified archive cannot reference an unresolved symlink. Ignore
-			// unrelated dangling links rather than rejecting valid evidence.
-			if link, linkErr := os.Lstat(path); linkErr == nil && link.Mode()&os.ModeSymlink != 0 {
-				return nil
-			}
-			return err
-		}
-		if !info.IsDir() {
+	files := map[string]bool{}
+	addFile := func(path string, info os.FileInfo) {
+		if !files[path] {
+			files[path] = true
 			guard.files = append(guard.files, info)
-			return nil
 		}
-		resolved, err := filepath.EvalSymlinks(path)
-		if err != nil {
-			return err
-		}
-		if !withinPath(root, resolved) {
-			// Referenced directories cannot escape a verified archive. Do not
-			// traverse unrelated symlinks into the rest of the filesystem.
-			return nil
-		}
-		if visited[resolved] {
-			return nil
-		}
-		visited[resolved] = true
-		guard.directories = append(guard.directories, resolved)
-		entries, err := os.ReadDir(path)
-		if err != nil {
-			return err
-		}
-		for _, entry := range entries {
-			if err := collect(filepath.Join(path, entry.Name())); err != nil {
-				return err
-			}
-		}
-		return nil
 	}
 	for _, source := range sources {
-		if err := collect(source); err != nil {
+		info, err := os.Stat(source)
+		if err != nil {
 			return nil, err
 		}
+		addFile(source, info)
 	}
+	// Keep the walk iterative and read directory entries in batches. A large
+	// unreferenced directory must not allocate an unbounded ReadDir result, and
+	// deeply nested trees must not keep a directory descriptor open per level.
+	type entry struct{ path, protectedRoot string }
+	var pending []entry
 	for _, name := range []string{"bundle.json", "tests", "contracts", "payloads"} {
 		path := filepath.Join(root, name)
 		if _, err := os.Lstat(path); errors.Is(err, os.ErrNotExist) {
@@ -98,8 +93,71 @@ func New(archive string) (*Guard, error) {
 		} else if err != nil {
 			return nil, err
 		}
-		if err := collect(path); err != nil {
+		pending = append(pending, entry{path: path})
+	}
+	visited := map[string]bool{}
+	entriesRead := 0
+	for len(pending) > 0 {
+		current := pending[len(pending)-1]
+		pending = pending[:len(pending)-1]
+		info, err := os.Stat(current.path)
+		if err != nil {
+			// A verified archive cannot reference an unresolved symlink. Ignore
+			// unrelated dangling links rather than rejecting valid evidence.
+			if link, linkErr := os.Lstat(current.path); linkErr == nil && link.Mode()&os.ModeSymlink != 0 {
+				continue
+			}
 			return nil, err
+		}
+		if !info.IsDir() {
+			addFile(current.path, info)
+			continue
+		}
+		resolved, err := filepath.EvalSymlinks(current.path)
+		if err != nil {
+			return nil, err
+		}
+		if !withinLexicalPath(root, resolved) &&
+			!withinDirectory(root, guard.rootInfo, resolved, ancestorInfos(resolved)) {
+			// Referenced directories cannot escape a verified archive. Do not
+			// traverse unrelated symlinks into the rest of the filesystem.
+			continue
+		}
+		if visited[resolved] {
+			continue
+		}
+		visited[resolved] = true
+		// Ordinary descendants are already protected by their raw root. Only
+		// retain another root when a directory alias leads somewhere else, such
+		// as tests/link backed by exports/source-tests.
+		if current.protectedRoot == "" || !withinLexicalPath(current.protectedRoot, resolved) {
+			guard.directories = append(guard.directories, directory{resolved, info})
+			current.protectedRoot = resolved
+		}
+		dir, err := os.Open(current.path)
+		if err != nil {
+			return nil, err
+		}
+		for {
+			entries, readErr := dir.ReadDir(128)
+			if len(entries) > limits.MaxFileReads-entriesRead {
+				_ = dir.Close()
+				return nil, fmt.Errorf("%w: archive output inventory exceeds WIRETAP_MAX_ARCHIVE_FILES (%d) raw entries; raise this setting for a trusted archive", bundle.ErrLoadLimit, limits.MaxFileReads)
+			}
+			entriesRead += len(entries)
+			for _, child := range entries {
+				pending = append(pending, entry{filepath.Join(current.path, child.Name()), current.protectedRoot})
+			}
+			if readErr != nil {
+				closeErr := dir.Close()
+				if errors.Is(readErr, io.EOF) {
+					readErr = nil
+				}
+				if err := errors.Join(readErr, closeErr); err != nil {
+					return nil, err
+				}
+				break
+			}
 		}
 	}
 	return guard, nil
@@ -116,13 +174,29 @@ func (guard *Guard) Destination(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if withinPath(guard.root, absolute) || withinPath(guard.root, resolved) {
-		if !guard.exportsOK || !withinPath(guard.exports, resolved) {
+	// Resolve each destination ancestor identity once, then reuse it for all
+	// containment checks. Source directory identities were cached by New.
+	ancestors := ancestorInfos(filepath.Dir(resolved))
+	insideRoot := withinLexicalPath(guard.root, absolute) || withinDirectory(guard.root, guard.rootInfo, resolved, ancestors)
+	if !insideRoot && absolute != resolved {
+		// An archive alias can lead through an exports symlink to an external
+		// directory. Keep the original parent's identities as well, so that
+		// resolving the symlink cannot bypass the exports-directory check.
+		insideRoot = withinDirectory(guard.root, guard.rootInfo, absolute, ancestorInfos(filepath.Dir(absolute)))
+	}
+	if insideRoot {
+		exportsInfo := guard.exportsInfo
+		if exportsInfo == nil {
+			// Exports may be created after New. Its identity is only needed for
+			// casing aliases; lexical paths work before the directory exists.
+			exportsInfo, _ = os.Stat(guard.exports)
+		}
+		if !guard.exportsOK || !withinDirectory(guard.exports, exportsInfo, resolved, ancestors) {
 			return "", fmt.Errorf("%w: output %q must be outside the capture archive or inside its exports directory", ErrDestination, path)
 		}
 	}
 	for _, directory := range guard.directories {
-		if withinPath(directory, resolved) {
+		if withinDirectory(directory.path, directory.info, resolved, ancestors) {
 			return "", fmt.Errorf("%w: output %q must not replace capture evidence", ErrDestination, path)
 		}
 	}
@@ -173,23 +247,36 @@ func resolveOutputDestination(absolute string) (string, error) {
 	}
 }
 
-func withinPath(root, path string) bool {
+func withinLexicalPath(root, path string) bool {
 	relative, err := filepath.Rel(root, path)
-	if err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) && !filepath.IsAbs(relative) {
+	return err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) && !filepath.IsAbs(relative)
+}
+
+func withinDirectory(root string, rootInfo os.FileInfo, path string, ancestors []os.FileInfo) bool {
+	if withinLexicalPath(root, path) {
 		return true
 	}
 	// Match existing ancestors by identity as well, since resolving symlinks
 	// need not canonicalize casing on a case-insensitive filesystem.
-	rootInfo, err := os.Stat(root)
-	if err != nil {
+	if rootInfo == nil {
 		return false
 	}
-	for current := filepath.Dir(path); ; current = filepath.Dir(current) {
-		if info, err := os.Stat(current); err == nil && os.SameFile(rootInfo, info) {
+	for _, info := range ancestors {
+		if os.SameFile(rootInfo, info) {
 			return true
 		}
+	}
+	return false
+}
+
+func ancestorInfos(path string) []os.FileInfo {
+	var ancestors []os.FileInfo
+	for current := path; ; current = filepath.Dir(current) {
+		if info, err := os.Stat(current); err == nil {
+			ancestors = append(ancestors, info)
+		}
 		if filepath.Dir(current) == current {
-			return false
+			return ancestors
 		}
 	}
 }

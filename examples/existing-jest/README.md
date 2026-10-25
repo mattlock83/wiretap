@@ -69,14 +69,17 @@ identities, all **10 API operations exercised**, coverage JSON/text and a Postma
 collection with no export errors. Ajv validates the exported collection against
 Postman's pinned official v2.1 schema. The harness compares attempt identities,
 methods, URLs, headers, bodies and saved responses with raw archive records and
-retained payload files. It does not exercise the Postman SDK parser; desktop
-import remains a separate manual check.
+retained payload files. It does not exercise the Postman SDK parser or desktop
+import and execution.
 
-Read `demo/artifacts/wiretap/last-run.json` for exact output paths. Upload the
-complete `demo/artifacts/wiretap/` directory in CI, including failing runs. API
+The advisory latest receipt at `demo/artifacts/wiretap/last-run.json` names the
+archive created by the harness. That archive contains its own canonical
+`last-run.json` with exact output paths. Upload the complete
+`demo/artifacts/wiretap/` directory in CI, including failing runs. API
 operation coverage is distinct from contract-condition coverage: the latter
 honestly includes violations, gaps and unsupported non-JSON body conditions.
 
 The demo's datastore mocks are in-process, so there is no downstream HTTP API
-to capture. For HTTP mock-boundary coverage, use [Basic REST](../basic-rest/README.md);
+to capture. For HTTP mocks and consumer/provider checks, use the
+[consumer/provider walkthrough](../consumer-provider/README.md);
 for native gRPC mocks, use [Native Node gRPC](../grpc-boundaries/node/README.md).

@@ -7,6 +7,10 @@ Node 22+; the CI matrix covers Node 22 and 24 on Linux, macOS and Windows.
 All commands below create local files or local images. They do not publish npm
 packages, container images, GitHub releases or binary downloads.
 
+Prepared artifacts can be installed using the
+[local release installation guide](install-local-release.md). Changes intended
+for the next release are listed in the [release notes](../CHANGELOG.md).
+
 ## Build and inspect the runtime
 
 From a checkout:
@@ -24,13 +28,13 @@ version and commit with Go linker flags.
 ## Prepare versioned binary archives
 
 ```sh
-go run ./scripts/release --version v0.1.0-local
+go run ./scripts/release --version v0.1.0-local --out dist/v0.1.0-local
 ```
 
 This builds Linux, macOS and Windows binaries for amd64 and arm64 under
-`dist/bin/`, then creates `.tar.gz` archives for Linux/macOS, `.zip` archives for
-Windows and `dist/SHA256SUMS`. Each archive contains only its binary and the MIT
-license. Use `--platforms host` for the current platform, or a comma-separated
+`dist/v0.1.0-local/bin/`, then creates `.tar.gz` archives for Linux/macOS, `.zip`
+archives for Windows and `dist/v0.1.0-local/SHA256SUMS`. Each archive contains only
+its binary and the MIT license. Use `--platforms host` for the current platform, or a comma-separated
 list such as `--platforms linux/amd64,darwin/arm64`. `--out` selects another local
 output directory.
 
@@ -44,12 +48,17 @@ otherwise it comes from the selected Git commit. ZIP dates must be in
 graph, working-tree dirty state, targets and epoch to reproduce the archive checksums. Existing unrelated
 files in the output directory are not included in `SHA256SUMS`.
 
+`--commit` accepts a full or abbreviated Git commit hash and resolves it to the
+full hash of the current `HEAD`. Nonexistent hashes and commits other than `HEAD`
+are rejected, including when `SOURCE_DATE_EPOCH` is supplied. Check out a different
+commit before preparing a build from it.
+
 ## Pack the SDK and prove a clean-project install
 
 ```sh
 npm ci --prefix sdk/js
-mkdir -p dist
-npm pack ./sdk/js --pack-destination ./dist
+mkdir -p dist/v0.1.0-local
+npm pack ./sdk/js --ignore-scripts --pack-destination ./dist/v0.1.0-local
 node scripts/package-smoke.mjs
 node scripts/runner-smoke.mjs
 node scripts/go-sdk-smoke.mjs
@@ -60,6 +69,31 @@ The package has a source-file allowlist and public exports for `@wiretap/sdk`,
 `@wiretap/sdk/playwright`, `@wiretap/sdk/mocha` and `@wiretap/sdk/managed-runtime`. It includes TypeScript declarations and a copy
 of the MIT license. Test fixtures, test dependencies and the lockfile are
 excluded from the package.
+
+After the final binary build, append the SDK tarball's checksum to the same
+manifest. From `dist/v0.1.0-local`, use `shasum -a 256 wiretap-sdk-0.1.0.tgz >> SHA256SUMS`
+on macOS, or `sha256sum wiretap-sdk-0.1.0.tgz >> SHA256SUMS` on Linux. In PowerShell:
+
+```powershell
+$name = 'wiretap-sdk-0.1.0.tgz'
+$hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $name).Hash.ToLowerInvariant()
+Add-Content -Encoding ascii SHA256SUMS "$hash  $name"
+```
+
+Use the filename printed by `npm pack` if the SDK version changes. A subsequent
+binary build rewrites `SHA256SUMS`, so repeat this step after rebuilding. Retain
+the versioned directory, release notes and matching source checkout together.
+
+For a portable Go SDK source handoff, first commit the intended source and build
+from a clean checkout. Then create a local source archive from that same `HEAD`:
+
+```sh
+git archive --format=tar.gz --prefix=wiretap-v0.1.0-local/ --output=dist/v0.1.0-local/wiretap_v0.1.0-local_source.tar.gz HEAD
+```
+
+Append its checksum in the same way as the SDK tarball. `git archive` excludes
+uncommitted changes; do not pair it with a modified source build. Extracted source
+can supply the Go module replacement described in the installation guide.
 
 The cross-platform `package-smoke.mjs` builds the local binary and packs the SDK,
 installs the tarball into a temporary project outside this checkout, starts an
@@ -79,7 +113,7 @@ It also type-checks CommonJS and ESM consumers with strict TypeScript settings.
 Playwright API tests do not need a browser installation. The Linux CI lane
 additionally runs the [browser example](../examples/playwright-runner/README.md)
 with Chromium and parallel API tests.
-That lane also runs the [Mocha example](../examples/mocha-runner/README.md).
+The packed-runner smoke covers Mocha's configuration wrapper and fixture lifecycle.
 
 The Go SDK smoke uses a clean external Go module with a local replacement for
 this checkout. It runs standard test packages concurrently, verifies coverage

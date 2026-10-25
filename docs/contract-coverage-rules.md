@@ -168,8 +168,9 @@ Explicit limitations:
 - Combination fingerprints describe condition keys and exact instance locations,
   not arbitrary payload equality. No value-normalisation or payload hashing is
   performed. Unsupported combinations are not invented.
-- Only supplied contracts define denominators. Cross-revision target mapping and
-  explicit expected-negative annotations remain future work.
+- Only supplied contracts define denominators. Targets from different contract
+  revisions are measured separately. Capture does not infer expected-negative
+  assertions from test names or error responses.
 
 ## Purpose
 
@@ -188,10 +189,9 @@ must not infer that an assertion was made solely from a test name or payload.
 ## 1. Establish the contract and scope first
 
 Coverage targets come from supplied, frozen contracts, independently of traffic.
-An operation with no exchanges must still be visible as uncovered. To claim
-coverage across all APIs, the run must have a separately declared, complete API
-inventory; APIs absent from both the inventory and traffic cannot be discovered
-by coverage analysis alone.
+Declared operations with no exchanges remain visible as uncovered. The report
+describes registered APIs only; it cannot discover APIs absent from the run
+inventory and captured traffic.
 
 Keep results separate by:
 
@@ -225,9 +225,9 @@ Schema location: /properties/items
 Condition: array length at inclusive minimum
 ```
 
-Each target has a stable identity, applicability prerequisites, a predicate,
-and a polarity (valid condition or violation). The inventory records these
-before observations are classified.
+Each target records a stable key, operation, phase, schema location, condition,
+applicability, feasibility and coverage state. Violations are separate records
+with their own evidence references.
 
 Each observation links to `{run_id, attempt_id, flow_id}`, its message phase,
 instance location, contract location, test name, outcome, and evidence quality.
@@ -244,7 +244,7 @@ must remain distinguishable even if their schemas look identical.
 ## 3. Derive finite classes from declared constraints
 
 Only feasible classes enter the applicable denominator. The following rules
-form the initial coverage vocabulary; they are not a request to enumerate every
+describe the supported HTTP coverage vocabulary. They do not enumerate every
 possible payload.
 
 | Contract feature | Valid coverage classes | Separate violation observations |
@@ -252,7 +252,6 @@ possible payload.
 | Declared operation | Operation exercised | Unknown operation or unmatched route |
 | Response status/media alternative | Each declared alternative exercised | Response outside the declared alternatives |
 | `enum` | Each permitted value, using its actual JSON type | Value outside the enum |
-| `const` | Declared value observed | Different value |
 | Optional property/parameter | Present; absent | Invalid present value is recorded against its constraints |
 | Required property/parameter | Present | Absent |
 | Nullable value | Null; non-null, where each is permitted | Null when forbidden |
@@ -261,16 +260,15 @@ possible payload.
 | String length | At the effective minimum; interior; at a declared maximum | Too short; too long |
 | Array length | At the effective minimum; interior; at a declared maximum | Too few; too many items |
 | `pattern` | A matching value | A non-matching value |
-| Supported, enforced `format` | A conforming value | A non-conforming value |
 | Declared type alternatives | Each allowed type observed | Disallowed type |
-| `oneOf`, `anyOf`, conditionals | Applicable branch observations, as specified below | Branch-selection or branch-validation failure |
+| `oneOf`, `anyOf`, `allOf` | Applicable branch observations, as specified below | Branch-selection or branch-validation failure |
 
 Boundary rules:
 
 - Keep only classes that exist. If minimum equals maximum, there is one boundary
   class, not two. An integer range from 0 to 1 has no interior integer class.
-- Respect the entire schema when deciding feasibility. An enum, `multipleOf`,
-  or another composed constraint can eliminate a nominal boundary or interior.
+- Finite enums and local numeric constraints can exclude impossible targets.
+  More complex feasibility remains unknown until supported by a valid observation.
 - String and array lengths have an effective minimum of zero when no minimum
   is declared. With no maximum, the interior class is unbounded above. Thus an
   unconstrained array can distinguish empty from nonempty observations.
@@ -286,12 +284,11 @@ Boundary rules:
 - Unsupported formats or keywords must be identified as unsupported, rather
   than counted as checked. Support and validation dialect must be recorded.
 
-The supported-condition set is versioned. Constraints not covered by the
-initial vocabulary can still be enforced by schema validation; they must not
-be described as having condition coverage until measurement rules exist. For example, tuple positions, `uniqueItems`,
-`contains`, dynamic-key rules, property dependencies, and forbidden additional
-properties need explicit rules before they contribute to a coverage percentage.
-Do not generate an unlimited target inventory from arbitrary property names.
+The supported-condition set is versioned. Schema validation and condition
+measurement have separate scopes. Tuple positions, `uniqueItems`, `contains`,
+dynamic-key rules, property dependencies and forbidden additional properties
+have no independent coverage targets. Arbitrary property names do not expand
+the target inventory.
 
 ## 4. Respect applicability, presence, and schema branches
 
@@ -330,12 +327,9 @@ For composed schemas:
   match; do not describe them as mutually exclusive scenarios.
 - `allOf`: all constituent constraints apply. Satisfying one constituent alone
   does not establish validity of the composed schema.
-- `if`/`then`/`else`: apply the dialect's actual conditional evaluation. Credit
-  the selected branch and its applicable conditions, not the unselected branch.
-- References and recursive schemas retain stable contract locations. Recursion
-  must not create an infinite catalogue of depth-specific targets. Repeated
-  instances aggregate against their schema locations, with instance paths kept
-  as evidence. Any unsupported recursive analysis remains explicit.
+- References retain stable locations in the expanded operation context. Repeated
+  instances aggregate against those locations, with instance paths kept as
+  evidence. Recursive analysis and `if`/`then`/`else` conditions are unsupported.
 
 A condition may be infeasible because of another condition. Exclude it only
 when that is established, and explain why. Lack of observations is not evidence
@@ -364,21 +358,8 @@ earns no positive request-condition credit. A documented, valid error response
 can earn response-condition credit if the attempt otherwise qualifies as passing
 and complete; this alone does not prove the rejection scenario was asserted.
 
-A future executor could measure rejection assurance separately. It would need to:
-
-- Record which request constraint was violated.
-- Associate the documented rejection response with that request.
-- Require evidence that the existing test actually expected and checked the
-  rejection before calling it successfully tested. A `400` response and a
-  suggestive test name alone are insufficient.
-- If a request violates several constraints, report rejection of that combination.
-  Do not assume the provider independently checked each violated constraint.
-- A malformed mock/provider response is a response-contract violation. It does
-  not become a successful valid-response target merely because it tests consumer
-  resilience. Such resilience intent needs its own explicit test evidence.
-
 Ordinary capture retains strict validation and its existing framework-owned
-assertions. Wiretap does not currently measure rejection assurance: observing an
+assertions. Wiretap does not measure rejection assurance: observing an
 error status is not evidence that a test asserted the intended validation rule.
 Generated tests and their execution are outside the local tool's scope.
 
@@ -412,9 +393,7 @@ For example, observing `status=cancelled` in one response and `items=[]` in anot
 does not establish coverage of `status=cancelled` with `items=[]`.
 
 Observed combinations are listed with their evidence, without a combination
-coverage percentage. Full Cartesian-product coverage is not required. A future
-pairwise or selected-combination policy must define the target set, respect
-feasibility and conditional applicability, and disclose what it omits.
+coverage percentage or a generated Cartesian-product denominator.
 Within arrays, preserve instance relationships: a field observed in item 0 and
 another field in item 1 do not prove the same-item combination was exercised.
 
@@ -453,38 +432,24 @@ new labels to either the mock or the test.
 
 ## 8. Fingerprints support comparison, not compatibility verdicts
 
-Preserve three separate descriptors:
+Each target records its operation key, contract revision, phase, condition and
+measurement rules. Combination fingerprints hash the measured condition keys
+and exact instance locations observed together. They do not hash arbitrary
+payload values, include test names in cross-repository identity, or infer
+application assertions.
 
-1. Operation identity: where comparable interactions belong.
-2. Request observation: parameters/message shape, measured conditions, and,
-   where appropriate, a digest of canonically normalised retained values.
-3. Response observation: outcome/status and the corresponding payload observations.
+Response status is a condition under an operation, so responses with different
+statuses remain associated with the same operation. Contract revision is part
+of target identity; an operation key remains discoverable across revisions.
 
-A condition-combination fingerprint can index the sorted, structured observation
-set. Version the canonicalisation and coverage rules. Keep the full digest and
-human-readable descriptors; a short three-word alias is only a display aid and
-must not be treated as collision-free identity.
+`wiretap compare` reports gained/lost coverage for unchanged target identities
+and additions/removals when a contract changes. It does not map changed targets
+across revisions. See [coverage comparisons](report-policies.md#compare-two-existing-coverage-reports).
 
-Do not put response status into the primary operation key: the same request
-returning different statuses must remain comparable. Do not use test names as
-cross-repository identifiers. Retain test names as evidence of intent.
-
-Include the contract revision as measurement provenance, but do not let a new
-revision make the underlying operation undiscoverable. Comparing condition
-coverage across revisions requires mapping changed targets and reporting new,
-removed, or changed constraints, rather than comparing raw fingerprints alone.
-
-Canonicalisation must retain meaningful distinctions: missing versus null,
-number versus string, array ordering, repeated parameters, and protocol-specific
-presence/default semantics. Never assume every ID, timestamp, or header can be
-ignored. Any normalisation rule that discards values must be explicit and
-versioned. Hash inputs come from retained evidence; missing bytes in legacy
-redacted captures cannot be recovered.
-
-Equal fingerprints mean equal observations under those rules. Different
-fingerprints invite an explainable diff. Neither result alone proves
-compatibility: providers must accept consumer requests, while captured mock
-fields do not prove what the consumer actually requires from responses.
+Equal combination fingerprints identify equal measured condition combinations.
+They do not establish equal payloads or consumer/provider compatibility. The
+[assumption checker](assumption-checks.md) separately compares retained concrete
+requests, paired responses and supported contract declarations.
 
 ## 9. Preserve evidence quality and protocol boundaries
 
@@ -502,7 +467,7 @@ The coverage model is protocol neutral; extraction is protocol specific:
 
 - HTTP uses route/method, parameters, request/response bodies, status, and media
   alternatives from the selected OpenAPI dialect.
-- gRPC currently uses fully qualified service/method, request/response messages,
+- gRPC uses fully qualified service/method, request/response messages,
   and final status, with structural presence/value conditions. Length bounds
   and business validation annotations remain outside the current measurement.
 - Streaming uses ordered message observations and explicit direction completion;

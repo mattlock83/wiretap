@@ -20,6 +20,15 @@ The binary accepts positive integer environment overrides:
 exports the archive. Zero, empty, negative and malformed values are errors;
 there is no environment setting that disables the budgets.
 
+Output generation also inventories raw files to prevent overwriting evidence
+through aliases or hard links. That scan has a separate entry budget equal to
+`WIRETAP_MAX_ARCHIVE_FILES`: each file, directory or symlink encountered beneath
+the raw `tests`, `contracts` and `payloads` roots counts, including unreferenced
+entries. The fixed raw roots themselves do not count. Directory entries are read
+in bounded batches, and source identities are reused across generated outputs.
+An inventory limit error stops output generation and identifies the setting to
+raise for a larger trusted archive.
+
 These budgets include `bundle.json`, attempt captures, contract manifests, every
 frozen contract and import, HTTP/event/gRPC payload attachments, rich gRPC status
 attachments and descriptor reads used to verify gRPC projections. Reading the

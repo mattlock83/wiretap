@@ -7,19 +7,21 @@ const path = require('node:path');
 
 module.exports = async function setup() {
   const calls = [];
+  const bundlePath = path.join(process.env.WIRETAP_PLAYWRIGHT_RESULT, 'bundle');
+  await fs.mkdir(bundlePath, { recursive: true });
   const server = http.createServer(async (req, res) => {
     let raw = ''; for await (const part of req) raw += part;
     const body = JSON.parse(raw || '{}');
     calls.push({ path: req.url, body, headers: req.headers });
     res.setHeader('content-type', 'application/json');
-    if (req.url === '/v1/startRun') res.end(JSON.stringify({ sut_url: url, defaults: { schema_required: false }, bundle_path: path.join(process.env.WIRETAP_PLAYWRIGHT_RESULT, 'bundle') }));
+    if (req.url === '/v1/startRun') res.end(JSON.stringify({ sut_url: url, defaults: { schema_required: false }, run_id: 'playwright-fixture', bundle_path: bundlePath }));
     else if (req.url === '/v1/setupTest') res.end(JSON.stringify({ session_id: `${body.test_identity.id}:${body.test_identity.attempt_ordinal}`, name: body.name, sut_url: url }));
     else if (req.url === '/v1/teardownTest') {
       // Finalization intentionally outlives onTestEnd. The global teardown
       // must wait for it before asking the runtime to export the run.
       await new Promise(resolve => setTimeout(resolve, 30));
       res.end(JSON.stringify({ capture: {} }));
-    } else if (req.url === '/v1/finishRun') res.end(JSON.stringify({ status: 'complete', outputs: { errors: [] } }));
+    } else if (req.url === '/v1/finishRun') res.end(JSON.stringify({ status: 'complete', run_id: 'playwright-fixture', bundle_path: bundlePath, outputs: { errors: [] } }));
     else res.end(JSON.stringify({ ok: true, headers: req.headers }));
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));

@@ -140,20 +140,23 @@ outcomes independently of callback settlement.
 ## Keep the outputs
 
 Retain the complete output directory in CI on success and failure. Managed
-JavaScript runs put the latest `last-run.json` receipt and bounded `wiretap.log`
-beside the unique run archive directories:
+JavaScript runs keep their canonical receipt and bounded process log inside
+each unique run archive:
 
 ```text
 artifacts/wiretap/
-  last-run.json
-  wiretap.log
+  last-run.json         # advisory latest snapshot for compatibility
   run-.../
+    last-run.json       # this run's canonical receipt
+    wiretap.log
+    bundle.json
 ```
 
 The receipt's `bundle_path`, `outputs.coverage` and `outputs.postman` identify the
 exact archive and export paths. Each archive contains raw traffic, contracts and
-per-attempt outcomes. Use different `outputDir` values for independent runs that
-execute concurrently so their latest receipt and log do not overwrite each other.
+per-attempt outcomes. Concurrent runs retain separate receipts and logs even
+when they share an output directory. The root latest snapshot can name any of
+those runs; use the returned receipt or the archive-local record as authoritative.
 The plain lifecycle API returns receipts; its harness chooses where to save them.
 
 Managed JavaScript runs keep a stdin lifeline to Wiretap, as the Go SDK does.
@@ -161,7 +164,9 @@ If the owning runner process dies, EOF asks Wiretap to stop and preserve an
 interrupted raw archive. Abrupt termination cannot complete normal exports or
 save the owner's receipt: `last-run.json` may be absent or refer to an earlier
 run. Killing Wiretap itself can leave an open archive if shutdown cannot finish.
-Normal managed shutdown force-kills a child that exceeds its shutdown timeout.
+Normal managed shutdown force-kills a child that exceeds its shutdown timeout
+and reports a cleanup failure. Unsuccessful child exits and incomplete or
+mismatched finalization receipts also fail cleanup.
 
 Jest and Playwright default to one worker. Parallel capture requires explicit
 sessions and W3C trace propagation through captured application dependencies.

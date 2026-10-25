@@ -160,9 +160,9 @@ class WiretapEnvironment extends TestEnvironment {
           error: Array.isArray(failure) ? failure[0] : failure
         });
       } catch (error) {
-        // Preserve the runner's original failure and add a cleanup failure only
-        // when it is the reason an otherwise successful test must fail.
-        if (!test.errors.length) test.errors.push(error);
+        // Keep the runner's original failure first, while retaining cleanup
+        // diagnostics even when the test or a user hook already failed.
+        test.errors.push(error);
       }
     }
   }

@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/mattlock83/wiretap/internal/core"
+	"github.com/mattlock83/wiretap/internal/version"
 )
 
 func newLogger(cfg core.LogConfig) *slog.Logger {
@@ -20,6 +21,7 @@ func newLogger(cfg core.LogConfig) *slog.Logger {
 func (a *App) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", a.handleHealthz)
+	mux.HandleFunc("/v1/capabilities", a.handleCapabilities)
 	mux.HandleFunc("/v1/startRun", a.handleStartRun)
 	mux.HandleFunc("/v1/setupTest", a.handleSetupTest)
 	mux.HandleFunc("/v1/teardownTest", a.handleTeardownTest)
@@ -29,12 +31,25 @@ func (a *App) routes() http.Handler {
 	return loggingMiddleware(a.logger, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Teardown owns its short critical section and drains outside the
 		// control lock so parallel tests and health checks remain responsive.
-		if r.URL.Path != "/v1/teardownTest" && r.URL.Path != "/healthz" {
+		if r.URL.Path != "/v1/teardownTest" && r.URL.Path != "/healthz" && r.URL.Path != "/v1/capabilities" {
 			a.controlMu.Lock()
 			defer a.controlMu.Unlock()
 		}
 		mux.ServeHTTP(w, r)
 	}))
+}
+
+// Capabilities describe this binary's control contract, independently of saved
+// archive and measurement versions. Reading them never starts a capture run.
+func (a *App) handleCapabilities(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"api_version": "1.0", "producer": version.Current(),
+		"capabilities": []string{"capture.http", "capture.grpc", "outputs.coverage", "outputs.postman", "test.identity", "run.finalize"},
+	})
 }
 
 func (a *App) handleHealthz(w http.ResponseWriter, r *http.Request) {

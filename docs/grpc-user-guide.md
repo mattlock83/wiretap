@@ -92,7 +92,8 @@ The default discovery timeout is ten seconds per boundary; an explicit timeout
 must be greater than zero and at most one minute. Reflection reuses that
 boundary's upstream TLS settings. Allow enough time in the harness for all
 contracts to resolve: Go's `TestOptions.SetupTimeout` overrides its 30-second
-setup default, and JavaScript's optional `timeoutMs` controls HTTP API deadlines.
+setup default, JavaScript's optional `timeoutMs` controls HTTP API deadlines,
+and Python's `timeout` uses seconds.
 
 These headers authenticate Wiretap's discovery requests only. Your tests and SUT
 still supply their normal RPC credentials. Discovery credentials are private
@@ -100,7 +101,7 @@ runtime settings and are excluded from bundle contents and diagnostics.
 
 ## Run through your existing test lifecycle
 
-Managed Go, Jest, Mocha and Playwright integrations own their Wiretap process and
+Managed Go, Jest, Mocha, Playwright and pytest integrations own their Wiretap process and
 finalize after per-test cleanup. Keep your existing SUT and mock setup, or use
 the SDK's HTTP handler hosting where applicable. See the
 [SDK integration guide](getting-started-existing-tests.md) for runner setup.
@@ -235,7 +236,7 @@ run Buf. See the [Buf build command](https://buf.build/docs/reference/cli/buf/bu
 
 Both local modes require an explicit, nonempty `services` list. A descriptor set
 or source tree can contain services outside the boundary you are measuring;
-Wiretap should not count all of them merely because their definitions are present.
+Only methods in the selected services enter the coverage inventory.
 
 The existing `schema: path/to/openapi.yaml` string remains valid for HTTP APIs.
 For `protocol: grpc`, use one of the source objects above; a bare string is

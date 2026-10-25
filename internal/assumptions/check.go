@@ -22,6 +22,7 @@ import (
 	"github.com/mattlock83/wiretap/internal/artifact"
 	"github.com/mattlock83/wiretap/internal/bundle"
 	"github.com/mattlock83/wiretap/internal/postman"
+	"github.com/mattlock83/wiretap/internal/version"
 )
 
 const RulesVersion = "wiretap-assumptions-4"
@@ -56,13 +57,22 @@ type Evidence struct {
 }
 
 type Finding struct {
-	Kind        string     `json:"kind"`
-	Code        string     `json:"code"`
-	Operation   string     `json:"operation,omitempty"`
-	Message     string     `json:"message"`
-	Consumer    *Evidence  `json:"consumer,omitempty"`
-	Provider    []Evidence `json:"provider,omitempty"`
-	Differences []string   `json:"differences,omitempty"`
+	Kind        string       `json:"kind"`
+	Code        string       `json:"code"`
+	Operation   string       `json:"operation,omitempty"`
+	Message     string       `json:"message"`
+	Consumer    *Evidence    `json:"consumer,omitempty"`
+	Provider    []Evidence   `json:"provider,omitempty"`
+	Differences []string     `json:"differences,omitempty"`
+	Excerpts    []Difference `json:"excerpts,omitempty"`
+}
+
+// Difference includes small values from the same candidate named in Provider.
+// Values are diagnostics only; comparison always uses the complete recording.
+type Difference struct {
+	Path     string `json:"path"`
+	Expected string `json:"expected"`
+	Actual   string `json:"actual"`
 }
 
 type Match struct {
@@ -85,6 +95,7 @@ type Counts struct {
 }
 
 type Report struct {
+	Producer                 version.Producer   `json:"producer"`
 	ReportVersion            string             `json:"report_version"`
 	RulesVersion             string             `json:"rules_version"`
 	Mode                     string             `json:"mode"`
@@ -150,7 +161,7 @@ func Check(ctx context.Context, options Options) (*Report, error) {
 	}
 	sort.Strings(ignored)
 	ignored = unique(ignored)
-	report := &Report{ReportVersion: "1.0", RulesVersion: RulesVersion, Mode: options.Mode,
+	report := &Report{Producer: version.Current(), ReportVersion: "1.0", RulesVersion: RulesVersion, Mode: options.Mode,
 		Scope: "observed_mock_examples_and_exercised_contracts", Dependency: dependency, Binding: "explicit_inputs",
 		Consumer: consumer.source(options.ConsumerCollections), Provider: provider.source(options.ProviderCollections),
 		IgnoredHeaders: ignored, Matches: []Match{}, Findings: []Finding{}, ExcludedProviderEvidence: []ExcludedEvidence{}}
@@ -260,9 +271,11 @@ func Check(ctx context.Context, options Options) (*Report, error) {
 				refs = append(refs, candidate.evidence)
 			}
 			finding := Finding{Kind: "mismatch", Code: "provider_response_mismatch", Operation: assumption.operation, Message: "provider tests cover the request, but none returns the mocked response", Consumer: &assumption.evidence, Provider: limitedEvidence(refs), Differences: differencePaths(assumption.response, candidates[0].response)}
+			finding.Excerpts = differenceExcerpts(assumption.response, candidates[0].response, finding.Differences)
 			if contractProblem != nil {
 				finding.Kind, finding.Code, finding.Message = contractProblem.kind, contractProblem.code, contractProblem.message
 				finding.Differences = contractProblem.differences
+				finding.Excerpts = nil
 			}
 			report.add(finding)
 		}

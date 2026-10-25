@@ -29,23 +29,18 @@ func main() {
 
 func run() error {
 	version := flag.String("version", "", "local release version, for example v0.1.0")
-	commit := flag.String("commit", "", "source Git commit (default: HEAD)")
+	commit := flag.String("commit", "", "source Git commit; must match the current HEAD (default: HEAD)")
 	platforms := flag.String("platforms", "linux/amd64,linux/arm64,darwin/amd64,darwin/arm64,windows/amd64,windows/arm64", "comma-separated GOOS/GOARCH targets; host selects the current machine")
 	out := flag.String("out", "dist", "local output directory")
 	flag.Parse()
 	if flag.NArg() != 0 || !regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9.+_-]{0,79}$`).MatchString(*version) {
 		return fmt.Errorf("--version is required and must contain only letters, digits, dot, plus, underscore or hyphen")
 	}
-	if *commit == "" {
-		data, err := exec.Command("git", "rev-parse", "HEAD").Output()
-		if err != nil {
-			return fmt.Errorf("resolve source commit: %w", err)
-		}
-		*commit = strings.TrimSpace(string(data))
+	resolvedCommit, err := resolveSourceCommit(*commit)
+	if err != nil {
+		return err
 	}
-	if !regexp.MustCompile(`^[a-fA-F0-9]{7,64}$`).MatchString(*commit) {
-		return fmt.Errorf("--commit must be a Git commit hash")
-	}
+	*commit = resolvedCommit
 	status, err := exec.Command("git", "status", "--porcelain").Output()
 	if err != nil {
 		return fmt.Errorf("inspect source working tree: %w", err)
@@ -123,6 +118,29 @@ func run() error {
 		fmt.Fprintf(&checksums, "%s  %s\n", hex.EncodeToString(hash[:]), name)
 	}
 	return os.WriteFile(filepath.Join(*out, "SHA256SUMS"), []byte(checksums.String()), 0644)
+}
+
+func resolveSourceCommit(commit string) (string, error) {
+	if commit != "" && !regexp.MustCompile(`^[a-fA-F0-9]{7,64}$`).MatchString(commit) {
+		return "", fmt.Errorf("--commit must be a Git commit hash")
+	}
+	data, err := exec.Command("git", "rev-parse", "--verify", "HEAD^{commit}").Output()
+	if err != nil {
+		return "", fmt.Errorf("resolve source HEAD: %w", err)
+	}
+	head := strings.TrimSpace(string(data))
+	if commit == "" {
+		return head, nil
+	}
+	data, err = exec.Command("git", "rev-parse", "--verify", strings.ToLower(commit)+"^{commit}").Output()
+	if err != nil {
+		return "", fmt.Errorf("resolve --commit %q: %w", commit, err)
+	}
+	resolved := strings.TrimSpace(string(data))
+	if resolved != head {
+		return "", fmt.Errorf("--commit %s does not match current HEAD %s; check out the selected commit before building", resolved, head)
+	}
+	return resolved, nil
 }
 
 func writeArchive(path, binaryName string, binary, license []byte, stamp time.Time) (err error) {

@@ -23,12 +23,13 @@ report version. Exact-byte hashes establish integrity, not compatibility.
 
 ## Stable tests and attempts
 
-Use SDK `identity: {id, variant?, attemptOrdinal?}` (Go `Identity`, HTTP
-`test_identity: {id, variant?, attempt_ordinal?}`) for a stable logical test.
+Use JavaScript `identity: {id, variant?, attemptOrdinal?}`, Go `Identity`, Python
+`identity={"id": ..., "variant": ..., "attempt_ordinal": ...}`, or HTTP
+`test_identity: {id, variant?, attempt_ordinal?}` for a stable logical test.
 IDs are local to the application; variants distinguish parameterized cases.
 Supply a nonnegative attempt ordinal when the runner exposes retry ordering.
 Omission means ordering was not supplied, never a guessed successful or last
-attempt. Managed Go, Mocha and Playwright integrations number the first attempt
+attempt. Managed Go, Mocha, Playwright and pytest integrations number the first attempt
 as `1`; automatic Jest capture keeps retry identity but does not supply an
 ordinal. Custom HTTP/SDK integrations may use any consistent nonnegative
 sequence. Names remain display labels; random capture IDs identify executions.
@@ -96,9 +97,9 @@ or retained evidence can make a result `unverified`.
 
 ## Assumption-check results
 
-`wiretap check consumer` and `wiretap check provider` compare either an explicit
-consumer/provider pair or a local run against discovered peers under
-`--artifacts <root>`. Discovery uses declared provider mappings and top-level
+`wiretap check consumer` and `wiretap check provider` compare an explicit
+consumer/provider pair, a local run against discovered peers under
+`--artifacts <root>`, or explicit same-build run sets. Discovery uses declared provider mappings and top-level
 application folders; it requires an unambiguous snapshot selection. Each pair
 reads complete archives and their Postman collections. A passing result requires
 collections verified against
@@ -112,7 +113,7 @@ gRPC matches require selected-method declaration equality and observed wire
 cross-decoding.
 
 Use `--format json` for the versioned result, and `--output <file>` to save it.
-Both result shapes have `report_version: "1.0"` and
+Pair, discovered-artifact and run-set results have `report_version: "1.0"` and
 `rules_version: "wiretap-assumptions-4"`. Check both versions and `scope` before
 interpreting a result. Version 4 respects explicit non-JSON HTTP media types:
 JSON-looking `text/plain` body bytes compare exactly; JSON media types and
@@ -137,6 +138,15 @@ mappings to other provider versions so those mismatches remain visible.
 Ambiguous snapshots, missing peers and invalid discovery inputs fail with
 exit `2` and no new report. The check does not merge history or select a latest
 run. See [selection rules](assumption-checks.md#share-provider-snapshots).
+
+### Run-set result
+
+With `--consumer-set` and `--provider-set`, the envelope uses
+`scope: "same_build_run_sets"`. `consumers` and `providers` retain each member's
+source identity and manifest digest. `counts`, `matches` and `findings` describe
+the selected dependency across the sets; each match still names one complete
+provider exchange. See [run sets](run-sets.md) for membership checks, evidence
+selection and aggregation limits.
 
 ### Pair result
 
@@ -284,5 +294,21 @@ report path rather than trusting an existing file after a failed invocation.
 `--output` requires an existing parent directory. Shared-artifact mode requires
 a destination outside the entire artifact root and the local input archive.
 Explicit pair mode requires a destination outside both archives and supplied
-Postman input directories. Output cannot replace a collection input. The checker
+Postman input directories. Run-set output must be outside every member archive
+and cannot replace either manifest. Output cannot replace a collection input. The checker
 writes a separate report and leaves the inputs unchanged.
+
+## Check reports, run sets and completion receipts
+
+[Assumption check schemas](check-report.schema.json) distinguish an explicit
+pair, discovered application relationships and same-build run sets by `scope`.
+All have independent report/rules versions and producer metadata. Response
+mismatches include up to 20 field paths with bounded `expected` and `actual`
+excerpts from the first listed provider candidate. The exact comparison uses
+the complete retained values, including precise large JSON numbers.
+
+[Run-set manifests](run-set.schema.json) pin original archive manifests; the
+[run-set guide](run-sets.md) describes the aggregate coverage envelope and source
+evidence. [Control response schemas](control-api.schema.json) describe capability
+discovery, completion and export receipts. See the [compatibility policy](support.md#format-compatibility)
+for additive fields and the distinction between producer and tested build IDs.

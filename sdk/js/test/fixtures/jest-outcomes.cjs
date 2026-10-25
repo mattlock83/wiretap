@@ -7,6 +7,7 @@ suite.test('timeout', async () => { await new Promise(resolve => setTimeout(reso
 suite.test('never settles', () => new Promise(() => {}), 60);
 suite.test('assertion count', () => { expect.assertions(1); });
 suite.test('validation', () => {});
+suite.test('test and capture cleanup fail', () => { throw Error('original test failure retained'); });
 describe('hooks', () => {
   beforeEach(async () => { await fetch(suite.sutUrl + '/hook/setup'); });
   afterEach(async () => {

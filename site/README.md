@@ -4,8 +4,8 @@ Wiretap leads the header, page title and product content. Phrond appears only as
 the footer attribution. Repository URLs point to `mattlock83/wiretap`.
 
 This is plain HTML, CSS and a small script. There is no build step, package
-installation, external font, analytics or service dependency. All assets use
-relative URLs, so the page works at a GitHub Pages project path or a custom domain.
+installation, external font, analytics or service dependency. Assets use relative
+URLs so the page can be served from a root or project path.
 
 ## Preview locally
 
@@ -34,8 +34,9 @@ The Phrond footer mark combines a fern silhouette with a diagonal stem, angular
 branches and graph nodes, reflecting its roots in visualising dependencies.
 
 The order flow and coverage cases are **illustrative examples**, not a live
-Wiretap capture interface or measured customer results. Keep them consistent with the product
-docs. Do not turn mock evidence into a claim of proven provider agreement.
+Wiretap capture interface or measured customer results. The page describes the
+implemented integrations and outputs in the [support matrix](../docs/support.md).
+Product plans belong in [the roadmap](../docs/roadmap.md).
 
 Without JavaScript the first example, all product copy, quickstart and FAQs still
 work. With JavaScript, the example supports Left/Right arrows, Home and End. The
@@ -43,33 +44,16 @@ copy button selects the command text if clipboard access is unavailable.
 
 ## Publish with GitHub Pages
 
-For free hosting, make the repository public when you are ready. The included
-workflow runs **only on manual dispatch**, so pushing page changes does not publish
-them automatically.
+The [included workflow](../.github/workflows/pages.yml) runs **only on manual
+dispatch** on `main`. Pushing page changes does not publish them automatically.
+The repository's GitHub Pages configuration must use GitHub Actions as its source.
 
 1. Commit and push `site/` and `.github/workflows/pages.yml` to `main`.
 2. In the repository's **Settings → Pages**, select **GitHub Actions** as the source.
 3. In **Actions → Deploy Wiretap landing page**, choose **Run workflow** on `main`.
-4. Open the URL reported by the deployment. Without a custom domain or an inherited
-   organisation domain, the project URL is `https://mattlock83.github.io/wiretap/`.
+4. Open the URL reported by the deployment.
 
 Repeat step 3 to publish updates. The workflow uploads only `site/`; it does not
 publish captured bundles, test payloads or other repository content.
 
 See GitHub's [custom workflow guide](https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages).
-
-## Connect your domain
-
-First verify domain ownership using GitHub's
-[domain verification guide](https://docs.github.com/en/pages/configuring-a-custom-domain-for-your-github-pages-site/verifying-your-custom-domain-for-github-pages).
-In **Settings → Pages → Custom domain**, set the hostname you want to use, then
-configure its DNS and enable **Enforce HTTPS** once GitHub has issued the certificate.
-Follow GitHub's [domain setup instructions](https://docs.github.com/en/pages/configuring-a-custom-domain-for-your-github-pages-site/managing-a-custom-domain-for-your-github-pages-site)
-for the correct records for an apex domain or subdomain.
-
-No domain is hardcoded in this page. A custom Actions deployment uses the Pages
-domain setting; a `CNAME` file is not needed. Once the final public URL is chosen,
-add its canonical URL and `og:url` to `index.html`.
-
-The page can use the main domain now and move under `/wiretap/` if you introduce
-other products later.
