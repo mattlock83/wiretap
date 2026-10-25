@@ -160,7 +160,7 @@ func TestCLIPostmanCorruptBundlePreservesCollectionSet(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, output := range []string{dir, filepath.Join(t.TempDir(), "new-collections")} {
-		if code := execute(context.Background(), []string{"export", "--bundle", bundlePath, "--format", "postman", "--output-dir", output}); code != 1 {
+		if code := execute(context.Background(), []string{"export", "--bundle", bundlePath, "--format", "postman", "--output-dir", output}); code != 2 {
 			t.Fatalf("corrupt bundle export = %d", code)
 		}
 		if output != dir {

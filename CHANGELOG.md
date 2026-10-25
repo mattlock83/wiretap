@@ -30,6 +30,10 @@
   recorded test attempts captured no traffic.
 - Consolidate overlapping HTTP demos; retain distinct runner, browser and
   native gRPC examples and clean installation checks.
+- Simplify CLI help, print flag errors once, and use exit 2 consistently for
+  invalid or missing inputs while preserving failed checks and output errors.
+- Bound terminal report details with omission counts and print exact coverage
+  and Postman paths after runner finalization, including pytest workers.
 
 ### Fixes
 

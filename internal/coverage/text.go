@@ -5,7 +5,11 @@ import (
 	"io"
 	"sort"
 	"strings"
+	"unicode"
 )
+
+const maxTextSpecs = 10
+const maxTextFamilies = 12
 
 // Text is a bounded reading aid over the same report, not another measurement
 // profile. Keep condition families separate: their denominators differ.
@@ -54,7 +58,11 @@ func writeTextReport(w io.Writer, report *Report) error {
 		if len(group.specs) == 0 {
 			out.WriteString("  No registered contracts.\n")
 		}
-		for _, spec := range group.specs {
+		for i, spec := range group.specs {
+			if i == maxTextSpecs {
+				fmt.Fprintf(&out, "  ... %d more contracts; use --format json for complete details.\n", len(group.specs)-i)
+				break
+			}
 			label := spec.SchemaID
 			if spec.AssetID != "" {
 				label = spec.AssetID
@@ -75,7 +83,11 @@ func writeTextReport(w io.Writer, report *Report) error {
 	}
 	if report.Contracts != nil {
 		out.WriteString("\nContract conditions (covered / gaps / unknown / unsupported / excluded)\n")
-		for _, spec := range report.Contracts.Specs {
+		for i, spec := range report.Contracts.Specs {
+			if i == maxTextSpecs {
+				fmt.Fprintf(&out, "  ... %d more contracts; use --format json for complete details.\n", len(report.Contracts.Specs)-i)
+				break
+			}
 			fmt.Fprintf(&out, "  %s (%s, %s)\n", textLabel(spec.APIID), textLabel(spec.Origin), textLabel(spec.TargetKind))
 			if !spec.DenominatorKnown {
 				out.WriteString("    Contract denominator unknown.\n")
@@ -88,19 +100,23 @@ func writeTextReport(w io.Writer, report *Report) error {
 				families = append(families, family)
 			}
 			sort.Strings(families)
-			for _, family := range families {
+			for i, family := range families {
+				if i == maxTextFamilies {
+					fmt.Fprintf(&out, "    ... %d more condition families in the JSON report.\n", len(families)-i)
+					break
+				}
 				count := spec.Counts[family]
 				label := strings.ReplaceAll(strings.TrimPrefix(family, "family:"), "_", " ")
 				fmt.Fprintf(&out, "    %s: %d / %d / %d / %d / %d\n", textLabel(label), count.Covered, count.NotCovered, count.Unknown, count.Unsupported, count.Excluded)
 			}
-			shown := 0
+			shown, remaining := 0, 0
 			for _, target := range spec.Targets {
 				if target.State != "not_covered" && target.State != "unknown" {
 					continue
 				}
 				if shown == 3 {
-					out.WriteString("    More condition details in the JSON report.\n")
-					break
+					remaining++
+					continue
 				}
 				location := target.FieldPath
 				if location == "" {
@@ -120,6 +136,9 @@ func writeTextReport(w io.Writer, report *Report) error {
 				fmt.Fprintf(&out, "    %s: %s %s %s (%s)\n", state, textLabel(target.Operation), textLabel(target.Phase), textLabel(target.Condition), textLabel(location))
 				shown++
 			}
+			if remaining > 0 {
+				fmt.Fprintf(&out, "    ... %d more gaps or unknown conditions in the JSON report.\n", remaining)
+			}
 			if len(spec.Violations) > 0 {
 				fmt.Fprintf(&out, "    Contract violations observed: %d; framework test outcomes are reported separately.\n", len(spec.Violations))
 			}
@@ -130,12 +149,12 @@ func writeTextReport(w io.Writer, report *Report) error {
 	}
 	for i, note := range report.Notes {
 		if i == 5 {
-			out.WriteString("More notes in the JSON report.\n")
+			fmt.Fprintf(&out, "... %d more notes in the JSON report.\n", len(report.Notes)-i)
 			break
 		}
 		fmt.Fprintf(&out, "Note: %s\n", textLabel(note))
 	}
-	out.WriteString("\nExercised operations show observed traffic. Contract coverage requires qualifying evidence.\nMock replies are test assumptions; provider agreement is not verified.\n")
+	out.WriteString("\nExercised operations show observed traffic. Contract coverage requires qualifying evidence.\nMock replies are test assumptions; provider agreement is not verified.\nUse --format json for the complete report.\n")
 	_, err := io.WriteString(w, out.String())
 	return err
 }
@@ -169,7 +188,7 @@ func capturedTraffic(report *Report) (counts struct{ http, grpc, other int }, kn
 // Captured labels can contain newlines or terminal control bytes. A summary
 // displays them as one bounded line; the machine report retains the source.
 func textLabel(value string) string {
-	value = strings.Join(strings.FieldsFunc(value, func(r rune) bool { return r < 32 || r == 127 }), " ")
+	value = strings.Join(strings.FieldsFunc(value, unicode.IsControl), " ")
 	runes := []rune(value)
 	if len(runes) > 180 {
 		return string(runes[:177]) + "..."

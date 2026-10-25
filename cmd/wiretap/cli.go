@@ -5,106 +5,123 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/mattlock83/wiretap/internal/app"
+	"github.com/mattlock83/wiretap/internal/bundle"
 	"github.com/mattlock83/wiretap/internal/core"
 	"github.com/mattlock83/wiretap/internal/project"
 	wiretaptls "github.com/mattlock83/wiretap/internal/tls"
 )
 
+var errUsage = errors.New("usage")
+
+// parseCommandFlags leaves diagnostics to execute so flag failures are printed
+// once. Help still uses the command's own usage text and output stream.
+func parseCommandFlags(flags *flag.FlagSet, args []string) error {
+	output, usage := flags.Output(), flags.Usage
+	flags.SetOutput(io.Discard)
+	flags.Usage = func() {}
+	err := flags.Parse(args)
+	flags.SetOutput(output)
+	flags.Usage = usage
+	if errors.Is(err, flag.ErrHelp) {
+		usage()
+		return err
+	}
+	if err != nil {
+		return fmt.Errorf("%w: %v\nRun %s --help for usage.", errUsage, err, flags.Name())
+	}
+	return nil
+}
+
 func execute(ctx context.Context, args []string) int {
-	if len(args) > 0 && (args[0] == "version" || args[0] == "--version") {
-		if err := versionCommand(args[1:], os.Stdout); err != nil {
-			if errors.Is(err, flag.ErrHelp) {
-				return 0
-			}
-			fmt.Fprintln(os.Stderr, err)
-			return 2
-		}
-		return 0
-	}
 	command := ""
-	if len(args) > 0 && len(args[0]) > 0 && args[0][0] != '-' {
-		command = args[0]
-		args = args[1:]
+	if len(args) > 0 && args[0] == "--version" {
+		command, args = "version", args[1:]
+	} else if len(args) > 0 && len(args[0]) > 0 && args[0][0] != '-' {
+		command, args = args[0], args[1:]
 	}
-	if command == "report" || command == "export" {
-		err := reportCommand(args)
-		if err != nil {
-			if errors.Is(err, flag.ErrHelp) {
-				return 0
-			}
-			fmt.Fprintln(os.Stderr, err)
-			if errors.Is(err, errUsage) {
-				return 2
-			}
-			return 1
-		}
-		return 0
-	}
-	if command == "check" {
+	var err error
+	switch command {
+	case "", "ca":
+		err = runtimeCommand(ctx, command, args)
+	case "version":
+		err = versionCommand(args, os.Stdout)
+	case "report", "export":
+		err = reportCommand(command, args)
+	case "check":
 		code, err := checkCommand(ctx, args)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 		}
 		return code
+	case "run-set":
+		err = runSetCommand(ctx, args)
+	case "doctor":
+		err = doctorCommand(ctx, args)
+	case "init":
+		err = initCommand(args)
+	case "compare":
+		err = compareCommand(ctx, args)
+	default:
+		err = fmt.Errorf("%w: unknown command %q; run wiretap --help for commands", errUsage, command)
 	}
-	if command == "run-set" {
-		if err := runSetCommand(ctx, args); err != nil {
-			if errors.Is(err, flag.ErrHelp) {
-				return 0
-			}
-			fmt.Fprintln(os.Stderr, err)
-			return 2
-		}
+	if err == nil || errors.Is(err, flag.ErrHelp) {
 		return 0
 	}
-	if command == "doctor" || command == "init" || command == "compare" {
-		var err error
-		switch command {
-		case "doctor":
-			err = doctorCommand(ctx, args)
-		case "init":
-			err = initCommand(args)
-		case "compare":
-			err = compareCommand(ctx, args)
-		}
-		if err == nil || errors.Is(err, flag.ErrHelp) {
-			return 0
-		}
-		fmt.Fprintln(os.Stderr, err)
-		if errors.Is(err, errUsage) {
-			return 2
-		}
+	fmt.Fprintln(os.Stderr, err)
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return 1
 	}
-	if command != "" && command != "ca" {
-		fmt.Fprintf(os.Stderr, "unknown command %q; use wiretap, init, doctor, report, export, check, run-set, compare, version, or ca\n", command)
+	if errors.Is(err, errUsage) || errors.Is(err, bundle.ErrInput) {
 		return 2
 	}
-	flags := flag.NewFlagSet("wiretap "+command, flag.ContinueOnError)
+	return 1
+}
+
+func runtimeCommand(ctx context.Context, command string, args []string) error {
+	name := "wiretap"
+	if command != "" {
+		name += " " + command
+	}
+	flags := flag.NewFlagSet(name, flag.ContinueOnError)
 	configPath := flags.String("config", "", "project configuration (default: discover .wiretap.yaml)")
 	flags.Usage = func() {
-		fmt.Fprintln(flags.Output(), "Usage: wiretap [--config path]\n  wiretap ca [--config path]\n  wiretap version [--json]\n  wiretap report --bundle <directory> [--format json|yaml|text|all]\n  wiretap export --bundle <directory> --format json --output coverage.json\n  wiretap export --bundle <directory> --format postman --output-dir postman\n  wiretap check consumer --consumer <capture> --artifacts <directory>\n  wiretap check provider --provider <capture> --artifacts <directory>\n  wiretap check <consumer|provider> --consumer <capture> --provider <capture> [--dependency <id>]")
-		fmt.Fprintln(flags.Output(), "  wiretap init --sut-url <url> --schema <file> --application <id>\n  wiretap doctor [--config path] [--format text|json]\n  wiretap run-set --bundle <archive> --bundle <archive> --output run-set.json\n  wiretap report --run-set run-set.json [--output coverage.json]\n  wiretap report --bundle <archive> --policy coverage-policy.json\n  wiretap compare --baseline before.json --current after.json\n  wiretap check <consumer|provider> --consumer-set consumers.json --provider-set providers.json")
+		if command == "ca" {
+			fmt.Fprintln(flags.Output(), "Usage: wiretap ca [--config path]\nPrint the capture CA certificate as PEM.")
+		} else {
+			fmt.Fprintln(flags.Output(), `Usage: wiretap [--config path]
+Start the capture API; run tests with your existing test framework.
+
+Commands:
+  init       Create a project configuration
+  doctor     Check local capture setup
+  report     Measure coverage from a capture or run set
+  export     Export coverage or executable Postman collections
+  check      Check consumer/provider compatibility
+  run-set    Group captures from one application build
+  compare    Compare coverage against a baseline
+  version    Print the Wiretap version
+  ca         Print the capture CA certificate
+
+Use wiretap <command> --help for options and examples.
+
+Capture options:`)
+		}
 		flags.PrintDefaults()
 	}
-	if err := flags.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return 0
-		}
-		return 2
+	if err := parseCommandFlags(flags, args); err != nil {
+		return err
 	}
 	if len(flags.Args()) > 0 {
-		fmt.Fprintln(os.Stderr, "unexpected arguments: Wiretap hosts the HTTP API; run tests with your existing test framework")
-		return 2
+		return fmt.Errorf("%w: unexpected arguments: Wiretap hosts the HTTP API; run tests with your existing test framework", errUsage)
 	}
 	cfg := core.DefaultConfig()
 	projectConfig, err := project.Load(*configPath)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 2
+		return fmt.Errorf("%w: %v", errUsage, err)
 	}
 	if projectConfig != nil {
 		if projectConfig.HTTPListen != "" {
@@ -117,34 +134,26 @@ func execute(ctx context.Context, args []string) int {
 		cfg.Proxy.CABaseDir = projectConfig.CADir
 	}
 	if err := applyEnv(&cfg); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 2
+		return fmt.Errorf("%w: %v", errUsage, err)
 	}
 	if err := cfg.Validate(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 2
+		return fmt.Errorf("%w: %v", errUsage, err)
 	}
 	if command == "ca" {
 		manager := wiretaptls.NewManager(cfg.Proxy.CABaseDir)
 		pem, err := manager.CACertPEM()
 		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			return 1
+			return err
 		}
 		_, err = os.Stdout.Write(pem)
-		if err != nil {
-			return 1
-		}
-		return 0
+		return err
 	}
 	instance, err := app.New(app.Deps{Config: cfg, Project: projectConfig})
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
+		return err
 	}
 	if err := instance.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
+		return err
 	}
-	return 0
+	return nil
 }

@@ -5,6 +5,28 @@ analysis.
 Postman collections are executable/example projections. Coverage reports are
 versioned measurements of that evidence, not replacement recordings.
 
+## CLI output and exit status
+
+Use `wiretap --help` for the command list and `wiretap <command> --help` for
+options. Reports and exports write their selected format to stdout unless an
+output path is supplied. Flag and input errors are printed once on stderr.
+
+| Exit | Meaning |
+| --- | --- |
+| `0` | Command succeeded, checks passed, or help was requested. |
+| `1` | A compatibility, coverage policy, baseline or setup check failed; capture, export or output writing can also fail with this status. |
+| `2` | Invalid command/flags, missing required arguments, or unreadable, corrupt or incompatible inputs. |
+
+`doctor` writes its diagnostic report and returns `1` when local setup checks
+fail, including a missing configuration. An invalid invocation returns `2`.
+Offline report/export commands return `2` for a missing or corrupt capture,
+without replacing existing outputs. Keep stderr and the exit status alongside
+machine reports; a failed command does not make a pre-existing report current.
+
+Text reports show bounded samples with omitted counts. Use JSON for complete
+check and baseline diagnostics, or JSON/YAML for complete coverage data. Display
+limits do not change measured totals or check verdicts.
+
 ## Versions and producer
 
 `bundle.json` retains raw format `3.1` and required-capability declarations.

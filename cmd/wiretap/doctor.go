@@ -52,11 +52,8 @@ func doctorCommand(ctx context.Context, args []string) error {
 		fmt.Fprintln(flags.Output(), "Usage: wiretap doctor [--config path] [--format text|json]\nCheck local setup without starting capture, contacting servers or writing files.")
 		flags.PrintDefaults()
 	}
-	if err := flags.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return err
-		}
-		return fmt.Errorf("%w: %v", errUsage, err)
+	if err := parseCommandFlags(flags, args); err != nil {
+		return err
 	}
 	if flags.NArg() != 0 || (*format != "text" && *format != "json") {
 		return fmt.Errorf("%w: doctor accepts --config and --format text|json", errUsage)

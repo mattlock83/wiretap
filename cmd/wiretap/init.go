@@ -24,11 +24,8 @@ func initCommand(args []string) error {
 		fmt.Fprintln(flags.Output(), "Usage: wiretap init --sut-url <url> --schema <file> --application <id> [--output path|-]\nCreate an HTTP project configuration without changing your tests or starting servers.")
 		flags.PrintDefaults()
 	}
-	if err := flags.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return err
-		}
-		return fmt.Errorf("%w: %v", errUsage, err)
+	if err := parseCommandFlags(flags, args); err != nil {
+		return err
 	}
 	if flags.NArg() != 0 || strings.TrimSpace(*sutURL) == "" || strings.TrimSpace(*schema) == "" || strings.TrimSpace(*application) == "" || *output == "" {
 		return fmt.Errorf("%w: init requires --sut-url, --schema and --application; --output is a new path or -", errUsage)

@@ -4,6 +4,7 @@ const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { startCapture } = require('./index');
 const { startManagedRuntime } = require('./managed-runtime');
+const { printCompletionSummary } = require('./completion-summary');
 const tracing = require('./tracing');
 
 const stateKey = Symbol.for('wiretap.mocha.adapter');
@@ -233,7 +234,7 @@ async function mochaHooks() {
         state.server.closeAllConnections();
       });
     } catch (error) { failure ??= error; }
-    try { await state.owner?.close(); } catch (error) { failure ??= error; }
+    try { printCompletionSummary(await state.owner?.close()); } catch (error) { failure ??= error; }
     state.restoreRunnable?.();
     state.restoreFixtures?.();
     process.removeListener('SIGINT', state.onInterrupt);

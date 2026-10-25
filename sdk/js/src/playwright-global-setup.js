@@ -3,6 +3,7 @@ const crypto = require('node:crypto');
 const path = require('node:path');
 const { startCapture } = require('./index');
 const { startManagedRuntime } = require('./managed-runtime');
+const { printCompletionSummary } = require('./completion-summary');
 const { metadataKey } = require('./playwright-config');
 const { getRun, setRun, attemptKey } = require('./playwright-state');
 
@@ -119,7 +120,7 @@ module.exports = async function setup(config) {
     }
     await Promise.all(pending);
     await closeServer();
-    try { await managed.close(); } catch (error) { failures.push(error); }
+    try { printCompletionSummary(await managed.close()); } catch (error) { failures.push(error); }
     process.removeListener('SIGTERM', onSigterm);
     if (previous === undefined) delete process.env.WIRETAP_PLAYWRIGHT_COORDINATOR;
     else process.env.WIRETAP_PLAYWRIGHT_COORDINATOR = previous;

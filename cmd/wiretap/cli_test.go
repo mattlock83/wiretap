@@ -2,6 +2,9 @@ package main
 
 import (
 	"context"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -14,11 +17,104 @@ func TestCLIRejectsTestOrchestration(t *testing.T) {
 }
 
 func TestCLIHelp(t *testing.T) {
-	for _, args := range [][]string{{"--help"}, {"ca", "--help"}, {"report", "--help"}, {"export", "--help"}} {
-		if code := execute(context.Background(), args); code != 0 {
-			t.Fatalf("execute(%q) = %d", args, code)
+	for _, command := range []string{"", "ca", "report", "export", "check", "init", "doctor", "run-set", "compare", "version"} {
+		args := []string{"--help"}
+		if command != "" {
+			args = append([]string{command}, args...)
+		}
+		code, out, diagnostic := executeCapturingStreams(t, args)
+		if code != 0 || !strings.Contains(out+diagnostic, "Usage: wiretap "+command) {
+			t.Fatalf("execute(%q) = %d, stdout %q, stderr %q", args, code, out, diagnostic)
 		}
 	}
+}
+
+func TestCLIFlagErrorsArePrintedOnceOnStderr(t *testing.T) {
+	for _, prefix := range [][]string{nil, {"ca"}, {"report"}, {"export"}, {"check", "consumer"}, {"init"}, {"doctor"}, {"run-set"}, {"compare"}, {"version"}, {"--version"}} {
+		args := append(append([]string{}, prefix...), "--not-a-flag")
+		code, out, diagnostic := executeCapturingStreams(t, args)
+		if code != 2 || out != "" || strings.Count(diagnostic, "flag provided but not defined: -not-a-flag") != 1 || strings.Contains(diagnostic, "Usage:") || !strings.Contains(diagnostic, "--help for usage") {
+			t.Fatalf("execute(%q) = %d, stdout %q, stderr %q", args, code, out, diagnostic)
+		}
+	}
+	for _, args := range [][]string{{"--config"}, {"report", "--bundle"}, {"check", "consumer", "--consumer"}, {"run-set", "--bundle"}, {"version", "--json=bad"}} {
+		code, out, diagnostic := executeCapturingStreams(t, args)
+		if code != 2 || out != "" || strings.Count(diagnostic, "usage:") != 1 || strings.Contains(diagnostic, "Usage:") {
+			t.Fatalf("execute(%q) = %d, stdout %q, stderr %q", args, code, out, diagnostic)
+		}
+	}
+}
+
+func TestCLIMissingInputsUseExitTwo(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "missing")
+	for _, args := range [][]string{
+		{"report"}, {"export"}, {"init"}, {"compare"}, {"run-set"},
+		{"--config", missing}, {"ca", "--config", missing},
+		{"report", "--bundle", missing},
+		{"export", "--bundle", missing, "--format", "postman"},
+		{"export", "--bundle", missing, "--format", "all"},
+		{"report", "--run-set", missing},
+		{"compare", "--baseline", missing, "--current", missing},
+		{"run-set", "--bundle", missing, "--output", filepath.Join(t.TempDir(), "set.json")},
+		{"check", "consumer", "--consumer", missing, "--provider", missing},
+	} {
+		code, out, diagnostic := executeCapturingStreams(t, args)
+		if code != 2 || out != "" || diagnostic == "" {
+			t.Fatalf("execute(%q) = %d, stdout %q, stderr %q", args, code, out, diagnostic)
+		}
+	}
+}
+
+func TestCLIOutputFailuresRemainExitOne(t *testing.T) {
+	archive := postmanBundleFixture(t)
+	output := filepath.Join(t.TempDir(), "absent", "report.json")
+	code, out, diagnostic := executeCapturingStreams(t, []string{"report", "--bundle", archive, "--output", output})
+	if code != 1 || out != "" || diagnostic == "" {
+		t.Fatalf("output failure = %d, stdout %q, stderr %q", code, out, diagnostic)
+	}
+	code, out, diagnostic = executeCapturingStreams(t, []string{"doctor", "--config", filepath.Join(t.TempDir(), "missing"), "--format", "json"})
+	if code != 1 || !strings.Contains(out, `"ok": false`) || diagnostic == "" {
+		t.Fatalf("failed setup check = %d, stdout %q, stderr %q", code, out, diagnostic)
+	}
+}
+
+func TestCLICancellationIsAnOperationalFailure(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	for _, args := range [][]string{
+		{"compare", "--baseline", "before.json", "--current", "after.json"},
+		{"run-set", "--bundle", "capture", "--output", "set.json"},
+		{"check", "consumer", "--consumer-set", "consumers.json", "--provider-set", "providers.json"},
+	} {
+		if code := execute(ctx, args); code != 1 {
+			t.Fatalf("cancelled execute(%q) = %d, want 1", args, code)
+		}
+	}
+}
+
+func executeCapturingStreams(t *testing.T, args []string) (int, string, string) {
+	t.Helper()
+	files := make([]*os.File, 2)
+	for i := range files {
+		file, err := os.CreateTemp(t.TempDir(), "cli-output-*")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer file.Close()
+		files[i] = file
+	}
+	out, diagnostic := os.Stdout, os.Stderr
+	os.Stdout, os.Stderr = files[0], files[1]
+	defer func() { os.Stdout, os.Stderr = out, diagnostic }()
+	code := execute(t.Context(), args)
+	read := func(file *os.File) string {
+		data, err := os.ReadFile(file.Name())
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(data)
+	}
+	return code, read(files[0]), read(files[1])
 }
 
 func TestCLIRejectsRemovedExportFormats(t *testing.T) {

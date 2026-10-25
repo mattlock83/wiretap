@@ -109,9 +109,17 @@ def pytest_sessionfinish(session, exitstatus):
     for owner in state["owners"]:
         try:
             receipt = owner.close()
-            reporter = session.config.pluginmanager.getplugin("terminalreporter")
-            if reporter and receipt:
-                reporter.write_line("Wiretap archive: %s" % receipt["bundle_path"])
+            if receipt:
+                lines = ["Wiretap archive: %s" % receipt["bundle_path"]]
+                outputs = receipt.get("outputs") or {}
+                for kind, path in sorted((outputs.get("coverage") or {}).items()):
+                    lines.append("Wiretap coverage (%s): %s" % (kind, path))
+                for path in outputs.get("postman") or []:
+                    lines.append("Wiretap Postman: %s" % path)
+                if hasattr(session.config, "workeroutput"):
+                    session.config.workeroutput.setdefault("wiretap_summary", []).extend(lines)
+                else:
+                    _write_summary(session.config, lines)
         except Exception as error:
             errors.append(error)
     if errors:
@@ -121,3 +129,16 @@ def pytest_sessionfinish(session, exitstatus):
                 reporter.write_line("Wiretap finalization failed: %s" % error, red=True)
         if session.exitstatus == 0:
             session.exitstatus = pytest.ExitCode.TESTS_FAILED
+
+
+def _write_summary(config, lines):
+    reporter = config.pluginmanager.getplugin("terminalreporter")
+    if reporter:
+        for line in lines:
+            reporter.write_line(line)
+
+
+@pytest.hookimpl(optionalhook=True)
+def pytest_testnodedown(node, error):
+    """Relay completed worker exports through xdist's controller reporter."""
+    _write_summary(node.config, getattr(node, "workeroutput", {}).get("wiretap_summary", []))

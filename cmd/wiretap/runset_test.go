@@ -56,4 +56,7 @@ func TestRunSetCLIReportsAndProtectsOriginals(t *testing.T) {
 	if _, _, err := bundle.Load(first); err != nil {
 		t.Fatalf("original overwritten: %v", err)
 	}
+	if code, _ := executeCapturingStdout(t, []string{"run-set", "--bundle", first, "--output", filepath.Join(t.TempDir(), "absent", "set.json")}); code != 1 {
+		t.Fatalf("output directory failure exit %d, want 1", code)
+	}
 }

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -100,14 +101,27 @@ func runPackage(run func() int, options RunOptions, pkg string, start func(conte
 	activeCapture.current = state
 	activeCapture.Unlock()
 	defer func() {
-		_, err := owner.close()
+		receipt, err := owner.close()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Wiretap finalization failed: %v\n", err)
 			if code == 0 {
 				code = 1
 			}
 		}
-		fmt.Fprintf(os.Stderr, "Wiretap artifacts: %s\n", owner.info.BundlePath)
+		fmt.Fprintf(os.Stderr, "Wiretap archive: %s\n", owner.info.BundlePath)
+		if err == nil && receipt != nil && receipt.Outputs != nil {
+			formats := make([]string, 0, len(receipt.Outputs.Coverage))
+			for format := range receipt.Outputs.Coverage {
+				formats = append(formats, format)
+			}
+			sort.Strings(formats)
+			for _, format := range formats {
+				fmt.Fprintf(os.Stderr, "Wiretap coverage (%s): %s\n", format, receipt.Outputs.Coverage[format])
+			}
+			for _, path := range receipt.Outputs.Postman {
+				fmt.Fprintf(os.Stderr, "Wiretap Postman: %s\n", path)
+			}
+		}
 	}()
 	return run()
 }

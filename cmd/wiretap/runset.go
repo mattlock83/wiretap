@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -17,7 +18,11 @@ func runSetCommand(ctx context.Context, args []string) error {
 	var paths checkValues
 	flags.Var(&paths, "bundle", "archive to include; repeat once per package or shard")
 	output := flags.String("output", "", "new run set JSON manifest")
-	if err := flags.Parse(args); err != nil {
+	flags.Usage = func() {
+		fmt.Fprintln(flags.Output(), "Usage: wiretap run-set --bundle <archive> --bundle <archive> --output <manifest.json>\nGroup captures from the same application build without changing the originals.\n\nOptions:")
+		flags.PrintDefaults()
+	}
+	if err := parseCommandFlags(flags, args); err != nil {
 		return err
 	}
 	if flags.NArg() != 0 || *output == "" || len(paths) == 0 {
@@ -25,7 +30,10 @@ func runSetCommand(ctx context.Context, args []string) error {
 	}
 	manifest, err := runset.Create(ctx, paths, *output)
 	if err != nil {
-		return fmt.Errorf("%w: %v", errUsage, err)
+		if errors.Is(err, runset.ErrOutputPath) {
+			return err
+		}
+		return fmt.Errorf("%w: %w", errUsage, err)
 	}
 	data, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {
@@ -43,6 +51,6 @@ func runSetCommand(ctx context.Context, args []string) error {
 	if err := writeCheckOutput(*output, sources, nil, append(data, '\n')); err != nil {
 		return err
 	}
-	fmt.Fprintln(os.Stdout, *output)
-	return nil
+	_, err = fmt.Fprintln(os.Stdout, *output)
+	return err
 }

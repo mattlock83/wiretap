@@ -85,8 +85,8 @@ func TestCLIPostmanExportPreservesOutputOnCorruptBundle(t *testing.T) {
 	if err := os.WriteFile(output, []byte("keep this export\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if code := execute(context.Background(), []string{"export", "--bundle", bundlePath, "--format", "postman", "--output", output}); code != 1 {
-		t.Fatalf("corrupt bundle export exit = %d, want 1", code)
+	if code := execute(context.Background(), []string{"export", "--bundle", bundlePath, "--format", "postman", "--output", output}); code != 2 {
+		t.Fatalf("corrupt bundle export exit = %d, want 2", code)
 	}
 	data, err := os.ReadFile(output)
 	if err != nil || string(data) != "keep this export\n" {
@@ -198,7 +198,7 @@ func TestTextReportReadsVerifiedArchive(t *testing.T) {
 		t.Fatal(err)
 	}
 	code, output = executeCapturingStdout(t, []string{"report", "--bundle", root, "--format", "text"})
-	if code != 1 || len(output) != 0 {
+	if code != 2 || len(output) != 0 {
 		t.Fatalf("corrupt evidence produced a summary: exit %d: %s", code, output)
 	}
 }

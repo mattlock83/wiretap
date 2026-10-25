@@ -26,6 +26,10 @@ import (
 
 const EvidenceVersion = "3.1"
 
+// ErrInput identifies an unreadable or invalid capture archive. Callers can
+// distinguish input failures from errors writing derived reports and exports.
+var ErrInput = errors.New("invalid capture archive")
+
 type FileRef struct {
 	Path   string `json:"path"`
 	SHA256 string `json:"sha256"`
@@ -709,7 +713,7 @@ func writeAtomic(path string, data []byte) error {
 func Load(root string) (*Run, []*artifact.Artifact, error) {
 	limits, err := loadLimitsFromEnv()
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("%w: %w", ErrInput, err)
 	}
 	return LoadWithLimits(root, limits)
 }
@@ -721,10 +725,14 @@ func Load(root string) (*Run, []*artifact.Artifact, error) {
 func LoadWithLimits(root string, limits LoadLimits) (*Run, []*artifact.Artifact, error) {
 	limits, err := limits.normalized()
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("%w: %w", ErrInput, err)
 	}
 	reader := &archiveReader{limits: limits}
-	return loadWithReader(root, reader)
+	run, captures, err := loadWithReader(root, reader)
+	if err != nil {
+		return nil, nil, fmt.Errorf("%w: %w", ErrInput, err)
+	}
+	return run, captures, nil
 }
 
 func loadWithReader(root string, reader *archiveReader) (*Run, []*artifact.Artifact, error) {

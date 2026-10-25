@@ -127,6 +127,53 @@ func TestTextSummaryDoesNotInferZeroTrafficWhenAttemptDetailsAreUnavailable(t *t
 	}
 }
 
+func TestTextSummaryBoundsContractListsAndCountsOmittedDetails(t *testing.T) {
+	report := &Report{Contracts: &ContractCoverage{Complete: true}}
+	for i := 0; i < 14; i++ {
+		api := fmt.Sprintf("api-%02d", i)
+		operations := []OperationSamples{}
+		for j := 0; j < 8; j++ {
+			operations = append(operations, OperationSamples{Operation: fmt.Sprintf("GET /route-%d", j)})
+		}
+		report.Provided.Specs = append(report.Provided.Specs, SpecCoverage{AssetID: api, DenominatorKnown: true, NotCovered: operations})
+		report.Dependent.Specs = append(report.Dependent.Specs, SpecCoverage{AssetID: api})
+		spec := &ContractSpec{APIID: api, Counts: map[string]ContractCounts{}}
+		for j := 0; j < 15; j++ {
+			spec.Counts[fmt.Sprintf("family:family-%02d", j)] = ContractCounts{Covered: j}
+			spec.Targets = append(spec.Targets, &ContractTarget{State: "not_covered", Condition: fmt.Sprintf("condition-%02d", j)})
+		}
+		// Covered targets must not inflate the omitted gap/unknown count.
+		spec.Targets = append(spec.Targets, &ContractTarget{State: "covered"})
+		report.Contracts.Specs = append(report.Contracts.Specs, spec)
+		report.Notes = append(report.Notes, fmt.Sprintf("note-%02d", i))
+	}
+	before, err := json.Marshal(report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if err := WriteReport(&out, report, "text"); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"4 more contracts", "3 more untested operations", "3 more condition families", "12 more gaps or unknown conditions", "9 more notes", "--format json"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("missing %q in %s", want, out.String())
+		}
+	}
+	for _, hidden := range []string{"api-13", "GET /route-7", "family-14", "condition-14", "note-13"} {
+		if strings.Contains(out.String(), hidden) {
+			t.Errorf("unsampled detail %q in text", hidden)
+		}
+	}
+	if out.Len() > 20<<10 {
+		t.Fatalf("unbounded summary: %d bytes", out.Len())
+	}
+	after, _ := json.Marshal(report)
+	if !bytes.Equal(before, after) || !bytes.Contains(after, []byte("api-13")) {
+		t.Fatal("summary changed the complete report")
+	}
+}
+
 type failedSummaryWriter struct{}
 
 func (failedSummaryWriter) Write([]byte) (int, error) { return 0, errors.New("cannot write") }

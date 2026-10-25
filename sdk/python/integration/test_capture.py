@@ -90,7 +90,7 @@ def run_pytest(project, source, *args):
     return subprocess.run(command, cwd=str(project), env=env, capture_output=True, text=True, timeout=90)
 
 
-def assert_exports(directory):
+def assert_exports(directory, terminal_output=None):
     receipt = json.loads((directory / "last-run.json").read_text())
     assert receipt["status"] == "complete"
     assert receipt["bundle_path"] == str(directory)
@@ -103,6 +103,13 @@ def assert_exports(directory):
         collection = json.loads(Path(name).read_text())
         assert collection["info"]["schema"].endswith("/v2.1.0/collection.json")
     assert (directory / "wiretap.log").stat().st_size <= 65536
+    if terminal_output is not None:
+        lines = ["Wiretap archive: " + receipt["bundle_path"]]
+        lines.extend("Wiretap coverage (%s): %s" % (kind, path)
+                     for kind, path in receipt["outputs"]["coverage"].items())
+        lines.extend("Wiretap Postman: " + path for path in receipt["outputs"]["postman"])
+        for line in lines:
+            assert terminal_output.count(line) == 1, terminal_output
 
 
 def test_plain_lifecycle_captures_http_and_exports(project):
@@ -173,7 +180,7 @@ def test_pytest_records_final_outcomes_and_parametrized_identities(project):
     assert variants == {"one", "two"}
     assert all(record["testcase"]["identity"]["attempt_ordinal"] == 1 for record in records)
     assert all(len(record["traffic"]) == 3 for record in records if "test_order[" in record["testcase"]["name"])
-    assert_exports(directories[0])
+    assert_exports(directories[0], result.stdout + result.stderr)
 
 
 def test_global_opt_in_and_default_no_capture(project):
@@ -204,7 +211,7 @@ def test_order(order, wiretap):
     assert sum(len(attempts(directory)) for directory in directories) == 6
     assert len({json.loads((directory / "last-run.json").read_text())["run_id"] for directory in directories}) == 2
     for directory in directories:
-        assert_exports(directory)
+        assert_exports(directory, result.stdout + result.stderr)
 
 
 def test_owner_death_stops_runtime_and_preserves_interrupted_archive(project):

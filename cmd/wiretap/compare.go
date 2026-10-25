@@ -21,11 +21,12 @@ func compareCommand(ctx context.Context, args []string) error {
 	current := flags.String("current", "", "current coverage JSON report")
 	format := flags.String("format", "text", "comparison format: text or json")
 	output := flags.String("output", "", "report file outside the two inputs (default: stdout)")
-	if err := flags.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return err
-		}
-		return fmt.Errorf("%w: %v", errUsage, err)
+	flags.Usage = func() {
+		fmt.Fprintln(flags.Output(), "Usage: wiretap compare --baseline <coverage.json> --current <coverage.json> [options]\nCompare measured coverage. Lost coverage returns exit 1; schema changes are descriptive.\n\nOptions:")
+		flags.PrintDefaults()
+	}
+	if err := parseCommandFlags(flags, args); err != nil {
+		return err
 	}
 	if flags.NArg() != 0 || *baseline == "" || *current == "" || *format != "text" && *format != "json" {
 		return fmt.Errorf("%w: use compare --baseline coverage.json --current coverage.json [--format text|json] [--output file]", errUsage)
@@ -40,11 +41,11 @@ func compareCommand(ctx context.Context, args []string) error {
 	var used int64
 	before, oldPath, err := readComparisonReport(ctx, *baseline, limits, &used)
 	if err != nil {
-		return fmt.Errorf("%w: baseline: %v", errUsage, err)
+		return fmt.Errorf("%w: baseline: %w", errUsage, err)
 	}
 	after, newPath, err := readComparisonReport(ctx, *current, limits, &used)
 	if err != nil {
-		return fmt.Errorf("%w: current: %v", errUsage, err)
+		return fmt.Errorf("%w: current: %w", errUsage, err)
 	}
 	diff, err := coverage.CompareReports(before, after)
 	if err != nil {
@@ -58,32 +59,8 @@ func compareCommand(ctx context.Context, args []string) error {
 			return err
 		}
 	} else {
-		fmt.Fprintf(&data, "Coverage comparison: %s -> %s\nLost coverage: %d; gained: %d; targets added: %d; targets removed: %d; schema changes: %d\n", diff.BaselineRunID, diff.CurrentRunID, len(diff.LostCoverage), len(diff.GainedCoverage), len(diff.AddedTargets), len(diff.RemovedTargets), len(diff.SchemaChanges))
-		for _, change := range diff.LostCoverage {
-			fmt.Fprintf(&data, "Lost: %s %s / %s / %s: %s -> %s [%s]\n", change.After.Origin, change.After.APIID, change.After.Operation, change.After.Family, change.Before.State, change.After.State, change.After.TargetKey)
-		}
-		for _, change := range diff.GainedCoverage {
-			fmt.Fprintf(&data, "Gained: %s %s / %s / %s: %s -> %s [%s]\n", change.After.Origin, change.After.APIID, change.After.Operation, change.After.Family, change.Before.State, change.After.State, change.After.TargetKey)
-		}
-		for _, inventory := range []struct {
-			label string
-			items []coverage.TargetSnapshot
-		}{{"Added", diff.AddedTargets}, {"Removed", diff.RemovedTargets}} {
-			for _, target := range inventory.items {
-				fmt.Fprintf(&data, "%s target: %s %s / %s / %s: %s [%s @ %s, %s]\n", inventory.label, target.Origin, target.APIID, target.Operation, target.Family, target.State, target.TargetKey, target.Revision, target.RulesVersion)
-			}
-		}
-		for _, change := range diff.SchemaChanges {
-			fmt.Fprintf(&data, "Schema changed: %s %s\n", change.Origin, change.APIID)
-			for _, schema := range change.Before {
-				fmt.Fprintf(&data, "  Baseline: %s @ %s (%s)\n", schema.SchemaID, schema.Revision, schema.RulesVersion)
-			}
-			for _, schema := range change.After {
-				fmt.Fprintf(&data, "  Current: %s @ %s (%s)\n", schema.SchemaID, schema.Revision, schema.RulesVersion)
-			}
-		}
-		for _, note := range diff.Notes {
-			fmt.Fprintln(&data, note)
+		if err := writeComparisonText(&data, diff); err != nil {
+			return err
 		}
 	}
 	if err := ctx.Err(); err != nil {

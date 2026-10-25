@@ -44,6 +44,8 @@ opt-in; unselected APIs and condition families do not lower another API's result
 The ordinary coverage report is still emitted when a policy fails; diagnostics
 go to stderr and the command exits 1. Invalid policies or incompatible report
 and measurement versions are input errors.
+Policy stderr shows the first ten findings and an omitted count. The full
+coverage report and policy selectors remain available to inspect every failure.
 
 ## Compare two existing coverage reports
 
@@ -62,6 +64,8 @@ revision change is an explicit addition/removal; coverage is not compared across
 different revisions. These observations are not breaking-change or provider
 compatibility proof. Lost coverage on an unchanged target writes the diff and
 exits 1; schema changes alone remain descriptive. `--format text` is the default.
+Text shows up to ten details per change category and three schemas per side,
+with omitted counts. JSON retains every change.
 
 Write comparison output outside raw capture archives. The command protects its
 two report inputs, their aliases and hard links, and capture directories found
@@ -79,6 +83,11 @@ declaration/value checks, provider-spec checks, Protobuf declaration/wire checks
 or example-only agreement without schemas. An unknown assurance kind stays
 explicit. Aggregate assurance counts include comparisons omitted by presentation
 limits; Markdown and JUnit also include each displayed comparison's assurance.
+
+Terminal text shows at most five comparisons, with failures first, ten findings
+per comparison and three nested evidence/difference samples per finding. It
+prints omitted counts and preserves full-result verdicts and assurance totals.
+Use `--format json` for complete details.
 
 ```sh
 wiretap check consumer --consumer artifacts/consumer --provider artifacts/provider --format markdown --output check.md

@@ -54,11 +54,11 @@ func checkCommand(ctx context.Context, args []string) (int, error) {
 		return 2, fmt.Errorf("%w: use wiretap check consumer or wiretap check provider", errUsage)
 	}
 	options.Mode = args[0]
-	if err := flags.Parse(args[1:]); err != nil {
+	if err := parseCommandFlags(flags, args[1:]); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0, nil
 		}
-		return 2, fmt.Errorf("%w: %v", errUsage, err)
+		return 2, err
 	}
 	if len(flags.Args()) != 0 {
 		return 2, fmt.Errorf("%w: unexpected arguments: %v", errUsage, flags.Args())
@@ -132,6 +132,9 @@ func checkCommand(ctx context.Context, args []string) (int, error) {
 		err = writeCheckFormat(&data, result, format)
 	}
 	if err != nil {
+		if ctx.Err() != nil {
+			return 1, ctx.Err()
+		}
 		if errors.Is(err, assumptions.ErrInput) {
 			return 2, err
 		}
@@ -159,25 +162,31 @@ func writeStoreCheckText(out io.Writer, report *assumptions.StoreReport) error {
 	if report.Compatible {
 		status = "PASS"
 	}
-	if _, err := fmt.Fprintf(out, "%s: check %s — %d comparisons; %d of %d mock examples verified\nArtifacts: %s\n", status, report.Mode, len(report.Comparisons), report.Counts.Verified, report.Counts.Assumptions, report.ArtifactsPath); err != nil {
-		return err
-	}
+	var text strings.Builder
+	fmt.Fprintf(&text, "%s: check %s — %d comparisons; %d of %d mock examples verified\nArtifacts: %s\n", status, terminalLabel(report.Mode), len(report.Comparisons), report.Counts.Verified, report.Counts.Assumptions, terminalLabel(report.ArtifactsPath))
 	var assurance checkAssurance
 	for _, comparison := range report.Comparisons {
 		assurance.add(comparison.Matches)
 	}
-	if _, err := fmt.Fprintln(out, assurance); err != nil {
-		return err
-	}
-	for _, comparison := range report.Comparisons {
-		if _, err := fmt.Fprintln(out); err != nil {
-			return err
+	fmt.Fprintln(&text, assurance)
+	shown := 0
+	// Show failures first so a long passing prefix cannot hide the reason the
+	// aggregate check failed. Preserve source order within each verdict.
+	for _, compatible := range []bool{false, true} {
+		for _, comparison := range report.Comparisons {
+			if comparison.Compatible != compatible || shown == maxTerminalComparisons {
+				continue
+			}
+			fmt.Fprintln(&text)
+			if err := writeCheckText(&text, comparison); err != nil {
+				return err
+			}
+			shown++
 		}
-		if err := writeCheckText(out, comparison); err != nil {
-			return err
-		}
 	}
-	return nil
+	terminalOmitted(&text, len(report.Comparisons)-shown, "comparisons")
+	_, err := io.WriteString(out, text.String())
+	return err
 }
 
 func writeCheckText(out io.Writer, report *assumptions.Report) error {
@@ -186,38 +195,44 @@ func writeCheckText(out io.Writer, report *assumptions.Report) error {
 		status = "PASS"
 	}
 	var text strings.Builder
-	fmt.Fprintf(&text, "%s: check %s — %d of %d mock examples verified\n", status, report.Mode, report.Counts.Verified, report.Counts.Assumptions)
-	fmt.Fprintf(&text, "Consumer: %s (%s)\nProvider: %s (%s)\nMock dependency: %s; binding: %s\n", report.Consumer.BundlePath, report.Consumer.RunID, report.Provider.BundlePath, report.Provider.RunID, report.Dependency, report.Binding)
+	fmt.Fprintf(&text, "%s: check %s — %d of %d mock examples verified\n", status, terminalLabel(report.Mode), report.Counts.Verified, report.Counts.Assumptions)
+	fmt.Fprintf(&text, "Consumer: %s (%s)\nProvider: %s (%s)\nMock dependency: %s; binding: %s\n", terminalLabel(report.Consumer.BundlePath), terminalLabel(report.Consumer.RunID), terminalLabel(report.Provider.BundlePath), terminalLabel(report.Provider.RunID), terminalLabel(report.Dependency), terminalLabel(report.Binding))
 	fmt.Fprintf(&text, "Uncovered: %d; mismatched: %d; unverified: %d\n", report.Counts.Uncovered, report.Counts.Mismatched, report.Counts.Unverified)
 	var assurance checkAssurance
 	assurance.add(report.Matches)
 	fmt.Fprintln(&text, assurance)
-	for _, finding := range report.Findings {
-		fmt.Fprintf(&text, "\n[%s] %s: %s", finding.Kind, finding.Code, finding.Operation)
+	for _, finding := range report.Findings[:min(len(report.Findings), maxTerminalItems)] {
+		fmt.Fprintf(&text, "\n[%s] %s: %s", terminalLabel(finding.Kind), terminalLabel(finding.Code), terminalLabel(finding.Operation))
 		if finding.Operation != "" {
 			text.WriteString(": ")
 		}
-		fmt.Fprintf(&text, "%s\n", finding.Message)
+		fmt.Fprintf(&text, "%s\n", terminalLabel(finding.Message))
 		if finding.Consumer != nil {
-			fmt.Fprintf(&text, "  Consumer test %q, flow %s: %s\n", finding.Consumer.TestName, finding.Consumer.FlowID, finding.Consumer.EvidencePath)
+			fmt.Fprintf(&text, "  Consumer test %q, flow %s: %s\n", terminalLabel(finding.Consumer.TestName), terminalLabel(finding.Consumer.FlowID), terminalLabel(finding.Consumer.EvidencePath))
 		}
-		for _, ref := range finding.Provider {
-			fmt.Fprintf(&text, "  Provider test %q, flow %s: %s\n", ref.TestName, ref.FlowID, ref.EvidencePath)
+		for _, ref := range finding.Provider[:min(len(finding.Provider), maxTerminalDetails)] {
+			fmt.Fprintf(&text, "  Provider test %q, flow %s: %s\n", terminalLabel(ref.TestName), terminalLabel(ref.FlowID), terminalLabel(ref.EvidencePath))
 		}
-		for _, path := range finding.Differences {
-			fmt.Fprintf(&text, "  Different: %s\n", path)
+		terminalOmitted(&text, len(finding.Provider)-maxTerminalDetails, "provider candidates")
+		for _, path := range finding.Differences[:min(len(finding.Differences), maxTerminalDetails)] {
+			fmt.Fprintf(&text, "  Different: %s\n", terminalLabel(path))
 		}
-		for _, excerpt := range finding.Excerpts {
-			fmt.Fprintf(&text, "  %s: expected %s; actual %s (first provider candidate)\n", excerpt.Path, excerpt.Expected, excerpt.Actual)
+		terminalOmitted(&text, len(finding.Differences)-maxTerminalDetails, "differences")
+		for _, excerpt := range finding.Excerpts[:min(len(finding.Excerpts), maxTerminalDetails)] {
+			fmt.Fprintf(&text, "  %s: expected %s; actual %s (first provider candidate)\n", terminalLabel(excerpt.Path), terminalLabel(excerpt.Expected), terminalLabel(excerpt.Actual))
 		}
+		terminalOmitted(&text, len(finding.Excerpts)-maxTerminalDetails, "value excerpts")
 	}
+	terminalOmitted(&text, len(report.Findings)-maxTerminalItems, "findings")
 	if len(report.ExcludedProviderEvidence) > 0 {
 		fmt.Fprintf(&text, "\nExcluded %d provider exchanges that cannot establish coverage.\n", len(report.ExcludedProviderEvidence))
-		for _, excluded := range report.ExcludedProviderEvidence {
-			fmt.Fprintf(&text, "  Test %q, flow %s: %s\n", excluded.Evidence.TestName, excluded.Evidence.FlowID, excluded.Reason)
+		for _, excluded := range report.ExcludedProviderEvidence[:min(len(report.ExcludedProviderEvidence), maxTerminalDetails)] {
+			fmt.Fprintf(&text, "  Test %q, flow %s: %s\n", terminalLabel(excluded.Evidence.TestName), terminalLabel(excluded.Evidence.FlowID), terminalLabel(excluded.Reason))
 		}
+		terminalOmitted(&text, len(report.ExcludedProviderEvidence)-maxTerminalDetails, "excluded provider exchanges")
 	}
-	fmt.Fprintf(&text, "\nPolicy: %s; exact retained examples and exercised contract rules after endpoint/header normalization.\n", report.RulesVersion)
+	fmt.Fprintf(&text, "\nPolicy: %s; exact retained examples and exercised contract rules after endpoint/header normalization.\n", terminalLabel(report.RulesVersion))
+	text.WriteString("Use --format json for complete diagnostics.\n")
 	_, err := io.WriteString(out, text.String())
 	return err
 }

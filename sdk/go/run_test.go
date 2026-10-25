@@ -7,6 +7,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -27,6 +29,8 @@ func TestRunPackagePreservesExitAndFinishesAfterTests(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			bundle := t.TempDir()
+			coveragePath := filepath.Join(bundle, "custom exports", "report.json")
+			postmanPath := filepath.Join(bundle, "custom exports", "orders.postman.json")
 			testsDone, finishCount := false, 0
 			var applicationURL string
 			control := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -41,7 +45,8 @@ func TestRunPackagePreservesExitAndFinishesAfterTests(t *testing.T) {
 					response.Body.Close()
 				}
 				w.WriteHeader(tc.finishCode)
-				_ = json.NewEncoder(w).Encode(map[string]any{"status": "complete", "run_id": "run-test", "bundle_path": bundle})
+				_ = json.NewEncoder(w).Encode(map[string]any{"status": "complete", "run_id": "run-test", "bundle_path": bundle,
+					"outputs": OutputResult{Coverage: map[string]string{"json": coveragePath}, Postman: []string{postmanPath}}})
 			}))
 			defer control.Close()
 			options := RunOptions{Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, "app") })}
@@ -50,6 +55,14 @@ func TestRunPackagePreservesExitAndFinishesAfterTests(t *testing.T) {
 				owner.info.RunID, owner.info.BundlePath = "run-test", bundle
 				return owner, nil
 			}
+			log, err := os.CreateTemp(t.TempDir(), "stderr")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer log.Close()
+			previousStderr := os.Stderr
+			os.Stderr = log
+			t.Cleanup(func() { os.Stderr = previousStderr })
 			got := runPackage(func() int {
 				activeCapture.Lock()
 				applicationURL = activeCapture.current.sutURL
@@ -60,6 +73,24 @@ func TestRunPackagePreservesExitAndFinishesAfterTests(t *testing.T) {
 				testsDone = true
 				return tc.testCode
 			}, options, "example.com/tests", start)
+			os.Stderr = previousStderr
+			data, err := os.ReadFile(log.Name())
+			if err != nil {
+				t.Fatal(err)
+			}
+			output := string(data)
+			if strings.Count(output, "Wiretap archive: "+bundle+"\n") != 1 {
+				t.Fatalf("archive diagnostic missing or duplicated: %s", output)
+			}
+			if tc.finishCode == http.StatusOK {
+				for _, line := range []string{"Wiretap coverage (json): " + coveragePath, "Wiretap Postman: " + postmanPath} {
+					if strings.Count(output, line+"\n") != 1 {
+						t.Fatalf("completed export path missing or duplicated: %s", output)
+					}
+				}
+			} else if strings.Contains(output, "Wiretap coverage") || strings.Contains(output, "Wiretap Postman") || !strings.Contains(output, "Wiretap finalization failed:") {
+				t.Fatalf("failed finalization must retain its error without a successful export summary: %s", output)
+			}
 			if got != tc.want || finishCount != 1 {
 				t.Fatalf("exit = %d, finishes = %d; want %d, 1", got, finishCount, tc.want)
 			}

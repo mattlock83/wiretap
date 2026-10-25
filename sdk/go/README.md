@@ -133,6 +133,8 @@ Each test package owns its Wiretap process and a unique run archive, even when
 output directory in CI on success and failure. Normal suite completion writes
 `last-run.json` with exact artifact/export paths and a `wiretap.log` inside the
 run directory, alongside captured traffic, contracts, test outcomes and exports.
+After successful finalization, `Run` prints the archive and exact coverage and
+Postman export paths to stderr. Use `go test -v` to see them for passing packages.
 
 Normal test failures still finalize exports. A hard panic, `go test -timeout`,
 or process termination can leave an interrupted archive without completed

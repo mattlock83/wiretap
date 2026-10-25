@@ -13,11 +13,15 @@ func versionCommand(args []string, out io.Writer) error {
 	flags := flag.NewFlagSet("wiretap version", flag.ContinueOnError)
 	flags.SetOutput(out)
 	jsonOutput := flags.Bool("json", false, "write producer identity as JSON")
-	if err := flags.Parse(args); err != nil {
+	flags.Usage = func() {
+		fmt.Fprintln(flags.Output(), "Usage: wiretap version [--json]\nPrint version and build identity without loading capture configuration.")
+		flags.PrintDefaults()
+	}
+	if err := parseCommandFlags(flags, args); err != nil {
 		return err
 	}
 	if len(flags.Args()) != 0 {
-		return fmt.Errorf("wiretap version accepts no positional arguments")
+		return fmt.Errorf("%w: wiretap version accepts no positional arguments", errUsage)
 	}
 	producer := version.Current()
 	if *jsonOutput {

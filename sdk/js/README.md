@@ -15,6 +15,8 @@ The Jest, Playwright and Mocha adapters start Wiretap on available ports, captur
 test attempts, finalize exports after test cleanup, and stop the process. Your runner owns
 execution and outcomes. Failed assertions, timeouts and cleanup failures remain
 visible; API contract violations are separate evidence.
+After successful finalization, the adapters print the exact archive, coverage
+and Postman paths to stderr. Low-level SDK calls return receipts without printing.
 
 ## Install and configure once
 

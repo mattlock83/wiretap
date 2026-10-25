@@ -229,6 +229,8 @@ test('withWiretap preserves the existing runner configuration and guards unsafe 
 
 test('Jest composes existing hooks, restores environment and stops Wiretap after export failure', async t => {
   const f = await fixture(t, { finishError: true });
+  const output = [];
+  t.mock.method(process.stderr, 'write', chunk => { output.push(chunk); return true; });
   globalThis.__wiretapHookOrder = [];
   t.after(() => { delete globalThis.__wiretapHookOrder; });
   await fs.writeFile(path.join(f.outputDir, 'setup.cjs'), "module.exports = async (globalConfig, projectConfig) => { globalThis.__wiretapHookOrder.push(['setup', globalConfig.marker, projectConfig.rootDir]); };\n");
@@ -251,6 +253,7 @@ test('Jest composes existing hooks, restores environment and stops Wiretap after
   assert.equal(process.listenerCount('SIGTERM'), sigtermListeners);
   await teardown({}, config);
   assert.equal(globalThis.__wiretapHookOrder.length, 2);
+  assert.equal(output.length, 0, 'failed exports must not announce successful capture');
 });
 
 test('failed Wiretap startup still invokes the existing Jest teardown', async t => {
@@ -265,6 +268,8 @@ test('failed Wiretap startup still invokes the existing Jest teardown', async t 
 
 test('managed startup uses the normalized Jest project root for a nested config', async t => {
   const f = await fixture(t);
+  const output = [];
+  t.mock.method(process.stderr, 'write', chunk => { output.push(chunk); return true; });
   const projectDir = path.join(f.outputDir, 'nested');
   await fs.mkdir(projectDir);
   const configPath = path.join(projectDir, 'jest.config.cjs');
@@ -277,6 +282,9 @@ test('managed startup uses the normalized Jest project root for a nested config'
     assert.deepEqual(f.spawned.args, ['--config', path.join(normalizedDir, '.wiretap.yaml')]);
     assert.equal(f.spawned.options.env.WIRETAP_OUTPUT_DIR, path.join(normalizedDir, 'artifacts'));
   } finally { await teardown(globalConfig, projectConfig); }
+  await teardown(globalConfig, projectConfig);
+  assert.deepEqual(output, [`Wiretap archive: ${f.receipt.bundle_path}\nWiretap coverage (json): ${f.receipt.outputs.coverage.json}\n`],
+    'the owning runner announces exact receipt paths once');
 });
 
 test('composed Jest hooks retain the project transformer while awaiting setup and teardown', async t => {

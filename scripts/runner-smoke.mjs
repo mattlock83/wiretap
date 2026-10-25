@@ -361,6 +361,13 @@ try {
     await fs.access(path.join(receipt.bundle_path, 'wiretap.log'));
     assert.equal(receipt.status, 'complete', `${runner}: ${JSON.stringify(receipt)}`);
     assert.deepEqual(receipt.outputs.errors, []);
+    const summary = [`Wiretap archive: ${receipt.bundle_path}`,
+      ...Object.entries(receipt.outputs.coverage).map(([format, filename]) => `Wiretap coverage (${format}): ${filename}`),
+      ...receipt.outputs.postman.map(filename => `Wiretap Postman: ${filename}`)];
+    for (const line of summary) {
+      assert.equal(result.stderr.split(line).length - 1, 1, `${runner}: missing or repeated completion path: ${line}`);
+      assert.ok(!result.stdout.includes(line), `${runner}: completion summary polluted reporter stdout`);
+    }
     const bundle = await readJSON(path.join(receipt.bundle_path, 'bundle.json'));
     assert.equal(bundle.run_state, 'complete');
     const attempts = await Promise.all(bundle.tests.map(entry => readJSON(path.join(receipt.bundle_path, entry.path))));

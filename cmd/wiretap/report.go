@@ -20,11 +20,10 @@ import (
 	"github.com/mattlock83/wiretap/internal/schemajson"
 )
 
-var errUsage = errors.New("usage")
 var errCheckIncompatible = errors.New("policy or baseline check failed")
 
-func reportCommand(args []string) error {
-	flags := flag.NewFlagSet("wiretap report", flag.ContinueOnError)
+func reportCommand(command string, args []string) error {
+	flags := flag.NewFlagSet("wiretap "+command, flag.ContinueOnError)
 	var bundlePath string
 	var runSetPath string
 	var policyPath string
@@ -45,11 +44,12 @@ func reportCommand(args []string) error {
 	flags.StringVar(&postmanConfig, "postman-config", "", "Postman export options JSON (gRPC endpoints and source proto packages)")
 	flags.BoolVar(&omitIncomplete, "postman-omit-incomplete", false, "omit unrepresentable interactions and report each omission (Postman only)")
 	flags.BoolVar(&includeArtifacts, "include-artifacts", false, "include artifact file paths in the report")
-	if err := flags.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return err
-		}
-		return fmt.Errorf("%w: %v", errUsage, err)
+	flags.Usage = func() {
+		fmt.Fprintf(flags.Output(), "Usage: wiretap %s --bundle <archive> [options]\n       wiretap %s --run-set <manifest.json> [--output coverage.json]\n\nRead a verified capture without replaying traffic. JSON is the default.\n\nExamples:\n  wiretap report --bundle <archive> --format text\n  wiretap export --bundle <archive> --format postman --output-dir postman\n  wiretap report --bundle <archive> --policy coverage-policy.json\n\nOptions:\n", command, command)
+		flags.PrintDefaults()
+	}
+	if err := parseCommandFlags(flags, args); err != nil {
+		return err
 	}
 	if len(flags.Args()) != 0 {
 		return fmt.Errorf("%w: unexpected arguments: %v", errUsage, flags.Args())
@@ -72,7 +72,7 @@ func reportCommand(args []string) error {
 		}
 		set, err := runset.Load(context.Background(), runSetPath)
 		if err != nil {
-			return err
+			return fmt.Errorf("%w: run set: %v", errUsage, err)
 		}
 		data, err := json.MarshalIndent(set.Coverage(), "", "  ")
 		if err != nil {
@@ -143,8 +143,8 @@ func reportCommand(args []string) error {
 		if err != nil {
 			return fmt.Errorf("%w: coverage policy: %v", errUsage, err)
 		}
-		for _, finding := range result.Findings {
-			fmt.Fprintf(os.Stderr, "Policy %s: %s %s %s %s: %s\n", finding.Code, finding.Origin, finding.APIID, finding.Operation, finding.Family, finding.Message)
+		if err := writePolicyText(os.Stderr, result); err != nil {
+			return err
 		}
 		if !result.Passed {
 			verdict = errCheckIncompatible

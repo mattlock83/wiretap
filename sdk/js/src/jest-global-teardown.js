@@ -1,4 +1,5 @@
 const { owners, projectKey, callHook } = require('./jest-hooks');
+const { printCompletionSummary } = require('./completion-summary');
 
 module.exports = async function wiretapGlobalTeardown(globalConfig, projectConfig) {
   const key = projectKey(projectConfig);
@@ -8,7 +9,7 @@ module.exports = async function wiretapGlobalTeardown(globalConfig, projectConfi
     let failure;
     try {
       const runtime = entry.runtime || await entry.starting;
-      await runtime?.close();
+      printCompletionSummary(await runtime?.close());
     } catch (error) { failure = error; }
     try { await callHook(projectConfig.testEnvironmentOptions.wiretap.globalTeardown, globalConfig, projectConfig); }
     catch (error) {

@@ -141,6 +141,8 @@ in CI on success and failure. Receipt identities and completion are checked;
 export errors retain available paths on `WiretapError.body` and still fail
 cleanup. An original test exception is preserved if cleanup also fails, with
 the secondary error on its `wiretap_cleanup_error` attribute.
+After successful finalization, pytest prints the archive and exact coverage and
+Postman export paths, including each worker's outputs when using xdist.
 
 Managed runtimes hold a stdin lifeline. If the Python owner dies, EOF asks
 Wiretap to stop and retain an interrupted raw archive. Hard interruption cannot

@@ -15,6 +15,13 @@ Go packages, JavaScript owners and Python workers. JavaScript also writes an
 advisory latest receipt in the output parent; use the archive-local receipt
 when selecting a particular run. Preserve the complete run directory.
 
+After successful finalization, the Go, Jest, Mocha, Playwright and pytest runner
+adapters print the archive and exact configured coverage/Postman paths from the
+completion receipt. JavaScript and Go use stderr; pytest uses its terminal
+reporter, including summaries from parallel workers. Low-level SDK calls return
+their receipts without printing these summaries. Failed tests keep their original
+outcome even when capture and export finish successfully.
+
 ```text
 artifacts/<run-id>/
   bundle.json             run identity, API/dependency inventory and test references
@@ -73,6 +80,9 @@ Omit `--output` to write to stdout. The report includes operation coverage,
 validation diagnostics and detailed condition results under `contract_coverage`.
 These reports are derived from the raw artifact and never become evidence inputs.
 `POST /v1/report` exposes the same JSON coverage calculation through the runtime.
+
+Text limits contract, operation and condition detail lists and names the omitted
+counts. JSON/YAML retain the complete report; truncation never changes totals.
 
 Save output files outside the capture archive or under its `exports/` directory.
 Reports and Postman exports reject destinations that replace raw recordings,

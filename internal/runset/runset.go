@@ -26,6 +26,10 @@ import (
 const Version = "1.0"
 const MaxMembers = 64
 
+// ErrOutputPath distinguishes destination resolution failures from invalid
+// input archives when preparing a manifest.
+var ErrOutputPath = errors.New("run set output path")
+
 type Member struct {
 	Path           string `json:"path"`
 	ManifestSHA256 string `json:"manifest_sha256"`
@@ -72,19 +76,19 @@ func Create(ctx context.Context, paths []string, destination string) (*Manifest,
 	}
 	directory, err := filepath.Abs(filepath.Dir(destination))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %w", ErrOutputPath, err)
 	}
 	// Output writers resolve directory aliases before creating the manifest.
 	// Compute relative members from that same physical directory, so loading
 	// through its real path or copying the tree preserves their meaning.
 	directory, err = filepath.EvalSymlinks(directory)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %w", ErrOutputPath, err)
 	}
 	for i, archive := range set.Archives {
 		path, err := filepath.Rel(directory, archive.Path)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("%w: %w", ErrOutputPath, err)
 		}
 		manifest.Members[i] = Member{filepath.ToSlash(path), archive.Digest}
 	}
