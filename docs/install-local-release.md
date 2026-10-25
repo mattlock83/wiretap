@@ -97,6 +97,16 @@ python -m pip install ./sdk/python
 python -m pip install "./sdk/python[pytest]"
 ```
 
+To pass a wheel to another local test project, build it without uploading:
+
+```sh
+python -m pip wheel --no-deps --wheel-dir dist/python ./sdk/python
+python -m pip install "dist/python/wiretap_sdk-0.1.0-py3-none-any.whl[pytest]"
+```
+
+The repository's `python scripts/python-package-smoke.py` check builds and tests
+the wheel in isolated environments using a locally built `WIRETAP_BINARY`.
+
 Set `WIRETAP_BINARY` to the extracted local runtime or place it on `PATH`. Use
 the [Python guide](../sdk/python/README.md) and
 [pytest example](../examples/pytest-suite/README.md) for fixture setup. These

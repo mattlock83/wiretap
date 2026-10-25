@@ -115,23 +115,16 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
-      - name: Build the local runtime and install the local Python SDK
+      - name: Build the local runtime
         run: |
           go build -o dist/wiretap.exe ./cmd/wiretap
-          python -m pip install "./sdk/python[test]" "${{ matrix.pytest }}"
-      - name: Check SDK lifecycle and receipt conformance
-        run: python -m unittest discover -s sdk/python/tests -v
-      - name: Check pytest failures, cleanup, ownership and parallel workers
-        run: python -m pytest -q sdk/python/integration
-      - name: Run the documented Python example
-        run: python -m pytest -q examples/pytest-suite
-      - name: Run the example with isolated parallel workers
-        run: python -m pytest -q -n 2 examples/pytest-suite
+      - name: Verify clean wheel installs, capture, lifecycle and parallel workers
+        run: python scripts/python-package-smoke.py --pytest "${{ matrix.pytest }}"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: python-evidence-${{ matrix.os }}-${{ matrix.python }}
-          path: examples/pytest-suite/artifacts/
+          path: artifacts/python-package/
           retention-days: 7
 
   local-release:

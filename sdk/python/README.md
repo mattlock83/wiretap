@@ -118,6 +118,23 @@ them explicitly to existing HTTP clients or gRPC metadata. Context variables
 follow ordinary Python async contexts; newly created threads need explicit
 headers or `contextvars.copy_context()`.
 
+Existing async clients such as `httpx.AsyncClient` work inside the ordinary
+attempt context. Await every request and child task before leaving that context.
+Use `capture.test(name, explicit_session=True)` for each attempt when keeping
+multiple attempts active in one runtime; pass each attempt's headers on every
+request. Runtime setup and teardown calls remain synchronous.
+
+For grpcio, dial `urlsplit(attempt.url).netloc` and pass
+`metadata=list(attempt.headers.items())` to the existing stub call. Configure
+the gRPC contract in `.wiretap.yaml`, and consume streaming responses before
+ending the attempt. The acceptance suite checks unary and server-streaming
+clients, trace association, protobuf coverage and native Postman exports.
+
+With `pytest-rerunfailures` installed, run your usual `pytest --reruns 1` command.
+Each execution keeps its own attempt ordinal, trace and setup/test/cleanup
+traffic. A later pass does not erase earlier failures from the archive; pytest
+still decides the suite's final exit status.
+
 `Runtime(base_url='http://127.0.0.1:18000').start()` connects to a runtime owned by
 your harness. Its `test()`, `report()` and `finish()` use the same lifecycle.
 Use the runtime API's snake_case keyword fields for per-test overrides, such as
@@ -167,13 +184,24 @@ provider agreement. See [assumption checks](../../docs/assumption-checks.md).
 From the repository root:
 
 ```sh
-python -m pip install -e './sdk/python[test]'
-PYTHONPATH=sdk/python/src python -m unittest discover -s sdk/python/tests -p 'test_*.py'
 go build -o dist/wiretap ./cmd/wiretap
-WIRETAP_BINARY="$PWD/dist/wiretap" python -m pytest -q sdk/python/integration
-WIRETAP_BINARY="$PWD/dist/wiretap" python -m pytest -q examples/pytest-suite
+WIRETAP_BINARY="$PWD/dist/wiretap" python scripts/python-package-smoke.py
 ```
 
-The integration tests run actual pytest subprocesses, including deliberate
-failures, fixture failures, skips, parametrization, xdist and owner death. No
-package is published.
+The same check runs in CI. It builds a local wheel, verifies metadata and the
+license, and installs it into separate clean environments with and without
+pytest. Both perform real HTTP capture; the pytest install must discover the
+plugin automatically outside the checkout. The dependency-free install runs the
+unit tests, then the pytest environment installs the test extra and runs all
+integration tests and the sequential/xdist example against that wheel.
+
+Acceptance covers fixture failures, skips, parametrization, owner death,
+overlapping async HTTP requests, recovered/exhausted retries, and unary and
+server-streaming gRPC. HTTPX, grpcio, protobuf and the retry plugin are test-extra
+dependencies; the core and pytest extras do not install them. Evidence is kept
+under `artifacts/python-package/`. No package is published.
+
+For a focused source test, install `./sdk/python[test]` in a virtual environment,
+set `WIRETAP_BINARY`, and run `python -m pytest -q sdk/python/integration`.
+The integration suite requires its test dependencies. Without `WIRETAP_BINARY`,
+capture checks are skipped.

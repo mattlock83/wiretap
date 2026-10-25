@@ -13,9 +13,12 @@ their provenance. Framework execution and assertions remain in your test suite.
 | Other runners/languages | HTTP control API | User-owned harness implementing the lifecycle contract. |
 
 The repository CI exercises Go and JavaScript across Linux, macOS and Windows.
-Python/pytest lanes cover Python 3.9, 3.12 and 3.14, including isolated workers,
-with Python 3.12 also configured on macOS and Windows. Dependency ranges live in each SDK's package
-metadata. The Python integration supplies explicit URLs and trace headers to
+Python/pytest lanes cover Python 3.9, 3.12 and 3.14, with Python 3.12 also on macOS
+and Windows. Each lane builds a wheel and checks clean installs with and without
+pytest, plugin discovery, isolated workers, overlapping async HTTP clients,
+recovered/exhausted retries, and unary/server-streaming grpcio clients.
+Dependency ranges live in each SDK's package metadata.
+The Python integration supplies explicit URLs and trace headers to
 existing clients; it does not install a tracing provider or patch client code.
 Application-side propagation is still required for shared concurrent services.
 

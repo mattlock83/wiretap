@@ -23,18 +23,24 @@ under `tests/postman-compat`. The CI matrix runs Go and SDK/package checks on
 Linux, macOS and Windows with Node 22 and 24. See the
 [support matrix](docs/support.md) for configured Python versions.
 
-For Python SDK changes, install the local test extra in a virtual environment
-and use the locally built runtime:
+For Python SDK changes, run the clean wheel acceptance check with a locally
+built runtime:
 
 ```sh
-python -m pip install "./sdk/python[test]"
 go build -o ./dist/wiretap ./cmd/wiretap
 export WIRETAP_BINARY="$PWD/dist/wiretap"
-python -m unittest discover -s sdk/python/tests -v
-python -m pytest -q sdk/python/integration
-python -m pytest -q examples/pytest-suite
-python -m pytest -q -n 2 examples/pytest-suite
+python scripts/python-package-smoke.py
 ```
+
+This builds locally and installs the wheel into clean environments with and
+without pytest. It checks plugin discovery, core unit tests, real HTTP/gRPC
+capture, async contexts, retries, failures, ownership and the sequential/parallel
+example. Evidence is retained under `artifacts/python-package/`. Nothing is
+uploaded to a package registry. Pass `--pytest 'pytest>=7.4,<8'` to reproduce
+the oldest pytest CI lane, or `--pytest 'pytest>=9,<10'` for the newer lanes.
+
+For focused development, install `./sdk/python[test]` in a virtual environment
+and run `python -m pytest -q sdk/python/integration` with `WIRETAP_BINARY` set.
 
 On Windows, build `dist/wiretap.exe` and set `WIRETAP_BINARY` to its absolute path
 using the shell's environment-variable syntax.

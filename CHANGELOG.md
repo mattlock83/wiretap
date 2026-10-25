@@ -34,6 +34,9 @@
   invalid or missing inputs while preserving failed checks and output errors.
 - Bound terminal report details with omission counts and print exact coverage
   and Postman paths after runner finalization, including pytest workers.
+- Verify Python wheels in clean core/pytest environments across the Python CI
+  matrix, including plugin discovery, async HTTP, retry history, real unary and
+  server-streaming gRPC capture, coverage and Postman exports.
 
 ### Fixes
 
