@@ -1,7 +1,7 @@
 package assumptions
 
 import (
-	"strings"
+	"errors"
 	"testing"
 
 	"github.com/mattlock83/wiretap/internal/artifact"
@@ -19,18 +19,14 @@ func unsupportedSelectionInteraction(id, role, boundary string) artifact.Flow {
 }
 
 func TestCheckSelectedMockEventAssumptionsCannotDisappearBehindSupportedHTTP(t *testing.T) {
-	consumer := checkCapture(false, httpNormalizationFixture())
+	consumer := checkCapture(false, checkFixtureFlow())
 	consumer.Traffic = append(consumer.Traffic, unsupportedSelectionInteraction("stock-event", "dependency", "stock"))
-	options := checkHTTPPair(t, []*artifact.Artifact{consumer}, []*artifact.Artifact{checkCapture(true, httpNormalizationFixture())})
+	options := checkHTTPPair(t, []*artifact.Artifact{consumer}, []*artifact.Artifact{checkCapture(true, checkFixtureFlow())})
 	for _, mode := range []string{"consumer", "provider"} {
 		t.Run(mode, func(t *testing.T) {
 			options.Mode = mode
-			report := mustCheck(t, options)
-			if report.Compatible || report.Counts.Assumptions != 2 || report.Counts.Verified != 1 || report.Counts.Unverified != 1 {
-				t.Fatalf("selected unsupported mock assumption disappeared: %+v", report)
-			}
-			if len(report.Findings) != 1 || report.Findings[0].Code != "consumer_evidence_unavailable" || report.Findings[0].Consumer == nil || report.Findings[0].Consumer.FlowID != "stock-event" || !strings.Contains(report.Findings[0].Message, "event interactions are unsupported") {
-				t.Fatalf("unsupported assumption lost its reason or exact evidence: %+v", report.Findings)
+			if _, err := Check(t.Context(), options); !errors.Is(err, ErrInput) {
+				t.Fatalf("selected unsupported mixed traffic accepted: %v", err)
 			}
 		})
 	}
@@ -38,7 +34,7 @@ func TestCheckSelectedMockEventAssumptionsCannotDisappearBehindSupportedHTTP(t *
 
 func TestCheckEntirelyUnsupportedSelectionKeepsUnverifiedVerdict(t *testing.T) {
 	consumer := &artifact.Artifact{Traffic: []artifact.Flow{unsupportedSelectionInteraction("stock-event", "dependency", "stock")}}
-	options := checkHTTPPair(t, []*artifact.Artifact{consumer}, []*artifact.Artifact{checkCapture(true, httpNormalizationFixture())})
+	options := checkHTTPPair(t, []*artifact.Artifact{consumer}, []*artifact.Artifact{checkCapture(true, checkFixtureFlow())})
 	report := mustCheck(t, options)
 	if report.Compatible || report.Counts.Assumptions != 1 || report.Counts.Unverified != 1 || len(report.Findings) != 1 || report.Findings[0].Code != "consumer_evidence_unavailable" {
 		t.Fatalf("unsupported-only selection lost its verdict: %+v", report)
@@ -48,21 +44,20 @@ func TestCheckEntirelyUnsupportedSelectionKeepsUnverifiedVerdict(t *testing.T) {
 func TestCheckUnsupportedEventsInOtherDependenciesDoNotExpandSelectedBoundary(t *testing.T) {
 	identity := consumerCheckIdentity()
 	identity.DependencyKinds["audit"] = "mock"
-	consumer := checkCapture(false, httpNormalizationFixture())
+	consumer := checkCapture(false, checkFixtureFlow())
 	consumer.Traffic = append(consumer.Traffic, unsupportedSelectionInteraction("audit-event", "dependency", "audit"))
-	options := Options{Mode: "consumer", Dependency: "stock", Consumer: writeCheckArchive(t, identity, "complete", consumer), Provider: writeCheckArchive(t, providerCheckIdentity(), "complete", checkCapture(true, httpNormalizationFixture()))}
+	options := Options{Mode: "consumer", Dependency: "stock", Consumer: writeCheckArchive(t, identity, "complete", consumer), Provider: writeCheckArchive(t, providerCheckIdentity(), "complete", checkCapture(true, checkFixtureFlow()))}
 	report := mustCheck(t, options)
 	if !report.Compatible || report.Counts.Assumptions != 1 || report.Counts.Verified != 1 || len(report.Findings) != 0 {
 		t.Fatalf("unrelated dependency changed the selected check: %+v", report)
 	}
 }
 
-func TestCheckUnsupportedProviderEventsAreVisibleButCreateNoConsumerObligation(t *testing.T) {
-	provider := checkCapture(true, httpNormalizationFixture())
+func TestCheckUnsupportedProviderEventsPreventPartialArazzoCertification(t *testing.T) {
+	provider := checkCapture(true, checkFixtureFlow())
 	provider.Traffic = append(provider.Traffic, unsupportedSelectionInteraction("provided-event", "provided", "inventory-api"))
-	options := checkHTTPPair(t, []*artifact.Artifact{checkCapture(false, httpNormalizationFixture())}, []*artifact.Artifact{provider})
-	report := mustCheck(t, options)
-	if !report.Compatible || report.Counts.Assumptions != 1 || report.Counts.Verified != 1 || len(report.ExcludedProviderEvidence) != 1 || report.ExcludedProviderEvidence[0].Evidence.FlowID != "provided-event" {
-		t.Fatalf("unsupported provider evidence was hidden or became an obligation: %+v", report)
+	options := checkHTTPPair(t, []*artifact.Artifact{checkCapture(false, checkFixtureFlow())}, []*artifact.Artifact{provider})
+	if _, err := Check(t.Context(), options); !errors.Is(err, ErrInput) {
+		t.Fatalf("partly represented provider selection accepted: %v", err)
 	}
 }

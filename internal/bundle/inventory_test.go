@@ -115,14 +115,11 @@ func TestEmptyBundleAndConsumerOnlyInventory(t *testing.T) {
 	if err := w.Configure(Identity{DependencyKinds: map[string]string{"payments": "service"}}); err != nil {
 		t.Fatal(err)
 	}
-	if err := w.SetContracts([]ContractResolution{{APIID: "payments", Role: "dependency", Protocol: "grpc", Source: "reflection", State: "pending"}}); err != nil {
-		t.Fatal(err)
-	}
 	run, _, err = Load(w.Path())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(run.ProvidedAPIs) != 0 || len(run.Dependencies) != 1 || !reflect.DeepEqual(run.Dependencies[0].Protocols, []string{"grpc"}) {
-		t.Fatalf("consumer-only unresolved boundary lost: %+v", run)
+	if len(run.ProvidedAPIs) != 0 || len(run.Dependencies) != 1 || len(run.Dependencies[0].Protocols) != 0 {
+		t.Fatalf("consumer-only configured boundary lost: %+v", run)
 	}
 }

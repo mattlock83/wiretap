@@ -7,8 +7,6 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
-	"golang.org/x/net/http2"
-	"golang.org/x/net/http2/h2c"
 	"io"
 	"log"
 	"net"
@@ -18,6 +16,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
 
 	"github.com/mattlock83/wiretap/internal/capture"
 	tlsmgr "github.com/mattlock83/wiretap/internal/tls"
@@ -48,9 +49,7 @@ type Config struct {
 	ReverseTarget string
 	// MaxBodyBytes bounds the request/response prefix retained for recording.
 	// Zero explicitly means unlimited.
-	MaxBodyBytes       int64
-	CaptureTLSCertFile string
-	CaptureTLSKeyFile  string
+	MaxBodyBytes int64
 }
 
 // DependencyRoute describes an externally owned dependency reached through
@@ -88,8 +87,6 @@ type Server struct {
 	dependencyResolver DependencyResolver
 
 	admissionResolver AdmissionResolver
-	grpcHandler       http.HandlerFunc
-	grpcProvider      bool
 	connections       Connections
 	transportMu       sync.Mutex
 	transport         *http.Transport
@@ -155,8 +152,8 @@ func (s *Server) SetReverseTarget(target string) error {
 		if err != nil {
 			return err
 		}
-		if parsed.Scheme == "" || parsed.Host == "" {
-			return errors.New("reverse target must be an absolute URL")
+		if (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+			return errors.New("reverse target must be an absolute http or https URL")
 		}
 	}
 	s.reverseMu.Lock()
@@ -215,12 +212,7 @@ func (s *Server) Start(ctx context.Context) (Info, error) {
 	shutdownCh := s.shutdownCh
 	server := s.server
 	go func() {
-		var err error
-		if s.cfg.CaptureTLSCertFile != "" {
-			err = server.ServeTLS(ln, s.cfg.CaptureTLSCertFile, s.cfg.CaptureTLSKeyFile)
-		} else {
-			err = server.Serve(ln)
-		}
+		err := server.Serve(ln)
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			if s.cfg.Logger != nil {
 				s.cfg.Logger.Printf("proxy serve error: %v", err)
@@ -230,22 +222,6 @@ func (s *Server) Start(ctx context.Context) (Info, error) {
 	}()
 
 	return Info{ListenAddr: ln.Addr().String(), Mode: s.cfg.Mode}, nil
-}
-
-func (s *Server) SetCaptureTLS(certFile, keyFile string) error {
-	if s.server != nil {
-		return ErrAlreadyStarted
-	}
-	if (certFile == "") != (keyFile == "") {
-		return errors.New("both capture TLS certificate and key are required")
-	}
-	if certFile != "" {
-		if _, err := tls.LoadX509KeyPair(certFile, keyFile); err != nil {
-			return err
-		}
-	}
-	s.cfg.CaptureTLSCertFile, s.cfg.CaptureTLSKeyFile = certFile, keyFile
-	return nil
 }
 
 // Stop gracefully stops the proxy server.
@@ -305,11 +281,8 @@ func (s *Server) CACertPEM() ([]byte, error) {
 
 // ServeHTTP handles proxy requests.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	s.reverseMu.RLock()
-	grpcProvider := s.grpcProvider
-	s.reverseMu.RUnlock()
-	if !strings.HasPrefix(r.URL.Path, "/__wiretap/") && (grpcProvider || strings.HasPrefix(strings.ToLower(r.Header.Get("Content-Type")), "application/grpc")) && s.grpcHandler != nil {
-		s.grpcHandler(w, r)
+	if unsupportedGRPC(r) {
+		writeProxyError(w, http.StatusUnsupportedMediaType, errors.New("gRPC is not supported; capture HTTP JSON/REST traffic"))
 		return
 	}
 	if r.Method == http.MethodConnect {
@@ -319,12 +292,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.handleHTTP(w, r)
 }
 
-func (s *Server) SetGRPCHandler(handler http.HandlerFunc) { s.grpcHandler = handler }
-
-func (s *Server) SetGRPCProvider(enabled bool) {
-	s.reverseMu.Lock()
-	s.grpcProvider = enabled
-	s.reverseMu.Unlock()
+func unsupportedGRPC(r *http.Request) bool {
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(r.Header.Get("Content-Type"))), "application/grpc")
 }
 
 func (s *Server) handleHTTP(w http.ResponseWriter, r *http.Request) {
@@ -538,6 +507,10 @@ func (s *Server) proxyTLSRequests(clientTLS net.Conn) {
 }
 
 func (s *Server) proxyTLSRequest(clientTLS net.Conn, req *http.Request) bool {
+	if unsupportedGRPC(req) {
+		writeTunnelProxyError(clientTLS, http.StatusUnsupportedMediaType, errors.New("gRPC is not supported; capture HTTP JSON/REST traffic"))
+		return false
+	}
 	started := time.Now()
 	var reqCapture *capture.Writer
 	req.Body, reqCapture = capture.WrapReadCloser(req.Body, s.cfg.MaxBodyBytes)

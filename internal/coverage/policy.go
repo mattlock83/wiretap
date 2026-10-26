@@ -142,7 +142,7 @@ func validateMeasurement(report *Report) error {
 		if spec == nil || spec.APIID == "" || spec.Origin != "provided" && spec.Origin != "dependency" {
 			return errors.New("contract specs require an API identity and provided/dependency origin")
 		}
-		if spec.RulesVersion != ContractRulesVersion && spec.RulesVersion != ProtobufRulesVersion {
+		if spec.RulesVersion != ContractRulesVersion {
 			return fmt.Errorf("unsupported contract spec rules_version %q", spec.RulesVersion)
 		}
 		key := specIdentity(spec)

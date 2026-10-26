@@ -71,8 +71,6 @@ func apiInventory(run Run, captures []*artifact.Artifact) ([]API, []API) {
 			switch s.Type {
 			case "openapi":
 				protocol = "http"
-			case "protobuf":
-				protocol = "grpc"
 			case "graphql":
 				protocol = "graphql"
 			}
@@ -91,15 +89,6 @@ func apiInventory(run Run, captures []*artifact.Artifact) ([]API, []API) {
 		if !found {
 			a.Contracts = append(a.Contracts, ref)
 		}
-	}
-	for _, c := range run.Contracts {
-		role := 0
-		if c.Role == "dependency" {
-			role = 1
-		}
-		a := get(role, c.APIID)
-		a.Configured = true
-		a.Protocols = uniqueString(a.Protocols, c.Protocol)
 	}
 	for role, apis := range [][]API{run.ProvidedAPIs, run.Dependencies} {
 		for _, old := range apis {
@@ -140,9 +129,7 @@ func apiInventory(run Run, captures []*artifact.Artifact) ([]API, []API) {
 			a.ObservedIn = uniqueString(a.ObservedIn, capture.TestCase.ID)
 			protocol := flow.Protocol
 			if protocol == "" {
-				if flow.Request.GRPC != nil {
-					protocol = "grpc"
-				} else if flow.Request.HTTP != nil {
+				if flow.Request.HTTP != nil {
 					protocol = "http"
 				}
 			}

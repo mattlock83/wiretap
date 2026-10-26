@@ -29,7 +29,6 @@ const (
 // Consumer checks resolve providers; provider checks resolve mapped consumers.
 type StoreOptions struct {
 	Mode, Consumer, Provider, Dependency, Artifacts string
-	InputFormat                                     string
 }
 
 // StorePlan records a deterministic set of independent comparisons. It never
@@ -48,7 +47,7 @@ type storeSnapshot struct {
 }
 
 // PlanStore resolves application/API mappings using bounded manifest reads.
-// Discovery is only selection: full archive and collection verification remains
+// Discovery is only selection: full archive and Arazzo verification remains
 // the responsibility of Check, including incomplete runs and version mismatch.
 func PlanStore(ctx context.Context, options StoreOptions) (*StorePlan, error) {
 	plan, err := planStore(ctx, options)
@@ -60,10 +59,6 @@ func PlanStore(ctx context.Context, options StoreOptions) (*StorePlan, error) {
 
 func planStore(ctx context.Context, options StoreOptions) (*StorePlan, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	inputFormat, err := checkInputFormat(options.InputFormat)
-	if err != nil {
 		return nil, err
 	}
 	var localPath string
@@ -115,11 +110,6 @@ func planStore(ctx context.Context, options StoreOptions) (*StorePlan, error) {
 	}
 	if err != nil {
 		return nil, err
-	}
-	if inputFormat == "arazzo" {
-		for i := range plan.Checks {
-			plan.Checks[i].InputFormat = inputFormat
-		}
 	}
 	return plan, nil
 }

@@ -1,9 +1,5 @@
 # HTTPS Trust Setup
 
-Native gRPC capture uses its own `capture_tls` and `upstream_tls` settings in
-`.wiretap.yaml`; see the [gRPC guide](grpc-user-guide.md#tls-and-tracing).
-The HTTP proxy CA described below is for HTTP/HTTPS capture.
-
 The proxy can run in MITM mode to capture HTTPS traffic. To allow TLS interception in test environments, your system or test runner must trust the Wiretap proxy CA certificate.
 
 Use `wiretap ca > wiretap-ca.pem` to export the public certificate for the current
@@ -60,7 +56,7 @@ $env:NODE_EXTRA_CA_CERTS = (Resolve-Path ./wiretap-ca.pem).Path
 npm test
 ```
 
-Use your normal Jest, Mocha, Playwright Test or Node test command in place of
+Use your normal Jest test command in place of
 `npm test`. Node reads this setting when the process starts, so setting it inside
 a test or setup hook does not update that process's trust. A client that supplies
 an explicit `ca` option must include Wiretap's CA in that option instead.

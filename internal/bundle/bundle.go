@@ -20,7 +20,6 @@ import (
 	"time"
 
 	"github.com/mattlock83/wiretap/internal/artifact"
-	"github.com/mattlock83/wiretap/internal/grpccontract"
 	"github.com/mattlock83/wiretap/internal/version"
 )
 
@@ -70,7 +69,6 @@ type Run struct {
 	InventoryScope       string                 `json:"inventory_scope"`
 	ProvidedAPIs         []API                  `json:"provided_apis"`
 	Dependencies         []API                  `json:"dependencies"`
-	Contracts            []ContractResolution   `json:"contract_resolutions,omitempty"`
 	EvidenceVersion      string                 `json:"format_version"`
 	RunID                string                 `json:"run_id"`
 	Revision             uint64                 `json:"revision"`
@@ -201,14 +199,11 @@ func sameJSON(a, b any) bool {
 }
 
 type BodyRef struct {
-	EventID           string `json:"event_id,omitempty"`
-	PayloadName       string `json:"payload_name,omitempty"`
-	FlowID            string `json:"flow_id"`
-	Phase             string `json:"phase"`
-	Kind              string `json:"kind,omitempty"`
-	MessageIndex      *int   `json:"message_index,omitempty"`
-	StatusDetailIndex *int   `json:"status_detail_index,omitempty"`
-	Representation    string `json:"representation"`
+	EventID        string `json:"event_id,omitempty"`
+	PayloadName    string `json:"payload_name,omitempty"`
+	FlowID         string `json:"flow_id"`
+	Phase          string `json:"phase"`
+	Representation string `json:"representation"`
 	FileRef
 	RetainedBytes int `json:"retained_bytes"`
 }
@@ -409,11 +404,6 @@ func (w *Writer) Commit(art *artifact.Artifact) (string, error) {
 	if err := artifact.ValidateInteractions(art); err != nil {
 		return "", err
 	}
-	for _, flow := range art.Traffic {
-		if err := artifact.ValidateGRPCObservation(flow); err != nil {
-			return "", err
-		}
-	}
 	for _, ref := range art.Schemas {
 		if err := validateSchemaBoundary(ref); err != nil {
 			return "", err
@@ -469,36 +459,6 @@ func (w *Writer) Commit(art *artifact.Artifact) (string, error) {
 			} else {
 				msg = &flow.Response
 			}
-			if msg.GRPC != nil {
-				for index := range msg.GRPC.Messages {
-					payload := &msg.GRPC.Messages[index]
-					body := payload.Body
-					if body == nil {
-						// An undecodable message may still retain its wire bytes.
-					} else {
-						ref, err := w.attachBody(flow.ID, phase, body)
-						if err != nil {
-							return "", err
-						}
-						if ref != nil {
-							value := index
-							ref.MessageIndex = &value
-							attempt.Bodies = append(attempt.Bodies, *ref)
-						}
-					}
-					ref, err := w.attachBody(flow.ID, phase, payload.Wire)
-					if err != nil {
-						return "", err
-					}
-					if ref != nil {
-						value := index
-						ref.MessageIndex = &value
-						ref.Kind = "wire"
-						attempt.Bodies = append(attempt.Bodies, *ref)
-					}
-				}
-				continue
-			}
 			if msg.HTTP == nil || msg.HTTP.Body == nil {
 				continue
 			}
@@ -526,9 +486,6 @@ func (w *Writer) Commit(art *artifact.Artifact) (string, error) {
 			attempt.Bodies = append(attempt.Bodies, BodyRef{FlowID: flow.ID, Phase: phase, Representation: representation, FileRef: FileRef{Path: rel, SHA256: hash}, RetainedBytes: len(raw)})
 			body.Text, body.Bytes = "", ""
 		}
-	}
-	if err := w.attachGRPCStatus(&attempt); err != nil {
-		return "", err
 	}
 	if err := w.attachEvents(&attempt); err != nil {
 		return "", err
@@ -564,35 +521,6 @@ func (w *Writer) Commit(art *artifact.Artifact) (string, error) {
 	return path, nil
 }
 
-func (w *Writer) attachBody(flowID, phase string, body *artifact.Body) (*BodyRef, error) {
-	if body == nil {
-		return nil, nil
-	}
-	var raw []byte
-	representation := ""
-	if body.Bytes != "" || body.Encoding == "base64" {
-		var err error
-		raw, err = base64.StdEncoding.DecodeString(body.Bytes)
-		if err != nil {
-			return nil, err
-		}
-		representation = "bytes"
-	} else if body.Text != "" {
-		raw = []byte(body.Text)
-		representation = "text"
-	}
-	if representation == "" {
-		return nil, nil
-	}
-	hash := digest(raw)
-	rel := "payloads/" + hash + ".bin"
-	if err := writeContent(w.root, rel, raw); err != nil {
-		return nil, err
-	}
-	body.Text, body.Bytes = "", ""
-	return &BodyRef{FlowID: flowID, Phase: phase, Representation: representation, FileRef: FileRef{Path: rel, SHA256: hash}, RetainedBytes: len(raw)}, nil
-}
-
 func (w *Writer) Finalize(state string) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -601,13 +529,6 @@ func (w *Writer) Finalize(state string) error {
 	}
 	if w.run.RunState != "open" {
 		return nil
-	}
-	if state == "complete" {
-		for _, boundary := range w.run.Contracts {
-			if boundary.State != "resolved" {
-				return fmt.Errorf("contract for %s is %s; resolve it before completing the run", boundary.APIID, boundary.State)
-			}
-		}
 	}
 	previous := w.run
 	w.run.RunState = state
@@ -764,9 +685,6 @@ func loadWithReader(root string, reader *archiveReader) (*Run, []*artifact.Artif
 	if err := resolveSchemas(root, run.Schemas, reader); err != nil {
 		return nil, nil, err
 	}
-	if err := validateContractResolutions(run); err != nil {
-		return nil, nil, err
-	}
 	seen := map[string]bool{}
 	var captures []*artifact.Artifact
 	for _, ref := range run.Attempts {
@@ -802,12 +720,6 @@ func loadWithReader(root string, reader *archiveReader) (*Run, []*artifact.Artif
 		if err := resolveSchemas(root, attempt.Capture.Schemas, reader); err != nil {
 			return nil, nil, err
 		}
-		if err := validateGRPCMessages(attempt.EvidenceVersion, attempt.Capture); err != nil {
-			return nil, nil, err
-		}
-		if err := validateGRPCSnapshot(run, attempt.Capture); err != nil {
-			return nil, nil, err
-		}
 		if err := reader.requireReads(len(attempt.Bodies)); err != nil {
 			return nil, nil, fmt.Errorf("attempt %q attachment inventory: %w", ref.AttemptID, err)
 		}
@@ -821,15 +733,6 @@ func loadWithReader(root string, reader *archiveReader) (*Run, []*artifact.Artif
 		}
 		seenBodies := map[string]bool{}
 		for _, bodyRef := range attempt.Bodies {
-			if strings.HasPrefix(bodyRef.Kind, "status-") {
-				if err := restoreGRPCStatusBody(root, flowMap, seenBodies, bodyRef, reader.readFile); err != nil {
-					return nil, nil, err
-				}
-				continue
-			}
-			if bodyRef.StatusDetailIndex != nil {
-				return nil, nil, errors.New("status selector on non-status attachment")
-			}
 			if bodyRef.Phase == "event" {
 				if err := restoreEventBody(root, flowMap, seenBodies, bodyRef, reader.readFile); err != nil {
 					return nil, nil, err
@@ -840,12 +743,6 @@ func loadWithReader(root string, reader *archiveReader) (*Run, []*artifact.Artif
 				return nil, nil, errors.New("event selectors on a pair body reference")
 			}
 			key := bodyRef.FlowID + "/" + bodyRef.Phase
-			if bodyRef.MessageIndex != nil {
-				key += fmt.Sprintf("/%d", *bodyRef.MessageIndex)
-			}
-			if bodyRef.Kind != "" {
-				key += "/" + bodyRef.Kind
-			}
 			if seenBodies[key] {
 				return nil, nil, fmt.Errorf("duplicate body reference %q", key)
 			}
@@ -864,18 +761,7 @@ func loadWithReader(root string, reader *archiveReader) (*Run, []*artifact.Artif
 				return nil, nil, fmt.Errorf("invalid body phase %q", bodyRef.Phase)
 			}
 			var body *artifact.Body
-			if bodyRef.MessageIndex != nil {
-				if msg.GRPC == nil || *bodyRef.MessageIndex < 0 || *bodyRef.MessageIndex >= len(msg.GRPC.Messages) {
-					return nil, nil, fmt.Errorf("gRPC body %q missing in interaction", key)
-				}
-				if bodyRef.Kind == "wire" {
-					body = msg.GRPC.Messages[*bodyRef.MessageIndex].Wire
-				} else if bodyRef.Kind == "" {
-					body = msg.GRPC.Messages[*bodyRef.MessageIndex].Body
-				} else {
-					return nil, nil, fmt.Errorf("unknown gRPC body kind %q", bodyRef.Kind)
-				}
-			} else if msg.HTTP != nil && bodyRef.Kind == "" {
+			if msg.HTTP != nil {
 				body = msg.HTTP.Body
 			}
 			if body == nil {
@@ -884,28 +770,12 @@ func loadWithReader(root string, reader *archiveReader) (*Run, []*artifact.Artif
 			if body.Text != "" || body.Bytes != "" {
 				return nil, nil, fmt.Errorf("body %q has both inline and attachment data", key)
 			}
-			if msg.GRPC != nil {
-				path, err := containedPath(root, bodyRef.Path)
-				if err != nil {
-					return nil, nil, err
-				}
-				info, err := os.Stat(path)
-				if err != nil {
-					return nil, nil, err
-				}
-				if bodyRef.RetainedBytes < 0 || info.Size() > 16<<20 {
-					return nil, nil, fmt.Errorf("gRPC body %q exceeds attachment limit", key)
-				}
-			}
 			raw, err := readRef(root, bodyRef.FileRef, reader.readFile)
 			if err != nil {
 				return nil, nil, err
 			}
 			if len(raw) != bodyRef.RetainedBytes {
 				return nil, nil, fmt.Errorf("body %q size mismatch", key)
-			}
-			if msg.GRPC != nil && ((bodyRef.Kind == "wire" && bodyRef.Representation != "bytes") || (bodyRef.Kind == "" && bodyRef.Representation != "text")) {
-				return nil, nil, fmt.Errorf("invalid gRPC body representation for %q", key)
 			}
 			switch bodyRef.Representation {
 			case "text":
@@ -924,23 +794,7 @@ func loadWithReader(root string, reader *archiveReader) (*Run, []*artifact.Artif
 				if part.msg.HTTP != nil && part.msg.HTTP.Body != nil && (part.msg.HTTP.Body.Text != "" || part.msg.HTTP.Body.Bytes != "") && !seenBodies[flow.ID+"/"+part.name] {
 					return nil, nil, fmt.Errorf("inline body data without attachment for flow %q", flow.ID)
 				}
-				if part.msg.GRPC != nil {
-					for index, payload := range part.msg.GRPC.Messages {
-						if payload.Body != nil && !seenBodies[fmt.Sprintf("%s/%s/%d", flow.ID, part.name, index)] {
-							return nil, nil, fmt.Errorf("inline gRPC body without attachment for flow %q", flow.ID)
-						}
-						if payload.Wire != nil && !seenBodies[fmt.Sprintf("%s/%s/%d/wire", flow.ID, part.name, index)] {
-							return nil, nil, fmt.Errorf("inline gRPC wire bytes without attachment for flow %q", flow.ID)
-						}
-					}
-				}
 			}
-		}
-		if err := verifyGRPCStatusUsing(attempt.Capture, seenBodies, reader.readFile); err != nil {
-			return nil, nil, err
-		}
-		if err := verifyGRPCPayloadsUsing(attempt.Capture, reader.readFile); err != nil {
-			return nil, nil, err
 		}
 		if err := validateEventAttachments(attempt.Capture, seenBodies); err != nil {
 			return nil, nil, err
@@ -989,7 +843,7 @@ func resolveSchemas(root string, schemas []artifact.SchemaRef, reader *archiveRe
 		if err := validateSchemaBoundary(*ref); err != nil {
 			return err
 		}
-		if ref.Type != "openapi" && ref.Type != "protobuf" && !opaqueContractType(ref.Type) {
+		if ref.Type != "openapi" && !opaqueContractType(ref.Type) {
 			return fmt.Errorf("unsupported contract type %q", ref.Type)
 		}
 		if ref.Source.Type == "omitted" {
@@ -1020,14 +874,6 @@ func resolveSchemas(root string, schemas []artifact.SchemaRef, reader *archiveRe
 		}
 		if digest(data) != ref.Source.SHA256 {
 			return fmt.Errorf("schema %q hash mismatch", ref.ID)
-		}
-		if ref.Type == "protobuf" {
-			if ref.Source.Format != "file_descriptor_set" {
-				return fmt.Errorf("protobuf schema %q is not a descriptor set", ref.ID)
-			}
-			if _, err := grpccontract.Parse(data, ref.Services); err != nil {
-				return fmt.Errorf("protobuf schema %q: %w", ref.ID, err)
-			}
 		}
 		manifestRel := setBase + "/manifest.json"
 		manifestPath, err := containedPath(root, manifestRel)
@@ -1178,4 +1024,25 @@ func rejectDuplicateKeys(data []byte) error {
 
 func sortRefs(refs []AttemptRef) {
 	sort.Slice(refs, func(i, j int) bool { return refs[i].AttemptID < refs[j].AttemptID })
+}
+
+func (ref *BodyRef) UnmarshalJSON(data []byte) error {
+	type plain BodyRef
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	for key := range fields {
+		for _, removed := range []string{"kind", "message_index", "status_detail_index"} {
+			if strings.EqualFold(key, removed) {
+				return fmt.Errorf("unsupported native gRPC body selector %q", key)
+			}
+		}
+	}
+	var value plain
+	if err := json.Unmarshal(data, &value); err != nil {
+		return err
+	}
+	*ref = BodyRef(value)
+	return nil
 }

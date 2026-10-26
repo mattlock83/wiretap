@@ -167,7 +167,7 @@ func TestDoctorMissingEnvironmentAndRuntimeOverrides(t *testing.T) {
 	})
 }
 
-func TestDoctorDefersRemoteReferencesAndReflectionWithoutRequests(t *testing.T) {
+func TestDoctorDefersRemoteReferencesWithoutRequests(t *testing.T) {
 	var requests atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests.Add(1)
@@ -187,44 +187,8 @@ func TestDoctorDefersRemoteReferencesAndReflectionWithoutRequests(t *testing.T) 
 	if !report.OK || doctorCheckNamed(t, report, "sut.schema").Status != "deferred" {
 		t.Fatalf("remote reference was not deferred: %+v", report)
 	}
-	if err := os.WriteFile(config, []byte(fmt.Sprintf("version: 1\nsut: {protocol: grpc, url: %s}\n", server.URL)), 0600); err != nil {
-		t.Fatal(err)
-	}
-	report = inspectSetup(t.Context(), config)
-	if !report.OK || doctorCheckNamed(t, report, "sut.schema").Status != "deferred" || requests.Load() != 0 {
-		t.Fatalf("reflection was not deferred without requests: %+v; requests=%d", report, requests.Load())
-	}
-}
-
-func TestDoctorResolvesLocalProtobufAndChecksTLSFiles(t *testing.T) {
-	root, config := setupProject(t, "")
-	if err := os.WriteFile(filepath.Join(root, "api.proto"), []byte(`syntax = "proto3";
-package demo;
-message Request {}
-service Example { rpc Get(Request) returns(Request); }
-`), 0600); err != nil {
-		t.Fatal(err)
-	}
-	configuration := `version: 1
-sut:
-  protocol: grpc
-  url: http://127.0.0.1:1
-  services: [demo.Example]
-  schema: {source: proto, files: [api.proto], import_paths: [.]}
-`
-	if err := os.WriteFile(config, []byte(configuration), 0600); err != nil {
-		t.Fatal(err)
-	}
-	if report := inspectSetup(t.Context(), config); !report.OK || doctorCheckNamed(t, report, "sut.schema").Status != "ok" {
-		t.Fatalf("local protobuf did not resolve: %+v", report)
-	}
-	configuration += "  capture_tls: {cert_file: missing.pem, key_file: missing.key}\n  upstream_tls: {ca_file: api.proto}\n"
-	if err := os.WriteFile(config, []byte(configuration), 0600); err != nil {
-		t.Fatal(err)
-	}
-	report := inspectSetup(t.Context(), config)
-	if report.OK || doctorCheckNamed(t, report, "sut.capture_tls").Status != "error" || doctorCheckNamed(t, report, "sut.upstream_ca").Status != "error" {
-		t.Fatalf("invalid TLS files accepted: %+v", report)
+	if requests.Load() != 0 {
+		t.Fatalf("remote schema contacted server %d times", requests.Load())
 	}
 }
 

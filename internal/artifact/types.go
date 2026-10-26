@@ -91,41 +91,26 @@ type Environment struct {
 
 // SchemaRef identifies schemas attached to the test case.
 type SchemaRef struct {
-	ID             string             `json:"id"`
-	Role           string             `json:"role"`
-	Type           string             `json:"type"`
-	Protocol       string             `json:"protocol,omitempty"`
-	Source         SchemaSource       `json:"source"`
-	OpenAPIVersion string             `json:"openapi_version,omitempty"`
-	AssetName      string             `json:"asset_name,omitempty"`
-	AssetID        string             `json:"asset_id,omitempty"`
-	AssetSHA       string             `json:"asset_sha,omitempty"`
-	Services       []string           `json:"services,omitempty"`
-	AcquiredFrom   string             `json:"acquired_from,omitempty"`
-	Acquisition    *SchemaAcquisition `json:"acquisition,omitempty"`
-}
-
-// SchemaAcquisition describes the boundary-specific source of a frozen contract.
-// It intentionally excludes credentials, target addresses and local source paths.
-type SchemaAcquisition struct {
-	AcquiredAt           time.Time `json:"acquired_at"`
-	ReflectionVersion    string    `json:"reflection_version,omitempty"`
-	AdvertisedServices   []string  `json:"advertised_services,omitempty"`
-	ExcludedServices     []string  `json:"excluded_services,omitempty"`
-	CompilerVersion      string    `json:"compiler_version,omitempty"`
-	NormalizationProfile string    `json:"normalization_profile"`
+	ID             string       `json:"id"`
+	Role           string       `json:"role"`
+	Type           string       `json:"type"`
+	Protocol       string       `json:"protocol,omitempty"`
+	Source         SchemaSource `json:"source"`
+	OpenAPIVersion string       `json:"openapi_version,omitempty"`
+	AssetName      string       `json:"asset_name,omitempty"`
+	AssetID        string       `json:"asset_id,omitempty"`
+	AssetSHA       string       `json:"asset_sha,omitempty"`
 }
 
 // SchemaSource identifies where the schema came from.
 type SchemaSource struct {
-	Type        string         `json:"type"`
-	Path        string         `json:"path,omitempty"`
-	URL         string         `json:"url,omitempty"`
-	Content     string         `json:"content,omitempty"`
-	SHA256      string         `json:"sha256,omitempty"`
-	Format      string         `json:"format,omitempty"`
-	ImportPaths []string       `json:"import_paths,omitempty"`
-	Files       []ContractFile `json:"files,omitempty"`
+	Type    string         `json:"type"`
+	Path    string         `json:"path,omitempty"`
+	URL     string         `json:"url,omitempty"`
+	Content string         `json:"content,omitempty"`
+	SHA256  string         `json:"sha256,omitempty"`
+	Format  string         `json:"format,omitempty"`
+	Files   []ContractFile `json:"files,omitempty"`
 }
 
 // ContractFile is one caller-supplied member of a portable contract package.
@@ -140,7 +125,6 @@ type ContractFile struct {
 // Flow captures one request/response exchange.
 type Flow struct {
 	Interaction *Interaction `json:"interaction,omitempty"`
-	GRPCEvents  []GrpcEvent  `json:"grpc_events,omitempty"`
 	ID          string       `json:"id"`
 	Protocol    string       `json:"protocol"`
 	Channel     string       `json:"channel"`
@@ -180,42 +164,6 @@ type DependencyAssumption struct {
 // Message wraps HTTP message payloads.
 type Message struct {
 	HTTP *HttpMessage
-	GRPC *GrpcMessage
-}
-
-// GrpcMessage describes one side of a native gRPC exchange. Application status
-// is distinct from the HTTP/2 transport status.
-type GrpcMessage struct {
-	Observation      *GrpcObservation   `json:"observation,omitempty"`
-	Kind             string             `json:"kind"`
-	Procedure        string             `json:"procedure,omitempty"`
-	Service          string             `json:"service,omitempty"`
-	Method           string             `json:"method,omitempty"`
-	SchemaRef        string             `json:"schema_ref,omitempty"`
-	StreamKind       string             `json:"stream_kind,omitempty"`
-	ObservedBytes    int64              `json:"observed_bytes,omitempty"`
-	Metadata         Headers            `json:"metadata,omitempty"`
-	Trailers         Headers            `json:"trailers,omitempty"`
-	HTTPStatus       int                `json:"http_status,omitempty"`
-	StatusCode       int                `json:"grpc_status,omitempty"`
-	StatusMessage    string             `json:"grpc_message,omitempty"`
-	StatusSource     string             `json:"status_source,omitempty"`
-	CaptureTruncated bool               `json:"capture_truncated,omitempty"`
-	Messages         []GrpcPayload      `json:"messages,omitempty"`
-	StatusDetails    *GrpcStatusDetails `json:"status_details,omitempty"`
-}
-
-type GrpcPayload struct {
-	Observation *GrpcPayloadObservation `json:"observation,omitempty"`
-	Index       int                     `json:"index"`
-	Type        string                  `json:"type,omitempty"`
-	Compressed  bool                    `json:"compressed,omitempty"`
-	// Redacted preserves unavailable payload evidence from legacy archives.
-	Redacted    bool   `json:"redacted,omitempty"`
-	Body        *Body  `json:"body,omitempty"`
-	Wire        *Body  `json:"wire,omitempty"`
-	DecodeError string `json:"decode_error,omitempty"`
-	DecodeState string `json:"decode_state,omitempty"`
 }
 
 // HttpMessage represents a request or response payload.

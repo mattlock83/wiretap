@@ -66,7 +66,7 @@ func TestCLIMissingInputsUseExitTwo(t *testing.T) {
 }
 
 func TestCLIOutputFailuresRemainExitOne(t *testing.T) {
-	archive := postmanBundleFixture(t)
+	archive := httpBundleFixture(t)
 	output := filepath.Join(t.TempDir(), "absent", "report.json")
 	code, out, diagnostic := executeCapturingStreams(t, []string{"report", "--bundle", archive, "--output", output})
 	if code != 1 || out != "" || diagnostic == "" {

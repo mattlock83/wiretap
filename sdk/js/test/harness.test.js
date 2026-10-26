@@ -1,7 +1,7 @@
 const assert = require("node:assert/strict");
 const http = require("node:http");
 const test = require("node:test");
-const { startCapture, bindTest, createNodeTestSuite } = require("../src");
+const { startCapture } = require("../src");
 
 async function controlServer(handler) {
   const server = http.createServer(async (req, res) => {
@@ -53,9 +53,6 @@ test("removed redaction options fail clearly before creating capture state", asy
       const config = { baseUrl: server.baseUrl, schemaRequired: false, redactions };
       await assert.rejects(startCapture(config), removed);
       await assert.rejects(startCapture({ baseUrl: server.baseUrl, schemaRequired: false, testDefaults: { redactions } }), removed);
-      assert.throws(() => createNodeTestSuite(config), removed);
-      assert.throws(() => createNodeTestSuite({ schemaRequired: false, testDefaults: { redactions } }), removed);
-      assert.throws(() => bindTest({}, () => {}, { redactions }), removed);
     }
     assert.deepEqual(calls, []);
 
@@ -63,8 +60,6 @@ test("removed redaction options fail clearly before creating capture state", asy
     await assert.rejects(runtime.setupTest({ name: "manual", redactions: [] }), removed);
     assert.throws(() => runtime.createTestAttempt("framework", { redactions: [] }), removed);
     await assert.rejects(runtime.runTest("callback", () => assert.fail("must not run"), { redactions: [] }), removed);
-    const wrapped = bindTest(runtime, () => assert.fail("must not register"));
-    assert.throws(() => wrapped("runner options", { redactions: [] }, () => {}), removed);
     assert.deepEqual(calls, ["/v1/startRun"]);
   } finally {
     await server.close();
@@ -179,24 +174,12 @@ test("external dependency schemas are required only when explicitly requested", 
     }),
     /dependency "inventory" requires an OpenAPI schema/
   );
-  assert.throws(
-    () => createNodeTestSuite({
-      schemaRequired: false,
-      dependencies: [{ assetId: "inventory", upstreamUrl: "http://wiremock.test", schemaRequired: true }]
-    }),
-    /dependency "inventory" requires an OpenAPI schema/
-  );
-  assert.throws(
-    () => createNodeTestSuite({
-      schemas: [{ id: "sut-api" }],
-      dependencies: [{ assetId: "bad/name", upstreamUrl: "http://wiremock.test", schema: { id: "inventory" } }]
-    }),
+  await assert.rejects(
+    startCapture({ schemas: [{ id: "sut-api" }], dependencies: [{ assetId: "bad/name", upstreamUrl: "http://wiremock.test" }] }),
     /valid assetId/
   );
-  assert.throws(
-    () => createNodeTestSuite({ schemas: [{ id: "sut-api" }], dependencies: {
-      inventory: { upstreamUrl: "http://wiremock.test", schemaRequired: "true" }
-    } }),
+  await assert.rejects(
+    startCapture({ schemas: [{ id: "sut-api" }], dependencies: { inventory: { upstreamUrl: "http://wiremock.test", schemaRequired: "true" } } }),
     /schemaRequired must be a boolean/
   );
 });
@@ -233,28 +216,10 @@ test("HTTP dependencies need no spec by default and preserve explicit schema req
     assert.equal(strictSetup.dependencies[1].schema_required, false);
     await runtime.teardownTest({ status: "pass" });
     await runtime.finishRun();
-    assert.throws(() => createNodeTestSuite({ schemas: [{ id: "sut" }], dependencies: {
+    await assert.rejects(startCapture({ schemas: [{ id: "sut" }], dependencies: {
       grpc: { upstreamUrl: "http://grpc.test", protocol: "grpc", schemaRequired: false }
-    } }), /requires a Protobuf contract/);
+    } }), /protocol was removed; Wiretap supports HTTP APIs/);
   } finally { await server.close(); }
-});
-
-test("createNodeTestSuite exposes capture, dependency forwarding, and reporting", () => {
-  const hooks = {};
-  const suite = createNodeTestSuite({
-    autoHooks: true,
-    schemas: [{ id: "sut-api" }],
-    testApi: {
-      test: () => {},
-      before: (fn) => { hooks.before = fn; },
-      after: (fn) => { hooks.after = fn; }
-    }
-  });
-  assert.equal(typeof suite.test, "function");
-  assert.equal(typeof suite.report, "function");
-	assert.equal(typeof suite.dependencyUrl, "function");
-  assert.equal(typeof hooks.before, "function");
-  assert.equal(typeof hooks.after, "function");
 });
 
 test("schemas are required unless explicitly omitted", async () => {
@@ -377,37 +342,9 @@ test("application metadata is sent at run start and resolved for each test", asy
   }
 });
 
-test("gRPC project defaults preserve protocol and direct dependency targets", async () => {
-  const calls = [];
-  const server = await controlServer((path, body) => {
-    calls.push({ path, body });
-    if (path === "/v1/startRun") return {
-      sut_url: "http://127.0.0.1:20010",
-      dependencies: { inventory: "http://127.0.0.1:20011" },
-      defaults: { sut_base_url: "http://sut.test", sut_protocol: "grpc", api_id: "orders",
-        dependencies: [{ asset_id: "inventory", protocol: "grpc", upstream_url: "http://mock.test", upstream_kind: "mock" }] }
-    };
-    if (path === "/v1/setupTest") return { session_id: "grpc", sut_url: "http://127.0.0.1:20010", dependencies: { inventory: "http://127.0.0.1:20011" } };
-    if (path === "/v1/teardownTest") return { capture: { schema_validation: { status: "pass" } } };
-    return {};
-  });
-  try {
-    const runtime = await startCapture({ baseUrl: server.baseUrl });
-    assert.equal(runtime.dependencyUrl("inventory"), "http://127.0.0.1:20011");
-    await runtime.runTest("grpc provider and mock", () => {});
-    const setup = calls.find(call => call.path === "/v1/setupTest").body;
-    assert.equal(setup.sut_protocol, "grpc");
-    assert.equal(setup.dependencies[0].protocol, "grpc");
-    assert.deepEqual(setup.schemas, []);
-    await runtime.finishRun();
-  } finally {
-    await server.close();
-  }
-});
-
 test("suite owner selects outputs and receives exact generated paths", async () => {
-  const outputs = { coverage: ["json", "yaml"], postman: true };
-  const expected = { bundle_path: "/capture/run-1", coverage: { json: "/capture/run-1/exports/coverage.json" }, postman: ["/capture/run-1/exports/postman/sut.json"], errors: [] };
+  const outputs = { coverage: ["json", "yaml"], arazzo: true };
+  const expected = { bundle_path: "/capture/run-1", coverage: { json: "/capture/run-1/exports/coverage.json" }, arazzo: "/capture/run-1/exports/arazzo/arazzo.json", errors: [] };
   let payload;
   const server = await controlServer((path, body) => {
     if (path === "/v1/finishRun") { payload = body; return { status: "complete", outputs: expected }; }

@@ -1,196 +1,92 @@
 # Wiretap
 
-Turn existing HTTP and native gRPC API tests into **portable evidence, Postman
-collections, Arazzo workflows and API coverage**. Keep your test framework, clients, assertions and
-mocks. Wiretap captures traffic at the application boundary, measures it against
-your OpenAPI or Protobuf contracts, and checks mock assumptions against provider
-test evidence.
+Turn existing Jest HTTP API tests into **portable evidence, Arazzo workflows and API coverage**. Keep your clients, assertions and mocks. Wiretap captures application boundaries, measures supported OpenAPI conditions and checks captured mock assumptions against provider test evidence.
 
-Wiretap is for **isolated test environments using synthetic data and dummy
-secrets**. It retains the traffic you send through it, including credentials and
-payloads, unchanged.
+Use isolated tests with synthetic data and dummy credentials. Captured traffic, including payloads and credentials, is retained unchanged.
 
 ```text
-Existing tests → Wiretap → Your application → Wiretap → Existing mocks or services
-                   └──────────────┬──────────────┘
-                        One portable run archive
-                 Raw evidence · Postman · Arazzo · API coverage
+Jest tests → Wiretap → Your application → Wiretap → Existing mocks or services
+                         One portable run archive
+                     Raw evidence · Arazzo · API coverage
 ```
 
 ## Try it
 
-From this checkout, with Go 1.26+:
+From this checkout, with Go 1.26+ and Node 22+:
+
+```sh
+node examples/existing-jest/run.mjs
+```
+
+The [Express/Jest demo](examples/existing-jest/README.md) builds Wiretap, installs the local SDK and captures 120 existing tests. It verifies that their original outcomes remain intact and checks coverage and Arazzo outputs. It publishes nothing.
+
+## Add it to your Jest suite
+
+Build the runtime and pack the SDK:
 
 ```sh
 go build -o dist/wiretap ./cmd/wiretap
-WIRETAP_BINARY="$PWD/dist/wiretap" go -C examples/go-suite test -count=1 ./...
+npm ci --prefix sdk/js
+npm pack ./sdk/js --ignore-scripts --pack-destination ./dist
 ```
 
-The example hosts an ordinary HTTP handler and captures its standard Go tests
-using `Run` and `StartTest`. It finalizes JSON/text coverage and Postman collections
-automatically under `examples/go-suite/artifacts/<run-id>/`. See the
-[Go example](examples/go-suite/README.md) for Windows commands and the two hooks.
+Install the printed tarball in your test project and put `wiretap` on `PATH`, or set `WIRETAP_BINARY` to its absolute path. Use Node 22+ and Jest 29.7 or 30.
 
-For Python tests, use the [Python SDK and pytest fixture](sdk/python/README.md)
-with the [runnable pytest suite](examples/pytest-suite/README.md).
+```js
+// jest.config.cjs
+const { withWiretap } = require('@wiretap/sdk/jest');
+module.exports = withWiretap(existingConfig, { app: '<rootDir>/app.js' });
+```
 
-For existing JavaScript tests, choose the [Jest, Playwright Test or Mocha adapter](sdk/js/README.md).
-Each manages Wiretap startup and exports around your normal test command. The
-[plain JavaScript API and Node harness](sdk/js/docs/javascript.md) remain available
-for custom setups. [More examples](examples/README.md) cover existing external
-tests, native gRPC, streaming, real clients and mocks.
+Point the shared client at capture, for example `supertest(process.env.WIRETAP_SUT_URL || app)`. Existing test imports, assertions and mocks stay in place. The adapter hosts the supplied HTTP handler inside Jest, starts capture, records final test outcomes and finalizes the run. For an already running API, omit `app` and configure `sut.url`.
 
-## Add it to your suite
+```yaml
+version: 1
+application: {id: orders-app, name: Orders}
+output_dir: artifacts/wiretap
+outputs: {coverage: [json, text], arazzo: true}
+sut:
+  id: orders
+  kind: service
+  schema: schemas/orders.openapi.yaml
+```
 
-Follow the [getting started guide](docs/getting-started-existing-tests.md) for the
-complete workflow: integrate your tests, understand the artifacts, share them
-under application folders, and check consumer/provider assumptions.
+The main API requires OpenAPI by default. HTTP dependencies and mocks need only their URL and kind; adding a schema enables their validation and contract coverage. Supplied schemas always validate. See the [Jest SDK](sdk/js/README.md), [getting started guide](docs/getting-started-existing-tests.md) and [configuration reference](docs/configuration.md).
 
-Use [`wiretap init` and `wiretap doctor`](docs/setup.md) to create a small
-configuration and check local contracts before running the suite.
+For parallel tests sharing an application, propagate W3C trace context through its server and outbound clients, or isolate workers. The adapter uses one worker by default. See [tracing and concurrency](docs/otel-adoption.md).
 
-For prepared binary archives and SDK tarballs, use
-[local release installation](docs/install-local-release.md).
+## Read the results
 
-For Jest, Playwright Test and Mocha, follow the [SDK setup guide](sdk/js/README.md):
-configure the contract, add the runner wrapper and route your shared client
-through capture. The adapter handles startup and finalization.
-
-For standard Go tests, add `wiretap.Run(m)` in `TestMain` and
-`wiretap.StartTest(t)` in a test or shared setup helper. The [Go SDK](sdk/go/README.md)
-manages startup, cleanup and exports; the [Go example](examples/go-suite/README.md)
-shows a complete suite with an existing HTTP handler and client.
-
-For a custom harness:
-
-1. Put application/dependency URLs and contracts in `.wiretap.yaml`.
-2. Let the SDK manage Wiretap, or connect to a runtime your harness already owns.
-3. Route test requests and application dependency calls through Wiretap.
-4. Use an SDK adapter to record each test's final outcome.
-5. Finalize once after all workers finish and retain the complete run directory.
-
-Use the [Python](sdk/python/README.md), [JavaScript](sdk/js/README.md), [Go](sdk/go/README.md), or
-[HTTP API](docs/runtime-api.md) integration. Your framework owns pass/fail.
-Contract mismatches are recorded separately, so a test deliberately sending an
-invalid request can assert its rejection and pass. Setup and capture failures
-still surface through cleanup.
-
-The main HTTP API under test requires OpenAPI by default. Consumed HTTP APIs
-and mocks need only their URLs; add specs to opt into their validation and
-contract coverage. Supplied specs always validate. gRPC requires Protobuf
-descriptors, discovered through reflection when no file is supplied, or loaded
-from `.proto` files or a descriptor set. Unary and all three streaming shapes
-are supported. See the
-[gRPC guide](docs/grpc-user-guide.md).
-
-For parallel tests sharing one application, propagate W3C trace context through
-its server and outbound clients. Otherwise run sequentially or isolate workers.
-See [tracing and concurrency](docs/otel-adoption.md).
-
-## Understand the result
-
-| Output | What it tells you |
+| Output | Purpose |
 | --- | --- |
-| `bundle.json`, `tests/`, `contracts/`, `payloads/` | What each test sent and received, its outcome, validation diagnostics and frozen contracts. |
-| `exports/coverage.txt` | A compact first view of outcomes, exercised operations, condition gaps and unknowns. |
-| `exports/coverage.json` | Which declared operations and supported contract conditions were exercised, with gaps and unknowns. |
-| `exports/postman/` | Captured HTTP and gRPC interactions grouped by test, for the application and mocked dependencies. |
-| `exports/arazzo/` | JSON/REST workflows for the application and mocked dependencies, with portable OpenAPI source files. |
-| `exports/result.json` | Exact export paths and any export errors. |
+| `bundle.json`, `tests/`, `contracts/`, `payloads/` | Captured requests/responses, final outcomes, validation diagnostics and frozen contracts. |
+| `exports/coverage.txt` | Compact outcomes, exercised operations, gaps and unknowns. |
+| `exports/coverage.json` | Detailed operation and contract-condition evidence. |
+| `exports/arazzo/arazzo.json` and companions | JSON/REST workflows with portable OpenAPI sources. |
+| `exports/result.json` | Exact export paths and errors. |
+| `last-run.json`, `wiretap.log` inside the run | Managed completion receipt and bounded runtime log. |
 
-Start with the summary, then follow the JSON report's test references when you
-need to understand a gap. One test can exercise many conditions; an unknown
-measurement is not a pass. A declared API with no captured tests still appears
-as untested when its contract is available.
-
-To inspect the Go example's archive later from this checkout, use the built
-binary and the exact run directory returned by the SDK:
-
-```bash
-./dist/wiretap report --bundle ./examples/go-suite/artifacts/<run-id> --format text
-./dist/wiretap export --bundle ./examples/go-suite/artifacts/<run-id> --format all
-```
-
-Exports work offline from the complete run archive. HTTP collections use Postman
-v2.1; native gRPC uses v3. JSON/REST captures can also export Arazzo workflows:
-
-```bash
-./dist/wiretap export --bundle ./examples/go-suite/artifacts/<run-id> \
-  --format arazzo --output-dir ./arazzo
-```
-
-See [exports and compatibility](docs/artifacts.md).
-For tools consuming the results, use the versioned
-[machine interface](docs/machine-interface.md).
-
-## Check assumptions across applications
-
-The runnable [consumer/provider example](examples/consumer-provider/README.md)
-captures both applications, verifies agreement, introduces a provider change
-that fails the check, and restores compatibility. It uses the same SDK, CLI and
-projection exports as an ordinary project.
-
-Upload complete runs and Postman or JSON/REST Arazzo exports to a shared artifact
-store, grouped by application ID. Restore the selected snapshots locally, then check your run
-against the other teams' evidence:
+Retain the complete run directory. Use the archive path returned by the adapter; the output root's latest receipt is advisory when runs overlap. Reports and exports also work offline:
 
 ```sh
-wiretap check consumer --consumer ./orders-run --artifacts ./api-evidence
-wiretap check provider --provider ./inventory-run --artifacts ./api-evidence
+wiretap report --bundle ./artifacts/wiretap/run-... --format text
+wiretap export --bundle ./artifacts/wiretap/run-... --format all
+wiretap export --bundle ./artifacts/wiretap/run-... --format arazzo --output-dir ./arazzo
 ```
 
-The consumer command checks all captured mock dependencies using their declared
-provider mappings. The provider command finds consumers mapped to its API and
-checks that its tests still support their mocks. Each selected mock request and
-response needs supporting evidence from a complete passing provider test;
-missing provider coverage fails the check. Wiretap requires an unambiguous
-snapshot for each selected application/API and never guesses the latest build.
-Collections stay in each run's `exports/postman/` directory and are verified
-against the raw archive. For JSON/REST APIs, use `--input-format arazzo` on either
-command to verify each run's `exports/arazzo/arazzo.json` and source companions
-instead. Both sides use the same format and still need complete archives.
-`outputs: {coverage: [json, text], arazzo: true}` generates those inputs without
-Postman.
+Arazzo exports supported JSON/REST workflows. Incomplete or unrepresentable eligible traffic can make export fail; retained raw evidence remains available. See [artifacts and exports](docs/artifacts.md) and the [machine interface](docs/machine-interface.md).
 
-For a single pair, supply `--consumer ./orders-run --provider ./inventory-run`
-in either mode, with `--dependency inventory` if needed. See
-[assumption checks](docs/assumption-checks.md) for mappings, folder layout,
-selection rules and CI output.
+## Check consumer/provider assumptions
 
-For tests split across packages or CI workers, use an explicit [same-build run
-set](docs/run-sets.md). [Coverage policies and baseline reports](docs/report-policies.md)
-provide optional CI gates; assumption reports also support Markdown and JUnit XML.
+Restore complete consumer and provider runs with their Arazzo exports, then compare them offline:
 
-The checker finds changed mock responses, request scenarios absent from provider
-tests, drift in exercised OpenAPI 3.0 rules when both contracts are supplied,
-Protobuf message/enum declaration changes, and incompatible gRPC wire examples.
-Without a consumer dependency spec, the provider's frozen HTTP contract still
-validates both captured exchanges. With both HTTP contracts, it catches changed
-enums or limits even when the recorded values satisfy both. Its strict comparison
-can also flag an extra optional response field or a relaxed rule that a running
-consumer would tolerate. Read
-[which issues it finds](docs/assumption-checks.md#issues-the-check-will-find),
-[what it cannot establish](docs/assumption-checks.md#what-the-check-will-not-establish)
-and [how to interpret failures](docs/assumption-checks.md#interpreting-results)
-before using it as a CI gate. Assertions about behavior and expected dependency
-calls remain part of your tests.
+```sh
+wiretap check consumer --consumer ./orders-run --provider ./inventory-run --dependency inventory
+wiretap check provider --consumer ./orders-run --provider ./inventory-run --dependency inventory
+```
 
-Keep complete runs in your shared artifact store under stable application/API
-IDs, tested revisions and run IDs. The [shared snapshot workflow](docs/assumption-checks.md#share-provider-snapshots)
-shows provider and consumer configuration, the application-folder layout and
-how to prepare an unambiguous set of downloaded archives for each check.
+The checker verifies each Arazzo workflow and source companion against its capture archive. Each mock request and paired response needs support from a complete passing provider test. It can also compare exercised OpenAPI 3.0 rules. Missing provider coverage, changed response values and declared rule drift remain distinct findings. A passing check covers the selected examples and supported rules; assertions about business behavior remain in your tests.
 
-## Product scope and documentation
+For shared application folders, use `--artifacts`; for explicitly selected shards of one build, use [run sets](docs/run-sets.md). See [assumption checks](docs/assumption-checks.md), [CI policies](docs/report-policies.md) and the [documentation index](docs/README.md).
 
-Wiretap captures existing tests, exports their evidence and verifies concrete
-consumer/provider examples and exercised contract rules offline. A passing
-check covers those examples and supported rules; it does not prove arbitrary
-business behavior. Wiretap does not
-generate or execute additional tests.
-
-Start with the [documentation index](docs/README.md) for setup, CI, formats and
-troubleshooting. The [architecture](docs/architecture.md) describes the components
-and their responsibilities; the [support matrix](docs/support.md) states integration
-and format compatibility. [Local packages](docs/local-release.md) can be built and
-installed without publishing anything externally. Future work is tracked only in
-the [roadmap](docs/roadmap.md).
+This experimental branch supports Jest, HTTP/HTTPS capture and Arazzo export. See [support](docs/support.md), [architecture](docs/architecture.md) and [local release preparation](docs/local-release.md).

@@ -55,7 +55,6 @@ dependencies:
   sut: {url: http://another.test, kind: service}
   supplied: {url: http://supplied.test, schema: supplied.yaml}
   strict: {url: http://strict.test, schema: strict.yaml, schema_required: true}
-  grpc: {url: http://grpc.test, protocol: grpc}
 `), filepath.Join(root, ".wiretap.yaml"))
 	if err != nil {
 		t.Fatal(err)
@@ -75,13 +74,9 @@ dependencies:
 	if !cfg.Dependencies["strict"].RequiresSchema() {
 		t.Fatal("explicit dependency requirement was ignored")
 	}
-	if !cfg.Dependencies["grpc"].RequiresSchema() || cfg.Dependencies["grpc"].SchemaRequired != nil {
-		t.Fatal("gRPC contract/reflection default changed")
-	}
 	for _, document := range []string{
 		"version: 1\nsut: {url: http://orders.test}\ndependencies:\n  inventory: {url: http://inventory.test}\n",
 		"version: 1\nsut: {schema: orders.yaml}\ndependencies:\n  inventory: {url: http://inventory.test, schema_required: true}\n",
-		"version: 1\nsut: {schema: orders.yaml}\ndependencies:\n  grpc: {url: http://grpc.test, protocol: grpc, schema_required: false}\n",
 	} {
 		if _, err := Decode([]byte(document), filepath.Join(root, ".wiretap.yaml")); err == nil {
 			t.Fatalf("accepted missing required contract: %s", document)
@@ -143,83 +138,24 @@ dependencies:
 	}
 }
 
-func TestGRPCConfigDefaultsAndLocalSourcePaths(t *testing.T) {
-	root := t.TempDir()
-	path := filepath.Join(root, ".wiretap.yaml")
-	data := `version: 1
-sut:
-  id: orders
-  protocol: grpc
-  url: http://127.0.0.1:50051
-  services: [orders.v1.Orders]
-dependencies:
-  inventory:
-    protocol: grpc
-    url: http://127.0.0.1:50052
-    services: [inventory.v1.Inventory]
-    schema:
-      source: proto
-      files: [inventory/v1/inventory.proto]
-      import_paths: [./proto]
-`
-	if err := os.WriteFile(path, []byte(data), 0600); err != nil {
-		t.Fatal(err)
-	}
-	cfg, err := Load(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.SUT.GRPCSchema != nil || cfg.SUT.Protocol != "grpc" || cfg.Dependencies["inventory"].GRPCSchema.Source != "proto" || cfg.Dependencies["inventory"].GRPCSchema.ImportPaths[0] != filepath.Join(root, "proto") {
-		t.Fatalf("unexpected gRPC project defaults: %#v", cfg)
-	}
-}
-
-func TestGRPCConfigRejectsMissingContractsAndInvalidSources(t *testing.T) {
-	for _, tc := range []struct{ name, sut, want string }{
-		{"schema opt-out", "schema_required: false", "gRPC requires a schema"},
-		{"explicit null", "schema: null", "explicit null"},
-		{"empty source", "schema: {}", "unsupported gRPC schema source"},
-		{"bare schema", "schema: api.proto", "source object"},
-		{"empty string schema", "schema: ''", "source object"},
-		{"zero timeout", "schema: {source: reflection, timeout: 0s}", "reflection timeout"},
-		{"unbounded timeout", "schema: {source: reflection, timeout: 2m}", "reflection timeout"},
-		{"invalid timeout", "schema: {source: reflection, timeout: soon}", "reflection timeout"},
-		{"pathful URL", "url: http://127.0.0.1:50051/api", "origin without path"},
-		{"local without services", "schema:\n    source: descriptor_set\n    path: api.protoset", "require services"},
+func TestRemovedRuntimeAndExportOptionsAreRejected(t *testing.T) {
+	for _, tc := range []struct{ name, body, want string }{
+		{"grpc SUT", "sut: {protocol: grpc, schema_required: false}", "only HTTP JSON/REST"},
+		{"grpc dependency", "sut: {schema_required: false}\ndependencies:\n  inventory: {url: http://inventory.test, protocol: grpc}", "only HTTP JSON/REST"},
+		{"services", "sut: {schema_required: false, services: [inventory.Inventory]}", "field services"},
+		{"capture listener", "sut: {schema_required: false, capture_listen: ':50051'}", "field capture_listen"},
+		{"capture TLS", "sut: {schema_required: false, capture_tls: {cert_file: server.crt, key_file: server.key}}", "field capture_tls"},
+		{"upstream TLS", "sut: {schema_required: false, upstream_tls: {ca_file: server.crt}}", "field upstream_tls"},
+		{"schema source", "sut: {schema: {source: reflection}}", "cannot unmarshal"},
+		{"null schema", "sut: {schema: null}", "explicit null"},
+		{"Postman output", "sut: {schema_required: false}\noutputs: {postman: true}", "postman"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			path := filepath.Join(t.TempDir(), ".wiretap.yaml")
-			body := "version: 1\nsut:\n  protocol: grpc\n"
-			if tc.name != "pathful URL" {
-				body += "  url: http://127.0.0.1:50051\n"
-			}
-			body += "  " + strings.ReplaceAll(tc.sut, "\n", "\n  ") + "\n"
-			if err := os.WriteFile(path, []byte(body), 0600); err != nil {
-				t.Fatal(err)
-			}
-			_, err := Load(path)
+			_, err := Decode([]byte("version: 1\n"+tc.body+"\n"), filepath.Join(t.TempDir(), ".wiretap.yaml"))
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("got %v, want %q", err, tc.want)
 			}
 		})
-	}
-}
-
-func TestAutomaticPostmanProtoRootsResolveFromProject(t *testing.T) {
-	config, err := Decode([]byte(`version: 1
-sut: {url: http://localhost:8080, schema_required: false}
-outputs:
-  postman: true
-  postman_options:
-    grpc:
-      sut: {url: grpc://localhost:50051, proto_root: proto, proto_file: api.proto}
-`), filepath.Join(t.TempDir(), ".wiretap.yaml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	target := config.Outputs.PostmanOptions.GRPC["sut"]
-	if target.ProtoRoot != filepath.Join(filepath.Dir(config.Path), "proto") || target.ProtoFile != "api.proto" {
-		t.Fatalf("incorrect proto paths: %+v", target)
 	}
 }
 

@@ -7,7 +7,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/mattlock83/wiretap/internal/arazzo"
@@ -43,10 +42,6 @@ func cliWriteCheckArazzo(t *testing.T, archive, directory string) (string, []str
 		}
 		companions = append(companions, path)
 	}
-	// These checks must work with Arazzo as the sole exported projection.
-	if err := os.RemoveAll(filepath.Join(archive, "exports", "postman")); err != nil {
-		t.Fatal(err)
-	}
 	return document, companions
 }
 
@@ -69,7 +64,7 @@ func TestCLIArazzoCheckBothViewpointsAndResponseEvidence(t *testing.T) {
 		t.Run(scenario.name, func(t *testing.T) {
 			provider := cliCheckArazzoArchive(t, false, scenario.response)
 			for _, mode := range []string{"consumer", "provider"} {
-				args := []string{"check", mode, "--input-format", "arazzo", "--consumer", filepath.Join(consumer, "bundle.json"), "--provider", provider}
+				args := []string{"check", mode, "--consumer", filepath.Join(consumer, "bundle.json"), "--provider", provider}
 				code, data := executeCapturingStdout(t, append(args, "--format", "json"))
 				var report assumptions.Report
 				if err := json.Unmarshal(data, &report); err != nil {
@@ -79,7 +74,7 @@ func TestCLIArazzoCheckBothViewpointsAndResponseEvidence(t *testing.T) {
 					t.Fatalf("%s check exit %d: %s", mode, code, data)
 				}
 				for _, source := range []assumptions.Source{report.Consumer, report.Provider} {
-					if source.InputFormat != "arazzo" || source.Arazzo == "" || len(source.ArazzoFiles) == 0 || len(source.Collections) != 0 {
+					if source.Arazzo == "" || len(source.ArazzoFiles) == 0 {
 						t.Fatalf("missing Arazzo provenance: %+v", source)
 					}
 				}
@@ -103,7 +98,7 @@ func TestCLIArazzoCheckExplicitFileAndDirectoryOverrides(t *testing.T) {
 	consumerDocument, _ := cliWriteCheckArazzo(t, consumer, t.TempDir())
 	providerDirectory := t.TempDir()
 	providerDocument, _ := cliWriteCheckArazzo(t, provider, providerDirectory)
-	args := []string{"check", "consumer", "--input-format", "arazzo", "--consumer", consumer, "--provider", provider, "--consumer-arazzo", consumerDocument, "--provider-arazzo", providerDirectory, "--format", "json"}
+	args := []string{"check", "consumer", "--consumer", consumer, "--provider", provider, "--consumer-arazzo", consumerDocument, "--provider-arazzo", providerDirectory, "--format", "json"}
 	code, data := executeCapturingStdout(t, args)
 	var report assumptions.Report
 	if err := json.Unmarshal(data, &report); err != nil || code != 0 || !report.Compatible || report.Consumer.Arazzo != consumerDocument || report.Provider.Arazzo != providerDocument {
@@ -139,7 +134,7 @@ func TestCLIArazzoCheckRejectsInvalidInputsWithoutReplacingReport(t *testing.T) 
 			if err := os.WriteFile(output, []byte("keep previous report"), 0600); err != nil {
 				t.Fatal(err)
 			}
-			code, stdout := executeCapturingStdout(t, []string{"check", "consumer", "--input-format", "arazzo", "--consumer", consumer, "--provider", provider, "--provider-arazzo", document, "--format", "json", "--output", output})
+			code, stdout := executeCapturingStdout(t, []string{"check", "consumer", "--consumer", consumer, "--provider", provider, "--provider-arazzo", document, "--format", "json", "--output", output})
 			data, err := os.ReadFile(output)
 			if code != 2 || len(stdout) != 0 || err != nil || string(data) != "keep previous report" {
 				t.Fatalf("invalid export exit %d, stdout %s, report %s, error %v", code, stdout, data, err)
@@ -148,21 +143,16 @@ func TestCLIArazzoCheckRejectsInvalidInputsWithoutReplacingReport(t *testing.T) 
 	}
 }
 
-func TestCLIArazzoCheckRejectsCrossFormatAndDiscoveryOverrides(t *testing.T) {
+func TestCLIArazzoCheckRejectsRemovedFlagsAndDiscoveryOverrides(t *testing.T) {
 	for _, flags := range [][]string{
-		{"--input-format", "arazzo", "--consumer-collection", "c.json"},
-		{"--input-format", "arazzo", "--provider-collection", "p.json"},
-		{"--consumer-arazzo", "c.json"},
-		{"--input-format", "postman", "--provider-arazzo", "p.json"},
-		{"--input-format", "postman", "--consumer-arazzo="},
-		{"--input-format", "other"},
-		{"--input-format", "arazzo", "--artifacts", "root", "--consumer-arazzo", "c.json"},
-		{"--input-format", "arazzo", "--consumer-set", "c.json", "--provider-set", "p.json", "--provider-arazzo", "p.json"},
+		{"--consumer-collection", "c.json"}, {"--provider-collection", "p.json"},
+		{"--input-format", "arazzo"}, {"--artifacts", "root", "--consumer-arazzo", "c.json"},
+		{"--consumer-set", "c.json", "--provider-set", "p.json", "--provider-arazzo", "p.json"},
 	} {
 		args := append([]string{"consumer", "--consumer", "consumer", "--provider", "provider"}, flags...)
 		code, err := checkCommand(context.Background(), args)
 		if code != 2 || !errors.Is(err, errUsage) {
-			t.Fatalf("mixed inputs %v: exit %d, error %v", flags, code, err)
+			t.Fatalf("invalid inputs %v: exit %d, error %v", flags, code, err)
 		}
 	}
 }
@@ -174,7 +164,7 @@ func TestCLIArazzoCheckProtectsExternalExportInputs(t *testing.T) {
 			provider := cliCheckArchive(t, false, "/items?limit=1", 200, `{"stock":3}`, state)
 			directory := t.TempDir()
 			document, companions := cliWriteCheckArazzo(t, provider, directory)
-			args := []string{"check", "consumer", "--input-format", "arazzo", "--consumer", consumer, "--provider", provider, "--provider-arazzo", document, "--format", "json"}
+			args := []string{"check", "consumer", "--consumer", consumer, "--provider", provider, "--provider-arazzo", document, "--format", "json"}
 			paths := append([]string{document, filepath.Join(directory, "new-report.json")}, companions...)
 			alias := filepath.Join(t.TempDir(), "exports")
 			if err := os.Symlink(directory, alias); err == nil {
@@ -210,9 +200,9 @@ func TestCLIArazzoCheckSupportsDiscoveryAndRunSets(t *testing.T) {
 		if mode == "provider" {
 			anchor = provider
 		}
-		code, data := executeCapturingStdout(t, []string{"check", mode, "--input-format", "arazzo", "--" + mode, anchor, "--artifacts", root, "--format", "json"})
+		code, data := executeCapturingStdout(t, []string{"check", mode, "--" + mode, anchor, "--artifacts", root, "--format", "json"})
 		var report assumptions.StoreReport
-		if err := json.Unmarshal(data, &report); err != nil || code != 0 || !report.Compatible || len(report.Comparisons) != 1 || report.Comparisons[0].Consumer.InputFormat != "arazzo" {
+		if err := json.Unmarshal(data, &report); err != nil || code != 0 || !report.Compatible || len(report.Comparisons) != 1 {
 			t.Fatalf("%s discovery exit %d: %s, %v", mode, code, data, err)
 		}
 	}
@@ -223,16 +213,9 @@ func TestCLIArazzoCheckSupportsDiscoveryAndRunSets(t *testing.T) {
 			t.Fatalf("create run set: exit %d", code)
 		}
 	}
-	code, data := executeCapturingStdout(t, []string{"check", "provider", "--input-format", "arazzo", "--consumer-set", sets[0], "--provider-set", sets[1], "--format", "json"})
+	code, data := executeCapturingStdout(t, []string{"check", "provider", "--consumer-set", sets[0], "--provider-set", sets[1], "--format", "json"})
 	var report assumptions.SetReport
-	if err := json.Unmarshal(data, &report); err != nil || code != 0 || !report.Compatible || report.Counts.Verified != 1 || len(report.Consumers) != 1 || len(report.Providers) != 1 || report.Consumers[0].InputFormat != "arazzo" || report.Providers[0].InputFormat != "arazzo" {
+	if err := json.Unmarshal(data, &report); err != nil || code != 0 || !report.Compatible || report.Counts.Verified != 1 || len(report.Consumers) != 1 || len(report.Providers) != 1 {
 		t.Fatalf("run set check exit %d: %s, %v", code, data, err)
-	}
-}
-
-func TestCLIArazzoCheckNamesSupportedInputFormats(t *testing.T) {
-	code, err := checkCommand(context.Background(), []string{"consumer", "--input-format", "yaml", "--consumer", "c", "--provider", "p"})
-	if code != 2 || err == nil || !strings.Contains(err.Error(), "postman or arazzo") {
-		t.Fatalf("input format usage: exit %d, %v", code, err)
 	}
 }

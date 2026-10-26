@@ -81,17 +81,3 @@ func TestSchemaExceptionDoesNotWeakenOtherAPIsOrIgnoreInvalidSpecs(t *testing.T)
 		}
 	}
 }
-
-func TestHTTPDependencyDefaultsDoNotDisableGRPCContractAcquisition(t *testing.T) {
-	registered, schemas, err := normalizeDependencies([]dependencyRegistration{{AssetID: "health", UpstreamURL: "http://grpc.test", Protocol: "grpc"}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(schemas) != 0 || len(registered["health"].Schemas) != 0 {
-		t.Fatal("gRPC reflection boundary was replaced by an omitted HTTP schema")
-	}
-	optional := false
-	if _, _, err := normalizeDependencies([]dependencyRegistration{{AssetID: "health", UpstreamURL: "http://grpc.test", Protocol: "grpc", SchemaRequired: &optional}}); err == nil || !strings.Contains(err.Error(), "gRPC requires a contract") {
-		t.Fatalf("gRPC contract opt-out was accepted: %v", err)
-	}
-}

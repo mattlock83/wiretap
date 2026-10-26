@@ -19,7 +19,6 @@ import (
 var validDependencyAssetID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
 
 type dependencyRegistration struct {
-	Protocol       string               `json:"protocol,omitempty"`
 	SchemaRequired *bool                `json:"schema_required,omitempty"`
 	AssetID        string               `json:"asset_id"`
 	AssetName      string               `json:"asset_name,omitempty"`
@@ -80,25 +79,14 @@ func normalizeDependencies(dependencies []dependencyRegistration) (map[string]de
 		if dependency.Schema != nil {
 			selectedSchemas = append(selectedSchemas, *dependency.Schema)
 		}
-		if dependency.Protocol == "" {
-			dependency.Protocol = "http"
-		}
-		if dependency.Protocol != "http" && dependency.Protocol != "grpc" {
-			return nil, nil, fmt.Errorf("dependency %q has invalid protocol", dependency.AssetID)
-		}
-		if dependency.Protocol == "grpc" && !requiresSchema(dependency.SchemaRequired) {
-			return nil, nil, fmt.Errorf("dependency %q: gRPC requires a contract", dependency.AssetID)
-		}
 		httpSchemaRequired := dependency.SchemaRequired != nil && *dependency.SchemaRequired
-		if dependency.Protocol == "http" && len(selectedSchemas) == 0 && httpSchemaRequired {
+		if len(selectedSchemas) == 0 && httpSchemaRequired {
 			return nil, nil, fmt.Errorf("dependency %q requires an OpenAPI schema; supply schema or schemas", dependency.AssetID)
 		}
-		if dependency.Protocol == "http" {
-			if err := validateSchemaSetup(selectedSchemas, !httpSchemaRequired); err != nil {
-				return nil, nil, fmt.Errorf("dependency %q: %w", dependency.AssetID, err)
-			}
+		if err := validateSchemaSetup(selectedSchemas, !httpSchemaRequired); err != nil {
+			return nil, nil, fmt.Errorf("dependency %q: %w", dependency.AssetID, err)
 		}
-		if dependency.Protocol == "http" && len(selectedSchemas) == 0 {
+		if len(selectedSchemas) == 0 {
 			selectedSchemas = []artifact.SchemaRef{omittedSchema(dependency.AssetID, "dependency")}
 		}
 		for i := range selectedSchemas {
@@ -225,7 +213,6 @@ func (a *App) admitRequest(request *http.Request, headerSession string) (*proxy.
 	if selected == "" && len(a.sessions) == 1 && a.defaultSessionID != "" && !a.hasRetiredWorkLocked() {
 		selected, correlation = a.defaultSessionID, "active_session"
 	}
-	nativeGRPC := strings.HasPrefix(strings.ToLower(request.Header.Get("Content-Type")), "application/grpc") && !strings.HasPrefix(request.URL.Path, "/__wiretap/")
 	session := a.sessions[selected]
 	if session == nil {
 		if selected != "" || len(a.sessions) > 0 || strings.HasPrefix(request.URL.Path, "/__wiretap/") {
@@ -233,9 +220,6 @@ func (a *App) admitRequest(request *http.Request, headerSession string) (*proxy.
 		}
 		// Traffic outside any test remains usable but must never be recorded later.
 		admission := &proxy.Admission{Record: func(proxy.HTTPExchange) {}}
-		if nativeGRPC {
-			admission.TrackGRPC = a.trackGRPCCall("")
-		}
 		return admission, nil
 	}
 	if session.closing {
@@ -247,18 +231,9 @@ func (a *App) admitRequest(request *http.Request, headerSession string) (*proxy.
 	session.pending++
 	a.inFlight++
 	var once sync.Once
-	grpcID := ""
-	var trackGRPC func(context.CancelFunc, func()) func()
-	if nativeGRPC {
-		grpcID = session.Store.reserveFlowID()
-		trackGRPC = a.trackGRPCCall(session.ID)
-	}
 	return &proxy.Admission{
 		SessionID: session.ID, CaseID: session.CaseID, Root: session.Root, TestCorrelation: correlation,
-		Record:     session.Store.RecordHTTP,
-		RecordGRPC: session.Store.RecordGRPC,
-		GRPCFlowID: grpcID,
-		TrackGRPC:  trackGRPC,
+		Record: session.Store.RecordHTTP,
 		Release: func() {
 			once.Do(func() {
 				a.sessionsMu.Lock()
@@ -304,10 +279,8 @@ func (a *App) waitForDrain(ctx context.Context, session *runtimeSession, timeout
 	select {
 	case <-session.drained:
 	case <-timer.C:
-		a.snapshotGRPCCalls(session.ID)
 		session.Store.MarkCaptureIncomplete("capture drain timed out; in-flight exchanges are incomplete")
 	case <-ctx.Done():
-		a.snapshotGRPCCalls(session.ID)
 		session.Store.MarkCaptureIncomplete("capture drain cancelled; in-flight exchanges are incomplete")
 	}
 }

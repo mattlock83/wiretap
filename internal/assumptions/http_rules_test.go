@@ -2,6 +2,7 @@ package assumptions
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
@@ -35,7 +36,7 @@ func httpRulesResponse(document map[string]any) map[string]any {
 
 func httpRulesCapture(t *testing.T, provider bool, document map[string]any, value string) *artifact.Artifact {
 	t.Helper()
-	flow := httpNormalizationFixture()
+	flow := checkFixtureFlow()
 	flow.Request.HTTP.URL = "http://consumer.test/items?tenant=shop"
 	if provider {
 		flow.Request.HTTP.URL = "https://provider.test/items?tenant=shop"
@@ -45,6 +46,18 @@ func httpRulesCapture(t *testing.T, provider bool, document map[string]any, valu
 	flow.Request.HTTP.Body.Text, flow.Response.HTTP.Body.Text = `{"value":`+value+`}`, `{"value":`+value+`}`
 	capture := checkCapture(provider, flow)
 	if document != nil {
+		operation := httpRulesOperation(document)
+		parameters, _ := operation["parameters"].([]any)
+		declared := false
+		for _, value := range parameters {
+			parameter := value.(map[string]any)
+			if parameter["name"] == "tenant" && parameter["in"] == "query" {
+				declared = true
+			}
+		}
+		if !declared {
+			operation["parameters"] = append(parameters, map[string]any{"name": "tenant", "in": "query", "schema": map[string]any{"type": "string"}})
+		}
 		data, err := json.Marshal(document)
 		if err != nil {
 			t.Fatal(err)
@@ -205,7 +218,7 @@ func TestCheckHTTPContractAvailability(t *testing.T) {
 	}
 }
 
-func TestCheckHTTPAmbiguousCapturedMediaTypesRemainUnverified(t *testing.T) {
+func TestCheckHTTPAmbiguousCapturedMediaTypesPreventArazzoVerification(t *testing.T) {
 	for _, phase := range []string{"request", "response"} {
 		for _, variant := range []string{"repeated", "case variants"} {
 			t.Run(phase+"/"+variant, func(t *testing.T) {
@@ -226,9 +239,8 @@ func TestCheckHTTPAmbiguousCapturedMediaTypesRemainUnverified(t *testing.T) {
 				options := checkHTTPPair(t, []*artifact.Artifact{consumer}, []*artifact.Artifact{provider})
 				for _, mode := range []string{"consumer", "provider"} {
 					options.Mode = mode
-					report := mustCheck(t, options)
-					if report.Compatible || report.Counts.Verified != 0 || !findingCode(report, "http_contract_unavailable") {
-						t.Fatalf("%s selected one ambiguous %s media type to certify an exchange: %+v", mode, phase, report)
+					if _, err := Check(t.Context(), options); !errors.Is(err, ErrInput) {
+						t.Fatalf("ambiguous Arazzo media accepted: %v", err)
 					}
 				}
 			})

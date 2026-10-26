@@ -21,7 +21,7 @@ import (
 // arbitrary x-* fields, remain significant unless explicitly ignored.
 var IgnoredHeaders = []string{
 	"accept-encoding", "baggage", "connection", "content-length", "date",
-	"grpc-accept-encoding", "grpc-encoding", "grpc-timeout", "host", "keep-alive",
+	"host", "keep-alive",
 	"postman-token", "proxy-connection", "server", "te", "trailer", "traceparent",
 	"tracestate", "transfer-encoding", "upgrade", "user-agent", "via",
 }
@@ -46,8 +46,6 @@ func normalizeFlow(flow artifact.Flow, ignoreHeaders []string) (request, respons
 	switch flow.Protocol {
 	case "http":
 		req, res, err = normalizeHTTP(flow, ignored)
-	case "grpc":
-		req, res, err = normalizeGRPC(flow, ignored)
 	default:
 		err = fmt.Errorf("unsupported protocol %q", flow.Protocol)
 	}
@@ -67,7 +65,7 @@ func normalizeFlow(flow artifact.Flow, ignoreHeaders []string) (request, respons
 
 func normalizeHTTP(flow artifact.Flow, ignored map[string]bool) (any, any, error) {
 	req, res := flow.Request.HTTP, flow.Response.HTTP
-	if req == nil || res == nil || flow.Request.GRPC != nil || flow.Response.GRPC != nil {
+	if req == nil || res == nil {
 		return nil, nil, fmt.Errorf("complete HTTP request and response are required")
 	}
 	if !headerName(strings.ToLower(req.Method)) {
@@ -374,106 +372,4 @@ func normalizeNumber(number json.Number) json.Number {
 		return json.Number(sign + trimmed)
 	}
 	return json.Number(sign + trimmed + "e" + exponent.String())
-}
-
-type normalizedGRPCPayload struct {
-	Type string         `json:"type"`
-	Body normalizedBody `json:"body"`
-}
-
-func normalizeGRPC(flow artifact.Flow, ignored map[string]bool) (any, any, error) {
-	req, res := flow.Request.GRPC, flow.Response.GRPC
-	if req == nil || res == nil || flow.Request.HTTP != nil || flow.Response.HTTP != nil ||
-		!artifact.GRPCDirectionComplete(req, true) || !artifact.GRPCDirectionComplete(res, true) {
-		return nil, nil, fmt.Errorf("complete gRPC request and response observations are required")
-	}
-	if err := artifact.ValidateGRPCObservation(flow); err != nil {
-		return nil, nil, fmt.Errorf("gRPC observations: %w", err)
-	}
-	if res.StatusCode < 0 || res.StatusCode > 16 || res.StatusSource != "headers" && res.StatusSource != "trailers" {
-		return nil, nil, fmt.Errorf("an observed terminal gRPC status is required")
-	}
-	procedure := strings.TrimPrefix(req.Procedure, "/")
-	parts := strings.Split(procedure, "/")
-	if len(parts) != 2 || parts[0] == "" || parts[1] == "" || res.Procedure != "" && strings.TrimPrefix(res.Procedure, "/") != procedure {
-		return nil, nil, fmt.Errorf("a consistent fully qualified gRPC procedure is required")
-	}
-	if req.StreamKind == "" || req.StreamKind != res.StreamKind {
-		return nil, nil, fmt.Errorf("a consistent gRPC stream kind is required")
-	}
-	switch req.StreamKind {
-	case "unary", "client_streaming", "server_streaming", "bidirectional":
-	default:
-		return nil, nil, fmt.Errorf("unsupported gRPC stream kind %q", req.StreamKind)
-	}
-	messages := [2][]normalizedGRPCPayload{{}, {}}
-	type ordered struct {
-		sequence  uint64
-		direction string
-	}
-	order := []ordered{}
-	for direction, message := range []*artifact.GrpcMessage{req, res} {
-		for _, payload := range message.Messages {
-			if payload.Redacted || payload.DecodeState != "decoded" || payload.DecodeError != "" || payload.Body == nil || payload.Body.Encoding != "json" || payload.Observation == nil {
-				return nil, nil, fmt.Errorf("all gRPC messages need complete decoded JSON projections")
-			}
-			body, err := normalizeBody(payload.Body)
-			if err != nil || body.Representation != "json" {
-				return nil, nil, fmt.Errorf("gRPC message %d: complete decoded JSON is required", payload.Index)
-			}
-			messages[direction] = append(messages[direction], normalizedGRPCPayload{Type: payload.Type, Body: body})
-			label := "request"
-			if direction == 1 {
-				label = "response"
-			}
-			order = append(order, ordered{sequence: payload.Observation.CompleteSequence, direction: label})
-		}
-	}
-	sort.Slice(order, func(i, j int) bool { return order[i].sequence < order[j].sequence })
-	interleaving := make([]string, len(order))
-	for i, message := range order {
-		interleaving[i] = message.direction
-	}
-	status, err := normalizeGRPCStatus(res.StatusDetails)
-	if err != nil {
-		return nil, nil, err
-	}
-	return map[string]any{
-			"protocol": "grpc", "procedure": procedure, "stream_kind": req.StreamKind,
-			"metadata": normalizeHeaders(req.Metadata, ignored, nil), "trailers": normalizeHeaders(req.Trailers, ignored, nil),
-			"messages": messages[0],
-		}, map[string]any{
-			"protocol": "grpc", "status": res.StatusCode, "message": res.StatusMessage,
-			"metadata": normalizeHeaders(res.Metadata, ignored, nil), "trailers": normalizeHeaders(res.Trailers, ignored, nil),
-			"messages": messages[1], "interleaving": interleaving, "status_details": status,
-		}, nil
-}
-
-func normalizeGRPCStatus(status *artifact.GrpcStatusDetails) (any, error) {
-	if status == nil {
-		return nil, nil
-	}
-	if status.State == "truncated" || status.State == "redacted" || status.Wire == nil {
-		return nil, fmt.Errorf("complete retained gRPC status details are required")
-	}
-	wire, err := normalizeWireBody(status.Wire)
-	if err != nil {
-		return nil, fmt.Errorf("gRPC status envelope: %w", err)
-	}
-	details := []any{}
-	for _, detail := range status.Details {
-		if detail.State == "truncated" || detail.State == "redacted" || detail.Wire == nil {
-			return nil, fmt.Errorf("complete retained gRPC status detail %d is required", detail.Index)
-		}
-		wire, err := normalizeWireBody(detail.Wire)
-		if err != nil {
-			return nil, fmt.Errorf("gRPC status detail %d: %w", detail.Index, err)
-		}
-		body, err := normalizeBody(detail.Body)
-		if err != nil {
-			return nil, fmt.Errorf("gRPC status detail %d: %w", detail.Index, err)
-		}
-		details = append(details, map[string]any{"type_url": detail.TypeURL, "type": detail.Type, "state": detail.State, "wire": wire, "body": body})
-	}
-	return map[string]any{"source": status.Source, "state": status.State, "code": status.Code, "message": status.Message, "wire": wire, "details": details}, nil
 }

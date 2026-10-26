@@ -47,12 +47,7 @@ provider test in any selected provider member captured the matching request and
 paired response and passes the contract checks. Wiretap never pairs a request
 from one exchange with a response from another. All selected projections are
 checked against their raw archives, even when another shard supplies a match.
-Postman is the default. For JSON/REST boundaries, use Arazzo on both sides:
-
-```sh
-wiretap check consumer --consumer-set consumer-runs.json \
-  --provider-set provider-runs.json --dependency inventory --input-format arazzo
-```
+Both sides use Arazzo workflows and source companions from their member archives.
 
 Every member with eligible workflows must retain `exports/arazzo/arazzo.json`
 and its source companions. An empty shard with no selected traffic and no
@@ -61,15 +56,13 @@ when the archive has no generated workflows. Complete archives remain required
 for response evidence, passing-test provenance and frozen contracts. Missing,
 stale or altered documents or companions fail input verification; selected
 unsupported traffic cannot be silently certified. Each member is also subject
-to the [strict whole-run Arazzo export limits](assumption-checks.md#use-arazzo-instead-of-postman-for-jsonrest).
+to the [strict whole-run Arazzo export limits](assumption-checks.md#arazzo-check-inputs).
 Verification does not execute Arazzo workflow expressions.
 
 Use `--consumer-set` and `--provider-set` together. They are separate from
 automatic `--artifacts` selection, which deliberately requires one unambiguous
-snapshot. Every member's projection remains under its own `exports/postman/`
-or `exports/arazzo/` directory; a run set does not synthesize a combined replay
-or change test identities. Run sets do not accept per-member collection or
-Arazzo path overrides. Keep original archives and exports alongside the manifest.
+snapshot. Every member's projection remains under its own `exports/arazzo/` directory; a run set does not synthesize a combined replay
+or change test identities. Run sets do not accept per-member Arazzo path overrides. Keep original archives and exports alongside the manifest.
 
 Coverage policies and baseline comparison currently accept single-archive
 coverage reports. Apply those gates per package/shard; the aggregate condition

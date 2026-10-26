@@ -2,7 +2,6 @@ package assumptions
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,15 +11,17 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mattlock83/wiretap/internal/arazzo"
 	"github.com/mattlock83/wiretap/internal/artifact"
 	"github.com/mattlock83/wiretap/internal/bundle"
-	"github.com/mattlock83/wiretap/internal/postman"
-	healthpb "google.golang.org/grpc/health/grpc_health_v1"
-	"google.golang.org/protobuf/encoding/protojson"
-	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/reflect/protodesc"
-	"google.golang.org/protobuf/types/descriptorpb"
 )
+
+func checkFixtureFlow() artifact.Flow {
+	flow := httpNormalizationFixture()
+	flow.Request.HTTP.URL = "http://127.0.0.1:1234/items/a%2Fb?q=one&a=first"
+	flow.Response.HTTP.Trailers = nil
+	return flow
+}
 
 func consumerCheckIdentity() bundle.Identity {
 	return bundle.Identity{Application: &bundle.Application{ID: "shop"}, APIID: "shop-api", SUTTargetKind: "service", DependencyKinds: map[string]string{"stock": "mock"}}
@@ -30,8 +31,8 @@ func providerCheckIdentity() bundle.Identity {
 	return bundle.Identity{Application: &bundle.Application{ID: "inventory"}, APIID: "inventory-api", SUTTargetKind: "service", SUTSource: map[string]any{"version": "v1"}}
 }
 
-// Build the actual portable archive and Postman projections used by the CLI.
-// No hand-written manifest or collection fixture can bypass the normal writer,
+// Build the actual portable archive and Arazzo projections used by the CLI.
+// No hand-written manifest or workflow fixture can bypass the normal writer,
 // attachment hashes, identity inventory or export completeness rules.
 func writeCheckArchive(t *testing.T, identity bundle.Identity, state string, captures ...*artifact.Artifact) string {
 	t.Helper()
@@ -70,23 +71,28 @@ func writeCheckArchive(t *testing.T, identity bundle.Identity, state string, cap
 			t.Fatal(err)
 		}
 	}
-	result, err := postman.GenerateAllWithOptions(writer.Path(), "", postman.Options{OmitIncomplete: true})
-	if err != nil {
-		t.Fatal(err)
-	}
-	directory := filepath.Join(writer.Path(), "exports", "postman")
-	if err := os.MkdirAll(directory, 0755); err != nil {
-		t.Fatal(err)
-	}
-	for _, export := range result.Exports {
-		file, err := os.Create(filepath.Join(directory, export.Filename))
+	export, exportErr := arazzo.Generate(writer.Path(), "")
+	// Unrepresentable fixtures exercise rejection paths; no export may certify them.
+	if exportErr == nil && export.Document != nil {
+		directory := filepath.Join(writer.Path(), "exports", "arazzo")
+		for _, companion := range export.Files {
+			path := filepath.Join(directory, filepath.FromSlash(companion.Path))
+			if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, companion.Data, 0600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		file, err := os.Create(filepath.Join(directory, "arazzo.json"))
 		if err != nil {
 			t.Fatal(err)
 		}
-		writeErr := postman.WriteExport(file, export)
-		closeErr := file.Close()
-		if writeErr != nil || closeErr != nil {
-			t.Fatalf("write Postman projection: %v / %v", writeErr, closeErr)
+		if err := arazzo.Write(file, export.Document); err != nil {
+			t.Fatal(err)
+		}
+		if err := file.Close(); err != nil {
+			t.Fatal(err)
 		}
 	}
 	return writer.Path()
@@ -127,9 +133,9 @@ func findingCode(report *Report, code string) bool {
 }
 
 func TestCheckConsumerAndProviderVerifySameObligation(t *testing.T) {
-	consumer := httpNormalizationFixture()
+	consumer := checkFixtureFlow()
 	provider := cloneNormalizationFlow(t, consumer)
-	provider.Request.HTTP.URL = "https://provider.example/items/a%2Fb?a=first&a=second&q=one"
+	provider.Request.HTTP.URL = "https://provider.example/items/a%2Fb?a=first&q=one"
 	provider.Request.HTTP.Headers["Traceparent"] = []string{"provider-trace"}
 	extra := cloneNormalizationFlow(t, provider)
 	extra.Request.HTTP.URL = "https://provider.example/unrelated"
@@ -156,7 +162,7 @@ func TestCheckConsumerAndProviderVerifySameObligation(t *testing.T) {
 func TestCheckDistinguishesMissingScenarioFromResponseMismatch(t *testing.T) {
 	for _, kind := range []string{"request", "response"} {
 		t.Run(kind, func(t *testing.T) {
-			consumer, provider := httpNormalizationFixture(), httpNormalizationFixture()
+			consumer, provider := checkFixtureFlow(), checkFixtureFlow()
 			if kind == "request" {
 				consumer.Request.HTTP.Body.Text = `{"amount":2,"items":[1,null]}`
 			} else {
@@ -178,7 +184,7 @@ func TestCheckDistinguishesMissingScenarioFromResponseMismatch(t *testing.T) {
 }
 
 func TestCheckDoesNotSpliceResponsesAcrossProviderTests(t *testing.T) {
-	consumer, first, second := httpNormalizationFixture(), httpNormalizationFixture(), httpNormalizationFixture()
+	consumer, first, second := checkFixtureFlow(), checkFixtureFlow(), checkFixtureFlow()
 	consumer.Response.HTTP.Body.Text = `{"available":true,"status":"shipped"}`
 	first.Response.HTTP.Body.Text = `{"available":true,"status":"pending"}`
 	second.Response.HTTP.Body.Text = `{"available":false,"status":"shipped"}`
@@ -189,7 +195,7 @@ func TestCheckDoesNotSpliceResponsesAcrossProviderTests(t *testing.T) {
 }
 
 func TestCheckRequiresActualConsumerExamples(t *testing.T) {
-	report := mustCheck(t, checkHTTPPair(t, nil, []*artifact.Artifact{checkCapture(true, httpNormalizationFixture())}))
+	report := mustCheck(t, checkHTTPPair(t, nil, []*artifact.Artifact{checkCapture(true, checkFixtureFlow())}))
 	if report.Compatible || report.Counts.Assumptions != 0 || !findingCode(report, "no_consumer_assumptions") {
 		t.Fatalf("empty comparison falsely certified compatibility: %+v", report)
 	}
@@ -220,7 +226,7 @@ func TestCheckProviderIdentityVersionAndKind(t *testing.T) {
 			consumer, provider := consumerCheckIdentity(), providerCheckIdentity()
 			consumer.ProviderMappings = map[string]bundle.ProviderRef{}
 			tc.edit(&consumer, &provider)
-			opts := Options{Mode: "consumer", Dependency: "stock", Consumer: writeCheckArchive(t, consumer, "complete", checkCapture(false, httpNormalizationFixture())), Provider: writeCheckArchive(t, provider, "complete", checkCapture(true, httpNormalizationFixture()))}
+			opts := Options{Mode: "consumer", Dependency: "stock", Consumer: writeCheckArchive(t, consumer, "complete", checkCapture(false, checkFixtureFlow())), Provider: writeCheckArchive(t, provider, "complete", checkCapture(true, checkFixtureFlow()))}
 			report := mustCheck(t, opts)
 			if report.Compatible || !findingCode(report, tc.code) {
 				t.Fatalf("incorrect provider binding was certified: %+v", report)
@@ -229,7 +235,7 @@ func TestCheckProviderIdentityVersionAndKind(t *testing.T) {
 	}
 	consumer := consumerCheckIdentity()
 	consumer.ProviderMappings = map[string]bundle.ProviderRef{"stock": {ApplicationID: "inventory", APIID: "inventory-api", Version: "v1"}}
-	report := mustCheck(t, Options{Mode: "provider", Consumer: writeCheckArchive(t, consumer, "complete", checkCapture(false, httpNormalizationFixture())), Provider: writeCheckArchive(t, providerCheckIdentity(), "complete", checkCapture(true, httpNormalizationFixture()))})
+	report := mustCheck(t, Options{Mode: "provider", Consumer: writeCheckArchive(t, consumer, "complete", checkCapture(false, checkFixtureFlow())), Provider: writeCheckArchive(t, providerCheckIdentity(), "complete", checkCapture(true, checkFixtureFlow()))})
 	if !report.Compatible || report.Binding != "declared_mapping" {
 		t.Fatalf("correct declared binding was not verified: %+v", report)
 	}
@@ -238,7 +244,7 @@ func TestCheckProviderIdentityVersionAndKind(t *testing.T) {
 func TestCheckFailedAndIncompleteProviderAttemptsAreNotWitnesses(t *testing.T) {
 	for _, kind := range []string{"failed", "skipped", "capture incomplete", "interrupted run", "open run"} {
 		t.Run(kind, func(t *testing.T) {
-			provider := checkCapture(true, httpNormalizationFixture())
+			provider := checkCapture(true, checkFixtureFlow())
 			state := "complete"
 			switch kind {
 			case "failed":
@@ -252,7 +258,13 @@ func TestCheckFailedAndIncompleteProviderAttemptsAreNotWitnesses(t *testing.T) {
 			case "open run":
 				state = "open"
 			}
-			opts := Options{Mode: "consumer", Consumer: writeCheckArchive(t, consumerCheckIdentity(), "complete", checkCapture(false, httpNormalizationFixture())), Provider: writeCheckArchive(t, providerCheckIdentity(), state, provider)}
+			opts := Options{Mode: "consumer", Consumer: writeCheckArchive(t, consumerCheckIdentity(), "complete", checkCapture(false, checkFixtureFlow())), Provider: writeCheckArchive(t, providerCheckIdentity(), state, provider)}
+			if kind == "capture incomplete" {
+				if _, err := Check(t.Context(), opts); !errors.Is(err, ErrInput) {
+					t.Fatalf("incomplete Arazzo capture accepted: %v", err)
+				}
+				return
+			}
 			report := mustCheck(t, opts)
 			if report.Compatible || report.Counts.Verified != 0 {
 				t.Fatalf("nonqualifying provider evidence was used: %+v", report)
@@ -268,38 +280,29 @@ func TestCheckFailedAndIncompleteProviderAttemptsAreNotWitnesses(t *testing.T) {
 }
 
 func TestCheckRejectsCorruptMissingAndStaleInputs(t *testing.T) {
-	for _, kind := range []string{"capture corruption", "missing provider collections", "stale provider response", "wrong consumer collection", "same archive", "invalid mode", "invalid ignored header"} {
+	for _, kind := range []string{"capture corruption", "missing provider document", "stale provider criterion", "wrong consumer document", "same archive", "invalid mode", "invalid ignored header"} {
 		t.Run(kind, func(t *testing.T) {
-			opts := checkHTTPPair(t, []*artifact.Artifact{checkCapture(false, httpNormalizationFixture())}, []*artifact.Artifact{checkCapture(true, httpNormalizationFixture())})
+			opts := checkHTTPPair(t, []*artifact.Artifact{checkCapture(false, checkFixtureFlow())}, []*artifact.Artifact{checkCapture(true, checkFixtureFlow())})
 			switch kind {
 			case "capture corruption":
-				path := filepath.Join(opts.Provider, "tests", "attempt-1.json")
-				if err := os.WriteFile(path, []byte(`{"not":"the committed attempt"}`), 0600); err != nil {
+				if err := os.WriteFile(filepath.Join(opts.Provider, "tests", "attempt-1.json"), []byte(`{"not":"the committed attempt"}`), 0600); err != nil {
 					t.Fatal(err)
 				}
-			case "missing provider collections":
-				if err := os.RemoveAll(filepath.Join(opts.Provider, "exports", "postman")); err != nil {
+			case "missing provider document":
+				if err := os.Remove(filepath.Join(opts.Provider, "exports", "arazzo", "arazzo.json")); err != nil {
 					t.Fatal(err)
 				}
-			case "stale provider response":
-				files, err := filepath.Glob(filepath.Join(opts.Provider, "exports", "postman", "*.json"))
-				if err != nil || len(files) != 1 {
-					t.Fatalf("provider collection: %v / %v", files, err)
-				}
-				data, err := os.ReadFile(files[0])
+			case "stale provider criterion":
+				path := filepath.Join(opts.Provider, "exports", "arazzo", "arazzo.json")
+				data, err := os.ReadFile(path)
 				if err != nil {
 					t.Fatal(err)
 				}
-				data = []byte(strings.Replace(string(data), `\"available\":true`, `\"available\":false`, -1))
-				if err := os.WriteFile(files[0], data, 0600); err != nil {
+				if err := os.WriteFile(path, []byte(strings.ReplaceAll(string(data), "$statusCode == 200", "$statusCode == 201")), 0600); err != nil {
 					t.Fatal(err)
 				}
-			case "wrong consumer collection":
-				files, err := filepath.Glob(filepath.Join(opts.Consumer, "exports", "postman", "sut-*.postman_collection.json"))
-				if err != nil || len(files) != 1 {
-					t.Fatalf("consumer SUT collection: %v / %v", files, err)
-				}
-				opts.ConsumerCollections = files
+			case "wrong consumer document":
+				opts.ConsumerArazzo = filepath.Join(opts.Provider, "exports", "arazzo", "arazzo.json")
 			case "same archive":
 				opts.Provider = opts.Consumer
 			case "invalid mode":
@@ -317,7 +320,7 @@ func TestCheckRejectsCorruptMissingAndStaleInputs(t *testing.T) {
 func TestCheckDependencySelectionAndManifestPaths(t *testing.T) {
 	consumer := consumerCheckIdentity()
 	consumer.DependencyKinds["currency"] = "mock"
-	opts := Options{Mode: "consumer", Consumer: writeCheckArchive(t, consumer, "complete", checkCapture(false, httpNormalizationFixture())), Provider: writeCheckArchive(t, providerCheckIdentity(), "complete", checkCapture(true, httpNormalizationFixture()))}
+	opts := Options{Mode: "consumer", Consumer: writeCheckArchive(t, consumer, "complete", checkCapture(false, checkFixtureFlow())), Provider: writeCheckArchive(t, providerCheckIdentity(), "complete", checkCapture(true, checkFixtureFlow()))}
 	if _, err := Check(t.Context(), opts); !errors.Is(err, ErrInput) {
 		t.Fatalf("ambiguous mock selection was silently guessed: %v", err)
 	}
@@ -331,7 +334,7 @@ func TestCheckDependencySelectionAndManifestPaths(t *testing.T) {
 		t.Fatalf("undeclared dependency was accepted: %v", err)
 	}
 	consumer.ProviderMappings = map[string]bundle.ProviderRef{"stock": {ApplicationID: "inventory", APIID: "inventory-api"}}
-	opts.Consumer = writeCheckArchive(t, consumer, "complete", checkCapture(false, httpNormalizationFixture()))
+	opts.Consumer = writeCheckArchive(t, consumer, "complete", checkCapture(false, checkFixtureFlow()))
 	opts.Dependency = ""
 	if report := mustCheck(t, opts); !report.Compatible || report.Dependency != "stock" || report.Binding != "declared_mapping" {
 		t.Fatalf("unique declared provider mapping was not selected: %+v", report)
@@ -339,7 +342,7 @@ func TestCheckDependencySelectionAndManifestPaths(t *testing.T) {
 }
 
 func TestCheckExplicitHeaderExceptionsAndCancellation(t *testing.T) {
-	consumer, provider := httpNormalizationFixture(), httpNormalizationFixture()
+	consumer, provider := checkFixtureFlow(), checkFixtureFlow()
 	provider.Request.HTTP.Headers["Authorization"] = []string{"Bearer other-dummy"}
 	opts := checkHTTPPair(t, []*artifact.Artifact{checkCapture(false, consumer)}, []*artifact.Artifact{checkCapture(true, provider)})
 	if report := mustCheck(t, opts); report.Compatible || report.Counts.Uncovered != 1 {
@@ -353,54 +356,6 @@ func TestCheckExplicitHeaderExceptionsAndCancellation(t *testing.T) {
 	cancel()
 	if _, err := Check(ctx, opts); !errors.Is(err, context.Canceled) {
 		t.Fatalf("cancelled comparison continued: %v", err)
-	}
-}
-
-func grpcCheckCapture(t *testing.T, provider bool, status healthpb.HealthCheckResponse_ServingStatus) *artifact.Artifact {
-	t.Helper()
-	descriptor, err := proto.Marshal(&descriptorpb.FileDescriptorSet{File: []*descriptorpb.FileDescriptorProto{protodesc.ToFileDescriptorProto(healthpb.File_grpc_health_v1_health_proto)}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	schema := artifact.SchemaRef{ID: "health", AssetID: "stock", Role: "dependency", Type: "protobuf", Services: []string{"grpc.health.v1.Health"}, Source: artifact.SchemaSource{Type: "protobuf_inline", Content: base64.StdEncoding.EncodeToString(descriptor)}}
-	if provider {
-		schema.Role, schema.AssetID = "sut", "inventory-api"
-	}
-	side := func(message proto.Message, sequence uint64) *artifact.GrpcMessage {
-		wire, err := proto.Marshal(message)
-		if err != nil {
-			t.Fatal(err)
-		}
-		projection, err := (protojson.MarshalOptions{UseProtoNames: true}).Marshal(message)
-		if err != nil {
-			t.Fatal(err)
-		}
-		count := int64(len(wire) + 5)
-		return &artifact.GrpcMessage{Kind: "grpc", Procedure: "/grpc.health.v1.Health/Check", Service: "grpc.health.v1.Health", Method: "Check", SchemaRef: "health", StreamKind: "unary", ObservedBytes: count,
-			Observation: &artifact.GrpcObservation{CompleteFrames: 1, RetainedFrames: 1, ObservedBytes: count, CountsComplete: true, EOF: true, End: "eof"},
-			Messages:    []artifact.GrpcPayload{{Index: 0, Type: string(message.ProtoReflect().Descriptor().FullName()), DecodeState: "decoded", Wire: &artifact.Body{Encoding: "base64", Bytes: base64.StdEncoding.EncodeToString(wire), OriginalBytes: int64(len(wire))}, Body: &artifact.Body{Encoding: "json", Text: string(projection)}, Observation: &artifact.GrpcPayloadObservation{WireBytes: uint64(len(wire)), StartSequence: sequence, CompleteSequence: sequence + 1, StartedOffsetNS: int64(sequence), CompletedOffsetNS: int64(sequence + 1)}}},
-		}
-	}
-	req, res := side(&healthpb.HealthCheckRequest{Service: "inventory"}, 0), side(&healthpb.HealthCheckResponse{Status: status}, 2)
-	res.HTTPStatus, res.StatusSource = 200, "trailers"
-	capture := checkCapture(provider, artifact.Flow{Protocol: "grpc", Request: artifact.Message{GRPC: req}, Response: artifact.Message{GRPC: res}})
-	capture.Schemas = []artifact.SchemaRef{schema}
-	return capture
-}
-
-func TestCheckNativeGRPCUsesVerifiedWireAndV3Collections(t *testing.T) {
-	for _, matching := range []bool{true, false} {
-		t.Run(fmt.Sprint(matching), func(t *testing.T) {
-			status := healthpb.HealthCheckResponse_SERVING
-			if !matching {
-				status = healthpb.HealthCheckResponse_NOT_SERVING
-			}
-			opts := checkHTTPPair(t, []*artifact.Artifact{grpcCheckCapture(t, false, healthpb.HealthCheckResponse_SERVING)}, []*artifact.Artifact{grpcCheckCapture(t, true, status)})
-			report := mustCheck(t, opts)
-			if report.Compatible != matching || matching && report.Counts.Verified != 1 || !matching && report.Counts.Mismatched != 1 {
-				t.Fatalf("native gRPC request/response contract comparison failed: %+v", report)
-			}
-		})
 	}
 }
 

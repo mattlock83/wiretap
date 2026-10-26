@@ -5,37 +5,28 @@
 ### The SDK cannot find the Wiretap binary
 
 Build the local runtime as described in [installation](local-release.md), then
-put it on `PATH` or set `WIRETAP_BINARY` to its absolute path. The adapters do not
-download or build executables. An external runtime instead uses
-`WIRETAP_BASE_URL`; use that mode only when your harness owns its lifecycle.
+put it on `PATH` or set `WIRETAP_BINARY` to its absolute path. The Jest adapter does not
+download or build executables.
 
 ### The control service or proxy will not start
 
-Managed SDKs choose available local ports. For an external runtime, check port
+Managed Jest chooses available local ports. For an external runtime, check port
 conflicts and `WIRETAP_HTTP_LISTEN` / `WIRETAP_PROXY_LISTEN`. The
 process must be allowed to bind local ports. A healthy control API at `/healthz`
 does not mean capture has started; test setup or `startRun` starts the proxy.
 
 ### No traffic is captured
 
-Send test calls to the session's `sutUrl` (Go: `SUTURL`; HTTP API: `sut_url`), with the real
-application address configured as `sut.url` or a per-test target override. Calls directly to
-the application bypass Wiretap. Use ordinary HTTP clients within `runTest`, an
-attempt's `run` callback, or the appropriate test adapter's trace context.
+Point the shared client at `process.env.WIRETAP_SUT_URL`, for example `supertest(process.env.WIRETAP_SUT_URL || app)`. Configure `sut.url` for an already running API, or `app` in the Jest wrapper for an in-process handler. Calls directly to the application bypass Wiretap. Capture includes per-test hooks and test callbacks; suite-wide hooks are outside individual attempts.
 
 ### Downstream dependency traffic is missing
 
-Declare the dependency and configure the application's client with its returned
-capture address: JavaScript uses `dependencyUrl(assetId)` and Go uses
-`session.Dependencies[assetID]`. HTTP dependencies use a gateway path such as
-`http://<wiretap-proxy>/__wiretap/dep/<asset-id>`; native gRPC uses a direct origin
-without that path. Calls directly to the mock bypass capture. Managed runtimes
-choose ports dynamically, so read the returned address.
+Declare the dependency and configure the application's client with the session's returned capture URL, such as `http://<wiretap-proxy>/__wiretap/dep/<asset-id>`. Calls directly to the mock bypass capture. Managed Jest chooses ports dynamically, so read the returned address through the adapter's session hook.
 
 Traced parallel sessions share their capture address and require inbound-to-outbound W3C
 propagation through the application. Untraced explicit sessions need isolated,
 session-scoped routes. In-process mocks that never send traffic to the proxy
-cannot be captured. See [tracing](otel-adoption.md#choosing-a-supported-setup).
+cannot be captured. See [tracing](otel-adoption.md#choose-a-capture-model).
 
 ### HTTPS or an upstream connection fails
 
@@ -88,17 +79,9 @@ the same test. Jest skips per-test hooks for `.concurrent`;
 put concurrent fixtures inside the callback. Suite-wide hooks do not belong to
 an individual attempt. See the [Jest guide](../sdk/js/docs/jest.md).
 
-### Go tests passed but no new archive appeared
+### Capture ended during a crash or timeout
 
-Use `go test -count=1 ./...` to produce fresh evidence instead of reusing Go's
-test cache. Add `wiretap.Run(m)` in `TestMain` and call `wiretap.StartTest(t)` in
-each test or shared setup helper. For parallel tests call `StartTest` after
-`t.Parallel()` and enable explicit sessions. See the [Go guide](../sdk/go/README.md).
-
-### Capture ended during a panic or timeout
-
-Ordinary assertion failures still finalize exports. Managed Go and JavaScript
-SDKs hold a stdin lifeline to their child runtime. If the owning test process
+Ordinary assertion failures still finalize exports. The Jest adapter holds a stdin lifeline to its child runtime. If the owning test process
 disappears, EOF requests graceful shutdown so the runtime stops and preserves
 an interrupted raw archive with pending attempts.
 
@@ -117,24 +100,19 @@ requests. A timeout records a failed, incomplete attempt. Late completions are
 never added to a later test.
 
 One owner must finalize a shared run after every worker has torn down its
-attempts. Use `manageRuntime: false` in worker integrations. `finishRun` stops
+attempts. The Jest global teardown owns shared finalization. `finishRun` stops
 the proxy and finalizes the bundle; the control process stays available.
 
 ## Schemas and reports
 
-### Setup requires an OpenAPI or Protobuf contract
-
-For gRPC, reflection is the default source. If the upstream does not expose it,
-configure local `.proto` files or a descriptor set as shown in the
-[gRPC guide](grpc-user-guide.md). Every gRPC boundary requires a contract;
-`schema_required: false` applies only to HTTP.
+### Setup requires an OpenAPI contract
 
 Set the main HTTP API's `schema` in `.wiretap.yaml`, or supply it through the
 SDK/API. Its explicit `schema_required: false` opt-out remains available. HTTP
 dependencies need no spec by default: add one to opt into validation and
 coverage, or set `schema_required: true` to enforce availability. Supplied specs
 still validate even with `schema_required: false`. Omitted schemas leave
-contract coverage unknown while calls and Postman examples remain captured.
+contract coverage unknown while calls remain captured. Arazzo export still requires eligible complete JSON/REST evidence.
 
 ### Bodies are truncated in a bundle
 
@@ -169,8 +147,7 @@ the verdict means.
 `--artifacts` expects a local extracted directory with application IDs as the
 top-level folders, such as `api-evidence/inventory-service/<run-id>/bundle.json`.
 The folder must match the captured application ID. Keep `tests/`, `contracts/`,
-`payloads/` and `exports/postman/` alongside each manifest. A ZIP/TAR file or a
-folder containing only collections cannot be discovered as a complete run.
+`payloads/` and `exports/arazzo/` alongside each manifest. A ZIP/TAR file or a folder containing only workflows cannot be discovered as a complete run.
 Restore real directories and files rather than symbolic links. An invalid or
 unsupported manifest anywhere in the scanned store fails discovery. Keep the
 local root dedicated to selected snapshots; the guide documents its
@@ -218,7 +195,7 @@ fields are not supported.
 `provider_response_mismatch` checks the whole captured response. A mock returning
 `{"id":"42"}` and a provider returning `{"id":"42","label":"demo"}` differ,
 even if `label` is optional and the running consumer ignores it. Status, other
-body values, response headers and gRPC status details may also differ.
+body values and response headers may also differ.
 
 Inspect `differences` and the referenced exchanges. Decide whether the mock
 should reflect the provider example, or whether the provider tested a different
@@ -297,58 +274,21 @@ declaration comparison. The original consumer archive still has unknown
 contract coverage. A provider spec without a matching passing provider test
 cannot turn an uncovered request into a verified one.
 
-### The gRPC examples agree, but Protobuf declarations differ
+### An Arazzo workflow is stale or does not match its archive
 
-`protobuf_contract_mismatch` means observed wire checks passed but the selected
-method's input/output declarations disagree. Both examples can use `READY = 1`
-while one enum also declares `PENDING = 2`. An unused reachable field can also
-change its kind, number, cardinality, presence, oneof, map or default without
-changing the captured JSON. Full reachable enum sets and field rules are
-compared, so those changes can fail conservatively.
-
-Inspect the selected method's frozen request/response graphs. Unrelated
-services, methods and messages are not diffed; declaration order is normalized.
-Changing the preferred enum label among aliases for one numeric value remains
-drift, as do syntax or enum open/closed semantics.
-A safe addition may still require investigation under this equality policy.
-`provider_wire_mismatch` instead identifies an observed cross-decoding failure;
-`protobuf_contract_unavailable` identifies a declaration comparison that cannot
-be completed reliably.
-
-A verified gRPC match has
-`contract_check: "protobuf_rules_and_observed_wire"`. Custom validation options
-are compared as opaque declaration bytes, not executed. Equal custom max-length
-annotations do not prove the observed string satisfies them, and plain Protobuf
-does not declare string or collection length bounds. Keep validation assertions
-in the test suites; captured length/value differences still fail the ordinary
-example comparison.
-
-### A collection is stale or does not match its archive
-
-The checker verifies collection attempt IDs and saved interactions against the
-raw archive. A collection from another run, a hand-edited response, a missing
-attempt or an incomplete file set cannot replace the source evidence. Point
-both inputs to the intended versions, then regenerate from those exact archives:
+The checker regenerates workflow content from the complete archive and verifies the selected document and source companions. A document from another run, hand-edited request, altered source or missing eligible workflow cannot replace the evidence. Regenerate from the exact intended archives:
 
 ```sh
-wiretap export --bundle ./consumer-run --format postman --output-dir ./consumer-run/exports/postman
-wiretap export --bundle ./provider-run --format postman --output-dir ./provider-run/exports/postman
+wiretap export --bundle ./consumer-run --format arazzo --output-dir ./consumer-run/exports/arazzo
+wiretap export --bundle ./provider-run --format arazzo --output-dir ./provider-run/exports/arazzo
 ```
 
-Keep the original contracts and payloads. Regeneration cannot recover missing
-raw evidence; restore the complete archive when integrity checks fail. Directory
-inputs discover `*.postman_collection.json` recursively. Supply
-`--consumer-collection` or `--provider-collection` in explicit pair mode when
-the files live elsewhere. With `--artifacts`, keep each run's collections in
-its own `exports/postman/`; collection overrides are rejected. Native gRPC replay
-URLs and source-schema settings may differ;
-HTTP collection URLs must still agree with their own archive. Request/response
-evidence must agree with the archive in both cases.
+Keep contracts and payloads. Regeneration cannot recover missing evidence; restore complete archives when integrity checks fail. Explicit pairs accept `--consumer-arazzo` and `--provider-arazzo`; discovery and run sets use each run's `exports/arazzo/arazzo.json`. Strict whole-run export can fail for incomplete or unrepresentable eligible traffic even on another boundary or an excluded provider attempt. Verification uses the archives for actual response evidence and does not execute workflow expressions. See [Arazzo limits](assumption-checks.md#arazzo-check-inputs).
 
 ### The check failed and no JSON report appeared
 
 Invalid flags, missing archives, corrupt evidence and missing or stale
-collections return exit `2` with a diagnostic on stderr. They may prevent the
+Arazzo inputs return exit `2` with a diagnostic on stderr. They may prevent the
 checker from constructing a report, even with `--format json`. An output write
 failure can also prevent a new report. Preserve the command's exit status and
 stderr; use a fresh output path so an old file cannot be confused with this run.
@@ -356,10 +296,9 @@ See the [CI gate example](ci-example.md#gate-consumerprovider-assumptions-offlin
 
 The output's parent directory must exist. With `--artifacts`, `--output` must
 be outside the entire artifact root and the local input archive. In explicit
-pair mode it must be outside both archives and supplied Postman directories.
-It cannot replace a collection file. Once a valid pair is selected, incomplete
+pair mode it must be outside both archives and the selected Arazzo export trees. It cannot replace a workflow or source companion. Once a valid pair is selected, incomplete
 runs, unverifiable provider identities and zero captured calls to the selected
-mock instead produce an unverified result before collections are required.
+mock instead produce an unverified result before Arazzo verification.
 
 ### The check passed, but an assertion or expected mock call is missing
 

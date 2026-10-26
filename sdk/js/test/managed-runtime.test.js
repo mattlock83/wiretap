@@ -69,7 +69,7 @@ async function fixture(t, behavior = {}) {
 
 test('managed runtime uses owned ephemeral listeners and returns the exact once-only receipt', async t => {
   const f = await fixture(t);
-  const outputs = { coverage: ['text'], postman: true };
+  const outputs = { coverage: ['text'], arazzo: true };
   const runtime = await startManagedRuntime({ binary: '/custom/wiretap', config: '.wiretap.yaml', cwd: f.outputDir, outputDir: f.outputDir, outputs });
   assert.equal(runtime.baseUrl, 'http://127.0.0.1:12345/');
   assert.equal(runtime.sutUrl, 'http://127.0.0.1:23456');

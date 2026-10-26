@@ -15,7 +15,6 @@ import (
 	"github.com/mattlock83/wiretap/internal/artifact"
 	"github.com/mattlock83/wiretap/internal/assumptions"
 	"github.com/mattlock83/wiretap/internal/bundle"
-	"github.com/mattlock83/wiretap/internal/postman"
 )
 
 func cliCheckArchive(t *testing.T, consumer bool, path string, status int, response string, states ...string) string {
@@ -57,25 +56,7 @@ func cliCheckArchiveWithContracts(t *testing.T, consumer bool, path string, stat
 	if err := writer.Finalize(state); err != nil {
 		t.Fatal(err)
 	}
-	exports, err := postman.GenerateAll(writer.Path(), "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	directory := filepath.Join(writer.Path(), "exports", "postman")
-	if err := os.MkdirAll(directory, 0755); err != nil {
-		t.Fatal(err)
-	}
-	for _, export := range exports {
-		file, err := os.Create(filepath.Join(directory, export.Filename))
-		if err != nil {
-			t.Fatal(err)
-		}
-		writeErr := postman.WriteExport(file, export)
-		closeErr := file.Close()
-		if writeErr != nil || closeErr != nil {
-			t.Fatalf("write collection: %v / %v", writeErr, closeErr)
-		}
-	}
+	cliWriteCheckArazzo(t, writer.Path(), filepath.Join(writer.Path(), "exports", "arazzo"))
 	return writer.Path()
 }
 
@@ -245,12 +226,12 @@ func TestCLIAssumptionCheckProtectsInputsAndExistingReports(t *testing.T) {
 	if err := os.WriteFile(output, []byte("keep existing"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	badCollection := filepath.Join(t.TempDir(), "bad.json")
-	if err := os.WriteFile(badCollection, []byte(`{"info":{},"item":[]}`), 0600); err != nil {
+	badWorkflow := filepath.Join(t.TempDir(), "bad.json")
+	if err := os.WriteFile(badWorkflow, []byte(`{"info":{},"item":[]}`), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if code := execute(context.Background(), append(args, "--consumer-collection", badCollection, "--output", output)); code != 2 {
-		t.Fatalf("invalid collection exit %d", code)
+	if code := execute(context.Background(), append(args, "--consumer-arazzo", badWorkflow, "--output", output)); code != 2 {
+		t.Fatalf("invalid workflow exit %d", code)
 	}
 	data, err := os.ReadFile(output)
 	if err != nil || string(data) != "keep existing" {

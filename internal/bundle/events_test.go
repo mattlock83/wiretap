@@ -11,12 +11,6 @@ import (
 	"time"
 
 	"github.com/mattlock83/wiretap/internal/artifact"
-	"google.golang.org/protobuf/encoding/protojson"
-	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/reflect/protodesc"
-	"google.golang.org/protobuf/reflect/protoreflect"
-	"google.golang.org/protobuf/types/descriptorpb"
-	"google.golang.org/protobuf/types/dynamicpb"
 )
 
 func eventFixture(t *testing.T, identity Identity, schemas []artifact.SchemaRef) (*Writer, *artifact.Artifact) {
@@ -93,95 +87,6 @@ func binaryEventPayload(name, encoding string, raw []byte) artifact.EventPayload
 		availability = "empty"
 	}
 	return artifact.EventPayload{Name: name, Encoding: encoding, Availability: availability, Body: &artifact.Body{Encoding: "base64", Bytes: base64.StdEncoding.EncodeToString(raw)}}
-}
-
-func bidiContract(t *testing.T) (artifact.SchemaRef, protoreflect.MessageDescriptor) {
-	t.Helper()
-	file := &descriptorpb.FileDescriptorProto{
-		Name: proto.String("chat.proto"), Package: proto.String("example.chat"), Syntax: proto.String("proto3"),
-		MessageType: []*descriptorpb.DescriptorProto{{Name: proto.String("Message"), Field: []*descriptorpb.FieldDescriptorProto{{Name: proto.String("text"), Number: proto.Int32(1), Label: descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL.Enum(), Type: descriptorpb.FieldDescriptorProto_TYPE_STRING.Enum()}}}},
-		Service:     []*descriptorpb.ServiceDescriptorProto{{Name: proto.String("Chat"), Method: []*descriptorpb.MethodDescriptorProto{{Name: proto.String("Exchange"), InputType: proto.String(".example.chat.Message"), OutputType: proto.String(".example.chat.Message"), ClientStreaming: proto.Bool(true), ServerStreaming: proto.Bool(true)}}}},
-	}
-	descriptor, err := protodesc.NewFile(file, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	raw, err := proto.Marshal(&descriptorpb.FileDescriptorSet{File: []*descriptorpb.FileDescriptorProto{file}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return artifact.SchemaRef{ID: "chat-contract", Role: "provided", AssetID: "chat", Type: "protobuf", Protocol: "grpc", Services: []string{"example.chat.Chat"}, Source: artifact.SchemaSource{Type: "protobuf_inline", Content: base64.StdEncoding.EncodeToString(raw)}}, descriptor.Messages().ByName("Message")
-}
-
-func chatPayloads(t *testing.T, descriptor protoreflect.MessageDescriptor, schema artifact.SchemaRef, text string) []artifact.EventPayload {
-	t.Helper()
-	message := dynamicpb.NewMessage(descriptor)
-	message.Set(descriptor.Fields().ByName("text"), protoreflect.ValueOfString(text))
-	wire, err := proto.Marshal(message)
-	if err != nil {
-		t.Fatal(err)
-	}
-	projection, err := protojson.Marshal(message)
-	if err != nil {
-		t.Fatal(err)
-	}
-	raw := binaryEventPayload("wire", "protobuf", wire)
-	raw.MessageType = string(descriptor.FullName())
-	raw.WriterSchema = &artifact.ContractLink{ID: schema.ID, SHA256: schema.Source.SHA256}
-	decoded := jsonEventPayload("decoded", string(projection))
-	decoded.DerivedFrom = "wire"
-	decoded.Transformation = "protobuf-json-v1"
-	decoded.ReaderSchema = &artifact.ContractLink{ID: schema.ID, SHA256: schema.Source.SHA256}
-	return []artifact.EventPayload{raw, decoded}
-}
-
-func TestProviderOnlyBidirectionalGRPCEventBundles(t *testing.T) {
-	for _, finish := range []string{"complete", "cancelled", "incomplete"} {
-		t.Run(finish, func(t *testing.T) {
-			schema, descriptor := bidiContract(t)
-			w, capture := eventFixture(t, Identity{Application: &Application{Name: "Chat server", ID: "example/chat-server"}}, []artifact.SchemaRef{schema})
-			events := []artifact.InteractionEvent{
-				{Direction: "received", Kind: "headers", Metadata: map[string]json.RawMessage{"grpc": json.RawMessage(`{"metadata":{"content-type":["application/grpc"]}}`)}},
-				{Direction: "received", Kind: "message", Payloads: chatPayloads(t, descriptor, capture.Schemas[0], "hello")},
-				{Direction: "sent", Kind: "headers", Metadata: map[string]json.RawMessage{"grpc": json.RawMessage(`{"metadata":{"server":["chat"]}}`)}},
-				{Direction: "sent", Kind: "message", Payloads: chatPayloads(t, descriptor, capture.Schemas[0], "welcome")},
-				{Direction: "received", Kind: "message", Payloads: chatPayloads(t, descriptor, capture.Schemas[0], "another")},
-			}
-			state := "complete"
-			switch finish {
-			case "complete":
-				events = append(events,
-					artifact.InteractionEvent{Direction: "received", Kind: "half_close"},
-					artifact.InteractionEvent{Direction: "sent", Kind: "message", Payloads: chatPayloads(t, descriptor, capture.Schemas[0], "goodbye")},
-					artifact.InteractionEvent{Direction: "sent", Kind: "trailers", Metadata: map[string]json.RawMessage{"grpc": json.RawMessage(`{"status":0,"message":"","metadata":{"grpc-status":["0"]}}`)}},
-					artifact.InteractionEvent{Direction: "sent", Kind: "complete"})
-			case "cancelled":
-				events = append(events, artifact.InteractionEvent{Direction: "received", Kind: "cancel", Metadata: map[string]json.RawMessage{"grpc": json.RawMessage(`{"status":1,"message":"caller cancelled"}`)}})
-			case "incomplete":
-				state = "incomplete"
-				capture.CaptureIncomplete = true
-				capture.CaptureDiagnostics = []string{"capture ended before terminal status was observed"}
-			}
-			capture.Traffic = []artifact.Flow{{ID: "chat-stream", Protocol: "grpc", Interaction: &artifact.Interaction{Kind: "stream", Boundary: artifact.BoundaryRef{Role: "provided", ID: "chat"}, Transport: "http2", Operation: "/example.chat.Chat/Exchange", CaptureState: state, StreamMode: "bidirectional", Events: observedEvents(events...)}}}
-			run, loaded, attempt := loadEventFixture(t, w, capture)
-			if len(run.ProvidedAPIs) != 1 || run.ProvidedAPIs[0].ID != "chat" || len(run.Dependencies) != 0 {
-				t.Fatalf("provider-only inventory invented dependencies or lost API: %+v / %+v", run.ProvidedAPIs, run.Dependencies)
-			}
-			if !sameJSON(run.RequiredCapabilities, []string{eventCapability}) || !sameJSON(attempt.RequiredCapabilities, []string{eventCapability}) {
-				t.Fatalf("missing event capability: %v / %v", run.RequiredCapabilities, attempt.RequiredCapabilities)
-			}
-			got := loaded.Traffic[0].Interaction
-			if got.Events[1].DirectionSequence != 1 || got.Events[3].DirectionSequence != 1 || got.Events[4].DirectionSequence != 2 {
-				t.Fatal("interleaving changed directional message order")
-			}
-			if finish == "incomplete" && (!loaded.CaptureIncomplete || got.CaptureState != "incomplete" || got.Events[len(got.Events)-1].Kind != "message") {
-				t.Fatal("incomplete stream acquired a synthetic terminal status")
-			}
-			if finish == "cancelled" && got.Events[len(got.Events)-1].Kind != "cancel" {
-				t.Fatal("cancellation was lost")
-			}
-		})
-	}
 }
 
 func TestConsumerOnlyUIGraphQLEventBundle(t *testing.T) {

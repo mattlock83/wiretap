@@ -137,7 +137,6 @@ func TestContractPackageRejectsAmbiguousAndUnsafeSources(t *testing.T) {
 		"root digest mismatch":     {Type: "inline", Content: "{}", SHA256: "wrong"},
 		"invalid base64":           {Type: "package", Path: "event.avsc", Files: []artifact.ContractFile{{Path: "event.avsc", Content: "!", Encoding: "base64"}}},
 		"unknown encoding":         {Type: "package", Path: "event.avsc", Files: []artifact.ContractFile{{Path: "event.avsc", Content: "{}", Encoding: "gzip"}}},
-		"unresolved import paths":  {Type: "inline", Content: "{}", ImportPaths: []string{"./types"}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			w, err := New(t.TempDir())

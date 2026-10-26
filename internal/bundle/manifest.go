@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/mattlock83/wiretap/internal/artifact"
 	"io"
+	"strings"
 )
 
 // DecodeManifest validates the declarations available in a run manifest without
@@ -15,6 +17,15 @@ import (
 func DecodeManifest(data []byte) (*Run, error) {
 	if err := rejectDuplicateKeys(data); err != nil {
 		return nil, err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return nil, err
+	}
+	for key := range fields {
+		if strings.EqualFold(key, "contract_resolutions") {
+			return nil, errors.New("legacy native gRPC contract resolution metadata is unsupported")
+		}
 	}
 	var run Run
 	decoder := json.NewDecoder(bytes.NewReader(data))
@@ -30,6 +41,25 @@ func DecodeManifest(data []byte) (*Run, error) {
 	}
 	if err := checkCapabilities(run.RequiredCapabilities); err != nil {
 		return nil, err
+	}
+	for _, schema := range run.Schemas {
+		if err := validateSchemaBoundary(schema); err != nil {
+			return nil, err
+		}
+	}
+	for _, group := range [][]API{run.ProvidedAPIs, run.Dependencies} {
+		for _, api := range group {
+			for _, protocol := range api.Protocols {
+				if artifact.UnsupportedRPCProtocol(protocol) {
+					return nil, errors.New("native gRPC API inventory is unsupported")
+				}
+			}
+			for _, contract := range api.Contracts {
+				if strings.EqualFold(strings.TrimSpace(contract.Type), "protobuf") {
+					return nil, errors.New("protobuf contracts are unsupported")
+				}
+			}
+		}
 	}
 	if err := validateApplication(run.Application); err != nil {
 		return nil, err

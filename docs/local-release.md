@@ -59,16 +59,10 @@ commit before preparing a build from it.
 npm ci --prefix sdk/js
 mkdir -p dist/v0.1.0-local
 npm pack ./sdk/js --ignore-scripts --pack-destination ./dist/v0.1.0-local
-node scripts/package-smoke.mjs
 node scripts/runner-smoke.mjs
-node scripts/go-sdk-smoke.mjs
 ```
 
-The package has a source-file allowlist and public exports for `@wiretap/sdk`,
-`@wiretap/sdk/tracing`, `@wiretap/sdk/jest`, `@wiretap/sdk/jest-environment`,
-`@wiretap/sdk/playwright`, `@wiretap/sdk/mocha` and `@wiretap/sdk/managed-runtime`. It includes TypeScript declarations and a copy
-of the MIT license. Test fixtures, test dependencies and the lockfile are
-excluded from the package.
+The package exports the Jest adapter (`@wiretap/sdk` and `@wiretap/sdk/jest`), Jest environment and tracing helpers. It includes TypeScript declarations and the MIT license. Tests, fixture dependencies and lockfiles are excluded from the package.
 
 After the final binary build, append the SDK tarball's checksum to the same
 manifest. From `dist/v0.1.0-local`, use `shasum -a 256 wiretap-sdk-0.1.0.tgz >> SHA256SUMS`
@@ -84,49 +78,9 @@ Use the filename printed by `npm pack` if the SDK version changes. A subsequent
 binary build rewrites `SHA256SUMS`, so repeat this step after rebuilding. Retain
 the versioned directory, release notes and matching source checkout together.
 
-For a portable Go SDK source handoff, first commit the intended source and build
-from a clean checkout. Then create a local source archive from that same `HEAD`:
+The Jest runner smoke script builds the binary, packs the SDK and installs it in a clean external project. It verifies captured outcomes, final receipts, cleanup, JSON/text coverage and Arazzo conformance to the pinned schema. The checks compare exported workflows with raw archive evidence and retained payloads, and preserve deliberately failing Jest outcomes. npm may access its registry/cache; nothing is published.
 
-```sh
-git archive --format=tar.gz --prefix=wiretap-v0.1.0-local/ --output=dist/v0.1.0-local/wiretap_v0.1.0-local_source.tar.gz HEAD
-```
-
-Append its checksum in the same way as the SDK tarball. `git archive` excludes
-uncommitted changes; do not pair it with a modified source build. Extracted source
-can supply the Go module replacement described in the installation guide.
-
-The cross-platform `package-smoke.mjs` builds the local binary and packs the SDK,
-installs the tarball into a temporary project outside this checkout, starts an
-ordinary HTTP application and runs existing Node tests through Wiretap. It
-checks the exact returned archive/output paths, coverage JSON, Postman collection
-and recorded outcomes for both passing tests and a deliberately failing test.
-The failing test must retain exit status 1 while still writing its outputs.
-The temporary project is removed afterward. npm may access its dependency
-registry/cache; nothing is published.
-
-The runner smoke additionally installs the packed SDK with Jest, Playwright Test
-and Mocha in a clean project. It checks retries, failing cleanup hooks, preserved
-user fixtures, coverage and Postman conformance to the pinned official HTTP
-schema. Exported request/response content is compared with raw archive records
-and retained payload files.
-It also type-checks CommonJS and ESM consumers with strict TypeScript settings.
-Playwright API tests do not need a browser installation. The Linux CI lane
-additionally runs the [browser example](../examples/playwright-runner/README.md)
-with Chromium and parallel API tests.
-The packed-runner smoke covers Mocha's configuration wrapper and fixture lifecycle.
-
-The Go SDK smoke uses a clean external Go module with a local replacement for
-this checkout. It runs standard test packages concurrently, verifies coverage
-and Postman output, repeated attempts, final cleanup outcomes and output
-overrides, and checks that panics and test timeouts stop the owned runtime.
-It requires Go and Node.js, with no npm installation. The
-[Go suite example](../examples/go-suite/README.md) is also runnable directly.
-
-The development-only Mocha 11 compatibility fixture uses patched `diff` and
-`serialize-javascript` overrides; these do not change consumers' Mocha dependencies.
-Regenerate the SDK lockfile from a directory containing only its package files,
-then verify a clean install with CI's npm versions. Updating it beside an existing
-`node_modules` tree can omit optional packages for other platforms.
+The [Express/Jest demo](../examples/existing-jest/README.md) checks a larger unchanged external suite. Regenerate lockfiles from package manifests and verify a clean install when dependencies change.
 
 Pass `--binary /absolute/path/to/wiretap` to check a locally built release binary.
 On Windows the script invokes npm's JavaScript entry point from the standard

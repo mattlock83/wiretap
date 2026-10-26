@@ -9,7 +9,6 @@ import (
 
 	"github.com/mattlock83/wiretap/internal/arazzo"
 	"github.com/mattlock83/wiretap/internal/artifact"
-	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 )
 
 func arazzoCheckFlow() artifact.Flow {
@@ -64,7 +63,7 @@ func editCheckArazzo(t *testing.T, path string, edit func(map[string]any)) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	value, err := decodeCollectionJSON(data)
+	value, err := decodeProjectionJSON(data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -278,25 +277,13 @@ func TestVerifyArazzoAllowsUnselectedBoundariesAndOnlyReadsSelectedSources(t *te
 }
 
 func TestVerifyArazzoRejectsPartiallyRepresentedSelectedTraffic(t *testing.T) {
-	for _, protocol := range []string{"non-JSON HTTP", "gRPC"} {
-		t.Run(protocol, func(t *testing.T) {
-			capture := checkCapture(false, arazzoCheckFlow(), arazzoCheckFlow())
-			if protocol == "gRPC" {
-				capture = grpcCheckCapture(t, false, healthpb.HealthCheckResponse_SERVING)
-				eligible := arazzoCheckFlow()
-				eligible.ID, eligible.Channel, eligible.AssetID = "http-extra", "sut_to_dependency", "stock"
-				capture.Traffic = append(capture.Traffic, eligible)
-			} else {
-				capture.Traffic[1].Response.HTTP.Headers["Content-Type"] = []string{"text/plain"}
-				capture.Traffic[1].Response.HTTP.Body.Text = "plain response"
-			}
-			root := writeCheckArchive(t, consumerCheckIdentity(), "complete", capture)
-			writeCheckArazzo(t, root)
-			_, _, err := loadArazzoCheckSnapshot(t, root).verifyArazzo("", "stock")
-			if err == nil || !strings.Contains(err.Error(), "not completely representable") {
-				t.Fatalf("partial selected traffic certified: %v", err)
-			}
-		})
+	capture := checkCapture(false, arazzoCheckFlow(), arazzoCheckFlow())
+	capture.Traffic[1].Response.HTTP.Headers["Content-Type"] = []string{"text/plain"}
+	capture.Traffic[1].Response.HTTP.Body.Text = "plain response"
+	root := writeCheckArchive(t, consumerCheckIdentity(), "complete", capture)
+	writeCheckArazzo(t, root)
+	if _, _, err := loadArazzoCheckSnapshot(t, root).verifyArazzo("", "stock"); err == nil || !strings.Contains(err.Error(), "not completely representable") {
+		t.Fatalf("partial selected traffic certified: %v", err)
 	}
 }
 

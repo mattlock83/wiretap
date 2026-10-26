@@ -174,7 +174,7 @@ func loadHTTPContractFiles(ctx context.Context, ref *artifact.SchemaRef) (map[st
 	if err != nil {
 		return nil, nil, "", err
 	}
-	if _, err := decodeCollectionJSON(manifestData); err != nil {
+	if _, err := decodeProjectionJSON(manifestData); err != nil {
 		return nil, nil, "", fmt.Errorf("invalid contract manifest: %w", err)
 	}
 	var manifest httpContractManifest
@@ -228,7 +228,7 @@ func loadHTTPContractFiles(ctx context.Context, ref *artifact.SchemaRef) (map[st
 		if hex.EncodeToString(digest[:]) != entry.SHA256 {
 			return nil, nil, "", fmt.Errorf("frozen OpenAPI file %q hash mismatch", entry.Path)
 		}
-		value, err := decodeCollectionJSON(data)
+		value, err := decodeProjectionJSON(data)
 		if err != nil {
 			return nil, nil, "", fmt.Errorf("invalid frozen OpenAPI JSON %q: %w", entry.Path, err)
 		}
@@ -382,7 +382,7 @@ func preciseHTTPBody(message *artifact.HttpMessage) error {
 	if len(raw) == 0 {
 		return nil
 	}
-	value, err := decodeCollectionJSON(raw)
+	value, err := decodeProjectionJSON(raw)
 	if err != nil {
 		// The validator reports ordinary JSON syntax errors. Ambiguity and
 		// unsupported normalization limits cannot earn validation assurance.

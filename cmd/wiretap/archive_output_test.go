@@ -13,23 +13,18 @@ import (
 
 	"github.com/mattlock83/wiretap/internal/archiveoutput"
 	"github.com/mattlock83/wiretap/internal/bundle"
-	"github.com/mattlock83/wiretap/internal/postman"
 )
 
 func TestCLIOutputsProtectDirectlyReferencedExportPayloads(t *testing.T) {
-	for _, target := range []string{"report", "report hardlink", "postman", "all coverage", "all postman", "all receipt"} {
+	for _, target := range []string{"report", "report hardlink", "arazzo", "all coverage", "all arazzo", "all receipt"} {
 		t.Run(target, func(t *testing.T) {
-			root := postmanBundleFixture(t)
+			root := httpBundleFixture(t)
 			relative := filepath.Join("exports", "coverage.json")
 			if target == "all receipt" {
 				relative = filepath.Join("exports", "result.json")
 			}
-			if target == "all postman" {
-				exports, err := postman.Generate(root, "")
-				if err != nil {
-					t.Fatal(err)
-				}
-				relative = filepath.Join("exports", "postman", exports[0].Filename)
+			if target == "all arazzo" {
+				relative = filepath.Join("exports", "arazzo", "arazzo.json")
 			}
 			before := relocateHTTPBodyReference(t, root, relative)
 			source := filepath.Join(root, relative)
@@ -41,10 +36,10 @@ func TestCLIOutputsProtectDirectlyReferencedExportPayloads(t *testing.T) {
 				}
 			}
 			args := []string{"report", "--bundle", root, "--output", output}
-			if target == "postman" {
-				args = []string{"export", "--bundle", root, "--format", "postman", "--output", output}
+			if target == "arazzo" {
+				args = []string{"export", "--bundle", root, "--format", "arazzo", "--output", output}
 			}
-			if target == "all coverage" || target == "all postman" || target == "all receipt" {
+			if target == "all coverage" || target == "all arazzo" || target == "all receipt" {
 				args = []string{"report", "--bundle", root, "--format", "all"}
 			}
 			if code := execute(context.Background(), args); code == 0 {
@@ -123,7 +118,7 @@ func TestCLICoverageOutputProtectsEvidence(t *testing.T) {
 		for _, format := range []string{"json", "yaml", "text"} {
 			for _, target := range []string{"manifest", "attempt", "directory alias", "leaf symlink", "hardlink"} {
 				t.Run(command+"/"+format+"/"+target, func(t *testing.T) {
-					root := postmanBundleFixture(t)
+					root := httpBundleFixture(t)
 					manifest := filepath.Join(root, "bundle.json")
 					before, err := os.ReadFile(manifest)
 					if err != nil {
@@ -165,7 +160,7 @@ func TestCLICoverageOutputProtectsEvidence(t *testing.T) {
 }
 
 func TestCLIReportRegeneratesInsideExports(t *testing.T) {
-	root := postmanBundleFixture(t)
+	root := httpBundleFixture(t)
 	exports := filepath.Join(root, "exports")
 	if err := os.Mkdir(exports, 0755); err != nil {
 		t.Fatal(err)
@@ -188,7 +183,7 @@ func TestCLIReportRegeneratesInsideExports(t *testing.T) {
 }
 
 func TestCLIAllOutputsProtectSourceBackedByExports(t *testing.T) {
-	root := postmanBundleFixture(t)
+	root := httpBundleFixture(t)
 	exports := filepath.Join(root, "exports")
 	if err := os.Mkdir(exports, 0755); err != nil {
 		t.Fatal(err)
@@ -212,7 +207,7 @@ func TestCLIAllOutputsProtectSourceBackedByExports(t *testing.T) {
 func TestArchiveOutputGuardProtectsSourcesBackedByExports(t *testing.T) {
 	for _, alias := range []string{"file", "directory"} {
 		t.Run(alias, func(t *testing.T) {
-			root := postmanBundleFixture(t)
+			root := httpBundleFixture(t)
 			exports := filepath.Join(root, "exports")
 			if err := os.Mkdir(exports, 0755); err != nil {
 				t.Fatal(err)
@@ -247,10 +242,10 @@ func TestArchiveOutputGuardProtectsSourcesBackedByExports(t *testing.T) {
 	}
 }
 
-func TestCLIPostmanProtectsSourceDestinations(t *testing.T) {
+func TestCLIArazzoProtectsSourceDirectories(t *testing.T) {
 	for _, target := range []string{"manifest", "source directory", "directory alias", "nested directory alias", "exports symlink"} {
 		t.Run(target, func(t *testing.T) {
-			root := postmanMockBundleFixture(t)
+			root := httpMockBundleFixture(t)
 			option, output := "--output", filepath.Join(root, "bundle.json")
 			switch target {
 			case "source directory":
@@ -271,7 +266,7 @@ func TestCLIPostmanProtectsSourceDestinations(t *testing.T) {
 				}
 				option, output = "--output-dir", filepath.Join(root, "exports", "new", "nested")
 			}
-			if code := execute(context.Background(), []string{"export", "--bundle", root, "--format", "postman", option, output}); code == 0 {
+			if code := execute(context.Background(), []string{"export", "--bundle", root, "--format", "arazzo", option, output}); code == 0 {
 				t.Fatal("accepted source destination")
 			}
 			if _, _, err := bundle.Load(root); err != nil {
@@ -283,64 +278,6 @@ func TestCLIPostmanProtectsSourceDestinations(t *testing.T) {
 				}
 			}
 		})
-	}
-}
-
-func TestCLIPostmanProtectsEveryCollectionBeforeWriting(t *testing.T) {
-	for _, kind := range []string{"symlink", "hardlink"} {
-		for index := 0; index < 3; index++ {
-			t.Run(kind+string(rune('0'+index)), func(t *testing.T) {
-				root := postmanMockBundleFixture(t)
-				exports, err := postman.Generate(root, "")
-				if err != nil {
-					t.Fatal(err)
-				}
-				directory := t.TempDir()
-				for i, export := range exports {
-					path := filepath.Join(directory, export.Filename)
-					if i == index {
-						link := os.Symlink
-						if kind == "hardlink" {
-							link = os.Link
-						}
-						if err := link(filepath.Join(root, "bundle.json"), path); err != nil {
-							t.Skip(err)
-						}
-					} else if err := os.WriteFile(path, []byte("keep"), 0644); err != nil {
-						t.Fatal(err)
-					}
-				}
-				if code := execute(context.Background(), []string{"export", "--bundle", root, "--format", "postman", "--output-dir", directory}); code == 0 {
-					t.Fatal("accepted linked source collection destination")
-				}
-				for i, export := range exports {
-					if i != index {
-						if data, err := os.ReadFile(filepath.Join(directory, export.Filename)); err != nil || string(data) != "keep" {
-							t.Fatalf("changed earlier collection: %q %v", data, err)
-						}
-					}
-				}
-				if _, _, err := bundle.Load(root); err != nil {
-					t.Fatalf("changed source archive: %v", err)
-				}
-			})
-		}
-	}
-}
-
-func TestCLIPostmanRegeneratesInsideExports(t *testing.T) {
-	root := postmanMockBundleFixture(t)
-	directory := filepath.Join(root, "exports", "postman")
-	for i := 0; i < 2; i++ {
-		if code := execute(context.Background(), []string{"export", "--bundle", root, "--format", "postman", "--output-dir", directory}); code != 0 {
-			t.Fatalf("export inside exports = %d", code)
-		}
-		if collections := readPostmanCollections(t, directory); len(collections) != 3 {
-			t.Fatalf("missing collections: %+v", collections)
-		}
-	}
-	if _, _, err := bundle.Load(root); err != nil {
-		t.Fatal(err)
 	}
 }
 
@@ -364,7 +301,7 @@ func TestCLIReportNewFilesRespectUmask(t *testing.T) {
 	if err := os.Chmod(existing, 0640); err != nil {
 		t.Fatal(err)
 	}
-	root := postmanBundleFixture(t)
+	root := httpBundleFixture(t)
 	for _, tc := range []struct {
 		path string
 		mode os.FileMode

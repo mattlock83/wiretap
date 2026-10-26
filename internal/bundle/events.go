@@ -28,8 +28,6 @@ func validateApplication(app *Application) error {
 
 const eventCapability = "event-interactions.v1"
 const packageCapability = "contract-packages.v1"
-const grpcObservationCapability = "grpc-observation.v1"
-const statusCapability = "grpc-status-details.v1"
 
 func requiredCapabilities(schemas []artifact.SchemaRef, captures []*artifact.Artifact) []string {
 	result := []string{}
@@ -45,12 +43,6 @@ func requiredCapabilities(schemas []artifact.SchemaRef, captures []*artifact.Art
 			}
 		}
 		for _, flow := range capture.Traffic {
-			if len(flow.GRPCEvents) > 0 || flow.Request.GRPC != nil && flow.Request.GRPC.Observation != nil || flow.Response.GRPC != nil && flow.Response.GRPC.Observation != nil {
-				result = uniqueString(result, grpcObservationCapability)
-			}
-			if flow.Request.GRPC != nil && flow.Request.GRPC.StatusDetails != nil || flow.Response.GRPC != nil && flow.Response.GRPC.StatusDetails != nil {
-				result = uniqueString(result, statusCapability)
-			}
 			if flow.Interaction != nil {
 				result = uniqueString(result, eventCapability)
 			}
@@ -75,7 +67,7 @@ func checkCapabilities(required []string) error {
 	}
 	seen := map[string]bool{}
 	for _, capability := range required {
-		if capability != eventCapability && capability != packageCapability && capability != grpcObservationCapability && capability != statusCapability {
+		if capability != eventCapability && capability != packageCapability {
 			return fmt.Errorf("unsupported required capability %q", capability)
 		}
 		if seen[capability] {
@@ -127,7 +119,7 @@ func (w *Writer) attachEvents(attempt *Attempt) error {
 
 func restoreEventBody(root string, flows map[string]*artifact.Flow, seen map[string]bool, ref BodyRef, readFile func(string) ([]byte, error)) error {
 	key := eventBodyKey(ref.FlowID, ref.EventID, ref.PayloadName)
-	if seen[key] || ref.EventID == "" || ref.PayloadName == "" || ref.MessageIndex != nil || ref.Kind != "" {
+	if seen[key] || ref.EventID == "" || ref.PayloadName == "" {
 		return fmt.Errorf("invalid or duplicate event attachment %q", key)
 	}
 	flow := flows[ref.FlowID]

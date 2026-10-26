@@ -1,8 +1,7 @@
 # Archive loading budgets
 
-Coverage reporting and Postman export load the immutable capture archive through
-`internal/bundle.Load`. Loading verifies hashes, schema inventories and gRPC
-projections, and restores retained payloads before calculating either output.
+Coverage reporting and Arazzo export load the immutable capture archive through
+`internal/bundle.Load`. Loading verifies hashes and schema inventories, and restores retained payloads before calculating either output.
 Run finalization verifies the same raw archive. A loading-budget or integrity
 error prevents a successful finalization result; retained evidence stays on disk.
 
@@ -30,8 +29,7 @@ An inventory limit error stops output generation and identifies the setting to
 raise for a larger trusted archive.
 
 These budgets include `bundle.json`, attempt captures, contract manifests, every
-frozen contract and import, HTTP/event/gRPC payload attachments, rich gRPC status
-attachments and descriptor reads used to verify gRPC projections. Reading the
+frozen contract and import, HTTP/event payload attachments. Reading the
 same path again consumes the budget again. For example, a payload shared by many
 attempts is restored into each attempt and counts each time; the budget is not
 the archive's unique size on disk.
@@ -55,10 +53,10 @@ run, captures, err := bundle.LoadWithLimits(root, limits)
 
 Zero fields select their defaults. Negative fields and byte budgets equal to
 `math.MaxInt64` are invalid; there is no unlimited sentinel. Increasing these
-budgets does not disable the existing protocol-specific gRPC retention limits.
+budgets does not remove capture-time body limits.
 Explicit `LoadWithLimits` budgets are independent of environment overrides.
 
 The budgets constrain input reads, not the exact process memory footprint.
-Decoded JSON, descriptors, restored strings and base64 bodies can require more
+Decoded JSON, restored strings and base64 bodies can require more
 memory than their input bytes. Choose smaller budgets when loading archives in
 a memory-constrained process. No archive files are modified by loading.

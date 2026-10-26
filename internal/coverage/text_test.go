@@ -69,7 +69,7 @@ func TestTextSummaryWarnsWhenRecordedTestsCaptureNoTraffic(t *testing.T) {
 			if err := WriteReport(&out, report, "text"); err != nil {
 				t.Fatal(err)
 			}
-			for _, want := range []string{"Captured interactions: 0 (0 HTTP, 0 gRPC, 0 other)", "WARNING:", "no network traffic was captured", "Wiretap's SUT URL", "proxy URLs", "test trace context"} {
+			for _, want := range []string{"Captured interactions: 0 (0 HTTP, 0 other)", "WARNING:", "no network traffic was captured", "Wiretap's SUT URL", "proxy URLs", "test trace context"} {
 				if !strings.Contains(out.String(), want) {
 					t.Errorf("missing %q: %s", want, out.String())
 				}
@@ -83,7 +83,7 @@ func TestTextSummaryWarnsWhenRecordedTestsCaptureNoTraffic(t *testing.T) {
 
 func TestTextSummaryCountsCapturedTrafficWithoutDependingOnSchemas(t *testing.T) {
 	report, err := generateFromEntries([]artifactEntry{
-		{Doc: &artifact.Artifact{TestCase: artifact.TestCase{ID: "first", Name: "same name", Status: "pass"}, Traffic: []artifact.Flow{{ID: "http", Protocol: "http"}, {ID: "grpc", Protocol: "grpc"}}}},
+		{Doc: &artifact.Artifact{TestCase: artifact.TestCase{ID: "first", Name: "same name", Status: "pass"}, Traffic: []artifact.Flow{{ID: "http", Protocol: "http"}, {ID: "event", Protocol: "kafka"}}}},
 		{Doc: &artifact.Artifact{TestCase: artifact.TestCase{ID: "second", Name: "same name", Status: "fail"}, Traffic: []artifact.Flow{{ID: "other", Protocol: "websocket"}}}},
 	}, nil, "example", false, time.Time{})
 	if err != nil {
@@ -105,7 +105,7 @@ func TestTextSummaryCountsCapturedTrafficWithoutDependingOnSchemas(t *testing.T)
 		if err := WriteReport(&out, input, "text"); err != nil {
 			t.Fatal(err)
 		}
-		if !strings.Contains(out.String(), "Captured interactions: 3 (1 HTTP, 1 gRPC, 1 other)") || strings.Contains(out.String(), "no network traffic was captured") {
+		if !strings.Contains(out.String(), "Captured interactions: 3 (1 HTTP, 2 other)") || strings.Contains(out.String(), "no network traffic was captured") {
 			t.Fatal("traffic omitted, duplicated, or confused with coverage: " + out.String())
 		}
 	}

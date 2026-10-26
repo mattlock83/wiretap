@@ -13,8 +13,9 @@ import (
 
 func TestFinishRunProducesOutputsAndPreservesFailedAttempts(t *testing.T) {
 	sut := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusServiceUnavailable)
-		w.Write([]byte("unavailable"))
+		w.Write([]byte(`{"error":"unavailable"}`))
 	}))
 	defer sut.Close()
 	control, _ := dependencyCaptureRuntime(t)
@@ -36,10 +37,10 @@ func TestFinishRunProducesOutputsAndPreservesFailedAttempts(t *testing.T) {
 	if err := json.Unmarshal(data, &result); err != nil {
 		t.Fatal(err)
 	}
-	if len(result.Postman) != 1 || result.Coverage["json"] == "" {
+	if result.Arazzo == "" || len(result.ArazzoFiles) != 1 || result.Coverage["json"] == "" {
 		t.Fatalf("missing outputs: %+v", result)
 	}
-	for _, path := range []string{result.Postman[0], result.Coverage["json"]} {
+	for _, path := range []string{result.Arazzo, result.ArazzoFiles[0], result.Coverage["json"]} {
 		if _, err := os.Stat(path); err != nil {
 			t.Fatal(err)
 		}

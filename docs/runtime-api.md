@@ -1,10 +1,6 @@
 # Runtime API
 
-The SDK calls this HTTP API from your existing test framework's lifecycle.
-The [JavaScript runner adapters](../sdk/js/README.md) and
-[Go `Run`/`StartTest` hooks](../sdk/go/README.md) and
-[Python/pytest integration](../sdk/python/README.md) manage the lifecycle for ordinary
-suites. Use this reference for another language or an externally managed runtime.
+The [Jest adapter](../sdk/js/docs/jest.md) calls this HTTP API from the framework lifecycle. This reference describes the underlying endpoints and an explicitly hosted runtime. Jest is the supported SDK integration on this branch.
 
 For direct integration, start the control process with
 `wiretap [--config path]`. Suite hooks own capture startup/finalization, test
@@ -45,10 +41,6 @@ and `dependency_base_url`, the reserved dependency gateway on that same proxy.
 It also returns `run_id` and `bundle_path`. A new run gets a
 fresh bundle under `WIRETAP_OUTPUT_DIR` (default `./artifacts`). The response
 also includes `defaults`, the resolved project test settings from `.wiretap.yaml`.
-For gRPC projects, `sut_url` and `dependencies` contain direct listener origins
-with no path prefix. `startRun` allocates them before the SUT and mocks start;
-it reports contract inventory as unresolved. The first `setupTest` resolves
-all Protobuf contracts before traffic admission. See the [gRPC guide](grpc-user-guide.md).
 Configured HTTP contracts freeze during startup, even when no attempts run, so
 coverage retains the declared operations as untested. SDK-only schema overrides
 are registered at test setup; declare contracts in `.wiretap.yaml` for empty-run
@@ -56,8 +48,7 @@ coverage. Repeated startup calls without new boundary definitions reuse the acti
 
 Optional `application: {name, id, description?}` identifies the SUT independently
 of its API boundaries. It inherits `.wiretap.yaml` when omitted, and at least a
-name or ID is required when supplied. It is retained in `bundle.json` and names
-Postman collections as `Orders - orders-app`. Application identity stays fixed
+name or ID is required when supplied. It is retained in `bundle.json`. Application identity stays fixed
 for a run; later requests can omit it or repeat the same object.
 
 Without a project file, register the same boundary definitions through HTTP:
@@ -67,42 +58,31 @@ Without a project file, register the same boundary definitions through HTTP:
   "boundaries": {
     "sut": {
       "id": "orders",
-      "protocol": "grpc",
-      "url": "http://127.0.0.1:50051",
-      "services": ["orders.v1.OrdersService"]
+      "url": "http://127.0.0.1:8080",
+      "schema": "schemas/orders.openapi.yaml"
     },
     "dependencies": {
       "inventory": {
-        "protocol": "grpc",
-        "url": "http://127.0.0.1:50052",
-        "kind": "mock",
-        "services": ["inventory.v1.InventoryService"]
+        "url": "http://127.0.0.1:9090",
+        "kind": "mock"
       }
     }
   }
 }
 ```
 
-`boundaries` accepts only `sut` and `dependencies`, using the same API fields,
-source objects and TLS options as `.wiretap.yaml`. Local paths are relative to
+`boundaries` accepts only `sut` and `dependencies`, using the same API fields and
+OpenAPI path settings as `.wiretap.yaml`. Local paths are relative to
 the Wiretap process's working directory. Environment expansion follows project
 configuration. Project-file boundaries cannot be overridden by HTTP. An active
 run rejects new boundary registrations; finish it before changing targets or
-contracts. Omitted gRPC `schema` selects reflection.
+contracts. Only HTTP/HTTPS boundaries are supported.
 
-The response and `bundle.json` include `contracts`, recording each gRPC
-boundary as `pending`, `failed` or `resolved`. Acquisition runs at most four
-boundaries concurrently, publishes the whole snapshot before admission, and is
-retryable after failure. Reflection is bounded to one minute per boundary;
-control-client timeouts must allow for all batches. Credentials stay outside
-this inventory and the returned defaults.
 `target_url` is only a routing destination; Wiretap never starts, configures,
 waits for, or stops that application.
 
 `POST /v1/finishRun` stops the proxy after all tests are torn down. It returns
-409 while any session is active. Retired gRPC calls are cancelled after their
-bounded drain snapshot has been committed. Unresolved contracts must succeed
-before finalization, including runs with zero tests. One orchestration
+409 while any session is active. One orchestration
 owner must control finalization when suites/workers share a runtime. This stops
 capture and completes the bundle; it leaves the control process running. The reverse SUT
 target cannot be changed while sessions are active.
@@ -116,10 +96,7 @@ Omitted fields inherit project defaults. Supplied arrays replace the defaults.
 The main HTTP API's OpenAPI spec is required by default; its explicit
 `schema_required: false` opt-out remains available. HTTP dependencies need no
 spec unless `schema_required: true` is set. Supplying one opts into validation
-and contract coverage; an invalid supplied spec always fails. gRPC boundaries require a Protobuf contract,
-configured with `protocol: grpc` and normally discovered through reflection.
-The `sut_protocol` and dependency `protocol` fields can be carried through
-the setup payload when inheriting project defaults. Capture uses synthetic data
+and contract coverage; an invalid supplied spec always fails. Removed protocol-specific setup fields are rejected. Capture uses synthetic data
 and dummy secrets; retained traffic is unchanged.
 
 ```json
@@ -149,8 +126,7 @@ and dummy secrets; retained traffic is unchanged.
 
 `application` may also be supplied on `setupTest` when the SDK starts a run
 lazily. Omitted application metadata reuses the active run's identity.
-Dependency `asset_name` supplies its display name in Postman mock collection
-exports, for example `Inventory Service - inventory`.
+Dependency `asset_name` supplies a human-readable display name in the inventory.
 
 The response includes `session_id`, `sut_url`, `proxy_listen`, `run_id`,
 `bundle_path`, and a
@@ -245,7 +221,7 @@ A copied artifact directory can be selected with `bundle_path`:
 
 Only run artifact directories are accepted. Unknown request fields are rejected.
 The response includes detailed condition results under `report.contract_coverage`. The CLI
-can also export YAML, Postman collections and JSON/REST Arazzo workflows; see [capture artifacts and exports](artifacts.md).
+can also export YAML and JSON/REST Arazzo workflows; see [capture artifacts and exports](artifacts.md).
 
 ## Proxy certificate
 
@@ -264,8 +240,8 @@ lists the omitted schema IDs. Contract violations produce validation status
 ## Discover capabilities
 
 `GET /v1/capabilities` returns `api_version: "1.0"`, `producer` and a
-`capabilities` array containing `capture.http`, `capture.grpc`, `outputs.coverage`,
-`outputs.postman`, `outputs.arazzo`, `test.identity` and `run.finalize`. This read starts no run and
+`capabilities` array containing `capture.http`, `outputs.coverage`,
+`outputs.arazzo`, `test.identity` and `run.finalize`. This read starts no run and
 does not wait for capture control operations. Other methods return 405. Existing
 clients can continue without probing; adapters supporting older binaries may
 treat 404 as unavailable discovery.

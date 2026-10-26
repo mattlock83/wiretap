@@ -2,8 +2,6 @@ package main
 
 import (
 	"context"
-	"crypto/tls"
-	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -17,7 +15,6 @@ import (
 	"github.com/mattlock83/wiretap/internal/bundle"
 	"github.com/mattlock83/wiretap/internal/core"
 	"github.com/mattlock83/wiretap/internal/fileuri"
-	"github.com/mattlock83/wiretap/internal/grpccontract"
 	"github.com/mattlock83/wiretap/internal/project"
 	"github.com/mattlock83/wiretap/internal/schemajson"
 )
@@ -124,27 +121,6 @@ func inspectSetup(ctx context.Context, path string) doctorReport {
 }
 
 func doctorAPI(ctx context.Context, report *doctorReport, name string, api project.API) {
-	if api.Protocol == "grpc" {
-		if api.CaptureTLS.CertFile != "" {
-			_, err := tls.LoadX509KeyPair(api.CaptureTLS.CertFile, api.CaptureTLS.KeyFile)
-			report.add(name+".capture_tls", "capture certificate and private key parse and match", err)
-		}
-		if api.UpstreamTLS.CAFile != "" {
-			data, err := os.ReadFile(api.UpstreamTLS.CAFile)
-			if err == nil && !x509.NewCertPool().AppendCertsFromPEM(data) {
-				err = fmt.Errorf("%s: upstream CA file contains no certificates", api.UpstreamTLS.CAFile)
-			}
-			report.add(name+".upstream_ca", "upstream CA file contains parseable certificates", err)
-		}
-		if api.GRPCSchema == nil || api.GRPCSchema.Source == "reflection" {
-			report.Checks = append(report.Checks, doctorCheck{name + ".schema", "deferred", "gRPC reflection is resolved when capture starts; no server was contacted"})
-			return
-		}
-		schema := api.GRPCSchema
-		_, err := grpccontract.Resolve(ctx, "", grpccontract.Source{Kind: schema.Source, Path: schema.Path, Files: schema.Files, ImportPaths: schema.ImportPaths}, api.Services)
-		report.add(name+".schema", "local protobuf contract and selected services resolve", err)
-		return
-	}
 	if api.Schema == "" {
 		report.Checks = append(report.Checks, doctorCheck{name + ".schema", "deferred", "OpenAPI intentionally omitted; capture has no contract coverage for this boundary"})
 		return

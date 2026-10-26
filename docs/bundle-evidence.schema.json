@@ -3,122 +3,351 @@
   "$id": "bundle-evidence.schema.json",
   "title": "Wiretap bundle format 3.x",
   "oneOf": [
-    { "$ref": "#/$defs/run" },
-    { "$ref": "#/$defs/attempt" }
+    {
+      "$ref": "#/$defs/run"
+    },
+    {
+      "$ref": "#/$defs/attempt"
+    }
   ],
   "$defs": {
-    "producer": {"type": "object", "required": ["name", "version"], "properties": {"name": {"const": "wiretap"}, "version": {"type": "string"}, "commit": {"type": "string"}, "dirty": {"type": "boolean"}}},
-    "testIdentity": {"type": "object", "required": ["id"], "properties": {"id": {"type": "string", "minLength": 1, "maxLength": 256}, "variant": {"type": "string"}, "attempt_ordinal": {"type": "integer", "minimum": 0}}},
-    "providerRef": {"type": "object", "required": ["application_id", "api_id"], "properties": {"application_id": {"type": "string", "minLength": 1}, "api_id": {"type": "string", "minLength": 1}, "version": {"type": "string"}}},
-    "version": { "type": "string", "pattern": "^3\\.[0-9]+$" },
-    "capabilities": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
-    "id": { "type": "string", "pattern": "^(?!\\.{1,2}$)[A-Za-z0-9._-]+$" },
-    "hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
-    "relativePath": { "type": "string", "minLength": 1, "pattern": "^(?!/)(?![A-Za-z]:)(?!.*(?:^|/)\\.\\.(?:/|$)).+$" },
+    "producer": {
+      "type": "object",
+      "required": [
+        "name",
+        "version"
+      ],
+      "properties": {
+        "name": {
+          "const": "wiretap"
+        },
+        "version": {
+          "type": "string"
+        },
+        "commit": {
+          "type": "string"
+        },
+        "dirty": {
+          "type": "boolean"
+        }
+      }
+    },
+    "testIdentity": {
+      "type": "object",
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "variant": {
+          "type": "string"
+        },
+        "attempt_ordinal": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "providerRef": {
+      "type": "object",
+      "required": [
+        "application_id",
+        "api_id"
+      ],
+      "properties": {
+        "application_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "api_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "string"
+        }
+      }
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^3\\.[0-9]+$"
+    },
+    "capabilities": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^(?!\\.{1,2}$)[A-Za-z0-9._-]+$"
+    },
+    "hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "relativePath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?![A-Za-z]:)(?!.*(?:^|/)\\.\\.(?:/|$)).+$"
+    },
     "fileRef": {
       "type": "object",
-      "required": ["path", "sha256"],
+      "required": [
+        "path",
+        "sha256"
+      ],
       "properties": {
-        "path": { "$ref": "#/$defs/relativePath" },
-        "sha256": { "$ref": "#/$defs/hash" }
+        "path": {
+          "$ref": "#/$defs/relativePath"
+        },
+        "sha256": {
+          "$ref": "#/$defs/hash"
+        }
       }
     },
     "schemaRef": {
       "type": "object",
-      "required": ["id", "role", "type", "source"],
+      "required": [
+        "id",
+        "role",
+        "type",
+        "source"
+      ],
       "properties": {
-        "id": { "type": "string", "minLength": 1 },
-        "role": { "enum": ["sut", "provided", "dependency"] },
-        "type": { "type": "string" },
-        "protocol": { "type": "string" },
-        "services": { "type": "array", "items": { "type": "string" } },
-        "acquired_from": { "type": "string" },
-        "acquisition": {
-          "type": "object",
-          "required": ["acquired_at", "normalization_profile"],
-          "properties": {
-            "acquired_at": { "type": "string", "format": "date-time" },
-            "reflection_version": { "enum": ["v1", "v1alpha"] },
-            "advertised_services": { "type": "array", "items": { "type": "string" } },
-            "excluded_services": { "type": "array", "items": { "type": "string" } },
-            "compiler_version": { "type": "string" },
-            "normalization_profile": { "type": "string" }
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "role": {
+          "enum": [
+            "sut",
+            "provided",
+            "dependency"
+          ]
+        },
+        "type": {
+          "type": "string",
+          "not": {
+            "const": "protobuf"
+          }
+        },
+        "protocol": {
+          "type": "string",
+          "not": {
+            "pattern": "^\\s*(?:[Gg][Rr][Pp][Cc]|[Gg][Rr][Pp][Cc][Ss]|[Gg][Rr][Pp][Cc]-[Ww][Ee][Bb]|[Gg][Rr][Pp][Cc][Ww][Ee][Bb]|[Gg][Rr][Pp][Cc]_[Ww][Ee][Bb]|[Gg][Rr][Pp][Cc]-[Ww][Ee][Bb]-[Tt][Ee][Xx][Tt]|[Gg][Rr][Pp][Cc]\\+[Pp][Rr][Oo][Tt][Oo]|[Gg][Rr][Pp][Cc]\\+[Jj][Ss][Oo][Nn]|[Gg][Rr][Pp][Cc]-[Ww][Ee][Bb]\\+[Pp][Rr][Oo][Tt][Oo]|[Gg][Rr][Pp][Cc]-[Ww][Ee][Bb]\\+[Jj][Ss][Oo][Nn]|[Gg][Rr][Pp][Cc]-[Ww][Ee][Bb]-[Tt][Ee][Xx][Tt]\\+[Pp][Rr][Oo][Tt][Oo]|[Gg][Rr][Pp][Cc]-[Ww][Ee][Bb]-[Tt][Ee][Xx][Tt]\\+[Jj][Ss][Oo][Nn])\\s*$"
           }
         },
         "source": {
           "type": "object",
-          "required": ["type"],
+          "required": [
+            "type"
+          ],
           "properties": {
-            "type": { "enum": ["file", "omitted"] },
-            "path": { "$ref": "#/$defs/relativePath" },
-            "sha256": { "$ref": "#/$defs/hash" },
-            "format": { "type": "string" }
+            "type": {
+              "enum": [
+                "file",
+                "omitted"
+              ]
+            },
+            "path": {
+              "$ref": "#/$defs/relativePath"
+            },
+            "sha256": {
+              "$ref": "#/$defs/hash"
+            },
+            "format": {
+              "type": "string"
+            }
           }
+        },
+        "openapi_version": {
+          "type": "string"
+        },
+        "asset_id": {
+          "type": "string"
+        },
+        "asset_name": {
+          "type": "string"
+        },
+        "asset_sha": {
+          "type": "string"
         }
-      }
+      },
+      "additionalProperties": false
     },
     "run": {
       "type": "object",
-      "required": ["format_version", "required_capabilities", "run_id", "revision", "run_state", "started_at", "updated_at", "inventory_scope", "provided_apis", "dependencies", "tests"],
+      "required": [
+        "format_version",
+        "required_capabilities",
+        "run_id",
+        "revision",
+        "run_state",
+        "started_at",
+        "updated_at",
+        "inventory_scope",
+        "provided_apis",
+        "dependencies",
+        "tests"
+      ],
       "properties": {
-        "format_version": { "$ref": "#/$defs/version" },
-        "producer": { "$ref": "#/$defs/producer" },
-        "provider_mappings": { "type": "object", "additionalProperties": { "$ref": "#/$defs/providerRef" } },
-        "required_capabilities": { "$ref": "#/$defs/capabilities" },
+        "format_version": {
+          "$ref": "#/$defs/version"
+        },
+        "producer": {
+          "$ref": "#/$defs/producer"
+        },
+        "provider_mappings": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/providerRef"
+          }
+        },
+        "required_capabilities": {
+          "$ref": "#/$defs/capabilities"
+        },
         "application": {
           "type": "object",
           "anyOf": [
-            { "required": ["name"], "properties": { "name": { "pattern": "\\S" } } },
-            { "required": ["id"], "properties": { "id": { "pattern": "\\S" } } }
+            {
+              "required": [
+                "name"
+              ],
+              "properties": {
+                "name": {
+                  "pattern": "\\S"
+                }
+              }
+            },
+            {
+              "required": [
+                "id"
+              ],
+              "properties": {
+                "id": {
+                  "pattern": "\\S"
+                }
+              }
+            }
           ],
           "properties": {
-            "name": { "type": "string" },
-            "id": { "type": "string" },
-            "description": { "type": "string" }
+            "name": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "description": {
+              "type": "string"
+            }
           }
         },
-        "inventory_scope": { "const": "configured_and_observed" },
-        "provided_apis": { "type": "array", "items": { "$ref": "#/$defs/api" } },
-        "dependencies": { "type": "array", "items": { "$ref": "#/$defs/api" } },
-        "run_id": { "$ref": "#/$defs/id" },
-        "revision": { "type": "integer", "minimum": 1 },
-        "run_state": { "enum": ["open", "complete", "interrupted"] },
-        "started_at": { "type": "string", "format": "date-time" },
-        "updated_at": { "type": "string", "format": "date-time" },
-        "finished_at": { "type": "string", "format": "date-time" },
-        "api_id": { "type": "string" },
-        "sut_target_kind": { "enum": ["mock", "service", "unknown"] },
-        "dependency_kinds": { "type": "object", "additionalProperties": { "enum": ["mock", "service", "unknown"] } },
-        "test_source": { "type": "object" },
-        "sut_source": { "type": "object" },
-        "contracts": { "type": "array", "items": { "$ref": "#/$defs/schemaRef" } },
-        "contract_resolutions": {
+        "inventory_scope": {
+          "const": "configured_and_observed"
+        },
+        "provided_apis": {
           "type": "array",
           "items": {
-            "type": "object",
-            "required": ["api_id", "role", "protocol", "source", "contract_resolution"],
-            "properties": {
-              "api_id": { "type": "string", "minLength": 1 },
-              "role": { "enum": ["sut", "dependency"] },
-              "protocol": { "const": "grpc" },
-              "source": { "enum": ["reflection", "proto", "descriptor_set"] },
-              "contract_resolution": { "enum": ["pending", "resolved", "failed"] },
-              "services": { "type": "array", "items": { "type": "string" } },
-              "diagnostic": { "type": "string" }
-            }
+            "$ref": "#/$defs/api"
+          }
+        },
+        "dependencies": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/api"
+          }
+        },
+        "run_id": {
+          "$ref": "#/$defs/id"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "run_state": {
+          "enum": [
+            "open",
+            "complete",
+            "interrupted"
+          ]
+        },
+        "started_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "finished_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "api_id": {
+          "type": "string"
+        },
+        "sut_target_kind": {
+          "enum": [
+            "mock",
+            "service",
+            "unknown"
+          ]
+        },
+        "dependency_kinds": {
+          "type": "object",
+          "additionalProperties": {
+            "enum": [
+              "mock",
+              "service",
+              "unknown"
+            ]
+          }
+        },
+        "test_source": {
+          "type": "object"
+        },
+        "sut_source": {
+          "type": "object"
+        },
+        "contracts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/schemaRef"
           }
         },
         "pending_tests": {
           "type": "array",
           "items": {
             "type": "object",
-            "required": ["attempt_id", "name", "started_at"],
+            "required": [
+              "attempt_id",
+              "name",
+              "started_at"
+            ],
             "properties": {
-              "identity": { "$ref": "#/$defs/testIdentity" },
-            "attempt_id": { "$ref": "#/$defs/id" },
-              "name": { "type": "string" },
-              "started_at": { "type": "string", "format": "date-time" },
-              "meta": { "type": "object" }
+              "identity": {
+                "$ref": "#/$defs/testIdentity"
+              },
+              "attempt_id": {
+                "$ref": "#/$defs/id"
+              },
+              "name": {
+                "type": "string"
+              },
+              "started_at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "meta": {
+                "type": "object"
+              }
             }
           }
         },
@@ -126,31 +355,89 @@
           "type": "array",
           "items": {
             "allOf": [
-              { "$ref": "#/$defs/fileRef" },
-              { "type": "object", "required": ["attempt_id"], "properties": { "attempt_id": { "$ref": "#/$defs/id" } } }
+              {
+                "$ref": "#/$defs/fileRef"
+              },
+              {
+                "type": "object",
+                "required": [
+                  "attempt_id"
+                ],
+                "properties": {
+                  "attempt_id": {
+                    "$ref": "#/$defs/id"
+                  }
+                }
+              }
             ]
           }
         }
+      },
+      "not": {
+        "required": [
+          "contract_resolutions"
+        ]
       }
     },
     "api": {
       "type": "object",
-      "required": ["id", "target_kind", "configured", "protocols", "contracts", "observed_in"],
+      "required": [
+        "id",
+        "target_kind",
+        "configured",
+        "protocols",
+        "contracts",
+        "observed_in"
+      ],
       "properties": {
-        "id": { "type": "string", "minLength": 1 },
-        "target_kind": { "enum": ["mock", "service", "unknown"] },
-        "configured": { "type": "boolean" },
-        "protocols": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
-        "observed_in": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/id" } },
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "target_kind": {
+          "enum": [
+            "mock",
+            "service",
+            "unknown"
+          ]
+        },
+        "configured": {
+          "type": "boolean"
+        },
+        "protocols": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "observed_in": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
         "contracts": {
           "type": "array",
           "items": {
             "type": "object",
-            "required": ["id", "type", "source"],
+            "required": [
+              "id",
+              "type",
+              "source"
+            ],
             "properties": {
-              "id": { "type": "string" },
-              "type": { "type": "string" },
-              "source": { "$ref": "#/$defs/schemaRef/properties/source" }
+              "id": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string"
+              },
+              "source": {
+                "$ref": "#/$defs/schemaRef/properties/source"
+              }
             }
           }
         }
@@ -158,399 +445,660 @@
     },
     "flow": {
       "type": "object",
-      "required": ["id", "protocol"],
+      "required": [
+        "id",
+        "protocol"
+      ],
       "oneOf": [
         {
-          "required": ["interaction"],
+          "required": [
+            "interaction"
+          ],
           "properties": {
-            "interaction": { "$ref": "#/$defs/interaction" },
-            "id": { "$ref": "#/$defs/id" },
-            "channel": { "const": "" },
-            "asset_id": { "const": "" },
-            "request": { "type": "null" },
-            "response": { "type": "null" }
+            "interaction": {
+              "$ref": "#/$defs/interaction"
+            },
+            "id": {
+              "$ref": "#/$defs/id"
+            },
+            "channel": {
+              "const": ""
+            },
+            "asset_id": {
+              "const": ""
+            },
+            "request": {
+              "type": "null"
+            },
+            "response": {
+              "type": "null"
+            }
           }
         },
         {
-          "required": ["channel", "request", "response"],
+          "required": [
+            "channel",
+            "request",
+            "response"
+          ],
           "properties": {
-            "interaction": { "type": "null" }
-          },
-          "if": {
-            "properties": {
-              "protocol": { "const": "grpc" }
-            }
-          },
-          "then": {
-            "properties": {
-              "request": { "$ref": "#/$defs/grpcMessage" },
-              "response": { "$ref": "#/$defs/grpcMessage" }
+            "interaction": {
+              "type": "null"
+            },
+            "protocol": {
+              "const": "http"
+            },
+            "request": {
+              "$ref": "#/$defs/httpMessage"
+            },
+            "response": {
+              "$ref": "#/$defs/httpMessage"
             }
           }
         }
       ],
       "properties": {
-        "id": { "type": "string", "minLength": 1 },
-        "protocol": { "type": "string", "minLength": 1 },
-        "channel": { "type": "string" },
-        "request": { "type": ["object", "null"] },
-        "response": { "type": ["object", "null"] },
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "protocol": {
+          "type": "string",
+          "minLength": 1
+        },
+        "channel": {
+          "type": "string"
+        },
+        "request": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "response": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
         "assumption": {
           "type": "object",
           "properties": {
-            "evidence_basis": { "const": "observed_exchange" },
-            "consumed_fields": { "const": "unknown" },
+            "evidence_basis": {
+              "const": "observed_exchange"
+            },
+            "consumed_fields": {
+              "const": "unknown"
+            },
             "provider_check": {
               "type": "object",
               "properties": {
-                "status": { "const": "not_checked" }
+                "status": {
+                  "const": "not_checked"
+                }
               }
             }
           }
-        },
-        "grpc_events": {
-          "type": "array",
-          "maxItems": 16,
-          "items": { "$ref": "#/$defs/grpcEvent" }
         }
+      },
+      "not": {
+        "anyOf": [
+          {
+            "required": [
+              "grpc_events"
+            ]
+          },
+          {
+            "properties": {
+              "protocol": {
+                "pattern": "^\\s*(?:[Gg][Rr][Pp][Cc]|[Gg][Rr][Pp][Cc][Ss]|[Gg][Rr][Pp][Cc]-[Ww][Ee][Bb]|[Gg][Rr][Pp][Cc][Ww][Ee][Bb]|[Gg][Rr][Pp][Cc]_[Ww][Ee][Bb]|[Gg][Rr][Pp][Cc]-[Ww][Ee][Bb]-[Tt][Ee][Xx][Tt]|[Gg][Rr][Pp][Cc]\\+[Pp][Rr][Oo][Tt][Oo]|[Gg][Rr][Pp][Cc]\\+[Jj][Ss][Oo][Nn]|[Gg][Rr][Pp][Cc]-[Ww][Ee][Bb]\\+[Pp][Rr][Oo][Tt][Oo]|[Gg][Rr][Pp][Cc]-[Ww][Ee][Bb]\\+[Jj][Ss][Oo][Nn]|[Gg][Rr][Pp][Cc]-[Ww][Ee][Bb]-[Tt][Ee][Xx][Tt]\\+[Pp][Rr][Oo][Tt][Oo]|[Gg][Rr][Pp][Cc]-[Ww][Ee][Bb]-[Tt][Ee][Xx][Tt]\\+[Jj][Ss][Oo][Nn])\\s*$"
+              }
+            },
+            "required": [
+              "protocol"
+            ]
+          }
+        ]
       }
     },
     "interaction": {
       "type": "object",
-      "required": ["kind", "boundary", "transport", "operation", "capture_state", "events"],
+      "required": [
+        "kind",
+        "boundary",
+        "transport",
+        "operation",
+        "capture_state",
+        "events"
+      ],
       "properties": {
-        "kind": { "enum": ["request_response", "publish", "consume", "stream"] },
+        "kind": {
+          "enum": [
+            "request_response",
+            "publish",
+            "consume",
+            "stream"
+          ]
+        },
         "boundary": {
           "type": "object",
-          "required": ["role", "id"],
+          "required": [
+            "role",
+            "id"
+          ],
           "properties": {
-            "role": { "enum": ["provided", "dependency"] },
-            "id": { "type": "string", "minLength": 1 }
+            "role": {
+              "enum": [
+                "provided",
+                "dependency"
+              ]
+            },
+            "id": {
+              "type": "string",
+              "minLength": 1
+            }
           }
         },
-        "transport": { "type": "string", "minLength": 1 },
-        "operation": { "type": "string", "minLength": 1 },
-        "capture_state": { "enum": ["complete", "incomplete"] },
-        "stream_mode": { "enum": ["client", "server", "bidirectional", "subscription"] },
-        "events": { "type": "array", "items": { "$ref": "#/$defs/event" } }
+        "transport": {
+          "type": "string",
+          "minLength": 1
+        },
+        "operation": {
+          "type": "string",
+          "minLength": 1
+        },
+        "capture_state": {
+          "enum": [
+            "complete",
+            "incomplete"
+          ]
+        },
+        "stream_mode": {
+          "enum": [
+            "client",
+            "server",
+            "bidirectional",
+            "subscription"
+          ]
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/event"
+          }
+        }
       },
-      "if": { "properties": { "kind": { "const": "stream" } } },
-      "then": { "required": ["stream_mode"] },
-      "else": { "not": { "required": ["stream_mode"] } }
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "stream"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "stream_mode"
+        ]
+      },
+      "else": {
+        "not": {
+          "required": [
+            "stream_mode"
+          ]
+        }
+      }
     },
     "event": {
       "type": "object",
-      "required": ["id", "sequence", "direction", "direction_sequence", "kind"],
+      "required": [
+        "id",
+        "sequence",
+        "direction",
+        "direction_sequence",
+        "kind"
+      ],
       "properties": {
-        "id": { "$ref": "#/$defs/id" },
-        "sequence": { "type": "integer", "minimum": 0 },
-        "direction": { "enum": ["sent", "received"] },
-        "direction_sequence": { "type": "integer", "minimum": 0 },
-        "kind": { "enum": ["headers", "message", "half_close", "trailers", "complete", "cancel", "error", "ack"] },
-        "observed_at": { "type": "string", "format": "date-time" },
-        "metadata": { "type": "object" },
-        "payloads": { "type": "array", "items": { "$ref": "#/$defs/eventPayload" } },
-        "links": { "type": "array", "items": { "$ref": "#/$defs/eventLink" } }
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "direction": {
+          "enum": [
+            "sent",
+            "received"
+          ]
+        },
+        "direction_sequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "kind": {
+          "enum": [
+            "headers",
+            "message",
+            "half_close",
+            "trailers",
+            "complete",
+            "cancel",
+            "error",
+            "ack"
+          ]
+        },
+        "observed_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "metadata": {
+          "type": "object"
+        },
+        "payloads": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/eventPayload"
+          }
+        },
+        "links": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/eventLink"
+          }
+        }
       }
     },
     "eventPayload": {
       "type": "object",
-      "required": ["name", "encoding", "availability"],
+      "required": [
+        "name",
+        "encoding",
+        "availability"
+      ],
       "properties": {
-        "name": { "$ref": "#/$defs/id" },
-        "encoding": { "type": "string", "minLength": 1 },
-        "media_type": { "type": "string" },
-        "message_type": { "type": "string" },
-        "availability": { "enum": ["present", "empty", "null", "redacted", "truncated", "unavailable"] },
-        "derived_from": { "type": "string" },
-        "transformation": { "type": "string" },
-        "writer_schema": { "$ref": "#/$defs/contractLink" },
-        "reader_schema": { "$ref": "#/$defs/contractLink" },
-        "body": { "type": "object" }
+        "name": {
+          "$ref": "#/$defs/id"
+        },
+        "encoding": {
+          "type": "string",
+          "minLength": 1
+        },
+        "media_type": {
+          "type": "string"
+        },
+        "message_type": {
+          "type": "string"
+        },
+        "availability": {
+          "enum": [
+            "present",
+            "empty",
+            "null",
+            "redacted",
+            "truncated",
+            "unavailable"
+          ]
+        },
+        "derived_from": {
+          "type": "string"
+        },
+        "transformation": {
+          "type": "string"
+        },
+        "writer_schema": {
+          "$ref": "#/$defs/contractLink"
+        },
+        "reader_schema": {
+          "$ref": "#/$defs/contractLink"
+        },
+        "body": {
+          "type": "object"
+        }
       },
       "allOf": [
         {
-          "if": { "properties": { "availability": { "enum": ["present", "empty", "truncated"] } } },
-          "then": { "required": ["body"] },
-          "else": { "not": { "required": ["body"] } }
+          "if": {
+            "properties": {
+              "availability": {
+                "enum": [
+                  "present",
+                  "empty",
+                  "truncated"
+                ]
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "body"
+            ]
+          },
+          "else": {
+            "not": {
+              "required": [
+                "body"
+              ]
+            }
+          }
         },
         {
-          "if": { "properties": { "availability": { "const": "truncated" } } },
-          "then": { "properties": { "body": { "required": ["truncated"], "properties": { "truncated": { "const": true } } } } },
-          "else": { "properties": { "body": { "properties": { "truncated": { "const": false } } } } }
+          "if": {
+            "properties": {
+              "availability": {
+                "const": "truncated"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "body": {
+                "required": [
+                  "truncated"
+                ],
+                "properties": {
+                  "truncated": {
+                    "const": true
+                  }
+                }
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "body": {
+                "properties": {
+                  "truncated": {
+                    "const": false
+                  }
+                }
+              }
+            }
+          }
         }
       ],
       "dependentRequired": {
-        "derived_from": ["transformation"],
-        "transformation": ["derived_from"]
+        "derived_from": [
+          "transformation"
+        ],
+        "transformation": [
+          "derived_from"
+        ]
       }
     },
     "contractLink": {
       "type": "object",
-      "required": ["id", "sha256"],
+      "required": [
+        "id",
+        "sha256"
+      ],
       "properties": {
-        "id": { "type": "string", "minLength": 1 },
-        "sha256": { "$ref": "#/$defs/hash" }
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sha256": {
+          "$ref": "#/$defs/hash"
+        }
       }
     },
     "eventLink": {
       "type": "object",
-      "required": ["flow_id", "relation", "evidence"],
+      "required": [
+        "flow_id",
+        "relation",
+        "evidence"
+      ],
       "properties": {
-        "flow_id": { "type": "string", "minLength": 1 },
-        "event_id": { "type": "string", "minLength": 1 },
-        "relation": { "enum": ["caused_by", "reply_to", "delivery_of", "acknowledges"] },
-        "evidence": { "enum": ["trace", "protocol", "hook", "timing", "unknown"] },
-        "run_id": { "$ref": "#/$defs/id" },
-        "attempt_id": { "$ref": "#/$defs/id" },
-        "attempt_sha256": { "$ref": "#/$defs/hash" }
+        "flow_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "event_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "relation": {
+          "enum": [
+            "caused_by",
+            "reply_to",
+            "delivery_of",
+            "acknowledges"
+          ]
+        },
+        "evidence": {
+          "enum": [
+            "trace",
+            "protocol",
+            "hook",
+            "timing",
+            "unknown"
+          ]
+        },
+        "run_id": {
+          "$ref": "#/$defs/id"
+        },
+        "attempt_id": {
+          "$ref": "#/$defs/id"
+        },
+        "attempt_sha256": {
+          "$ref": "#/$defs/hash"
+        }
       },
       "dependentRequired": {
-        "run_id": ["attempt_id", "attempt_sha256"],
-        "attempt_id": ["run_id", "attempt_sha256"],
-        "attempt_sha256": ["run_id", "attempt_id"]
-      }
-    },
-    "grpcMessage": {
-      "type": "object",
-      "required": ["kind", "procedure", "service", "method", "schema_ref"],
-      "if": { "required": ["http_status"] },
-      "then": { "required": ["grpc_status"] },
-      "properties": {
-        "kind": { "const": "grpc" },
-        "procedure": { "type": "string", "pattern": "^/[^/]+/[^/]+$" },
-        "service": { "type": "string" },
-        "method": { "type": "string" },
-        "schema_ref": { "type": "string" },
-        "stream_kind": { "enum": ["unary", "client_streaming", "server_streaming", "bidirectional", "unknown"] },
-        "observed_bytes": { "type": "integer", "minimum": 0 },
-        "status_source": { "type": "string" },
-        "metadata": { "type": "object" },
-        "trailers": { "type": "object" },
-        "http_status": { "type": "integer" },
-        "grpc_status": { "type": "integer", "minimum": -1, "maximum": 16 },
-        "grpc_message": { "type": "string" },
-        "capture_truncated": { "type": "boolean" },
-        "messages": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "required": ["index"],
-            "properties": {
-              "index": { "type": "integer", "minimum": 0 },
-              "type": { "type": "string" },
-              "compressed": { "type": "boolean" },
-              "redacted": { "type": "boolean" },
-              "body": { "type": "object" },
-              "wire": { "type": "object" },
-              "decode_error": { "type": "string" },
-              "observation": { "$ref": "#/$defs/grpcPayloadObservation" },
-              "decode_state": { "enum": ["decoded", "invalid", "unavailable"] }
-            }
-          },
-          "maxItems": 1024
-        },
-        "observation": { "$ref": "#/$defs/grpcObservation" },
-        "status_details": { "$ref": "#/$defs/grpcStatusDetails" }
+        "run_id": [
+          "attempt_id",
+          "attempt_sha256"
+        ],
+        "attempt_id": [
+          "run_id",
+          "attempt_sha256"
+        ],
+        "attempt_sha256": [
+          "run_id",
+          "attempt_id"
+        ]
       }
     },
     "capture": {
       "type": "object",
-      "required": ["version", "testcase", "traffic"],
+      "required": [
+        "version",
+        "testcase",
+        "traffic"
+      ],
       "properties": {
-        "version": { "type": "integer", "minimum": 1 },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
         "testcase": {
           "type": "object",
-          "required": ["id", "name", "started_at"],
+          "required": [
+            "id",
+            "name",
+            "started_at"
+          ],
           "properties": {
-            "identity": { "$ref": "#/$defs/testIdentity" },
-            "id": { "$ref": "#/$defs/id" },
-            "name": { "type": "string" },
-            "started_at": { "type": "string", "format": "date-time" }
+            "identity": {
+              "$ref": "#/$defs/testIdentity"
+            },
+            "id": {
+              "$ref": "#/$defs/id"
+            },
+            "name": {
+              "type": "string"
+            },
+            "started_at": {
+              "type": "string",
+              "format": "date-time"
+            }
           }
         },
-        "schemas": { "type": "array", "items": { "$ref": "#/$defs/schemaRef" } },
-        "traffic": { "type": "array", "items": { "$ref": "#/$defs/flow" } }
+        "schemas": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/schemaRef"
+          }
+        },
+        "traffic": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/flow"
+          }
+        }
       }
     },
     "bodyRef": {
       "allOf": [
-        { "$ref": "#/$defs/fileRef" },
+        {
+          "$ref": "#/$defs/fileRef"
+        },
         {
           "type": "object",
-          "required": ["flow_id", "phase", "representation", "retained_bytes"],
+          "required": [
+            "flow_id",
+            "phase",
+            "representation",
+            "retained_bytes"
+          ],
           "properties": {
-            "flow_id": { "type": "string", "minLength": 1 },
-            "phase": { "enum": ["request", "response", "event"] },
-            "event_id": { "type": "string", "minLength": 1 },
-            "payload_name": { "type": "string", "minLength": 1 },
-            "representation": { "enum": ["text", "bytes"] },
-            "kind": { "enum": ["wire", "status-envelope", "status-descriptors", "status-detail-wire", "status-detail-json"] },
-            "message_index": { "type": "integer", "minimum": 0 },
-            "retained_bytes": { "type": "integer", "minimum": 0 },
-            "status_detail_index": { "type": "integer", "minimum": 0 }
+            "flow_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "phase": {
+              "enum": [
+                "request",
+                "response",
+                "event"
+              ]
+            },
+            "event_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "payload_name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "representation": {
+              "enum": [
+                "text",
+                "bytes"
+              ]
+            },
+            "retained_bytes": {
+              "type": "integer",
+              "minimum": 0
+            }
           },
           "if": {
             "properties": {
-              "phase": { "const": "event" }
+              "phase": {
+                "const": "event"
+              }
             }
           },
           "then": {
-            "required": ["event_id", "payload_name"],
-            "not": {
-              "anyOf": [
-                { "required": ["message_index"] },
-                { "required": ["kind"] },
-                { "required": ["status_detail_index"] }
-              ]
-            }
+            "required": [
+              "event_id",
+              "payload_name"
+            ]
           },
           "else": {
             "not": {
               "anyOf": [
-                { "required": ["event_id"] },
-                { "required": ["payload_name"] }
+                {
+                  "required": [
+                    "event_id"
+                  ]
+                },
+                {
+                  "required": [
+                    "payload_name"
+                  ]
+                }
               ]
             }
           },
-          "allOf": [
-            {
-              "if": {
-                "required": ["kind"],
-                "properties": {
-                  "kind": { "enum": ["status-envelope", "status-descriptors", "status-detail-wire", "status-detail-json"] }
-                }
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "kind"
+                ]
               },
-              "then": {
-                "properties": {
-                  "phase": { "const": "response" }
-                },
-                "not": {
-                  "anyOf": [
-                    { "required": ["message_index"] },
-                    { "required": ["event_id"] },
-                    { "required": ["payload_name"] }
-                  ]
-                }
-              }
-            },
-            {
-              "if": {
-                "required": ["kind"],
-                "properties": {
-                  "kind": { "enum": ["status-detail-wire", "status-detail-json"] }
-                }
+              {
+                "required": [
+                  "message_index"
+                ]
               },
-              "then": { "required": ["status_detail_index"] },
-              "else": {
-                "not": { "required": ["status_detail_index"] }
+              {
+                "required": [
+                  "status_detail_index"
+                ]
               }
-            }
-          ]
+            ]
+          }
         }
       ]
     },
     "attempt": {
       "type": "object",
-      "required": ["format_version", "required_capabilities", "run_id", "attempt_id", "capture"],
+      "required": [
+        "format_version",
+        "required_capabilities",
+        "run_id",
+        "attempt_id",
+        "capture"
+      ],
       "properties": {
-        "format_version": { "$ref": "#/$defs/version" },
-        "required_capabilities": { "$ref": "#/$defs/capabilities" },
-        "run_id": { "$ref": "#/$defs/id" },
-        "attempt_id": { "$ref": "#/$defs/id" },
-        "capture": { "$ref": "#/$defs/capture" },
-        "bodies": { "type": "array", "items": { "$ref": "#/$defs/bodyRef" } }
-      }
-    },
-    "grpcPayloadObservation": {
-      "type": "object",
-      "required": ["wire_bytes", "started_offset_ns", "completed_offset_ns", "start_sequence", "complete_sequence"],
-      "properties": {
-        "wire_bytes": { "type": "integer", "minimum": 0 },
-        "started_offset_ns": { "type": "integer", "minimum": 0 },
-        "completed_offset_ns": { "type": "integer", "minimum": 0 },
-        "start_sequence": { "type": "integer", "minimum": 0 },
-        "complete_sequence": { "type": "integer", "minimum": 0 }
-      }
-    },
-    "grpcPartialFrame": {
-      "type": "object",
-      "required": ["index", "header_bytes", "wire_bytes", "observed_payload_bytes", "started_offset_ns", "start_sequence"],
-      "properties": {
-        "index": { "type": "integer", "minimum": 0 },
-        "header_bytes": { "type": "integer", "minimum": 1, "maximum": 5 },
-        "wire_bytes": { "type": "integer", "minimum": 0 },
-        "observed_payload_bytes": { "type": "integer", "minimum": 0 },
-        "started_offset_ns": { "type": "integer", "minimum": 0 },
-        "start_sequence": { "type": "integer", "minimum": 0 }
-      }
-    },
-    "grpcObservation": {
-      "type": "object",
-      "required": ["complete_frames", "retained_frames", "omitted_frames", "observed_bytes", "counts_complete", "eof", "end"],
-      "properties": {
-        "complete_frames": { "type": "integer", "minimum": 0 },
-        "retained_frames": { "type": "integer", "minimum": 0, "maximum": 1024 },
-        "omitted_frames": { "type": "integer", "minimum": 0 },
-        "observed_bytes": { "type": "integer", "minimum": 0 },
-        "counts_complete": { "type": "boolean" },
-        "eof": { "type": "boolean" },
-        "end": { "enum": ["open", "eof", "error", "closed"] },
-        "error": { "type": "string" },
-        "omitted": {
-          "type": "object",
-          "required": ["first_index", "count"],
-          "properties": {
-            "first_index": { "type": "integer", "minimum": 0 },
-            "count": { "type": "integer", "minimum": 1 }
-          }
+        "format_version": {
+          "$ref": "#/$defs/version"
         },
-        "partial": { "$ref": "#/$defs/grpcPartialFrame" }
-      }
-    },
-    "grpcEvent": {
-      "type": "object",
-      "required": ["sequence", "offset_ns", "direction", "kind"],
-      "properties": {
-        "sequence": { "type": "integer", "minimum": 0 },
-        "offset_ns": { "type": "integer", "minimum": 0 },
-        "direction": { "enum": ["request", "response", "rpc"] },
-        "kind": { "enum": ["headers", "half_close", "end", "trailers", "cancel", "error"] }
-      }
-    },
-    "grpcStatusDetail": {
-      "type": "object",
-      "required": ["index", "type_url", "state"],
-      "properties": {
-        "index": { "type": "integer", "minimum": 0 },
-        "type_url": { "type": "string" },
-        "state": { "enum": ["decoded", "opaque", "malformed", "truncated", "redacted"] },
-        "type": { "type": "string" },
-        "descriptor_source": { "enum": ["boundary", "auxiliary"] },
-        "descriptor_sha256": { "$ref": "#/$defs/hash" },
-        "wire": { "type": "object" },
-        "body": { "type": "object" },
-        "diagnostic": { "type": "string" }
-      }
-    },
-    "grpcStatusDetails": {
-      "type": "object",
-      "required": ["source", "state", "details"],
-      "properties": {
-        "source": { "enum": ["headers", "trailers"] },
-        "state": { "enum": ["decoded", "malformed", "inconsistent", "truncated", "redacted"] },
-        "details": {
+        "required_capabilities": {
+          "$ref": "#/$defs/capabilities"
+        },
+        "run_id": {
+          "$ref": "#/$defs/id"
+        },
+        "attempt_id": {
+          "$ref": "#/$defs/id"
+        },
+        "capture": {
+          "$ref": "#/$defs/capture"
+        },
+        "bodies": {
           "type": "array",
-          "maxItems": 256,
-          "items": { "$ref": "#/$defs/grpcStatusDetail" }
-        },
-        "code": { "type": "integer" },
-        "message": { "type": "string" },
-        "diagnostic": { "type": "string" },
-        "wire": { "type": "object" },
-        "auxiliary_descriptor": { "type": "object" },
-        "auxiliary_sha256": { "$ref": "#/$defs/hash" }
+          "items": {
+            "$ref": "#/$defs/bodyRef"
+          }
+        }
       }
+    },
+    "httpMessage": {
+      "type": "object",
+      "properties": {
+        "method": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        },
+        "status": {
+          "type": "integer"
+        },
+        "headers": {
+          "type": "object"
+        },
+        "trailers": {
+          "type": "object"
+        },
+        "body": {
+          "type": "object"
+        }
+      },
+      "additionalProperties": false
     }
   }
 }

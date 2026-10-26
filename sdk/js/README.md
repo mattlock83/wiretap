@@ -1,82 +1,42 @@
-# JavaScript SDK
+# Jest SDK
 
-Add API capture to your existing tests. Wiretap produces a portable run archive,
-Postman collections, JSON/REST Arazzo workflows and API coverage from the requests your tests already make.
-Keep your assertions, mocks and HTTP clients.
+Add HTTP API capture to your existing Jest tests. Wiretap records a portable run
+archive, JSON/REST Arazzo workflows and API coverage. Keep your assertions, mocks
+and HTTP clients.
 
-| Your test runner | Integration |
-| --- | --- |
-| [Jest](docs/jest.md) | Wrap the config and change your shared client's URL. Existing test imports stay unchanged. |
-| [Playwright Test](docs/playwright.md) | Wrap the config and change the `test` import in tests or a shared fixtures module. |
-| [Mocha](docs/mocha.md) | Wrap the config and change your shared client's URL. Existing test imports stay unchanged. |
-| [Plain JavaScript / Node test runner](docs/javascript.md) | Use the existing lifecycle API or `createNodeTestSuite` with a project-owned harness. |
-
-The Jest, Playwright and Mocha adapters start Wiretap on available ports, capture
-test attempts, finalize exports after test cleanup, and stop the process. Your runner owns
-execution and outcomes. Failed assertions, timeouts and cleanup failures remain
-visible; API contract violations are separate evidence.
-After successful finalization, the adapters print the exact archive, coverage
-and Postman/Arazzo paths to stderr. Low-level SDK calls return receipts without printing.
+The adapter starts Wiretap on available ports, captures each executed test,
+finalizes exports after cleanup, and stops its process. Jest owns the test
+outcomes. Failed assertions, timeouts and cleanup failures remain visible;
+API contract violations are separate evidence.
 
 ## Install and configure once
 
-The SDK requires Node.js 22+; CI covers Node 22 and 24. Mocha 12 requires 22.12+.
-Supported adapters are Jest 29.7 or 30, Playwright Test 1.64.1+ within 1.x, and
-Mocha 11 (11.7.5+) or 12. Install the local SDK tarball alongside your existing
-runner and put the Wiretap executable on `PATH`, or set
-`WIRETAP_BINARY` to its absolute path:
+Use Node.js 22+ and Jest 29.7 or 30. Install the local SDK tarball alongside Jest
+and put the Wiretap executable on `PATH`, or set `WIRETAP_BINARY` to its absolute
+path:
 
 ```sh
 npm install --save-dev /absolute/path/to/wiretap-sdk-0.1.0.tgz
 ```
 
 See [local installation](https://github.com/mattlock83/wiretap/blob/main/docs/local-release.md)
-for building the binary and tarball. The SDK does not download binaries or install
-optional test runners. TypeScript declarations are included.
+for building the binary and tarball. The SDK includes TypeScript declarations
+and downloads no executable.
 
-Put `.wiretap.yaml` and your API contract in the test project. The runtime also
-discovers this configuration in parent directories:
+Put `.wiretap.yaml` and your API contract in the Jest project:
 
 ```yaml
 version: 1
 application: {id: my-api}
 output_dir: artifacts/wiretap
-outputs: {coverage: [json, text], postman: true, arazzo: true}
+outputs: {coverage: [json, text], arazzo: true}
 sut:
   id: my-api
   kind: service
   schema: openapi.yaml
-  # Add url: http://127.0.0.1:3000 for an already running API.
 ```
 
-Use synthetic data and dummy credentials. Captured traffic is retained unchanged.
-For downstream mock capture, gRPC and tracing, see
-[boundary configuration](https://github.com/mattlock83/wiretap/blob/main/docs/configuration.md)
-and the [plain JavaScript guide](docs/javascript.md).
-
-The main HTTP API requires its OpenAPI spec by default. HTTP dependencies and
-mocks need only their URL and kind; add a dependency `schema` to opt into
-validation and contract coverage. No opt-out flag is needed for schema-free
-dependency capture. Supplied specs always validate. gRPC still needs a Protobuf
-descriptor, discovered through reflection when no source file is supplied.
-
-For an HTTP inventory mock, add this alongside `sut` in the same file:
-
-```yaml
-dependencies:
-  inventory:
-    url: http://127.0.0.1:9090
-    kind: mock
-```
-
-Point the application's inventory client at the returned dependency capture URL
-so its calls are captured. The plain API exposes `capture.dependencyUrl("inventory")`;
-runner hooks/fixtures expose the session's dependency URLs. See
-[HTTP dependency schema options](docs/javascript.md#http-dependency-schema-options)
-to add a spec or require one. Without a spec, calls and Postman examples remain
-available, while that dependency's contract coverage is unknown.
-
-## Jest
+Wrap your existing Jest configuration:
 
 ```js
 // jest.config.cjs
@@ -84,93 +44,40 @@ const { withWiretap } = require('@wiretap/sdk/jest');
 module.exports = withWiretap(existingConfig, { app: '<rootDir>/app.js' });
 ```
 
-Change the shared API client from `supertest(app)` to
-`supertest(process.env.WIRETAP_SUT_URL || app)`, then run your normal Jest command.
-The app loads inside Jest so existing mocks work. Omit `app` when your harness
-already hosts the API. [Jest guide →](docs/jest.md)
+`app` exports your existing Express/Node HTTP handler. It loads inside Jest so
+existing mocks work. Change a shared Supertest client from `supertest(app)` to
+`supertest(process.env.WIRETAP_SUT_URL || app)`, then run your usual Jest command.
+For an already running API, omit `app` and add its `url` under `sut`.
+See the [Jest guide](docs/jest.md) for dynamic fixtures, retries, tracing and
+selective capture, or run the [existing Jest example](https://github.com/mattlock83/wiretap/tree/main/examples/existing-jest).
 
-## Playwright Test
+The main HTTP API requires an OpenAPI spec by default. HTTP dependencies and
+mocks need only their URL and kind; supplying a dependency schema enables its
+validation and contract coverage. Every supplied spec is validated. Use
+synthetic data and dummy credentials: captured traffic is retained unchanged.
+See [boundary configuration](https://github.com/mattlock83/wiretap/blob/main/docs/configuration.md)
+for mock capture and provider mappings.
 
-```js
-// playwright.config.js
-const { withWiretap } = require('@wiretap/sdk/playwright');
-module.exports = withWiretap(existingConfig);
-```
-
-```js
-// tests or your shared fixtures module
-const { test, expect } = require('@wiretap/sdk/playwright');
-```
-
-Keep the existing `use.baseURL` and `webServer` settings. Relative requests from
-`request` and browser fixtures route through capture. Use
-`capturePlaywright(existingTest)` when you already extend the test fixture.
-[Playwright guide →](docs/playwright.md)
-
-## Mocha
-
-```js
-// .mocharc.cjs
-const { withWiretap } = require('@wiretap/sdk/mocha');
-module.exports = withWiretap(existingConfig, { app: './app.js' });
-```
-
-Point the shared API client at `process.env.WIRETAP_SUT_URL`, then run your normal
-Mocha command. Omit `app` if your suite already hosts the API; in that case,
-`mocha --require @wiretap/sdk/mocha` also works with `.wiretap.yaml`.
-[Mocha guide →](docs/mocha.md)
-
-## Plain JavaScript
-
-The existing API stays available for custom lifecycles:
-
-```js
-const { startCapture } = require('@wiretap/sdk');
-const capture = await startCapture(); // connects to your running Wiretap
-await capture.runTest('lists todos', async ({ sutUrl }) => {
-  // Use your existing client and assertions here.
-});
-await capture.finishRun();
-```
-
-This shows the core calls. For complete startup, failure handling and multi-file
-ownership, use the [JavaScript guide](docs/javascript.md) and
-[copyable Node suite](https://github.com/mattlock83/wiretap/tree/main/examples/node-suite).
-Framework integrations should use `createTestAttempt` to observe final runner
-outcomes independently of callback settlement.
+The package root and `@wiretap/sdk/jest` expose `withWiretap`, `captureJest` and
+`createJestSuite`. `@wiretap/sdk/tracing` initializes instrumentation before an
+application imports its clients. `@wiretap/sdk/jest-environment` supplies the
+Jest environment used by the adapter.
 
 ## Keep the outputs
 
-Retain the complete output directory in CI on success and failure. Managed
-JavaScript runs keep their canonical receipt and bounded process log inside
-each unique run archive:
+After successful finalization, the adapter prints exact archive, coverage and
+Arazzo paths to stderr. Retain the complete output directory in CI on success
+and failure. Each unique run contains its canonical `last-run.json` receipt,
+bounded `wiretap.log`, captured traffic, frozen contracts and exports. The
+output-root receipt is an advisory latest snapshot; concurrent runs keep their
+own records. Read `bundle_path`, `outputs.coverage`, `outputs.arazzo` and
+`outputs.arazzo_files` from the receipt for exact artifact paths.
 
-```text
-artifacts/wiretap/
-  last-run.json         # advisory latest snapshot for compatibility
-  run-.../
-    last-run.json       # this run's canonical receipt
-    wiretap.log
-    bundle.json
-```
+The owned process keeps a stdin lifeline to Wiretap. If Jest dies, EOF asks
+Wiretap to preserve an interrupted archive. Abrupt termination cannot complete
+normal exports or save the owner's receipt. Normal shutdown fails cleanup if
+Wiretap cannot stop or its finalization receipt is incomplete or mismatched.
 
-The receipt's `bundle_path`, `outputs.coverage` and `outputs.postman` identify the
-exact archive and export paths. Each archive contains raw traffic, contracts and
-per-attempt outcomes. Concurrent runs retain separate receipts and logs even
-when they share an output directory. The root latest snapshot can name any of
-those runs; use the returned receipt or the archive-local record as authoritative.
-The plain lifecycle API returns receipts; its harness chooses where to save them.
-
-Managed JavaScript runs keep a stdin lifeline to Wiretap, as the Go SDK does.
-If the owning runner process dies, EOF asks Wiretap to stop and preserve an
-interrupted raw archive. Abrupt termination cannot complete normal exports or
-save the owner's receipt: `last-run.json` may be absent or refer to an earlier
-run. Killing Wiretap itself can leave an open archive if shutdown cannot finish.
-Normal managed shutdown force-kills a child that exceeds its shutdown timeout
-and reports a cleanup failure. Unsuccessful child exits and incomplete or
-mismatched finalization receipts also fail cleanup.
-
-Jest and Playwright default to one worker. Parallel capture requires explicit
-sessions and W3C trace propagation through captured application dependencies.
-Mocha capture currently supports serial runs. The runner guides document fixture
-scope, retries, interruption and configuration limits.
+Jest uses one worker by default. Parallel workers and concurrent tests require
+explicit sessions and W3C trace propagation through captured application
+boundaries. See the [Jest guide](docs/jest.md).

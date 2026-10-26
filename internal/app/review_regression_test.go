@@ -6,10 +6,8 @@ import (
 	"fmt"
 	"github.com/mattlock83/wiretap/internal/bundle"
 	"github.com/mattlock83/wiretap/internal/core"
-	wiretap "github.com/mattlock83/wiretap/sdk/go"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel/propagation"
-	"go.opentelemetry.io/otel/trace"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -157,7 +155,7 @@ func TestDrainDoesNotBlockOtherTestsOrLoseResponse(t *testing.T) {
 	}
 }
 
-func TestGoSDKCapturesParallelTestsThroughRealRuntime(t *testing.T) {
+func TestParallelSessionsCommitTracedAttemptsAndFinalizeRun(t *testing.T) {
 	mock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { io.WriteString(w, "ok") }))
 	defer mock.Close()
 	var dependencyURL string
@@ -177,20 +175,35 @@ func TestGoSDKCapturesParallelTestsThroughRealRuntime(t *testing.T) {
 	control, app := dependencyCaptureRuntime(t)
 	info := postDependencyJSON(t, control.URL, "/v1/startRun", map[string]any{"proxy": map[string]string{"target_url": sut.URL}})
 	dependencyURL = info["sut_url"].(string) + "/__wiretap/dep/inventory"
-	runtime := wiretap.Runtime{BaseURL: control.URL}
 	var mu sync.Mutex
 	expected := map[string]string{}
 	t.Run("parallel", func(t *testing.T) {
 		for i := 0; i < 2; i++ {
 			t.Run(fmt.Sprint(i), func(t *testing.T) {
 				t.Parallel()
-				session := runtime.StartTest(t, wiretap.TestOptions{SUTBaseURL: sut.URL, SchemaRequired: new(bool), ExplicitSession: true,
-					Dependencies: []wiretap.Dependency{{AssetID: "inventory", UpstreamURL: mock.URL, Schema: &wiretap.Schema{ID: "inventory", Type: "openapi", Source: wiretap.SchemaSource{Type: "inline", Content: permissiveDependencySchema().Source.Content}}}},
+				registration := traceRegistration(i + 111)
+				session := postDependencyJSON(t, control.URL, "/v1/setupTest", map[string]any{
+					"name": t.Name(), "sut_base_url": sut.URL, "schema_required": false, "explicit_session": true,
+					"trace_context": registration,
+					"dependencies":  []dependencyRegistration{{AssetID: "inventory", UpstreamURL: mock.URL, Schema: permissiveDependencySchema()}},
+				})
+				t.Cleanup(func() {
+					status := "pass"
+					if t.Failed() {
+						status = "fail"
+					}
+					postDependencyJSON(t, control.URL, "/v1/teardownTest", map[string]any{"session_id": session["session_id"], "status": status})
 				})
 				mu.Lock()
-				expected[t.Name()] = trace.SpanContextFromContext(session.Context).TraceID().String()
+				expected[t.Name()] = fmt.Sprintf("%032x", i+111)
 				mu.Unlock()
-				res, err := session.HTTPClient(http.DefaultClient).Get(session.SUTURL + "/orders")
+				req, err := http.NewRequest("GET", session["sut_url"].(string)+"/orders", nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				req.Header.Set("traceparent", registration["traceparent"])
+				req.Header.Set("tracestate", registration["tracestate"])
+				res, err := http.DefaultClient.Do(req)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -203,9 +216,7 @@ func TestGoSDKCapturesParallelTestsThroughRealRuntime(t *testing.T) {
 		}
 	})
 	root := app.currentBundle().Path()
-	if err := runtime.FinishRun(t.Context()); err != nil {
-		t.Fatal(err)
-	}
+	postDependencyJSON(t, control.URL, "/v1/finishRun", map[string]any{})
 	run, captures, err := bundle.Load(root)
 	if err != nil || len(captures) != 2 {
 		t.Fatalf("expected two committed attempts: %d %v", len(captures), err)
@@ -215,11 +226,11 @@ func TestGoSDKCapturesParallelTestsThroughRealRuntime(t *testing.T) {
 	}
 	for _, doc := range captures {
 		if doc.TestCase.Status != "pass" || len(doc.Traffic) != 2 || doc.TestCase.TraceID != expected[doc.TestCase.Name] {
-			t.Fatalf("incorrect SDK artifact: %#v", doc)
+			t.Fatalf("incorrect captured attempt: %#v", doc)
 		}
 		for _, flow := range doc.Traffic {
 			if flow.TraceID != doc.TestCase.TraceID || flow.TestCorrelation != "trace" {
-				t.Fatalf("lost SDK propagation: %#v", flow)
+				t.Fatalf("lost HTTP trace propagation: %#v", flow)
 			}
 		}
 	}

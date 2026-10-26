@@ -38,7 +38,7 @@ func buildIdentity(identity bundle.Identity, revision string) bundle.Identity {
 }
 
 func TestRunSetChecksShardsWithoutSplicingExchanges(t *testing.T) {
-	first, second := httpNormalizationFixture(), httpNormalizationFixture()
+	first, second := checkFixtureFlow(), checkFixtureFlow()
 	second.Request.HTTP.URL = "https://provider.example/second"
 	second.Response.HTTP.Body.Text = `{"different":true}`
 	consumer := writeCheckArchive(t, consumerCheckIdentity(), "complete", checkCapture(false, first, second))
@@ -73,7 +73,7 @@ func TestRunSetChecksShardsWithoutSplicingExchanges(t *testing.T) {
 
 func TestRunSetRejectsMixedBuildsDuplicateIncompleteAndChangedInputs(t *testing.T) {
 	makeArchive := func(revision, state string) string {
-		return writeCheckArchive(t, buildIdentity(providerCheckIdentity(), revision), state, checkCapture(true, httpNormalizationFixture()))
+		return writeCheckArchive(t, buildIdentity(providerCheckIdentity(), revision), state, checkCapture(true, checkFixtureFlow()))
 	}
 	first := makeArchive("one", "complete")
 	for name, paths := range map[string][]string{
@@ -102,12 +102,12 @@ func TestRunSetRejectsMixedBuildsDuplicateIncompleteAndChangedInputs(t *testing.
 	}
 }
 
-func TestRunSetRejectsCorruptedCollectionEvenWhenOtherShardMatches(t *testing.T) {
-	consumer := writeCheckArchive(t, consumerCheckIdentity(), "complete", checkCapture(false, httpNormalizationFixture()))
-	first := writeCheckArchive(t, buildIdentity(providerCheckIdentity(), "one"), "complete", checkCapture(true, httpNormalizationFixture()))
-	second := writeCheckArchive(t, buildIdentity(providerCheckIdentity(), "one"), "complete", checkCapture(true, httpNormalizationFixture()))
+func TestRunSetRejectsCorruptedArazzoEvenWhenOtherShardMatches(t *testing.T) {
+	consumer := writeCheckArchive(t, consumerCheckIdentity(), "complete", checkCapture(false, checkFixtureFlow()))
+	first := writeCheckArchive(t, buildIdentity(providerCheckIdentity(), "one"), "complete", checkCapture(true, checkFixtureFlow()))
+	second := writeCheckArchive(t, buildIdentity(providerCheckIdentity(), "one"), "complete", checkCapture(true, checkFixtureFlow()))
 	providerSet := writeRunSet(t, first, second)
-	files, err := filepath.Glob(filepath.Join(second, "exports", "postman", "*.json"))
+	files, err := filepath.Glob(filepath.Join(second, "exports", "arazzo", "arazzo.json"))
 	if err != nil || len(files) == 0 {
 		t.Fatalf("missing fixture: %v", err)
 	}
@@ -120,7 +120,7 @@ func TestRunSetRejectsCorruptedCollectionEvenWhenOtherShardMatches(t *testing.T)
 }
 
 func TestRunSetCheckRetainsHeaderPolicyAndStableWitness(t *testing.T) {
-	flow := httpNormalizationFixture()
+	flow := checkFixtureFlow()
 	consumer := writeCheckArchive(t, consumerCheckIdentity(), "complete", checkCapture(false, cloneNormalizationFlow(t, flow)))
 	first := writeCheckArchive(t, buildIdentity(providerCheckIdentity(), "one"), "complete", checkCapture(true, cloneNormalizationFlow(t, flow)))
 	second := writeCheckArchive(t, buildIdentity(providerCheckIdentity(), "one"), "complete", checkCapture(true, cloneNormalizationFlow(t, flow)))

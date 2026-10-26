@@ -21,7 +21,6 @@ import (
 
 	"github.com/mattlock83/wiretap/internal/artifact"
 	"github.com/mattlock83/wiretap/internal/bundle"
-	"github.com/mattlock83/wiretap/internal/postman"
 	"github.com/mattlock83/wiretap/internal/version"
 )
 
@@ -31,9 +30,9 @@ const RulesVersion = "wiretap-assumptions-4"
 var ErrInput = errors.New("invalid assumption-check input")
 
 type Options struct {
-	Mode, Consumer, Provider, Dependency                    string
-	ConsumerCollections, ProviderCollections, IgnoreHeaders []string
-	InputFormat, ConsumerArazzo, ProviderArazzo             string
+	Mode, Consumer, Provider, Dependency string
+	ConsumerArazzo, ProviderArazzo       string
+	IgnoreHeaders                        []string
 }
 
 type Source struct {
@@ -44,8 +43,6 @@ type Source struct {
 	ApplicationID    string   `json:"application_id,omitempty"`
 	APIID            string   `json:"api_id,omitempty"`
 	ManifestSHA256   string   `json:"manifest_sha256"`
-	Collections      []string `json:"collections"`
-	InputFormat      string   `json:"input_format,omitempty"`
 	Arazzo           string   `json:"arazzo,omitempty"`
 	ArazzoFiles      []string `json:"arazzo_files,omitempty"`
 }
@@ -140,17 +137,6 @@ func Check(ctx context.Context, options Options) (*Report, error) {
 	if options.Mode != "consumer" && options.Mode != "provider" {
 		return nil, fmt.Errorf("%w: check requires consumer or provider", ErrInput)
 	}
-	inputFormat, err := checkInputFormat(options.InputFormat)
-	if err != nil {
-		return nil, err
-	}
-	options.InputFormat = inputFormat
-	if inputFormat == "arazzo" && (len(options.ConsumerCollections) > 0 || len(options.ProviderCollections) > 0) {
-		return nil, fmt.Errorf("%w: Arazzo checks require Arazzo inputs on both sides; Postman collection overrides are unsupported", ErrInput)
-	}
-	if inputFormat == "postman" && (options.ConsumerArazzo != "" || options.ProviderArazzo != "") {
-		return nil, fmt.Errorf("%w: Arazzo overrides require input format arazzo for both sides", ErrInput)
-	}
 	consumer, err := loadSnapshot(options.Consumer)
 	if err != nil {
 		return nil, fmt.Errorf("%w: consumer: %v", ErrInput, err)
@@ -178,7 +164,7 @@ func Check(ctx context.Context, options Options) (*Report, error) {
 	ignored = unique(ignored)
 	report := &Report{Producer: version.Current(), ReportVersion: "1.0", RulesVersion: RulesVersion, Mode: options.Mode,
 		Scope: "observed_mock_examples_and_exercised_contracts", Dependency: dependency, Binding: "explicit_inputs",
-		Consumer: consumer.sourceForFormat(options.ConsumerCollections, inputFormat, options.ConsumerArazzo), Provider: provider.sourceForFormat(options.ProviderCollections, inputFormat, options.ProviderArazzo),
+		Consumer: consumer.source(options.ConsumerArazzo), Provider: provider.source(options.ProviderArazzo),
 		IgnoredHeaders: ignored, Matches: []Match{}, Findings: []Finding{}, ExcludedProviderEvidence: []ExcludedEvidence{}}
 	for _, entry := range []struct {
 		role     string
@@ -268,9 +254,7 @@ func Check(ctx context.Context, options Options) (*Report, error) {
 			}
 			contractCheck, problem := contracts.verify(ctx, assumption, candidate)
 			if problem != nil {
-				// Preserve wire incompatibility as the most concrete diagnostic
-				// when several equal-looking responses fail different checks.
-				if contractProblem == nil || contractProblem.code != "provider_wire_mismatch" || problem.code == "provider_wire_mismatch" {
+				if contractProblem == nil {
 					contractProblem = problem
 				}
 				continue
@@ -296,7 +280,7 @@ func Check(ctx context.Context, options Options) (*Report, error) {
 		}
 	}
 	// Entirely unavailable consumer evidence may not have an exportable
-	// collection at all. Preserve its useful unverified verdict instead of
+	// workflow document at all. Preserve its useful unverified verdict instead of
 	// replacing it with a secondary missing-projection error.
 	if unavailableConsumers == len(consumers) && len(consumers) > 0 {
 		return report, nil
@@ -306,39 +290,25 @@ func Check(ctx context.Context, options Options) (*Report, error) {
 	for _, entry := range []struct {
 		role     string
 		snapshot *snapshot
-		inputs   []string
 		arazzo   string
 		boundary string
 		source   *Source
 	}{
-		{"consumer", consumer, options.ConsumerCollections, options.ConsumerArazzo, dependency, &report.Consumer}, {"provider", provider, options.ProviderCollections, options.ProviderArazzo, "", &report.Provider},
+		{"consumer", consumer, options.ConsumerArazzo, dependency, &report.Consumer}, {"provider", provider, options.ProviderArazzo, "", &report.Provider},
 	} {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		if err := entry.snapshot.verifyProjection(inputFormat, entry.inputs, entry.arazzo, entry.boundary, entry.source); err != nil {
-			return nil, fmt.Errorf("%w: %s %s inputs: %v", ErrInput, entry.role, inputFormat, err)
+		if err := entry.snapshot.verifyProjection(entry.arazzo, entry.boundary, entry.source); err != nil {
+			return nil, fmt.Errorf("%w: %s Arazzo inputs: %v", ErrInput, entry.role, err)
 		}
 	}
 	report.Compatible = len(report.Findings) == 0 && report.Counts.Verified > 0
 	return report, nil
 }
 
-func checkInputFormat(value string) (string, error) {
-	if value == "" {
-		return "postman", nil
-	}
-	if value != "postman" && value != "arazzo" {
-		return "", fmt.Errorf("%w: input format must be postman or arazzo", ErrInput)
-	}
-	return value, nil
-}
-
-func (s *snapshot) verifyProjection(format string, collections []string, arazzoInput, boundary string, source *Source) error {
-	if format == "postman" {
-		return s.verifyCollections(collections, boundary)
-	}
-	path, companions, err := s.verifyArazzo(arazzoInput, boundary)
+func (s *snapshot) verifyProjection(input, boundary string, source *Source) error {
+	path, companions, err := s.verifyArazzo(input, boundary)
 	if err != nil {
 		return err
 	}
@@ -421,42 +391,21 @@ func (s *snapshot) unchanged() error {
 	return nil
 }
 
-func (s *snapshot) source(inputs []string) Source {
-	if len(inputs) == 0 {
-		inputs = []string{filepath.Join(s.root, "exports", "postman")}
-	}
-	paths := make([]string, 0, len(inputs))
-	for _, path := range inputs {
-		absolute, err := filepath.Abs(path)
-		if err == nil {
-			path = absolute
-		}
-		paths = append(paths, path)
-	}
+func (s *snapshot) source(input string) Source {
 	appID := ""
 	if s.run.Application != nil {
 		appID = s.run.Application.ID
 	}
-	return Source{BundlePath: s.root, RunID: s.run.RunID, SnapshotRevision: s.run.Revision, RunState: s.run.RunState, ApplicationID: appID, APIID: providerAPI(s.run), ManifestSHA256: s.digest, Collections: paths}
-}
-
-func (s *snapshot) sourceForFormat(inputs []string, format, arazzoInput string) Source {
-	source := s.source(inputs)
-	if format != "arazzo" {
-		return source
+	if input == "" {
+		input = filepath.Join(s.root, "exports", "arazzo", "arazzo.json")
 	}
-	source.InputFormat, source.Collections = "arazzo", []string{}
-	if arazzoInput == "" {
-		arazzoInput = filepath.Join(s.root, "exports", "arazzo", "arazzo.json")
+	if absolute, err := filepath.Abs(input); err == nil {
+		input = absolute
 	}
-	if absolute, err := filepath.Abs(arazzoInput); err == nil {
-		arazzoInput = absolute
+	if info, err := os.Stat(input); err == nil && info.IsDir() {
+		input = filepath.Join(input, "arazzo.json")
 	}
-	if info, err := os.Stat(arazzoInput); err == nil && info.IsDir() {
-		arazzoInput = filepath.Join(arazzoInput, "arazzo.json")
-	}
-	source.Arazzo = arazzoInput
-	return source
+	return Source{BundlePath: s.root, RunID: s.run.RunID, SnapshotRevision: s.run.Revision, RunState: s.run.RunState, ApplicationID: appID, APIID: providerAPI(s.run), ManifestSHA256: s.digest, Arazzo: input}
 }
 
 func providerAPI(run *bundle.Run) string {
@@ -522,15 +471,7 @@ func (s *snapshot) samples(channel, dependency string) []sample {
 			}
 			var schema *artifact.SchemaRef
 			schemaProblem := ""
-			if flow.Request.GRPC != nil {
-				for i := range capture.Schemas {
-					ref := &capture.Schemas[i]
-					if ref.Type == "protobuf" && ref.ID == flow.Request.GRPC.SchemaRef && (channel == "test_to_sut" && (ref.Role == "sut" || ref.Role == "provided" && ref.AssetID == flow.AssetID) || channel == "sut_to_dependency" && ref.Role == "dependency" && ref.AssetID == dependency) {
-						schema = ref
-						break
-					}
-				}
-			} else if flow.Request.HTTP != nil {
+			if flow.Request.HTTP != nil {
 				for i := range capture.Schemas {
 					ref := &capture.Schemas[i]
 					if ref.Type != "openapi" || !(channel == "test_to_sut" && (ref.Role == "sut" || ref.Role == "provided" && ref.AssetID == flow.AssetID) || channel == "sut_to_dependency" && ref.Role == "dependency" && ref.AssetID == dependency) {
@@ -558,38 +499,12 @@ func (s *snapshot) samples(channel, dependency string) []sample {
 	return out
 }
 
-func (s *snapshot) verifyCollections(inputs []string, boundary string) error {
-	if len(inputs) == 0 {
-		inputs = []string{filepath.Join(s.root, "exports", "postman")}
-	}
-	result, err := postman.GenerateAllWithOptions(s.root, "", postman.Options{OmitIncomplete: true})
-	if err != nil {
-		return err
-	}
-	var expected []postman.Export
-	for _, export := range result.Exports {
-		if export.BoundaryID == boundary {
-			expected = append(expected, export)
-		}
-	}
-	if len(expected) == 0 {
-		return errors.New("selected boundary has no representable Postman projection")
-	}
-	if err := VerifyCollections(inputs, expected); err != nil {
-		return err
-	}
-	return s.unchanged()
-}
-
 func operation(flow artifact.Flow) string {
 	if flow.Request.HTTP != nil {
 		u, err := url.Parse(flow.Request.HTTP.URL)
 		if err == nil {
 			return flow.Request.HTTP.Method + " " + u.EscapedPath()
 		}
-	}
-	if flow.Request.GRPC != nil {
-		return "gRPC " + flow.Request.GRPC.Procedure
 	}
 	return flow.Protocol
 }

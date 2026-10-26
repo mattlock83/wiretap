@@ -1,6 +1,7 @@
 package assumptions
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -36,7 +37,7 @@ func TestCheckObservedTypesEnumsAndLengthsFailInBothModes(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			for _, phase := range []string{"request", "response"} {
 				t.Run(phase, func(t *testing.T) {
-					consumer, provider := httpNormalizationFixture(), httpNormalizationFixture()
+					consumer, provider := checkFixtureFlow(), checkFixtureFlow()
 					consumerMessage, providerMessage := consumer.Request.HTTP, provider.Request.HTTP
 					if phase == "response" {
 						consumerMessage, providerMessage = consumer.Response.HTTP, provider.Response.HTTP
@@ -74,25 +75,22 @@ func TestCheckObservedTypesEnumsAndLengthsFailInBothModes(t *testing.T) {
 	}
 }
 
-func TestCheckPreservesNonJSONBodyBytesInBothModes(t *testing.T) {
+func TestCheckRejectsNonJSONBodies(t *testing.T) {
 	for _, media := range []string{"text/plain", "application/octet-stream"} {
 		for _, phase := range []string{"request", "response"} {
 			t.Run(media+"/"+phase, func(t *testing.T) {
-				consumer, provider := httpNormalizationFixture(), httpNormalizationFixture()
+				consumer, provider := checkFixtureFlow(), checkFixtureFlow()
 				cm, pm := consumer.Request.HTTP, provider.Request.HTTP
-				code := "provider_request_uncovered"
 				if phase == "response" {
 					cm, pm = consumer.Response.HTTP, provider.Response.HTTP
-					code = "provider_response_mismatch"
 				}
 				cm.Headers["Content-Type"], pm.Headers["Content-Type"] = []string{media}, []string{media}
 				cm.Body.Text, pm.Body.Text = "1", "1.0"
 				options := checkHTTPPair(t, []*artifact.Artifact{checkCapture(false, consumer)}, []*artifact.Artifact{checkCapture(true, provider)})
 				for _, mode := range []string{"consumer", "provider"} {
 					options.Mode = mode
-					report := mustCheck(t, options)
-					if report.Compatible || report.Counts.Verified != 0 || !findingCode(report, code) {
-						t.Fatalf("%s check normalized meaningful %s bytes: %+v", mode, media, report)
+					if _, err := Check(t.Context(), options); !errors.Is(err, ErrInput) {
+						t.Fatalf("unsupported representation certified: %v", err)
 					}
 				}
 			})

@@ -29,16 +29,6 @@ type SetReport struct {
 // exchange. Only already-verified members from the same build can supply
 // alternative witnesses for a consumer assumption.
 func CheckRunSets(ctx context.Context, consumerPath, providerPath, mode, dependency string, ignored []string) (*SetReport, error) {
-	return CheckRunSetsWithFormat(ctx, consumerPath, providerPath, mode, dependency, ignored, "postman")
-}
-
-// CheckRunSetsWithFormat verifies the same export format on both sides while
-// retaining each archive's complete response evidence and build identity.
-func CheckRunSetsWithFormat(ctx context.Context, consumerPath, providerPath, mode, dependency string, ignored []string, inputFormat string) (*SetReport, error) {
-	inputFormat, err := checkInputFormat(inputFormat)
-	if err != nil {
-		return nil, err
-	}
 	consumers, err := runset.Load(ctx, consumerPath)
 	if err != nil {
 		return nil, fmt.Errorf("%w: consumer run set: %v", ErrInput, err)
@@ -70,9 +60,9 @@ func CheckRunSetsWithFormat(ctx context.Context, consumerPath, providerPath, mod
 			if index == 0 {
 				boundary = selected
 			}
-			source := snapshot.sourceForFormat(nil, inputFormat, "")
-			if err := snapshot.verifyProjection(inputFormat, nil, "", boundary, &source); err != nil {
-				return nil, fmt.Errorf("%w: run set %s inputs: %v", ErrInput, inputFormat, err)
+			source := snapshot.source("")
+			if err := snapshot.verifyProjection("", boundary, &source); err != nil {
+				return nil, fmt.Errorf("%w: run set Arazzo inputs: %v", ErrInput, err)
 			}
 			if index == 0 {
 				result.Consumers = append(result.Consumers, source)
@@ -85,7 +75,7 @@ func CheckRunSetsWithFormat(ctx context.Context, consumerPath, providerPath, mod
 		matches := map[string]Match{}
 		findings := map[string]Finding{}
 		for _, provider := range providers.Archives {
-			report, err := Check(ctx, Options{Mode: mode, Consumer: consumer.Path, Provider: provider.Path, Dependency: selected, IgnoreHeaders: ignored, InputFormat: inputFormat})
+			report, err := Check(ctx, Options{Mode: mode, Consumer: consumer.Path, Provider: provider.Path, Dependency: selected, IgnoreHeaders: ignored})
 			if err != nil {
 				return nil, err
 			}

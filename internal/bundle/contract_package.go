@@ -63,7 +63,7 @@ func (w *Writer) freezeContractPackage(ref artifact.SchemaRef) (artifact.SchemaR
 	root := source.Path
 	switch source.Type {
 	case "package":
-		if source.URL != "" || source.Content != "" || len(source.ImportPaths) != 0 {
+		if source.URL != "" || source.Content != "" {
 			return ref, errors.New("contract package must supply only a root path and explicit files")
 		}
 		for _, file := range source.Files {
@@ -92,7 +92,7 @@ func (w *Writer) freezeContractPackage(ref artifact.SchemaRef) (artifact.SchemaR
 			files[file.Path] = data
 		}
 	case "file", "inline":
-		if source.URL != "" || len(source.Files) != 0 || len(source.ImportPaths) != 0 {
+		if source.URL != "" || len(source.Files) != 0 {
 			return ref, errors.New("multi-file contracts require an explicit package source")
 		}
 		if source.Type == "file" {

@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mattlock83/wiretap/internal/arazzo"
 	"github.com/mattlock83/wiretap/internal/artifact"
 	"github.com/mattlock83/wiretap/internal/bundle"
 	"github.com/mattlock83/wiretap/internal/coverage"
-	"github.com/mattlock83/wiretap/internal/postman"
 )
 
 func failedRun(t *testing.T, changes ...func(*artifact.Artifact)) string {
@@ -25,7 +25,7 @@ func failedRun(t *testing.T, changes ...func(*artifact.Artifact)) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	capture := &artifact.Artifact{Version: 2, TestCase: tc, Schemas: frozen, Traffic: []artifact.Flow{{ID: "f-1", Protocol: "http", Channel: "test_to_sut", Request: artifact.Message{HTTP: &artifact.HttpMessage{Method: "GET", URL: "http://sut.test/orders"}}, Response: artifact.Message{HTTP: &artifact.HttpMessage{Status: 503, Body: &artifact.Body{Text: "unavailable"}}}}}}
+	capture := &artifact.Artifact{Version: 2, TestCase: tc, Schemas: frozen, Traffic: []artifact.Flow{{ID: "f-1", Protocol: "http", Channel: "test_to_sut", Request: artifact.Message{HTTP: &artifact.HttpMessage{Method: "GET", URL: "http://sut.test/orders"}}, Response: artifact.Message{HTTP: &artifact.HttpMessage{Status: 503, Headers: artifact.Headers{"Content-Type": {"application/json"}}, Body: &artifact.Body{Text: `{"error":"unavailable"}`}}}}}}
 	for _, change := range changes {
 		change(capture)
 	}
@@ -44,11 +44,11 @@ func TestFailedAttemptsProduceEverySelectedOutput(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := Generate(t.Context(), root, Config{Coverage: []string{"json", "yaml", "text"}, Postman: true})
+	result, err := Generate(t.Context(), root, Config{Coverage: []string{"json", "yaml", "text"}, Arazzo: true})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(result.Coverage) != 3 || len(result.Postman) != 1 || len(result.Errors) != 0 {
+	if len(result.Coverage) != 3 || result.Arazzo == "" || len(result.Errors) != 0 {
 		t.Fatalf("wrong outputs: %+v", result)
 	}
 	var report coverage.Report
@@ -63,13 +63,13 @@ func TestFailedAttemptsProduceEverySelectedOutput(t *testing.T) {
 	if err != nil || filepath.Ext(result.Coverage["text"]) != ".txt" || !strings.Contains(string(textReport), "1 failed") {
 		t.Fatalf("missing readable failed-run summary: %s, %v", textReport, err)
 	}
-	var collection postman.Collection
-	data, _ = os.ReadFile(result.Postman[0])
-	if err := json.Unmarshal(data, &collection); err != nil {
+	var document arazzo.Document
+	data, _ = os.ReadFile(result.Arazzo)
+	if err := json.Unmarshal(data, &document); err != nil {
 		t.Fatal(err)
 	}
-	if len(collection.Items) != 1 || collection.Items[0].Items[0].Responses[0].Code != 503 {
-		t.Fatal("lost captured response")
+	if len(document.Workflows) != 1 || document.Workflows[0].Steps[0].SuccessCriteria[0].Condition != "$statusCode == 503" {
+		t.Fatal("lost captured status")
 	}
 	after, _ := os.ReadFile(filepath.Join(root, "bundle.json"))
 	if string(before) != string(after) {
@@ -89,11 +89,11 @@ func TestOutputFailureRetainsCoverageAndArchive(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(root, "exports"), 0700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(root, "exports", "postman"), []byte("keep"), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "exports", "arazzo"), []byte("keep"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	result, err := Generate(t.Context(), root, Defaults())
-	if err == nil || len(result.Errors) == 0 || result.Coverage["json"] == "" || len(result.Postman) != 0 {
+	if err == nil || len(result.Errors) == 0 || result.Coverage["json"] == "" || result.Arazzo != "" {
 		t.Fatalf("failure hidden or coverage lost: %+v %v", result, err)
 	}
 	if _, err := os.Stat(result.Coverage["json"]); err != nil {
@@ -125,7 +125,7 @@ func TestOutputDirectorySymlinkCannotWriteOutsideArchive(t *testing.T) {
 }
 
 func TestAutomaticOutputsProtectSourceBackedByExports(t *testing.T) {
-	for _, target := range []string{"coverage", "postman", "receipt"} {
+	for _, target := range []string{"coverage", "arazzo", "receipt"} {
 		for _, alias := range []string{"source symlink", "output hardlink"} {
 			t.Run(target+"/"+alias, func(t *testing.T) {
 				root := failedRun(t)
@@ -135,8 +135,8 @@ func TestAutomaticOutputsProtectSourceBackedByExports(t *testing.T) {
 				}
 				output := outputs.Coverage["json"]
 				switch target {
-				case "postman":
-					output = outputs.Postman[0]
+				case "arazzo":
+					output = outputs.Arazzo
 				case "receipt":
 					output = filepath.Join(root, "exports", "result.json")
 				}
@@ -169,32 +169,6 @@ func TestAutomaticOutputsProtectSourceBackedByExports(t *testing.T) {
 				}
 			})
 		}
-	}
-}
-
-func TestAutomaticPostmanOmissionPolicyRetainsExactDiagnostics(t *testing.T) {
-	root := failedRun(t, func(c *artifact.Artifact) {
-		incomplete := c.Traffic[0]
-		incomplete.ID = "incomplete"
-		request := *incomplete.Request.HTTP
-		request.Body = &artifact.Body{Text: "prefix", Truncated: true, OriginalBytes: 99}
-		incomplete.Request.HTTP = &request
-		c.Traffic = append(c.Traffic, incomplete)
-	})
-	result, err := Generate(t.Context(), root, Config{Coverage: []string{"json"}, Postman: true, PostmanOptions: &postman.Options{OmitIncomplete: true}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(result.Postman) != 1 || len(result.PostmanOmissions) != 1 || result.PostmanOmissions[0].FlowID != "incomplete" || len(result.Errors) != 0 {
-		t.Fatalf("missing omissions: %+v", result)
-	}
-	receipt, err := os.ReadFile(filepath.Join(root, "exports", "result.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var saved Result
-	if err := json.Unmarshal(receipt, &saved); err != nil || len(saved.PostmanOmissions) != 1 {
-		t.Fatalf("missing receipt diagnostics: %s %v", receipt, err)
 	}
 }
 
@@ -248,7 +222,10 @@ func TestAutomaticArazzoIncludesDocumentAndSchemaCompanions(t *testing.T) {
 }
 
 func TestAutomaticArazzoSkipsNonJSONTraffic(t *testing.T) {
-	root := failedRun(t)
+	root := failedRun(t, func(c *artifact.Artifact) {
+		c.Traffic[0].Response.HTTP.Headers = artifact.Headers{"Content-Type": {"text/plain"}}
+		c.Traffic[0].Response.HTTP.Body = &artifact.Body{Text: "unavailable"}
+	})
 	result, err := Generate(t.Context(), root, Defaults())
 	if err != nil || result.Arazzo != "" || len(result.ArazzoFiles) != 0 || len(result.Errors) != 0 {
 		t.Fatalf("non-JSON traffic should not export Arazzo: %+v, %v", result, err)
@@ -267,7 +244,7 @@ func TestAutomaticArazzoFailureRetainsOtherOutputs(t *testing.T) {
 		t.Fatal(err)
 	}
 	result, err := Generate(t.Context(), root, Defaults())
-	if err == nil || result.Arazzo != "" || len(result.ArazzoFiles) != 0 || len(result.Errors) != 1 || result.Errors[0].Format != "arazzo" || result.Coverage["json"] == "" || len(result.Postman) != 1 {
+	if err == nil || result.Arazzo != "" || len(result.ArazzoFiles) != 0 || len(result.Errors) != 1 || result.Errors[0].Format != "arazzo" || result.Coverage["json"] == "" {
 		t.Fatalf("Arazzo failure lost other exports: %+v, %v", result, err)
 	}
 	if _, _, err := bundle.Load(root); err != nil {
@@ -277,7 +254,7 @@ func TestAutomaticArazzoFailureRetainsOtherOutputs(t *testing.T) {
 
 func TestNestedCompanionWritesRejectEverySymlinkAncestor(t *testing.T) {
 	root := t.TempDir()
-	parent := filepath.Join(root, "exports", "postman")
+	parent := filepath.Join(root, "exports", "arazzo")
 	if err := os.MkdirAll(parent, 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -285,7 +262,7 @@ func TestNestedCompanionWritesRejectEverySymlinkAncestor(t *testing.T) {
 	if err := os.Symlink(outside, filepath.Join(parent, "schemas")); err != nil {
 		t.Skip(err)
 	}
-	path := filepath.Join(parent, "schemas", "service", "api.proto")
+	path := filepath.Join(parent, "schemas", "service", "openapi.json")
 	if err := writeFile(t.Context(), root, path, []byte("secret")); err == nil {
 		t.Fatal("followed nested symlink")
 	}

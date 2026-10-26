@@ -1,61 +1,34 @@
 # Supported integrations and compatibility
 
-Wiretap captures traffic associated with existing tests, measures supported
-conditions in supplied contracts, and checks consumer mocks against provider
-test evidence. Executable Postman collections carry the captured examples and
-their provenance. Framework execution and assertions remain in your test suite.
+This branch supports Jest HTTP API capture, Arazzo workflows and consumer/provider checks. Existing assertions, fixtures, clients and mocks stay with the test suite.
 
 | Integration | Supported surface | Ownership |
 | --- | --- | --- |
-| Go | Go 1.26+, standard `testing` | One managed runtime per package with `Run` and `StartTest`. |
-| JavaScript | Node 22+; Jest 29/30, Playwright Test 1.64, Mocha 11/12, plain lifecycle API | Runner adapters or an outer managed harness. |
-| Python | Python 3.9+; optional pytest 7.4–9 and pytest-xdist | Stdlib control client/context managers; one runtime per pytest worker. |
-| Other runners/languages | HTTP control API | User-owned harness implementing the lifecycle contract. |
+| Jest | Node 22+; Jest 29.7 or 30, Node test environment | One managed suite runtime; automatic attempt capture and finalization. |
+| Runtime control API | HTTP lifecycle endpoints | Underlying service interface used by the adapter. |
 
-The repository CI exercises Go and JavaScript across Linux, macOS and Windows.
-Python/pytest lanes cover Python 3.9, 3.12 and 3.14, with Python 3.12 also on macOS
-and Windows. Each lane builds a wheel and checks clean installs with and without
-pytest, plugin discovery, isolated workers, overlapping async HTTP clients,
-recovered/exhausted retries, and unary/server-streaming grpcio clients.
-Dependency ranges live in each SDK's package metadata.
-The Python integration supplies explicit URLs and trace headers to
-existing clients; it does not install a tracing provider or patch client code.
-Application-side propagation is still required for shared concurrent services.
+The Jest adapter hosts an existing Node HTTP handler or routes to an already running API. It defaults to one worker. Shared concurrent applications require explicit sessions, W3C propagation and fixture isolation. See [Jest details](../sdk/js/docs/jest.md).
 
 | Protocol/contract | Scope |
 | --- | --- |
-| HTTP/HTTPS + OpenAPI 3.0 | Boundary capture, supported contract conditions and exercised-rule assumption checks; configure HTTPS trust. |
-| Native gRPC + Protobuf | Unary and client/server/bidirectional streaming, reflection or local descriptors/protos; documented TLS support. |
-| OpenAPI 3.1 and unsupported schema constructs | Explicit measurement/check limits; no claim of complete semantic support. |
+| HTTP/HTTPS + OpenAPI 3.0 | Boundary capture, supported condition coverage and exercised-rule checks. |
+| JSON/REST Arazzo | Strict workflow export, portable OpenAPI companions and archive-backed assumption checks. |
+| OpenAPI 3.1 and unsupported constructs | Explicit measurement/check limits. |
+| Generic event evidence | Opaque archive preservation with explicit unmeasured scope; no automatic capture adapter. |
 
-See [coverage rules](contract-coverage-rules.md), [gRPC scope](grpc-support.md)
-and [assumption-check limits](assumption-checks.md#what-the-check-will-not-establish)
-for precise semantics. A coverage percentage is not a compatibility proof.
+Only HTTP/HTTPS capture is supported. See [HTTPS trust](https-trust.md), [coverage rules](contract-coverage-rules.md) and [check limits](assumption-checks.md#what-the-check-will-not-establish). Coverage percentages alone do not prove compatibility.
 
 ## Format compatibility
 
-| Contract | Current identifier | Reader behavior |
+| Contract | Identifier | Reader behavior |
 | --- | --- | --- |
-| Control API | `api_version: "1.0"` at `/v1/capabilities` | Check required capabilities; tolerate documented optional fields. |
-| Raw archive | `format_version: "3.1"` | Enforce required capabilities and archive integrity before reading evidence. |
-| Coverage, assumption checks and completion/export receipts | `report_version: "1.0"` | Accept additive fields within a supported version; reject unsupported versions and unknown semantics needed by a decision. |
-| Run set manifest | `run_set_version: "1.0"` | Validate all members and their pinned manifest hashes; reject unknown manifest fields. |
-| Coverage policy | `policy_version: "1.0"` | Reject misspelled/unknown policy keys; gates are opt-in. |
-| Measurement rules | Per-report/per-spec `rules_version` | Compare only matching known rule identities. Changed contract revisions stay distinct. |
+| Control API | `api_version: "1.0"` | Check version and required capabilities. |
+| Raw archive | `format_version: "3.1"` | Enforce supported capabilities and integrity. |
+| Coverage/check reports and receipts | `report_version: "1.0"` | Check envelope and measurement rules before decisions. |
+| Run sets | `run_set_version: "1.0"` | Verify pinned member hashes and same-build identity. |
+| Coverage policy | `policy_version: "1.0"` | Reject unknown/misspelled keys; gates are opt-in. |
+| Measurement | Per-report/per-spec `rules_version` | Compare matching known rule identities. |
 
-Producer version and commit describe the binary writing a document. They are
-independent of the tested application's revision in `sut_source`. New optional
-fields may be added within an envelope version. Changes to target identity or
-measurement meaning change the applicable rules version; incompatible document
-shape changes require a new format version. Preserve unknown fields when copying
-documents and the complete original archive when regenerating exports.
+This experimental branch removes prior projection and native RPC formats. Removed options and evidence are rejected. Preserve complete archives and use this branch's runtime and Jest package together. Producer identity describes the tool, independently of the application revision in `sut_source`.
 
-Schemas: [raw archive](bundle-evidence.schema.json),
-[coverage](coverage-report.schema.json), [assumption checks](check-report.schema.json),
-[run sets](run-set.schema.json), and [control/export responses](control-api.schema.json).
-The latter exposes separate `$defs/capabilities`, `$defs/finish` and
-`$defs/exports` definitions. Error-only HTTP responses remain ordinary API errors.
-
-Assumption checks support [JUnit XML report output](report-policies.md#send-assumption-checks-to-ci)
-for CI importers. This report format is independent of the test runner used to
-capture the evidence.
+Schemas: [archive](bundle-evidence.schema.json), [coverage](coverage-report.schema.json), [checks](check-report.schema.json), [run sets](run-set.schema.json), [control/export responses](control-api.schema.json). Successful responses and errors have separate shapes. Check reports can also be [Markdown or JUnit XML](report-policies.md#send-assumption-checks-to-ci).

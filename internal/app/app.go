@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
@@ -12,9 +13,7 @@ import (
 	"github.com/mattlock83/wiretap/internal/artifact"
 	"github.com/mattlock83/wiretap/internal/bundle"
 	"github.com/mattlock83/wiretap/internal/core"
-	"github.com/mattlock83/wiretap/internal/grpccontract"
 	"github.com/mattlock83/wiretap/internal/project"
-	"golang.org/x/net/http2"
 )
 
 type Deps struct {
@@ -33,15 +32,7 @@ type App struct {
 	bundleMu  sync.Mutex
 	bundle    *bundle.Writer
 
-	proxyComponent  *ProxyComponent
-	grpcMu          sync.RWMutex
-	grpcContracts   map[string]*grpccontract.Contract
-	grpcSchemas     []artifact.SchemaRef
-	grpcListeners   map[string]*grpcCaptureListener
-	grpcTransportMu sync.Mutex
-	grpcTransports  map[string]*http2.Transport
-	grpcCallsMu     sync.Mutex
-	grpcCalls       map[*activeGRPCCall]struct{}
+	proxyComponent *ProxyComponent
 
 	controlMu     sync.Mutex
 	traceOwners   map[string]string
@@ -82,23 +73,15 @@ func (a *App) ensureBundle() (*bundle.Writer, error) {
 		// Freeze the configured HTTP inventory before any test starts. Empty or
 		// interrupted runs still need a denominator for their coverage reports.
 		var schemas []artifact.SchemaRef
-		if defaults.SUTProtocol != "grpc" {
-			schemas = append(schemas, defaults.Schemas...)
-			for i := range schemas {
-				schemas[i].Role = "sut"
-				schemas[i].AssetID = defaults.APIID
-			}
-			if len(schemas) == 0 && !requiresSchema(defaults.SchemaRequired) {
-				schemas = append(schemas, omittedSchema(defaults.APIID, "sut"))
-			}
+		schemas = append(schemas, defaults.Schemas...)
+		for i := range schemas {
+			schemas[i].Role = "sut"
+			schemas[i].AssetID = defaults.APIID
 		}
-		var httpDependencies []dependencyRegistration
-		for _, dependency := range defaults.Dependencies {
-			if dependency.Protocol != "grpc" {
-				httpDependencies = append(httpDependencies, dependency)
-			}
+		if len(schemas) == 0 && !requiresSchema(defaults.SchemaRequired) {
+			schemas = append(schemas, omittedSchema(defaults.APIID, "sut"))
 		}
-		_, dependencySchemas, err := normalizeDependencies(httpDependencies)
+		_, dependencySchemas, err := normalizeDependencies(defaults.Dependencies)
 		if err != nil {
 			return nil, err
 		}
@@ -143,6 +126,16 @@ func New(deps Deps) (*App, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
+	if deps.Project != nil {
+		if protocol := deps.Project.SUT.Protocol; protocol != "" && protocol != "http" {
+			return nil, fmt.Errorf("sut: unsupported protocol %q; only HTTP JSON/REST APIs are supported", protocol)
+		}
+		for id, dependency := range deps.Project.Dependencies {
+			if protocol := dependency.Protocol; protocol != "" && protocol != "http" {
+				return nil, fmt.Errorf("dependency %q: unsupported protocol %q; only HTTP JSON/REST APIs are supported", id, protocol)
+			}
+		}
+	}
 
 	logger := deps.Logger
 	if logger == nil {
@@ -173,14 +166,8 @@ func New(deps Deps) (*App, error) {
 
 	if component, ok := proxy.(*ProxyComponent); ok {
 		app.proxyComponent = component
-		if deps.Project != nil && deps.Project.SUT.Protocol == "grpc" {
-			if err := component.server.SetCaptureTLS(deps.Project.SUT.CaptureTLS.CertFile, deps.Project.SUT.CaptureTLS.KeyFile); err != nil {
-				return nil, err
-			}
-		}
 		component.SetDependencyResolver(app.resolveDependencyRoute)
 		component.server.SetAdmissionResolver(app.admitRequest)
-		component.server.SetGRPCHandler(func(w http.ResponseWriter, r *http.Request) { app.forwardGRPC(w, r, "") })
 	}
 
 	app.server = &http.Server{

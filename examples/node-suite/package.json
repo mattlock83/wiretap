@@ -1,6 +1,0 @@
-{
-  "name": "wiretap-node-suite-example",
-  "private": true,
-  "engines": { "node": ">=22" },
-  "scripts": { "test": "node run-tests.mjs" }
-}

@@ -104,18 +104,45 @@ func TestHTTPMessageJSONRejectsInvalidFields(t *testing.T) {
 	}
 }
 
-func TestGRPCMessageRequiresTagAndExplicitStatus(t *testing.T) {
-	for _, raw := range []string{`{"procedure":"/a/b"}`, `{"grpc_status":0}`, `{"messages":[]}`, `{"kind":"future"}`, `{"kind":"grpc","http_status":200}`, `{"kind":"grpc","http_status":200,"grpc_status":null}`} {
+func TestNativeRPCMessagesAndFlowsAreRejected(t *testing.T) {
+	for _, raw := range []string{`{"procedure":"/a/b"}`, `{"grpc_status":0}`, `{"messages":[]}`, `{"kind":"future"}`, `{"kind":"grpc","http_status":200,"grpc_status":0}`, `{"Kind":"grpc"}`, `{"PROCEDURE":"/a/b"}`, `{"Grpc_Status":0}`, `{"MESSAGES":[]}`} {
 		var message Message
 		if err := json.Unmarshal([]byte(raw), &message); err == nil {
-			t.Fatalf("invalid gRPC message accepted: %s", raw)
+			t.Fatalf("unsupported message accepted: %s", raw)
 		}
 	}
-	var message Message
-	if err := json.Unmarshal([]byte(`{"kind":"grpc","http_status":200,"grpc_status":0}`), &message); err != nil {
+	for _, raw := range []string{`{"id":"rpc","protocol":"grpc"}`, `{"id":"rpc","grpc_events":[]}`, `{"id":"rpc","GRPC_EVENTS":[]}`, `{"id":"rpc","protocol":" GRpC "}`, `{"id":"rpc","protocol":"grpc-web"}`, `{"id":"rpc","protocol":"grpcs"}`, `{"id":"rpc","protocol":"grpc","PROTOCOL":"http"}`} {
+		var flow Flow
+		if err := json.Unmarshal([]byte(raw), &flow); err == nil {
+			t.Fatalf("unsupported flow accepted: %s", raw)
+		}
+	}
+}
+
+func TestRemovedRPCSchemaMetadataCannotBeDecodedAsHTTP(t *testing.T) {
+	for _, raw := range []string{`{"Type":" Protobuf "}`, `{"Protocol":" GRPC-Web "}`, `{"type":"protobuf","TYPE":"openapi"}`, `{"Services":[]}`, `{"ACQUIRED_FROM":"reflection"}`, `{"Acquisition":{}}`} {
+		var schema SchemaRef
+		if err := json.Unmarshal([]byte(raw), &schema); err == nil {
+			t.Fatalf("unsupported schema accepted: %s", raw)
+		}
+	}
+}
+
+func TestUnrelatedCustomProtocolRemainsSupported(t *testing.T) {
+	var flow Flow
+	if err := json.Unmarshal([]byte(`{"id":"custom","protocol":"example.custom-v2"}`), &flow); err != nil {
 		t.Fatal(err)
 	}
-	if message.GRPC == nil || message.GRPC.StatusCode != 0 {
-		t.Fatal("explicit OK status not restored")
+	if err := ValidateInteractions(&Artifact{Traffic: []Flow{flow}}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRemovedRPCSourcesAndUnknownSchemaFieldsAreRejected(t *testing.T) {
+	for _, raw := range []string{`{"source":{"Import_Paths":["./proto"]}}`, `{"source":{"Type":" protobuf_inline "}}`, `{"source":{"format":"FILE_DESCRIPTOR_SET"}}`, `{"unknown":true}`, `{"source":{"unknown":true}}`} {
+		var schema SchemaRef
+		if err := json.Unmarshal([]byte(raw), &schema); err == nil {
+			t.Fatalf("unsupported source or unknown schema field accepted: %s", raw)
+		}
 	}
 }

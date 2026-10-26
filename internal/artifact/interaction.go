@@ -110,6 +110,20 @@ func hexDigest(value string) bool {
 // ValidateInteractions validates the recording structure and payload references,
 // not business contracts or the correctness of observed protocol behavior.
 func ValidateInteractions(capture *Artifact) error {
+	if capture == nil {
+		return nil
+	}
+	for _, schema := range capture.Schemas {
+		if strings.EqualFold(strings.TrimSpace(schema.Type), "protobuf") || UnsupportedRPCProtocol(schema.Protocol) {
+			return fmt.Errorf("native gRPC and protobuf contracts are unsupported")
+		}
+	}
+	for _, flow := range capture.Traffic {
+		if UnsupportedRPCProtocol(flow.Protocol) {
+			return fmt.Errorf("native gRPC capture evidence is unsupported")
+		}
+	}
+
 	flows := map[string]*Flow{}
 	for i := range capture.Traffic {
 		f := &capture.Traffic[i]
@@ -127,7 +141,7 @@ func ValidateInteractions(capture *Artifact) error {
 		if !identifier(f.ID) || strings.TrimSpace(f.Protocol) == "" {
 			return fail("missing protocol or invalid ID")
 		}
-		if f.Request.HTTP != nil || f.Request.GRPC != nil || f.Response.HTTP != nil || f.Response.GRPC != nil {
+		if f.Request.HTTP != nil || f.Response.HTTP != nil {
 			return fail("event and pair representations cannot be combined")
 		}
 		if f.Channel != "" || f.AssetID != "" {

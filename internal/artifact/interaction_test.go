@@ -6,11 +6,11 @@ import (
 )
 
 func interactionFixture() *Artifact {
-	return &Artifact{Traffic: []Flow{{ID: "flow", Protocol: "grpc", Interaction: &Interaction{
+	return &Artifact{Traffic: []Flow{{ID: "flow", Protocol: "websocket", Interaction: &Interaction{
 		Kind: "stream", Boundary: BoundaryRef{Role: "provided", ID: "chat"},
 		Transport: "http2", Operation: "/chat.Chat/Connect", CaptureState: "complete", StreamMode: "bidirectional",
 		Events: []InteractionEvent{
-			{ID: "a", Sequence: 0, Direction: "received", DirectionSequence: 0, Kind: "message", Payloads: []EventPayload{{Name: "wire", Encoding: "protobuf", Availability: "present", Body: &Body{Encoding: "base64", Bytes: "CgFh"}}}},
+			{ID: "a", Sequence: 0, Direction: "received", DirectionSequence: 0, Kind: "message", Payloads: []EventPayload{{Name: "wire", Encoding: "bytes", Availability: "present", Body: &Body{Encoding: "base64", Bytes: "CgFh"}}}},
 			{ID: "b", Sequence: 1, Direction: "sent", DirectionSequence: 0, Kind: "message"},
 			{ID: "c", Sequence: 2, Direction: "received", DirectionSequence: 1, Kind: "half_close"},
 			{ID: "d", Sequence: 3, Direction: "sent", DirectionSequence: 1, Kind: "trailers"},
@@ -83,7 +83,7 @@ func TestInteractionLinksDoNotInventCausality(t *testing.T) {
 func TestInteractionPayloadRequiresUniqueBoundaryContract(t *testing.T) {
 	a := interactionFixture()
 	hash := strings.Repeat("a", 64)
-	a.Schemas = []SchemaRef{{ID: "schema", Type: "protobuf", Role: "provided", AssetID: "chat", Source: SchemaSource{Type: "file", Path: "contracts/first/root", SHA256: hash}}}
+	a.Schemas = []SchemaRef{{ID: "schema", Type: "asyncapi", Role: "provided", AssetID: "chat", Source: SchemaSource{Type: "file", Path: "contracts/first/root", SHA256: hash}}}
 	a.Traffic[0].Interaction.Events[0].Payloads[0].WriterSchema = &ContractLink{ID: "schema", SHA256: hash}
 	if err := ValidateInteractions(a); err != nil {
 		t.Fatal(err)
@@ -106,7 +106,7 @@ func TestInteractionProjectionRedactionRemovesBothRepresentations(t *testing.T) 
 		t.Run(redact, func(t *testing.T) {
 			a := interactionFixture()
 			event := &a.Traffic[0].Interaction.Events[0]
-			event.Payloads = append(event.Payloads, EventPayload{Name: "json", Encoding: "json", Availability: "present", DerivedFrom: "wire", Transformation: "protojson", Body: &Body{Text: `{"value":"a"}`}})
+			event.Payloads = append(event.Payloads, EventPayload{Name: "json", Encoding: "json", Availability: "present", DerivedFrom: "wire", Transformation: "custom-json", Body: &Body{Text: `{"value":"a"}`}})
 			if err := ValidateInteractions(a); err != nil {
 				t.Fatal(err)
 			}

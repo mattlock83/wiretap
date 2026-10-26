@@ -4,22 +4,18 @@ Wiretap writes one portable directory per run under `./artifacts` by default.
 Set `output_dir` in `.wiretap.yaml` or `WIRETAP_OUTPUT_DIR` to choose another
 parent directory. SDK/API responses return the exact `bundle_path`.
 
-Each test teardown commits an immutable JSON recording. Managed SDK adapters
-finalize the run and configured exports after test cleanup, then stop their
-Wiretap process. With a project-owned runtime, one suite owner calls
+Each test teardown commits an immutable JSON recording. The Jest integration finalizes the run and configured exports after test
+cleanup, then stops its Wiretap process. With a project-owned runtime, one suite owner calls
 `/v1/finishRun` after every worker finishes. Keep the complete directory when sharing it or
 uploading it to CI so its contracts and payload references remain valid. Managed
 runs also write `last-run.json` with exact archive/export paths and a bounded
 `wiretap.log` inside each run directory. This isolates receipts for concurrent
-Go packages, JavaScript owners and Python workers. JavaScript also writes an
-advisory latest receipt in the output parent; use the archive-local receipt
+Jest runs. The SDK also writes an advisory latest receipt in the output parent; use the archive-local receipt
 when selecting a particular run. Preserve the complete run directory.
 
-After successful finalization, the Go, Jest, Mocha, Playwright and pytest runner
-adapters print the archive and exact configured coverage, Postman and Arazzo paths from the
-completion receipt. JavaScript and Go use stderr; pytest uses its terminal
-reporter, including summaries from parallel workers. Low-level SDK calls return
-their receipts without printing these summaries. Failed tests keep their original
+After successful finalization, Jest prints the archive and exact configured
+coverage and Arazzo paths from the completion receipt to stderr.
+Failed tests keep their original
 outcome even when capture and export finish successfully.
 
 ```text
@@ -48,17 +44,15 @@ Use `wiretap check consumer` or `wiretap check provider` with a local run and
 `--artifacts <root>` to discover mapped peers beneath application folders. You
 can also select an explicit pair with `--consumer` and `--provider`, or explicit
 [same-build run sets](run-sets.md) with `--consumer-set` and `--provider-set`. Every run
-needs its complete archive and the selected projection exports. Postman is the
-default; `--input-format arazzo` selects JSON/REST Arazzo workflows and their source
+needs its complete archive, Arazzo workflows and their OpenAPI source
 companions on both sides. The checker verifies those projections against their
 raw evidence, then requires each selected mock request and paired
 response to have compatible evidence from a passing provider service test.
 The provider's frozen OpenAPI 3.0 contract can validate both concrete exchanges
 without a consumer dependency spec; that match is marked
 `openapi_3_0_provider_contract`. With both contracts present, exercised rules
-must also agree and each exchange validates under its own schema. Native gRPC
-also compares the selected method's reachable message/enum declarations and
-cross-decodes observed wire messages. With both HTTP schemas absent or omitted,
+must also agree and each exchange validates under its own schema. With both
+HTTP schemas absent or omitted,
 the report marks a verified match as example-only. Uncovered scenarios fail the
 check. See [assumption checks](assumption-checks.md) for command examples,
 dependency selection, JSON results and limits.
@@ -87,7 +81,7 @@ Text limits contract, operation and condition detail lists and names the omitted
 counts. JSON/YAML retain the complete report; truncation never changes totals.
 
 Save output files outside the capture archive or under its `exports/` directory.
-Reports, Postman and Arazzo exports reject destinations that replace raw recordings,
+Reports and Arazzo exports reject destinations that replace raw recordings,
 contracts, retained payloads or the manifest, including symlink and hardlink
 aliases. The archive's `exports/` directory must be a real directory; a source
 file stored there through an archive alias remains protected. These checks also
@@ -99,7 +93,7 @@ reading a full JSON report:
 
 ```text
 Attempts: 2 (2 passed, 0 failed, 0 skipped)
-Captured interactions: 2 (2 HTTP, 0 gRPC, 0 other)
+Captured interactions: 2 (2 HTTP, 0 other)
 
 Provided APIs
   orders: 1/2 operations exercised
@@ -200,20 +194,19 @@ operations and labels it as observed evidence. It does not infer contract
 constraints from examples. Nonempty request and response bodies require a JSON
 content type and valid JSON. Empty-body HTTP operations require a JSON content
 type or a matching frozen OpenAPI operation.
-Native gRPC and non-JSON traffic are excluded. A run with no eligible workflows
+Non-JSON HTTP traffic is excluded. A run with no eligible workflows
 does not produce an automatic Arazzo output.
 
 Select `outputs.arazzo: true` to generate `exports/arazzo/arazzo.json` at suite
 finalization. `exports/result.json` returns its exact path in `arazzo` and source
 paths in `arazzo_files`. `--format all` includes Arazzo when eligible JSON/REST
-traffic is present. Export errors are reported independently from coverage and
-Postman errors.
+traffic is present. Export errors are reported independently from coverage errors.
 
-Arazzo can replace Postman as the projection input to JSON/REST assumption checks:
+Arazzo workflows are the projection inputs to JSON/REST assumption checks:
 
 ```sh
 wiretap check consumer --consumer ./consumer-run --provider ./provider-run \
-  --dependency inventory --input-format arazzo
+  --dependency inventory
 ```
 
 Both archives default to `exports/arazzo/arazzo.json` with companions beside it.
@@ -222,188 +215,17 @@ provenance and frozen contracts, and verifies the Arazzo document and companions
 against a regenerated projection. It does not execute workflow expressions.
 Missing, stale or altered inputs fail verification. Unsupported traffic in a
 selected boundary cannot be silently excluded from a passing check. See
-[Arazzo check inputs](assumption-checks.md#use-arazzo-instead-of-postman-for-jsonrest)
+[Arazzo check inputs](assumption-checks.md#arazzo-check-inputs)
 for explicit paths, shared-store and run-set usage.
 
-`outputs: {coverage: [json, text], arazzo: true}` is a valid suite configuration
-without Postman exports.
-
-## Postman collections
-
-Export a capture run as separate Postman JSON collections. HTTP uses the
-existing Collection v2.1 format; native gRPC uses Collection v3.0.0:
-
-```bash
-wiretap export --bundle ./artifacts/<run-id> --format postman \
-  --output-dir ./postman
-```
-
-The directory contains separate collections for the SUT and each dependency
-marked `kind: mock` (API: `upstream_kind: mock`) with recorded traffic. Real
-services and unknown target kinds are excluded from dependency collections.
-HTTP filenames normally use `sut-<application-id>.postman_collection.json` and
-`mock-<dependency-id>.postman_collection.json`. gRPC uses
-`sut-<application-id>.grpc.postman_collection.json` and
-`mock-<dependency-id>.grpc.postman_collection.json`. Unusual or conflicting IDs
-receive stable, unique filenames. A gRPC-only run does not add an empty SUT HTTP
-collection. HTTP-only exports retain their previous filenames and request encoding.
-
-The SUT collection name is `<application.name> - <application.id>`, for example
-`Orders - orders-app`. If the application ID is absent, the API ID is used; if
-either part is absent, the available name or ID is used. Mock collection names
-use `<dependency.name> - <dependency-id>`, or just the ID when no name is recorded.
-Set a dependency's optional `name` in `.wiretap.yaml`, or pass `asset_name` in its
-SDK/API registration. `--sut-name` overrides only the SUT collection name.
-
-`--output orders.postman_collection.json` names the primary collection and
-places the remaining collection files alongside it. The primary is the SUT
-HTTP collection when present, otherwise the SUT gRPC collection, or the first
-dependency collection for a dependency-only run. The chosen filename must not
-collide with another collection filename. Use either `--output` or
-`--output-dir`. Omitting both writes to stdout only when the run produces one
-collection.
-
-`wiretap report --format postman` accepts the same options. The export reads and
-verifies the run's captured evidence and retained payloads, so the original
-workspace and running systems are not required.
-
-For both protocols, each test attempt has its original attempt ID as the folder
-ID. Unique test names remain unchanged. Repeated names get an explicit
-`[attempt <id>]` suffix; collisions with literal names are resolved deterministically.
-Every retry is retained. The original recording names and IDs remain unchanged.
-HTTP also retains empty folders when a system had no HTTP requests in that test. The SUT collection contains requests from tests to
-the SUT; each mock collection contains the SUT's requests to that dependency.
-Requests are ordered by request start time. If a request lacks a start time,
-the folder retains capture order and notes that limit. A recorded response is
-saved as an example, with a basic Postman test that checks its HTTP status code.
-Requests without a recorded response status have a skipped status check.
-Request and response bodies use the retained capture and its capture limits.
-For compatibility, exports also inspect older archives for redacted evidence.
-They reject affected interactions or omit them with an explicit diagnostic when
-that policy is selected. Binary request bodies are embedded as base64 file
-content that Postman decodes when sending. Binary response examples are labeled and
-saved as base64.
-Postman's cookie jar, automatic URL encoding and optional generated headers are
-disabled so replay uses the captured URL and application headers. Postman still
-calculates transport headers such as Host and Content-Length for the request.
-Raw bodies use text mode with the recorded Content-Type header, preserving even
-malformed JSON used by negative tests.
-
-gRPC v3 collections contain one folder per test with retained gRPC interactions.
-Unary, server-streaming, client-streaming and bidirectional calls preserve their
-decoded protobuf JSON messages. Saved examples contain outgoing and incoming
-messages in the order Wiretap observed their completion, plus request metadata,
-response metadata, trailers and final RPC status. Binary metadata values use
-canonical padded base64; rich errors retain the verified original
-`grpc-status-details-bin` envelope. The first outgoing message is also the
-request's initial `message`, as required to describe the invocable request; it
-is not an additional send in the saved conversation.
-
-gRPC output retains attempt IDs for folder identity. Execution results, timestamps
-and durations remain excluded. An RPC error status is still a recorded interaction.
-Complete negative RPC responses are exported.
-The v3 schema cannot represent explicit half-close events or raw protobuf
-message bytes; those are not added as invented messages. Timing is excluded.
-
-### Incomplete captures
-
-The CLI and automatic Postman export are strict by default: incomplete captures,
-truncated bodies, transport failures, undecoded gRPC messages, missing terminal
-status, and request trailers that v3 cannot represent fail the export before
-replacing any collection. Compatibility checks also reject legacy-redacted
-evidence. A complete negative API response remains exportable.
-
-To retain healthy exchanges from a mixed run, use:
-
-```bash
-wiretap export --bundle ./artifacts/<run-id> --format postman \
-  --postman-omit-incomplete --output-dir ./postman
-```
-
-Every omitted interaction is reported to stderr and recorded in
-`wiretap-postman-diagnostics.json` beside the collections. Valid interactions in
-other tests, dependencies, or protocols remain available. This opt-in does not
-modify the source archive. Corrupt archives or invalid configuration always fail;
-they cannot be made valid by requesting omissions.
-
-### gRPC replay targets and source schemas
-
-An offline archive does not provide a portable server address or original source
-`.proto` files. The default export leaves those fields unspecified. Supply
-explicit replay settings with `--postman-config ./postman.json`:
-
-```json
-{
-  "grpc": {
-    "sut": {
-      "url": "http://localhost:50051",
-      "proto_root": "./proto",
-      "proto_file": "inventory/v1/inventory.proto"
-    },
-    "dependency:payments": { "url": "https://payments.example.test:443" }
-  }
-}
-```
-
-Keys are `sut` or `dependency:<exact dependency ID>`. Keys match original
-recorded export-eligible boundaries, including boundaries whose interactions
-were all explicitly omitted. Unknown keys fail so a typo cannot silently drop
-a replay override. `http`/`grpc` selects plaintext and
-`https`/`grpcs` selects TLS; credentials, URL query strings and endpoint paths are
-rejected. These settings affect derived collections only.
-
-`proto_root` is relative to the configuration file and `proto_file` is relative
-to that root. Supply both together. The exporter compiles the local source
-package and verifies the recorded methods are present, then copies source bytes
-under `schemas/` and sets Postman's native `schema.source: file` and `location`.
-The copied package contains its local `.proto` files and is limited to 256 files
-and 16 MiB. A frozen reflection descriptor is
-never turned into invented `.proto` source. If original source is unavailable,
-configure the schema manually in Postman or use a server with reflection.
-
-Keep the collection and copied `schemas/` tree together. Postman's v3 file schema
-locations are relative to its working directory; use the export directory as the
-working directory, or select the copied root proto after importing in the desktop
-app. Source schema companions require `--output` or `--output-dir`.
-
-### Automatic exports
-
-The same options work in `.wiretap.yaml` for suite-finalization exports:
+Automatic exports default to JSON/text coverage and eligible Arazzo workflows.
+Configure them explicitly with:
 
 ```yaml
 outputs:
   coverage: [json, text]
-  postman: true
   arazzo: true
-  postman_options:
-    omit_incomplete: true
-    grpc:
-      sut:
-        url: http://localhost:50051
-        proto_root: ./proto
-        proto_file: inventory/v1/inventory.proto
 ```
 
-Here `proto_root` is relative to `.wiretap.yaml`. The automatic output receipt
-`exports/result.json` includes `postman` collection paths, `postman_files` copied
-source paths, and `postman_omissions` with exact attempt/flow identities. Export
-errors remain under `errors`; coverage can succeed when Postman export fails.
-`coverage: [json, text]` writes both `coverage.json` and the compact `coverage.txt`.
-`--format all` defaults to those two formats, Postman collections and eligible
-Arazzo workflows.
-`--format all` also accepts `--postman-config` and `--postman-omit-incomplete` for
-explicit regeneration with these settings.
-
-### Compatibility checks
-
-The exporter emits Postman's official single-document JSON representation rather
-than the native Git YAML directory layout. HTTP v2.1 and native gRPC v3 exports
-are checked against their pinned official
-[HTTP](https://schema.postman.com/collection/json/v2.1.0/draft-07/collection.json) and
-[gRPC](https://schema.postman.com/collection/json/v3.0.0/draft-07/collection.json)
-JSON schemas, with concrete expectations for captured request/response content.
-The [compatibility harness](../tests/postman-compat/README.md) covers RPC shapes,
-binary data, rich errors and retries using actual exporter output. It does not
-exercise the Postman SDK parser or claim desktop import/export or server invocation
-has been verified. Desktop import and imported-collection invocation are outside
-the automated compatibility checks.
+Coverage and Arazzo errors remain separate in `exports/result.json`; successful
+coverage paths remain available when Arazzo export fails.

@@ -15,19 +15,16 @@ import (
 	"github.com/mattlock83/wiretap/internal/archiveoutput"
 	"github.com/mattlock83/wiretap/internal/bundle"
 	"github.com/mattlock83/wiretap/internal/coverage"
-	"github.com/mattlock83/wiretap/internal/postman"
 	"github.com/mattlock83/wiretap/internal/version"
 )
 
 type Config struct {
-	Coverage       []string         `json:"coverage,omitempty" yaml:"coverage,omitempty"`
-	Postman        bool             `json:"postman,omitempty" yaml:"postman,omitempty"`
-	Arazzo         bool             `json:"arazzo,omitempty" yaml:"arazzo,omitempty"`
-	PostmanOptions *postman.Options `json:"postman_options,omitempty" yaml:"postman_options,omitempty"`
+	Coverage []string `json:"coverage,omitempty" yaml:"coverage,omitempty"`
+	Arazzo   bool     `json:"arazzo,omitempty" yaml:"arazzo,omitempty"`
 }
 
 func Defaults() Config {
-	return Config{Coverage: []string{"json", "text"}, Postman: true, Arazzo: true}
+	return Config{Coverage: []string{"json", "text"}, Arazzo: true}
 }
 func (c Config) Validate() error {
 	seen := map[string]bool{}
@@ -48,16 +45,13 @@ type Diagnostic struct {
 	Message string `json:"message"`
 }
 type Result struct {
-	ReportVersion    string               `json:"report_version"`
-	Producer         version.Producer     `json:"producer"`
-	BundlePath       string               `json:"bundle_path"`
-	Coverage         map[string]string    `json:"coverage"`
-	Postman          []string             `json:"postman"`
-	Errors           []Diagnostic         `json:"errors"`
-	PostmanFiles     []string             `json:"postman_files,omitempty"`
-	PostmanOmissions []postman.Diagnostic `json:"postman_omissions,omitempty"`
-	Arazzo           string               `json:"arazzo,omitempty"`
-	ArazzoFiles      []string             `json:"arazzo_files,omitempty"`
+	ReportVersion string            `json:"report_version"`
+	Producer      version.Producer  `json:"producer"`
+	BundlePath    string            `json:"bundle_path"`
+	Coverage      map[string]string `json:"coverage"`
+	Errors        []Diagnostic      `json:"errors"`
+	Arazzo        string            `json:"arazzo,omitempty"`
+	ArazzoFiles   []string          `json:"arazzo_files,omitempty"`
 }
 
 // Generate keeps successful outputs available when another exporter fails. It
@@ -83,7 +77,7 @@ func Generate(ctx context.Context, archive string, cfg Config) (*Result, error) 
 		}
 		return writeFile(ctx, root, path, data)
 	}
-	result := &Result{ReportVersion: "1.0", Producer: version.Current(), BundlePath: root, Coverage: map[string]string{}, Postman: []string{}, Errors: []Diagnostic{}}
+	result := &Result{ReportVersion: "1.0", Producer: version.Current(), BundlePath: root, Coverage: map[string]string{}, Errors: []Diagnostic{}}
 	var failures []error
 	fail := func(format string, err error) {
 		result.Errors = append(result.Errors, Diagnostic{format, err.Error()})
@@ -109,59 +103,6 @@ func Generate(ctx context.Context, archive string, cfg Config) (*Result, error) 
 					fail("coverage."+format, err)
 				} else {
 					result.Coverage[format] = path
-				}
-			}
-		}
-	}
-	if cfg.Postman {
-		if err := ctx.Err(); err != nil {
-			fail("postman", err)
-		} else {
-			options := postman.Options{}
-			if cfg.PostmanOptions != nil {
-				options = *cfg.PostmanOptions
-			}
-			generated, err := postman.GenerateAllWithOptions(root, "", options)
-			if generated != nil {
-				result.PostmanOmissions = generated.Diagnostics
-			}
-			if err != nil {
-				fail("postman", err)
-			} else {
-				exports := generated.Exports
-				// Encode every collection before replacing any file, including mixed runs.
-				encoded := make([][]byte, len(exports))
-				for i, export := range exports {
-					var data bytes.Buffer
-					if err = postman.WriteExport(&data, export); err != nil {
-						break
-					}
-					encoded[i] = data.Bytes()
-				}
-				if err != nil {
-					fail("postman", err)
-				} else {
-					for i, export := range exports {
-						companions := []string{}
-						for _, companion := range export.Files {
-							path := filepath.Join(root, "exports", "postman", filepath.FromSlash(companion.Path))
-							if err = writeOutput(path, companion.Data); err != nil {
-								break
-							}
-							companions = append(companions, path)
-						}
-						if err != nil {
-							fail("postman", err)
-							break
-						}
-						path := filepath.Join(root, "exports", "postman", export.Filename)
-						if err := writeOutput(path, encoded[i]); err != nil {
-							fail("postman", err)
-							break
-						}
-						result.Postman = append(result.Postman, path)
-						result.PostmanFiles = append(result.PostmanFiles, companions...)
-					}
 				}
 			}
 		}
@@ -220,7 +161,7 @@ func writeFile(ctx context.Context, root, path string, data []byte) error {
 	if err != nil || relative == "." || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) || filepath.IsAbs(relative) {
 		return errors.New("export path must be inside archive exports directory")
 	}
-	// Check every ancestor before creation, including nested proto companions.
+	// Check every ancestor before creation, including nested OpenAPI companions.
 	for current := base; ; {
 		if info, err := os.Lstat(current); err == nil && (!info.IsDir() || info.Mode()&os.ModeSymlink != 0) {
 			return fmt.Errorf("export destination %q is not a regular directory", current)

@@ -113,12 +113,6 @@
             "type": "string"
           }
         },
-        "postman": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
         "errors": {
           "type": "array",
           "items": {
@@ -137,12 +131,6 @@
             ]
           }
         },
-        "postman_files": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
         "arazzo": {
           "type": "string"
         },
@@ -151,12 +139,6 @@
           "items": {
             "type": "string"
           }
-        },
-        "postman_omissions": {
-          "type": "array",
-          "items": {
-            "type": "object"
-          }
         }
       },
       "required": [
@@ -164,9 +146,9 @@
         "producer",
         "bundle_path",
         "coverage",
-        "postman",
         "errors"
-      ]
+      ],
+      "additionalProperties": false
     }
   }
 }

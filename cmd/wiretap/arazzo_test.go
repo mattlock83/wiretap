@@ -137,7 +137,6 @@ func TestCLIArazzoRequiresEligibleTrafficBeforeWriting(t *testing.T) {
 		schema         bool
 	}{
 		{name: "HTML response", protocol: "html", schema: true},
-		{name: "gRPC", protocol: "grpc", schema: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			root := arazzoBundleFixture(t, tc.schema, tc.protocol)
@@ -241,9 +240,7 @@ func TestCLIArazzoCorruptArchivePreservesOutput(t *testing.T) {
 
 func arazzoBundleFixture(t *testing.T, withSchema bool, protocol string) string {
 	t.Helper()
-	if protocol == "grpc" {
-		return postmanGRPCBundleFixture(t, false, false)
-	}
+
 	writer, err := bundle.NewAt(filepath.Join(t.TempDir(), "capture"))
 	if err != nil {
 		t.Fatal(err)

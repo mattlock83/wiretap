@@ -2,8 +2,7 @@
 
 Use `wiretap check` to compare a consumer's captured mock interactions with the
 provider's own captured tests. The check works offline from complete Wiretap
-archives and their Postman collections, or their Arazzo workflows for JSON/REST
-APIs. It does not start servers, replay requests, execute scripts or workflow
+archives and their Arazzo workflows for JSON/REST APIs. It does not start servers, replay requests, execute scripts or workflow
 expressions, or generate tests.
 
 **A pass means every selected captured mock exchange has at least one complete,
@@ -11,8 +10,7 @@ passing provider test exchange that supports that concrete request and response,
 with agreement on supported frozen contract rules where available.**
 HTTP matches with both schemas absent or explicitly omitted are example-only;
 the report identifies them. With only the provider's HTTP schema, the check
-validates both captured exchanges against that provider contract. Native gRPC
-checks the exercised method's declared message graphs and observed wire compatibility.
+validates both captured exchanges against that provider contract.
 
 - [Check against shared application artifacts](#check-against-shared-application-artifacts)
 - [What a passing result establishes](#what-a-passing-result-establishes)
@@ -27,8 +25,7 @@ checks the exercised method's declared message graphs and observed wire compatib
 
 ## Check against shared application artifacts
 
-Each team uploads its complete Wiretap runs and the selected Postman or Arazzo
-exports under its application ID in your shared artifact store. Restore the
+Each team uploads its complete Wiretap runs and Arazzo exports under its application ID in your shared artifact store. Restore the
 intended snapshots into a local `api-evidence/` directory, then use one command from either side:
 
 ```sh
@@ -36,11 +33,9 @@ wiretap check consumer --consumer ./orders-run --artifacts ./api-evidence
 wiretap check provider --provider ./inventory-run --artifacts ./api-evidence
 ```
 
-For JSON/REST APIs, add `--input-format arazzo` to either command to use each
-run's `exports/arazzo/arazzo.json` and its OpenAPI source companions instead.
-The selected format applies to both sides; mixed Postman/Arazzo checks are not
-supported. The complete archives supply response bodies, response headers,
-passing-test provenance, provider mappings and frozen contracts in both modes.
+Both commands use each run's `exports/arazzo/arazzo.json` and its OpenAPI
+source companions. The complete archives supply response bodies, response
+headers, passing-test provenance, provider mappings and frozen contracts.
 
 The consumer command asks: **Do all my captured mocks agree with their
 providers' tests?** It uses each mock dependency's declared provider mapping to
@@ -93,11 +88,8 @@ For each captured call to the selected mock, Wiretap:
    frozen OpenAPI 3.0 contract. With both contracts, validates each exchange
    against its own schema and compares exercised validation rules. If both
    schemas are absent, explicitly marks an example-only match instead.
-5. For native gRPC, checks that the observed request and response bytes
-   can be understood using the opposite side's frozen protobuf descriptors,
-   then compares the exercised method's input/output message declarations.
-6. Checks that the supplied Postman examples, or the Arazzo workflows and their
-   source companions, agree with projections regenerated from their own archives.
+5. Checks that the supplied Arazzo workflows and their source companions agree
+   with projections regenerated from their own archives.
 
 All selected consumer exchanges must succeed. An empty selection cannot pass.
 Provider tests need not share the consumer's test names, files or attempt IDs.
@@ -219,44 +211,6 @@ graph for validity and reliable numeric precision. Malformed, unsupported or
 precision-unsafe rules elsewhere in those documents can prevent loading and
 produce `http_contract_unavailable`, even when their operation is unexercised.
 
-### Native gRPC disagreements
-
-| Issue | Example | Result |
-| --- | --- | --- |
-| Missing procedure or request scenario | Consumer calls `inventory.v1.Stock/Reserve` with values absent from provider tests. | Uncovered. |
-| Request message count, order, type or stream kind differs | Consumer sends two ordered client-stream messages; provider only records one, or a different stream kind. | Uncovered. |
-| Wrong terminal application status | Mock returns gRPC `OK`; a matching provider exchange returns `NOT_FOUND`. | Mismatch if no matching `OK` example exists. HTTP/2 `200` alone is insufficient. |
-| Response messages differ | A server-stream mock drops a message, changes its value, or returns messages in another order. | Mismatch. |
-| Application metadata or trailers differ | Mock omits business metadata or supplies a different value. | Mismatch unless that metadata field is ignored. |
-| Rich-error details differ | Mock supplies different retained error details. | Mismatch; header exclusions do not remove the separately recorded rich-error evidence. |
-| Observed message interleaving differs | A bidirectional conversation records a different order of complete request and response messages. | Mismatch under the recorded conversation policy. |
-| JSON looks equal but exercised wire fields are incompatible | Both examples show `quantity: 3`, but that value uses a different protobuf field number. | Wire mismatch when cross-decoding cannot reproduce the opposite side's recorded value. |
-| Source bytes contain fields unknown to the target descriptor | An observed message includes an unknown nested field or an unpacked `Any` the target cannot understand. | Conservative wire mismatch. |
-| Unobserved enum names or numbers change | Both examples use `READY = 1`, but the provider adds `PENDING = 2` or renumbers another enum value. | Protobuf contract mismatch. |
-| Reachable field declarations change | An unused optional field, field kind/number, cardinality, presence, oneof, map or default differs in the selected method's message graph. | Protobuf contract mismatch when observed wire checks pass. |
-| Custom validation option declarations change | A custom max-length annotation carries different option bytes despite equal observed strings. | Conservative protobuf contract mismatch; the annotation is not executed. |
-
-Nonzero terminal gRPC statuses can support intentional negative tests when
-the test passed and the request, response and terminal status were captured
-completely. An incomplete deadline or cancellation capture is not promoted
-to complete evidence just because its test expected cancellation.
-
-The declared-rule comparison follows the exercised method's static request and
-response message graphs, including recursive references, full enum name/number
-sets, syntax and enum open/closed semantics. Ordinary declaration order is
-normalized and references are resolved. A changed preferred label among aliases
-for the same number remains drift because it affects canonical ProtoJSON names;
-unrelated services, methods and message definitions are not statically diffed.
-Adding a reachable field or enum value can fail even if it is absent from every
-observed message. This is conservative declaration equality, so a safe additive
-change can still need investigation.
-
-Custom validation annotations are compared as opaque option declaration bytes.
-Their predicates are not evaluated against values. Plain Protobuf does not
-declare string or collection length bounds; captured length/value changes
-still fail the ordinary example comparison. Missing or unusable declarations
-needed for the check are unverified rather than omitted from assurance.
-
 ### Missing or unsuitable evidence and inputs
 
 | Issue | How it is handled |
@@ -271,14 +225,14 @@ needed for the check are unverified rather than omitted from assurance.
 | Provider target is declared as a mock or has unknown kind | Unverified; provider evidence must declare a service target. |
 | Declared provider application, API or version does not agree | Unverified; an unknown required version is not treated as a match. |
 | Archive hashes, references or format are invalid | Input error, with no passing verdict. |
-| Selected Postman or Arazzo inputs are missing, edited, stale or incomplete | Input error when no full matching projection is supplied. Arazzo source companions must also match. |
-| Arazzo selection contains gRPC, non-JSON HTTP or other unsupported traffic | Cannot certify that boundary by exporting only its eligible JSON/REST subset. |
+| Selected Arazzo inputs are missing, edited, stale or incomplete | Input error when no full matching projection is supplied. Arazzo source companions must also match. |
+| Arazzo selection contains non-JSON HTTP or other unsupported traffic | Cannot certify that boundary by exporting only its eligible JSON/REST subset. |
 
 These evidence-selection rules require usable projection inputs. Failed provider
 attempts do not automatically fail the check when the exports can be verified
 and complete passing evidence supports every selected consumer example.
 Incomplete captures may prevent strict Arazzo regeneration even when another
-provider attempt could support a match; see [Arazzo input limits](#use-arazzo-instead-of-postman-for-jsonrest).
+provider attempt could support a match; see [Arazzo input limits](#arazzo-check-inputs).
 Keep the provider suite's own exit status as a separate CI gate.
 
 ### Worked example: an unrealistic inventory response
@@ -387,7 +341,7 @@ when the consumer would safely ignore that field.
 
 Treat the failure as an example disagreement to investigate. It is not proof
 of a runtime breaking change. Update unrealistic or outdated mocks when that
-is the right resolution, then regenerate evidence; editing a collection to
+is the right resolution, then regenerate evidence; editing a workflow to
 hide the difference does not change the raw capture.
 
 ### That the entire API or every schema rule is compatible
@@ -431,40 +385,17 @@ unsupported OpenAPI 3.1 or rules that cannot be checked reliably produce an
 unverified result. Keep contract coverage
 alongside the check to see which declared cases have actually been exercised.
 
-For gRPC, the selected method's statically reachable input/output declarations
-are compared even when a field or enum value did not occur in the example. Unrelated methods,
-services and message graphs are not diffed. This conservative equality is not
-an exhaustive schema-evolution or client-compatibility proof: safe additions can
-fail, and observed unknown fields are rejected even where a particular client
-would tolerate them. Observed wire cross-decoding remains mandatory.
-Types referenced only dynamically through `google.protobuf.Any` or rich status
-details need not be reached by this declaration traversal. Their observed
-values still participate in example checks, with existing `Any` wire checks
-where applicable. The entire frozen descriptor's enum inventory is not diffed.
-
-Custom validation annotations are compared as opaque declaration bytes, not
-executed. Equal option declarations do not prove the observed values satisfy a
-custom length limit or another predicate. Plain Protobuf has no such length
-rules to infer. Both suites can record the same value that violates an identical
-custom length annotation and still agree under these checks. Keep the
-application's validation assertions and tests for the
-other permitted enum values and boundaries alongside the assumption check.
-
 Matching values also do not prove business semantics. Two suites can both
 record `price: 100` while interpreting the units differently if no visible
 field distinguishes the units.
 
 ### That workflows, retries or call counts are correct
 
-Each HTTP exchange or RPC is checked independently. The command does not
+Each HTTP exchange is checked independently. The command does not
 verify prerequisites, ordering across calls, transaction boundaries, side
 effects, idempotency, retry policy or the number of times a dependency should
 have been called. Multiple consumer exchanges can reuse the same supporting
 provider exchange.
-
-Within one native streaming gRPC call, retained message order and observed
-request/response interleaving are compared. This does not establish timings,
-lifecycle-event equivalence or workflows across separate RPCs.
 
 All retained attempts are considered; the checker does not select only the
 last retry. A failed consumer attempt with selected mock traffic remains
@@ -477,7 +408,7 @@ The inputs contain calls that actually crossed Wiretap. The command does not
 discover source-code stub definitions, unexercised consumer code paths, or
 traffic that bypassed capture. A mock configured with ten responses but
 exercised once contributes the one observed exchange. Adding uncaptured
-examples to a selected Postman collection or Arazzo workflow does not extend
+examples to a selected Arazzo workflow does not extend
 the comparison; the edited projection will no longer match its recorded export.
 
 Zero calls to the selected mock fail. However, one captured call can pass
@@ -496,7 +427,7 @@ The command performs no live requests. It does not establish deployment
 routing, DNS, TLS/certificate behavior, HTTP-version compatibility, latency,
 load capacity, concurrency or deadline behavior. Endpoint scheme, host and
 port are excluded from cross-archive HTTP request matching. Differences in
-ignored headers, including `grpc-timeout`, are outside that comparison.
+ignored headers are outside that comparison.
 
 Authorization and business headers are significant unless ignored, but
 matching dummy credentials does not test authentication or authorization
@@ -509,27 +440,6 @@ declarations in the capture. Integrity hashes detect inconsistent or changed
 evidence; they do not authenticate its publisher or prove that the declared
 provider code was executed. Without a mapping, explicit inputs establish the
 pairing chosen by the caller. Choose and retain evidence from trusted builds.
-
-### That Postman scripts or replay configuration work
-
-Collection verification checks recorded example fidelity. It does not run
-pre-request scripts, test scripts, custom assertions, variable substitution,
-cookie handling or redirect behavior. Editing scripts, labels or descriptions
-does not establish a new assumption and may leave the verdict unchanged.
-Unsupported authentication transformations and external request-body files
-are rejected rather than evaluated.
-
-HTTP URLs in a supplied collection must agree with that collection's own
-archive; origin normalization applies between the two archives. Native gRPC
-replay URLs, schema locations and connection settings are allowed to differ
-without proving those settings are usable. Run Postman separately when replay
-behavior is the question.
-
-Collection directories are searched for full matching projections. Unmatched
-files can be ignored as other boundaries or unrelated exports. A valid copy
-beside a stale or malformed copy can therefore still satisfy the selection.
-Use explicit file flags to require validation of particular files; this
-command is not a directory-wide export cleanup check.
 
 ### That Arazzo workflows execute successfully
 
@@ -544,7 +454,7 @@ the question.
 
 ### That other protocols receive native semantic checking
 
-Native protocol comparison currently covers HTTP exchanges and gRPC. Selected
+Protocol comparison currently covers HTTP exchanges. Selected
 event interactions such as Kafka messages are unverified. GraphQL sent as an
 ordinary captured HTTP exchange can be compared as an HTTP example, but this
 does not analyze a GraphQL schema, operation semantics or subscriptions.
@@ -556,36 +466,6 @@ Opaque, encrypted or unavailable payloads cannot supply missing observations.
 Keep the complete archive, including `tests/`, `contracts/` and `payloads/`.
 Coverage reports alone are insufficient: equal coverage conditions do not prove
 that the same request received the same response.
-
-Collections default to each archive's `exports/postman/` directory. To select
-collections stored elsewhere, provide files or directories explicitly:
-
-```sh
-wiretap check consumer \
-  --consumer ./consumer-run/bundle.json \
-  --provider ./provider-run/bundle.json \
-  --dependency inventory \
-  --consumer-collection ./collections/inventory.postman_collection.json \
-  --provider-collection ./provider-collections
-```
-
-These collection overrides apply to explicit pair mode. Repeat
-`--consumer-collection` or `--provider-collection` for multiple inputs.
-Shared-store mode keeps each run's own `exports/postman/` directory.
-Directories are searched recursively for `*.postman_collection.json` and may
-contain collections for other boundaries.
-Wiretap verifies the collections against projections regenerated from their
-archives, including attempt IDs, requests, responses and application headers.
-A collection edited to change a payload or status cannot override the captured
-evidence. Native gRPC replay URL and source-schema settings may differ because
-they configure replay rather than the recorded conversation.
-
-If exports are missing, generate them from the exact archive:
-
-```sh
-wiretap export --bundle ./consumer-run --format postman --output-dir ./consumer-run/exports/postman
-wiretap export --bundle ./provider-run --format postman --output-dir ./provider-run/exports/postman
-```
 
 Both runs must be complete with no pending attempts. Each selected consumer
 example must come from a complete passing attempt and contain supported,
@@ -600,24 +480,23 @@ selection or entirely unusable consumer evidence fails before projection inputs
 are required. For an otherwise eligible comparison, missing, invalid or stale
 projection inputs are invalid inputs.
 
-### Use Arazzo instead of Postman for JSON/REST
+### Arazzo check inputs
 
-Select Arazzo on both sides with `--input-format arazzo`. Each archive defaults
-to `exports/arazzo/arazzo.json`; no Postman export is required. Generate missing
-inputs from the exact archives:
+Each archive defaults to `exports/arazzo/arazzo.json`. Generate missing inputs
+from the exact archives:
 
 ```sh
 wiretap export --bundle ./consumer-run --format arazzo --output-dir ./consumer-run/exports/arazzo
 wiretap export --bundle ./provider-run --format arazzo --output-dir ./provider-run/exports/arazzo
 wiretap check consumer --consumer ./consumer-run --provider ./provider-run \
-  --dependency inventory --input-format arazzo
+  --dependency inventory
 ```
 
 Explicit pairs can select a different document or directory on either side:
 
 ```sh
 wiretap check provider --consumer ./consumer-run --provider ./provider-run \
-  --dependency inventory --input-format arazzo \
+  --dependency inventory \
   --consumer-arazzo ./consumer-arazzo/arazzo.json \
   --provider-arazzo ./provider-arazzo
 ```
@@ -637,8 +516,8 @@ omit-incomplete mode. A passing provider witness cannot bypass that export
 failure.
 
 Set `outputs: {coverage: [json, text], arazzo: true}` in both projects to produce
-these inputs automatically without Postman. Shared-store and run-set checks also
-accept `--input-format arazzo` and use each member's default export location;
+these inputs automatically. Shared-store and run-set checks use each member's
+default export location;
 explicit Arazzo path overrides apply only to an explicit pair.
 
 ## Share provider snapshots
@@ -646,8 +525,7 @@ explicit Arazzo path overrides apply only to an explicit pair.
 Each team's test suite records its own provided API and freezes that API's
 spec. Consumer teams can capture HTTP mocks without keeping another copy of
 the provider's OpenAPI file. Both sides still keep complete run archives and
-Postman exports, or Arazzo exports when checking JSON/REST with
-`--input-format arazzo`.
+Arazzo exports.
 
 For example, the inventory provider's `.wiretap.yaml` owns its contract:
 
@@ -657,7 +535,7 @@ application: {id: inventory-service, name: Inventory}
 sut_source:
   version: '${INVENTORY_VERSION}'
   revision: '${INVENTORY_REVISION}'
-outputs: {coverage: [json, text], postman: true}
+outputs: {coverage: [json, text], arazzo: true}
 sut:
   id: inventory-http
   url: ${INVENTORY_SERVICE_URL}
@@ -671,7 +549,7 @@ HTTP mock to that provider:
 ```yaml
 version: 1
 application: {id: orders-service, name: Orders}
-outputs: {coverage: [json, text], postman: true}
+outputs: {coverage: [json, text], arazzo: true}
 sut:
   id: orders-http
   url: ${ORDERS_SERVICE_URL}
@@ -708,7 +586,7 @@ api-evidence/
           tests/
           contracts/
           payloads/
-          exports/postman/
+          exports/arazzo/
   orders-service/
     orders-http/
       <sut-revision>/
@@ -717,7 +595,7 @@ api-evidence/
           tests/
           contracts/
           payloads/
-          exports/postman/
+          exports/arazzo/
 ```
 
 The top-level application folder must agree with the captured application ID.
@@ -733,7 +611,7 @@ before invoking `wiretap check`. For Artifactory or CI artifacts packaged as
 ZIP or TAR files, extract them first. The CLI accepts an extracted run directory
 or its `bundle.json`, with all referenced files retained alongside it.
 Preserve internal paths, filenames and contents; moving the whole run is
-supported, while flattening its files or copying only collections loses inputs.
+supported, while flattening its files or copying only workflows loses inputs.
 Keep `contracts/` and its imported files together with `tests/` and `payloads/`.
 `--artifacts` discovers local extracted runs beneath application folders. It
 does not upload to or fetch from Artifactory or another remote store.
@@ -788,9 +666,8 @@ wiretap check provider \
   --artifacts ./api-evidence
 ```
 
-Shared-store checks use each run's `exports/postman/` by default. With
-`--input-format arazzo`, they use `exports/arazzo/arazzo.json` and its source
-companions. Shared-store mode rejects collection and Arazzo path overrides; use
+Shared-store checks use each run's `exports/arazzo/arazzo.json` and its source
+companions. Shared-store mode rejects Arazzo path overrides; use
 explicit pair mode when projections live elsewhere. Supply only the local
 viewpoint's run with `--artifacts`: `--consumer` in consumer mode or `--provider` in provider
 mode. Supplying both run flags together with `--artifacts` is an input error.
@@ -876,10 +753,9 @@ when you also want independent consumer/provider declaration comparison.
 
 The check first compares concrete examples; prospective matches must also meet
 the contract checks described above. A consumer request needs a provider
-request with the same relevant method, path, parameters, headers and body, or
-the same gRPC procedure and ordered request messages. That provider exchange
-must also have the response the mock supplied: HTTP status or gRPC terminal
-status, application headers or metadata, and body or ordered messages.
+request with the same relevant method, path, parameters, headers and body.
+That provider exchange must also have the response the mock supplied: HTTP
+status, application headers and body.
 
 JSON object property order and equivalent numeric notation are immaterial:
 `100`, `100.0` and `1e2` represent the same number. JSON values remain significant;
@@ -889,25 +765,18 @@ reported as uncovered unless the provider has tested those concrete values.
 There is no inference from a passing schema validation or an equal coverage
 fingerprint to agreement on arbitrary values.
 
-Absent and present-empty bodies differ. Non-JSON bodies, including invalid or
-duplicate-key JSON used in negative tests, compare byte for byte. HTTP header
+Absent and present-empty bodies differ. Arazzo inputs require eligible
+JSON/REST exchanges; non-JSON bodies and invalid or duplicate-key JSON cannot
+be certified through a partial export. HTTP header
 names are case-insensitive, while method tokens and escaped paths retain their
 case and values. Query key order is normalized, while repeated values retain
 their order. Header values and repeated-header order remain significant unless
 the header is ignored; semantically equivalent spellings are not inferred.
-JSON normalization applies to JSON media types (`application/json` and types
-ending in `+json`) and valid JSON when `Content-Type` is absent. An explicit
-non-JSON media type, such as `text/plain`, keeps byte equality even when its
-body happens to look like JSON. Thus `text/plain` bodies `1` and `1.0` differ.
+Arazzo export requires a JSON media type (`application/json` or a type ending
+in `+json`) for nonempty bodies. Empty-body operations need a JSON media type
+or a matching frozen OpenAPI operation.
 The content-type header itself still participates in header comparison.
 Request origin addresses are excluded, while paths are retained.
-gRPC comparisons also retain stream shape, message order, observed direction
-interleaving and rich-error details.
-For a prospective gRPC match, Wiretap also decodes the consumer's request bytes
-with the provider's frozen descriptor and the provider's response bytes with
-the consumer's descriptor. Equal JSON examples cannot hide incompatible field
-numbers or wire types.
-
 Requests and responses stay paired. A request from one provider test and a
 response from another cannot jointly satisfy a mock. When the provider tested
 the same request but no qualifying exchange returned the mocked status,
@@ -917,7 +786,7 @@ provider request exists, it is uncovered.
 Capture origins and a narrow set of transport, tracing and client/server headers
 are ignored because test addresses and capture plumbing vary between suites.
 The defaults are `accept-encoding`, `baggage`, `connection`, `content-length`,
-`date`, `grpc-accept-encoding`, `grpc-encoding`, `grpc-timeout`, `host`,
+`date`, `host`,
 `keep-alive`, `postman-token`, `proxy-connection`, `server`, `te`, `trailer`,
 `traceparent`, `tracestate`, `transfer-encoding`, `upgrade`, `user-agent` and
 `via`. Headers nominated by `Connection` are also excluded. `Content-Encoding`
@@ -935,10 +804,6 @@ request and response comparison; use this only when that value is irrelevant to
 the assumption being checked. Payload fields are never silently ignored.
 These exclusions apply to captured header values. Declared OpenAPI request or
 response header rules still participate in contract comparison.
-For gRPC, excluding a header such as `grpc-status` or `grpc-status-details-bin`
-does not exclude the separately recorded terminal status, status message or
-rich-error details.
-
 A passing check means the supplied provider tests support these captured
 examples. It does not prove that every possible request works, that the tests
 asserted every captured field, or that a live deployment behaves identically.
@@ -951,9 +816,9 @@ checks the recorded response rather than guessing a smaller required subset.
 | --- | --- | --- |
 | Verified | At least one complete passing provider exchange supports this consumer request and response, with the recorded `contract_check` assurance. | Retain the referenced archives; inspect example-only matches and keep testing additional scenarios separately. |
 | Uncovered | No qualifying provider request matches the concrete normalized consumer request. | Inspect exact paths, query values, payloads and significant headers; add the provider case or align fixtures. |
-| Mismatch | Examples or exercised HTTP/Protobuf declarations disagree, a checked HTTP message violates its schema, or observed gRPC bytes fail cross-decoding. | Investigate the linked example/contract difference, then correct the mock, provider or intended scenario. |
+| Mismatch | Examples or exercised HTTP declarations disagree, or a checked HTTP message violates its schema. | Investigate the linked example/contract difference, then correct the mock, provider or intended scenario. |
 | Unverified | The selection, evidence or required contract checks cannot establish agreement. | Resolve the capture, identity, contract, target-kind or test-outcome problem and recapture as needed. |
-| Input error | Supplied archives, collections or flags cannot form a valid comparison. | Read stderr, supply intact matching inputs and rerun. |
+| Input error | Supplied archives, Arazzo inputs or flags cannot form a valid comparison. | Read stderr, supply intact matching inputs and rerun. |
 
 Uncovered is a test-evidence gap, not a statement that the provider would reject
 the request. Mismatch is an example, rule or validation disagreement, not an
@@ -967,9 +832,6 @@ compatibility; it is not treated as a pass.
 | --- | --- |
 | `provider_request_uncovered` | No eligible provider exchange matches this request scenario. |
 | `provider_response_mismatch` | Candidate provider exchanges do not supply the mocked response. |
-| `provider_wire_mismatch` | A prospective gRPC example match fails decoding under the opposite descriptor. |
-| `protobuf_contract_mismatch` | The selected method's declared input/output graph differs after observed wire checks pass. |
-| `protobuf_contract_unavailable` | Required Protobuf declarations cannot support a reliable comparison. |
 | `http_contract_mismatch` | Exercised HTTP validation rules differ, including conservative enum-set or bound drift. |
 | `http_contract_violation` | A response or qualifying request violates the applicable own or provider frozen HTTP contract. |
 | `http_contract_unavailable` | Required HTTP contracts or rules are unavailable, unsupported or cannot be checked reliably. |
@@ -980,7 +842,7 @@ compatibility; it is not treated as a pass.
 | `provider_identity_mismatch` | Declared application/API mapping conflicts with the supplied provider. |
 | `provider_version_unverified` | A declared provider version is missing or different in recorded `sut_source.version`. |
 
-Archive/collection input errors are reported on stderr and do not produce
+Archive/Arazzo input errors are reported on stderr and do not produce
 these finding codes or a new JSON result. An existing `--output` file is left
 unchanged when input validation fails. Do not treat an old report as the
 result of the current command; use its exit status as well.
@@ -1035,7 +897,7 @@ when both sides omitted their HTTP schemas, could contain:
 ```
 
 The full pair result also identifies both source archives, manifest digests,
-input collections, binding and ignored-header policy. With `--artifacts`, each
+Arazzo inputs, binding and ignored-header policy. With `--artifacts`, each
 entry in `comparisons` has this same pair-report shape; the outer report supplies
 the overall verdict and totals. An `evidence_path` is relative
 to its source archive; the fragment selects the recorded flow in the attempt
@@ -1046,8 +908,6 @@ exchange. Its `contract_check` is `openapi_3_0_validation_rules` for exercised
 HTTP rule equality and own-schema value checks,
 `openapi_3_0_provider_contract` for validating both HTTP examples with the
 provider's schema when the consumer omitted one,
-`protobuf_rules_and_observed_wire` for selected gRPC
-declaration equality plus observed cross-decoding,
 or `unavailable` for an example-only HTTP match with both schemas absent or
 omitted. The text summary calls out the example-only match count.
 `excluded_provider_evidence` explains why other provider exchanges
@@ -1056,11 +916,7 @@ could not serve as witnesses. Its presence alone does not fail a comparison.
 The report is a diagnostic summary rather than an exhaustive diff. A finding
 includes at most ten provider references and twenty differing paths. HTTP rule
 differences are under `contract/request/...` or `contract/response/...`;
-`contract/validation` identifies a value-validation failure. Protobuf
-declaration differences use paths such as
-`protobuf/contract/messages/<full-message-name>/fields/<field-number>/...` or
-`protobuf/contract/enums/<full-enum-name>/...`; request/response entries link to
-the message names. For a
+`contract/validation` identifies a value-validation failure. For a
 response mismatch, paths compare the consumer response with the first candidate
 provider response; they do not identify the closest candidate or enumerate
 every disagreement across every candidate. Response mismatches also include
@@ -1082,7 +938,7 @@ wiretap check provider --provider ./inventory-run --artifacts ./api-evidence \
 
 The output's parent directory must already exist. Choose a location outside
 the entire `--artifacts` root and local input archive. In explicit pair mode,
-keep it outside both archives and any supplied Postman or Arazzo input
+keep it outside both archives and any supplied Arazzo input
 directory; an output cannot replace a projection input or source companion.
 For an explicit Arazzo file, keep output outside its containing export tree;
 companions remain protected even when an early unverified verdict skips input

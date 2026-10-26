@@ -14,9 +14,6 @@ import (
 // ContractRulesVersion changes whenever target identity or measurement semantics change.
 const ContractRulesVersion = "wiretap-contract-1"
 
-// ProtobufRulesVersion keeps RPC measurement independent of HTTP identities.
-const ProtobufRulesVersion = "wiretap-protobuf-2"
-
 // ContractCoverage is a disposable measurement of one verified bundle snapshot.
 // It deliberately makes no all-API, assertion, or provider-compatibility claim.
 type ContractCoverage struct {
@@ -72,7 +69,6 @@ type ContractTarget struct {
 }
 
 type ContractEvidence struct {
-	MessageIndex      *int   `json:"message_index,omitempty" yaml:"message_index,omitempty"`
 	CaptureIncomplete bool   `json:"capture_incomplete" yaml:"capture_incomplete"`
 	TransportError    string `json:"transport_error,omitempty" yaml:"transport_error,omitempty"`
 	Validation        string `json:"validation" yaml:"validation"`
@@ -165,19 +161,6 @@ func buildContractCoverage(run *bundle.Run, captures []*artifact.Artifact) *Cont
 		out.Complete = false
 	}
 	refs := append([]artifact.SchemaRef{}, run.Schemas...)
-	for _, boundary := range run.Contracts {
-		if boundary.State == "resolved" {
-			continue
-		}
-		out.Complete = false
-		origin := "provided"
-		kind := run.SUTTargetKind
-		if boundary.Role == "dependency" {
-			origin = "dependency"
-			kind = run.DependencyKinds[boundary.APIID]
-		}
-		out.Specs = append(out.Specs, &ContractSpec{RulesVersion: ProtobufRulesVersion, APIID: boundary.APIID, SchemaID: boundary.APIID, Origin: origin, TargetKind: kind, Dialect: "protobuf", Notes: []string{"Contract resolution is " + boundary.State + "; declared API inventory and coverage denominator are unknown."}, Targets: []*ContractTarget{}, Counts: map[string]ContractCounts{}})
-	}
 	for _, a := range captures {
 		refs = append(refs, a.Schemas...)
 		if a.CaptureIncomplete {
@@ -227,11 +210,6 @@ func buildContractCoverage(run *bundle.Run, captures []*artifact.Artifact) *Cont
 		out.Specs = append(out.Specs, spec)
 		if id == "" {
 			spec.Notes = append(spec.Notes, "API identity is missing; do not compare these keys across repositories")
-		}
-		if ref.Type == "protobuf" {
-			measureGRPCContract(spec, ref, run, captures, origin, id)
-			finishContractSpec(spec)
-			continue
 		}
 		if ref.Source.Type == "omitted" || ref.Type != "openapi" {
 			if ref.Source.Type == "omitted" {

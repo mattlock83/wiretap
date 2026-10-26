@@ -65,12 +65,12 @@ pass; the raw Jest command still exits with failure. The API is intentionally
 left unchanged so capture cannot hide these existing issues.
 
 The checks also require a finalized archive containing 120 distinct test
-identities, all **10 API operations exercised**, coverage JSON/text and a Postman
-collection with no export errors. Ajv validates the exported collection against
-Postman's pinned official v2.1 schema. The harness compares attempt identities,
-methods, URLs, headers, bodies and saved responses with raw archive records and
-retained payload files. It does not exercise the Postman SDK parser or desktop
-import and execution.
+identities, all **10 API operations exercised**, coverage JSON/text and Arazzo
+workflows with no export errors. Ajv validates the exported workflows against
+Arazzo's pinned official schema. The harness compares attempt identities,
+eligible JSON/REST methods, URLs, headers, request bodies and success criteria
+with raw archive records and retained payload files. Non-JSON calls remain in
+the archive and contribute to API coverage.
 
 The advisory latest receipt at `demo/artifacts/wiretap/last-run.json` names the
 archive created by the harness. That archive contains its own canonical
@@ -81,5 +81,4 @@ honestly includes violations, gaps and unsupported non-JSON body conditions.
 
 The demo's datastore mocks are in-process, so there is no downstream HTTP API
 to capture. For HTTP mocks and consumer/provider checks, use the
-[consumer/provider walkthrough](../consumer-provider/README.md);
-for native gRPC mocks, use [Native Node gRPC](../grpc-boundaries/node/README.md).
+[assumption checker](../../docs/assumption-checks.md).

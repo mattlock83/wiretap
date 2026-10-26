@@ -30,7 +30,7 @@ func TestCapabilitiesDoNotStartRunOrWaitForControlLock(t *testing.T) {
 		t.Fatal(err)
 	}
 	validateControlResponse(t, "capabilities", document)
-	if w.Code != 200 || result.APIVersion != "1.0" || len(result.Capabilities) != 7 || result.Producer["name"] != "wiretap" || a.currentBundle() != nil {
+	if w.Code != 200 || result.APIVersion != "1.0" || len(result.Capabilities) != 5 || result.Producer["name"] != "wiretap" || a.currentBundle() != nil {
 		t.Fatalf("invalid capabilities: %s", w.Body.String())
 	}
 	data, err := os.ReadFile("../../sdk/conformance/scenarios.json")

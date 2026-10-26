@@ -1,8 +1,8 @@
 {
   "name": "@wiretap/sdk",
   "version": "0.1.0",
-  "description": "Test lifecycle and tracing SDK for Wiretap boundary capture",
-  "main": "src/index.js",
+  "description": "Jest lifecycle and tracing SDK for Wiretap HTTP capture",
+  "main": "jest.js",
   "type": "commonjs",
   "license": "MIT",
   "engines": {
@@ -22,29 +22,17 @@
     "jest-each": "^30.5.2"
   },
   "devDependencies": {
-    "@playwright/test": "^1.64.1",
-    "@types/mocha": "^10.0.10",
-    "jest": "^30.5.2",
-    "mocha": "^12.0.3",
-    "mocha-11": "npm:mocha@^11.7.5"
+    "jest": "^30.5.2"
   },
   "peerDependencies": {
-    "@playwright/test": "^1.64.1",
-    "jest-environment-node": "^29.7.0 || ^30.0.0",
-    "mocha": "^11.7.5 || ^12.0.0"
+    "jest-environment-node": "^29.7.0 || ^30.0.0"
   },
   "peerDependenciesMeta": {
     "jest-environment-node": {
       "optional": true
-    },
-    "mocha": {
-      "optional": true
-    },
-    "@playwright/test": {
-      "optional": true
     }
   },
-  "types": "src/index.d.ts",
+  "types": "jest.d.ts",
   "files": [
     "src/",
     "tracing.js",
@@ -54,10 +42,6 @@
     "jest-environment.js",
     "LICENSE",
     "README.md",
-    "mocha.js",
-    "mocha.d.ts",
-    "playwright.js",
-    "playwright.d.ts",
     "docs/"
   ],
   "repository": {
@@ -67,9 +51,9 @@
   },
   "exports": {
     ".": {
-      "types": "./src/index.d.ts",
-      "require": "./src/index.js",
-      "default": "./src/index.js"
+      "types": "./jest.d.ts",
+      "require": "./jest.js",
+      "default": "./jest.js"
     },
     "./tracing": {
       "types": "./tracing.d.ts",
@@ -82,27 +66,6 @@
       "default": "./jest.js"
     },
     "./jest-environment": "./jest-environment.js",
-    "./package.json": "./package.json",
-    "./managed-runtime": {
-      "types": "./src/managed-runtime.d.ts",
-      "require": "./src/managed-runtime.js",
-      "default": "./src/managed-runtime.js"
-    },
-    "./mocha": {
-      "types": "./mocha.d.ts",
-      "require": "./mocha.js",
-      "default": "./mocha.js"
-    },
-    "./playwright": {
-      "types": "./playwright.d.ts",
-      "require": "./playwright.js",
-      "default": "./playwright.js"
-    }
-  },
-  "overrides": {
-    "mocha-11": {
-      "diff": "^8.0.4",
-      "serialize-javascript": "^7.1.4"
-    }
+    "./package.json": "./package.json"
   }
 }

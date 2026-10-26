@@ -66,7 +66,6 @@ func TestCheckFormatsDescribeAssuranceForEveryReportScope(t *testing.T) {
 		{ContractCheck: "openapi_3_0_validation_rules"},
 		{ContractCheck: "openapi_3_0_validation_rules"},
 		{ContractCheck: "openapi_3_0_provider_contract"},
-		{ContractCheck: "protobuf_rules_and_observed_wire"},
 		{ContractCheck: "unavailable"},
 		{ContractCheck: "unavailable"},
 		{ContractCheck: "unrecognized_contract_check"},
@@ -79,7 +78,7 @@ func TestCheckFormatsDescribeAssuranceForEveryReportScope(t *testing.T) {
 		{Compatible: true, Matches: matches[3:]},
 	}}
 	set := &assumptions.SetReport{Compatible: true, Counts: counts, Matches: matches}
-	want := "Assurance: 2 HTTP declaration and value checks; 1 HTTP provider-spec checks; 1 protobuf declaration and wire checks; 2 example-only matches (schemas unavailable); 2 matches with unknown assurance."
+	want := "Assurance: 2 HTTP declaration and value checks; 1 HTTP provider-spec checks; 2 example-only matches (schemas unavailable); 2 matches with unknown assurance."
 	for name, report := range map[string]any{"pair": pair, "store": store, "run set": set, "pair value": *pair, "store value": *store, "run set value": *set} {
 		t.Run(name, func(t *testing.T) {
 			var markdown, junit bytes.Buffer
@@ -124,13 +123,13 @@ func TestCheckFormatsRetainAssuranceAfterComparisonTruncation(t *testing.T) {
 	for i := 0; i < maxCheckComparisons; i++ {
 		store.Comparisons = append(store.Comparisons, &assumptions.Report{Compatible: true, Matches: []assumptions.Match{{ContractCheck: "unavailable"}}})
 	}
-	store.Comparisons = append(store.Comparisons, &assumptions.Report{Compatible: true, Matches: []assumptions.Match{{ContractCheck: "protobuf_rules_and_observed_wire"}}})
+	store.Comparisons = append(store.Comparisons, &assumptions.Report{Compatible: true, Matches: []assumptions.Match{{ContractCheck: "openapi_3_0_provider_contract"}}})
 	for _, format := range []string{"markdown", "junit"} {
 		var out bytes.Buffer
 		if err := writeCheckFormat(&out, store, format); err != nil {
 			t.Fatal(err)
 		}
-		for _, want := range []string{"1 protobuf declaration and wire checks", "256 example-only matches (schemas unavailable)", "truncated"} {
+		for _, want := range []string{"1 HTTP provider-spec checks", "256 example-only matches (schemas unavailable)", "truncated"} {
 			if !strings.Contains(out.String(), want) {
 				t.Errorf("%s lost full-result assurance %q", format, want)
 			}
@@ -145,7 +144,7 @@ func TestCheckFormatsShowZeroAssuranceWithoutInventingMatches(t *testing.T) {
 			if err := writeCheckFormat(&out, report, format); err != nil {
 				t.Fatal(err)
 			}
-			for _, want := range []string{"0 HTTP declaration and value checks", "0 HTTP provider-spec checks", "0 protobuf declaration and wire checks", "0 example-only matches", "0 matches with unknown assurance"} {
+			for _, want := range []string{"0 HTTP declaration and value checks", "0 HTTP provider-spec checks", "0 example-only matches", "0 matches with unknown assurance"} {
 				if !strings.Contains(out.String(), want) {
 					t.Errorf("%T %s omitted %q", report, format, want)
 				}

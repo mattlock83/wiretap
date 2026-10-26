@@ -84,7 +84,7 @@ func TestPolicyRejectsUnknownVersionsAndMalformedMeasurement(t *testing.T) {
 	for _, mutation := range []func(*Report){
 		func(r *Report) { r.ReportVersion = "2.0" },
 		func(r *Report) { r.Contracts.RulesVersion = "future-rules" },
-		func(r *Report) { r.Contracts.Specs[0].RulesVersion = "wiretap-protobuf-1" },
+		func(r *Report) { r.Contracts.Specs[0].RulesVersion = "unsupported-rules-version" },
 		func(r *Report) { r.Contracts.Specs[0].Targets[0].State = "maybe" },
 		func(r *Report) {
 			r.Contracts.Specs[0].Targets = append(r.Contracts.Specs[0].Targets, r.Contracts.Specs[0].Targets[0])

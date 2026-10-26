@@ -29,7 +29,7 @@ wiretap report --bundle artifacts/run-... --policy coverage-policy.json --format
 ```
 
 `origin` is `provided` or `dependency`. Select literal operation names from the
-coverage report; gRPC operations use their full `/package.Service/Method` path.
+coverage report, such as `GET /orders`.
 Required operations must have eligible coverage evidence. Required families
 fail on `not_covered` targets and when the named family is absent. With
 `fail_unknown`, unknown denominators and selected `unknown` or `unsupported`
@@ -79,8 +79,7 @@ XML importer. They work with explicit pairs, artifact-store discovery and run
 sets. They present the existing check verdict and preserve its exit status.
 JUnit cases describe consumer/provider assumption checks, not framework tests.
 Text, Markdown and JUnit also show how many matched examples received HTTP
-declaration/value checks, provider-spec checks, Protobuf declaration/wire checks,
-or example-only agreement without schemas. An unknown assurance kind stays
+declaration/value checks, provider-spec checks or example-only agreement without schemas. An unknown assurance kind stays
 explicit. Aggregate assurance counts include comparisons omitted by presentation
 limits; Markdown and JUnit also include each displayed comparison's assurance.
 

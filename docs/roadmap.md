@@ -1,49 +1,20 @@
 # Roadmap
 
-This is the only place for proposed work and deferred release steps. These items
-are not shipped features or delivery commitments. See the
-[support matrix](support.md) and [documentation index](README.md) for what exists.
-
-Keep changes focused on capturing traffic from existing tests, measuring supplied
-contracts, and checking mock accuracy and consumer compatibility using evidence
-embedded in executable Postman collections. Prefer small adapters and offline
-tools that preserve the original evidence.
+Proposed work here is not shipped functionality or a delivery commitment. This experimental branch focuses on Jest, HTTP/HTTPS capture, OpenAPI coverage and Arazzo-backed assumption checks. See [support](support.md) for current behavior.
 
 ## Verification and distribution
 
-- Complete manual Postman desktop acceptance for HTTP and native gRPC collection
-  import and execution, including descriptor attachment and streaming behavior.
-  Automated schema/content checks do not establish desktop execution behavior.
-- Choose the public website URL and add canonical and Open Graph URL metadata
-  when hosting is configured.
-- Package registry publication, release tags, public binary releases and image
-  uploads remain on hold until explicitly requested. This includes npm, PyPI and
-  Go module release distribution.
-
-## Deferred integrations
-
-- Java/JUnit SDK, explicitly deferred from the Python integration work.
-- Other small runner adapters, such as Vitest or .NET test integrations, only
-  where existing lifecycle hooks can supply reliable test ownership and outcomes.
-- Connect wire protocol, gRPC-Web and mutual TLS, subject to concrete capture
-  requirements and protocol-specific evidence tests.
+- Extend independent Arazzo runner/import acceptance beyond schema and archive-content verification. Wiretap itself does not execute workflows.
+- Choose a public website URL and add canonical metadata when hosting is configured.
+- Registry publication, release tags, public binary releases and image uploads remain on hold until requested.
 
 ## Coverage and comparison candidates
 
-- Extend supported contract semantics, including OpenAPI 3.1 and condition
-  targets for `const`, `if`/`then`/`else`, format predicates, recursive schemas and
-  other unsupported keywords. Define finite targets and explicit measurement
-  limits before claiming coverage.
-- Explore cross-revision condition mapping. Preserve distinct contract and rule
-  identities; a changed schema must not silently inherit coverage.
-- Explore explicit expected-negative annotations and evidence that the test
-  asserted the rejection. A status code, validation error or test name alone
-  cannot establish that assurance.
-- Consider selected or pairwise combination targets with an explicit policy and
-  denominator. Observed conditions in the same message alone do not establish
-  coverage of all combinations.
-- Consider a small offline HTML report viewer only if existing text, JSON,
-  Markdown and CI reports leave a concrete inspection need.
+- Extend supported contract semantics, including OpenAPI 3.1, format predicates, recursive schemas and conditional keywords. Define finite targets and explicit limits before claiming coverage.
+- Explore cross-revision condition mapping while retaining distinct contract/rule identities.
+- Explore expected-negative annotations and evidence that the test asserted a rejection. A status code or name alone cannot establish this.
+- Consider explicit pairwise combination targets with a declared policy and denominator.
+- Improve Jest fixture/concurrency diagnostics where a concrete integration need appears.
+- Consider a small offline viewer if text, JSON, Markdown and CI reports leave an inspection gap.
 
-Test generation, dependency simulation, hosted registries and managed test
-execution remain outside the product scope.
+Test generation, dependency simulation, hosted registries and managed test execution remain outside scope. The existing Jest runner still owns test execution and assertions.

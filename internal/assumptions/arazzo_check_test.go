@@ -2,7 +2,6 @@ package assumptions
 
 import (
 	"bytes"
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -44,9 +43,7 @@ func writeArazzoCheckProjection(t *testing.T, root string) {
 			t.Fatal(err)
 		}
 	}
-	if err := os.RemoveAll(filepath.Join(root, "exports", "postman")); err != nil {
-		t.Fatal(err)
-	}
+
 }
 
 func arazzoPair(t *testing.T, consumer, provider artifact.Flow) Options {
@@ -54,11 +51,10 @@ func arazzoPair(t *testing.T, consumer, provider artifact.Flow) Options {
 	opts := checkHTTPPair(t, []*artifact.Artifact{checkCapture(false, consumer)}, []*artifact.Artifact{checkCapture(true, provider)})
 	writeArazzoCheckProjection(t, opts.Consumer)
 	writeArazzoCheckProjection(t, opts.Provider)
-	opts.InputFormat = "arazzo"
 	return opts
 }
 
-func TestArazzoChecksUseCompleteArchiveResponsesWithoutPostman(t *testing.T) {
+func TestArazzoChecksUseCompleteArchiveResponsesWithArazzo(t *testing.T) {
 	for _, scenario := range []string{"compatible", "response body", "response header", "request", "ignored header"} {
 		t.Run(scenario, func(t *testing.T) {
 			consumer, provider := integrationArazzoFlow(), integrationArazzoFlow()
@@ -89,7 +85,7 @@ func TestArazzoChecksUseCompleteArchiveResponsesWithoutPostman(t *testing.T) {
 					t.Fatalf("missing request evidence: %+v", report)
 				}
 				for _, source := range []Source{report.Consumer, report.Provider} {
-					if source.InputFormat != "arazzo" || source.Arazzo == "" || len(source.ArazzoFiles) == 0 || len(source.Collections) != 0 || source.ManifestSHA256 == "" {
+					if source.Arazzo == "" || len(source.ArazzoFiles) == 0 || source.ManifestSHA256 == "" {
 						t.Fatalf("incomplete Arazzo provenance: %+v", source)
 					}
 				}
@@ -113,7 +109,6 @@ func TestArazzoChecksPreserveContractDriftChecks(t *testing.T) {
 	opts := checkHTTPPair(t, []*artifact.Artifact{makeCapture(false, `["open","closed"]`)}, []*artifact.Artifact{makeCapture(true, `["open","closed","new"]`)})
 	writeArazzoCheckProjection(t, opts.Consumer)
 	writeArazzoCheckProjection(t, opts.Provider)
-	opts.InputFormat = "arazzo"
 	report := mustCheck(t, opts)
 	if report.Compatible || !findingCode(report, "http_contract_mismatch") {
 		t.Fatalf("Arazzo bypassed contract rules: %+v", report)
@@ -138,7 +133,7 @@ func TestArazzoChecksKeepFailedProviderAndIdentityUnverified(t *testing.T) {
 				providerIdentity.Application.ID = "other"
 				code = "provider_identity_mismatch"
 			}
-			opts := Options{Mode: "consumer", InputFormat: "arazzo", Consumer: writeCheckArchive(t, identity, "complete", consumer), Provider: writeCheckArchive(t, providerIdentity, state, provider)}
+			opts := Options{Mode: "consumer", Consumer: writeCheckArchive(t, identity, "complete", consumer), Provider: writeCheckArchive(t, providerIdentity, state, provider)}
 			writeArazzoCheckProjection(t, opts.Consumer)
 			writeArazzoCheckProjection(t, opts.Provider)
 			report := mustCheck(t, opts)
@@ -160,36 +155,26 @@ func TestArazzoCheckSelectionAppliesToDiscoveryAndRunSets(t *testing.T) {
 		writeArazzoCheckProjection(t, root)
 	}
 	consumerSet, providerSet := writeRunSet(t, consumer), writeRunSet(t, providerOne, providerTwo)
-	report, err := CheckRunSetsWithFormat(t.Context(), consumerSet, providerSet, "consumer", "", nil, "arazzo")
+	report, err := CheckRunSets(t.Context(), consumerSet, providerSet, "consumer", "", nil)
 	if err != nil || !report.Compatible || report.Counts.Verified != 2 || len(report.Providers) != 2 {
 		t.Fatalf("Arazzo shards: %+v, %v", report, err)
 	}
 	for _, source := range append(report.Consumers, report.Providers...) {
-		if source.Arazzo == "" || len(source.Collections) != 0 {
+		if source.Arazzo == "" {
 			t.Fatalf("wrong run-set inputs: %+v", source)
 		}
 	}
-	// Discovery preserves format choice; no Postman directory exists in this store.
+	// Discovery verifies each run's Arazzo document and companions.
 	store := t.TempDir()
 	provider := writeCheckArchive(t, providerCheckIdentity(), "complete", checkCapture(true, first, second))
 	writeArazzoCheckProjection(t, provider)
 	storedProvider := putStoreArchive(t, store, "inventory", "run", provider)
 	storedConsumer := putStoreArchive(t, store, "shop", "run", consumer)
-	for _, opts := range []StoreOptions{{Mode: "consumer", Consumer: storedConsumer, Artifacts: store, InputFormat: "arazzo"}, {Mode: "provider", Provider: storedProvider, Artifacts: store, InputFormat: "arazzo"}} {
+	for _, opts := range []StoreOptions{{Mode: "consumer", Consumer: storedConsumer, Artifacts: store}, {Mode: "provider", Provider: storedProvider, Artifacts: store}} {
 		discovered, err := CheckStore(t.Context(), opts, nil)
 		if err != nil || !discovered.Compatible || discovered.Counts.Verified != 2 || len(discovered.Comparisons) != 1 {
 			t.Fatalf("Arazzo discovery: %+v, %v", discovered, err)
 		}
-		if discovered.Comparisons[0].Consumer.InputFormat != "arazzo" {
-			t.Fatal("discovery lost format")
-		}
-	}
-}
 
-func TestCheckRejectsMixedFormatInputsAtLibraryBoundary(t *testing.T) {
-	for _, opts := range []Options{{Mode: "consumer", InputFormat: "arazzo", ConsumerCollections: []string{"postman.json"}}, {Mode: "consumer", InputFormat: "postman", ProviderArazzo: "arazzo.json"}, {Mode: "consumer", InputFormat: "unknown"}} {
-		if _, err := Check(t.Context(), opts); !errors.Is(err, ErrInput) {
-			t.Fatalf("accepted mixed or unknown inputs: %v", err)
-		}
 	}
 }

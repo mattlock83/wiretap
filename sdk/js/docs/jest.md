@@ -36,7 +36,7 @@ the API contract and exports in `.wiretap.yaml`:
 version: 1
 application: {id: my-api}
 output_dir: artifacts/wiretap
-outputs: {coverage: [json, text], postman: true}
+outputs: {coverage: [json, text], arazzo: true}
 sut:
   id: my-api
   kind: service
@@ -45,7 +45,7 @@ sut:
 
 The main HTTP API requires that spec by default. HTTP dependencies and mocks
 need no spec or opt-out flag; add a dependency schema only to enable its
-validation and contract coverage. See [HTTP dependency schema options](javascript.md#http-dependency-schema-options)
+validation and contract coverage. See [boundary configuration](https://github.com/mattlock83/wiretap/blob/main/docs/configuration.md)
 for strict `schemaRequired: true` overrides and provider-check assurance.
 
 Run your usual Jest command with `wiretap` on PATH, or set `WIRETAP_BINARY` to
@@ -79,7 +79,7 @@ module.exports = withWiretap(existingConfig);
 
 Each unique run archive contains its canonical `last-run.json` receipt and a
 bounded `wiretap.log`. The receipt gives the exact archive, coverage report and
-Postman collection paths. Keep the complete output directory in CI, including
+Arazzo workflow paths. Keep the complete output directory in CI, including
 failed runs. The output-root `last-run.json` remains an advisory latest snapshot;
 concurrent owners retain independent records inside their archives.
 Framework results and API contract violations are reported separately.
@@ -123,13 +123,13 @@ for example `{ capture: { tags: ['integration'] } }`. Dynamic callbacks and a
 custom tracer provider belong in `captureJest`, because Jest serializes its
 configuration when starting workers.
 
-`createJestSuite` and the plain [JavaScript lifecycle API](javascript.md) remain
-available for selective capture and project-owned runtime lifecycles. Use
+`createJestSuite` supports selective Jest capture with a project-owned runtime. Use
 `testEnvironment: '@wiretap/sdk/jest-environment'` when supplying those hooks
 yourself. The selective `createJestSuite` wrapper supports async test callbacks;
 the automatic adapter above supports Jest's existing callback forms.
 
 The [pinned external Express/Jest demo](https://github.com/mattlock83/wiretap/tree/main/examples/existing-jest)
 verifies all 120 existing outcomes before and after capture, API coverage and
-Postman conformance to its pinned official HTTP schema, with exported
-request/response content compared against raw archive records and payload files.
+Arazzo conformance to its pinned official schema, with exported
+eligible JSON/REST workflow requests and success criteria compared against raw
+archive records and payload files. Non-JSON calls remain in the archive.

@@ -9,7 +9,7 @@ wiretap doctor
 ```
 
 `init` creates `.wiretap.yaml` with application identity, a provided API named
-`sut`, and automatic JSON/text coverage and Postman exports. The schema path is
+`sut`, and automatic JSON/text coverage and Arazzo exports. The schema path is
 relative to that configuration file. It creates no test runners, mocks, schemas
 or application processes. Add dependencies and adjust API identity in the
 ordinary [project configuration](configuration.md).
@@ -28,21 +28,20 @@ wiretap doctor --config .wiretap.yaml --format json
 
 Doctor uses the runtime's project loader, environment overrides and configuration
 validation. It reports missing environment substitutions, malformed local
-OpenAPI contracts/references, invalid local Protobuf sources or descriptor sets,
-and malformed configured gRPC TLS certificate/key and CA files. A missing
+OpenAPI contracts/references and unsupported boundary/output options. A missing
 configuration produces an error with the initialization command to run. Projects
 configured entirely through the runtime API can continue using that integration;
 doctor inspects a project file.
 
 Doctor reads local files and inspects the nearest existing output directory's
 permission bits. It creates no directories, certificates, capture runs or probe
-files, binds no listeners and sends no HTTP or reflection requests. Permission
+files, binds no listeners and sends no HTTP requests. Permission
 bits are an indication: ACLs, filesystem mount restrictions and actual writes
 are verified when capture starts. On Windows, only the parent directory's
 existence/type is checked. Environment output-directory overrides are resolved
 relative to the working directory, as they are at runtime.
 
-Reflection and remote OpenAPI references appear as `deferred`. Missing optional
+Remote OpenAPI references appear as `deferred`. Missing optional
 dependency specifications also appear as `deferred`, with their coverage limit.
 The runtime resolves remote contracts when capture starts. Doctor does not
 establish server availability, client CA trust, trace propagation, test ownership

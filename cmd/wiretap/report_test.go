@@ -12,12 +12,11 @@ import (
 	"github.com/mattlock83/wiretap/internal/artifact"
 	"github.com/mattlock83/wiretap/internal/bundle"
 	"github.com/mattlock83/wiretap/internal/coverage"
-	"github.com/mattlock83/wiretap/internal/postman"
 	"gopkg.in/yaml.v3"
 )
 
 func TestCLICoverageReportsUseRawArchive(t *testing.T) {
-	bundlePath := postmanBundleFixture(t)
+	bundlePath := httpBundleFixture(t)
 	for _, command := range []string{"report", "export"} {
 		for _, format := range []string{"", "yaml"} {
 			t.Run(command+"/"+format, func(t *testing.T) {
@@ -49,52 +48,7 @@ func TestCLICoverageReportsUseRawArchive(t *testing.T) {
 	}
 }
 
-func TestCLIPostmanExport(t *testing.T) {
-	bundlePath := postmanBundleFixture(t)
-	for _, command := range []string{"export", "report"} {
-		t.Run(command, func(t *testing.T) {
-			output := filepath.Join(t.TempDir(), "collection.postman_collection.json")
-			if code := execute(context.Background(), []string{command, "--bundle", bundlePath, "--format", "postman", "--sut-name", "Inventory API", "--output", output}); code != 0 {
-				t.Fatalf("%s Postman export exit = %d", command, code)
-			}
-			data, err := os.ReadFile(output)
-			if err != nil {
-				t.Fatal(err)
-			}
-			assertPostmanExport(t, data)
-		})
-	}
-
-	t.Run("stdout", func(t *testing.T) {
-		code, data := executeCapturingStdout(t, []string{"export", "--bundle", bundlePath, "--format", "postman", "--sut-name", "Inventory API"})
-		if code != 0 {
-			t.Fatalf("stdout Postman export exit = %d", code)
-		}
-		assertPostmanExport(t, data)
-	})
-}
-
-func TestCLIPostmanExportPreservesOutputOnCorruptBundle(t *testing.T) {
-	bundlePath := postmanBundleFixture(t)
-	// Changing immutable evidence must fail bundle verification before the output
-	// is opened, even when the replacement evidence would decode successfully.
-	if err := os.WriteFile(filepath.Join(bundlePath, "tests", "read-items.json"), []byte("{}\n"), 0644); err != nil {
-		t.Fatal(err)
-	}
-	output := filepath.Join(t.TempDir(), "existing.json")
-	if err := os.WriteFile(output, []byte("keep this export\n"), 0644); err != nil {
-		t.Fatal(err)
-	}
-	if code := execute(context.Background(), []string{"export", "--bundle", bundlePath, "--format", "postman", "--output", output}); code != 2 {
-		t.Fatalf("corrupt bundle export exit = %d, want 2", code)
-	}
-	data, err := os.ReadFile(output)
-	if err != nil || string(data) != "keep this export\n" {
-		t.Fatalf("failed export changed existing output: %q, %v", data, err)
-	}
-}
-
-func postmanBundleFixture(t *testing.T) string {
+func httpBundleFixture(t *testing.T) string {
 	t.Helper()
 	writer, err := bundle.NewAt(filepath.Join(t.TempDir(), "capture"))
 	if err != nil {
@@ -137,39 +91,6 @@ func postmanBundleFixture(t *testing.T) string {
 	return writer.Path()
 }
 
-func assertPostmanExport(t *testing.T, data []byte) {
-	t.Helper()
-	var collection postman.Collection
-	if err := json.Unmarshal(data, &collection); err != nil {
-		t.Fatalf("invalid Postman JSON: %v\n%s", err, data)
-	}
-	if collection.Info.Name != "Inventory API" || !strings.Contains(collection.Info.Schema, "v2.1.0") {
-		t.Fatalf("unexpected collection metadata: %+v", collection.Info)
-	}
-	if len(collection.Items) != 2 || collection.Items[0].Name != "reads items" || collection.Items[1].Name != "missing item" {
-		t.Fatalf("expected a folder per test: %+v", collection.Items)
-	}
-	requests := collection.Items[0].Items
-	if len(requests) != 2 || requests[0].Request.Method != "GET" || requests[1].Request.Method != "POST" {
-		t.Fatalf("expected only inbound requests in start-time order: %+v", requests)
-	}
-	if !strings.Contains(requests[0].Request.URL, "items") || len(collection.Items[1].Items) != 1 {
-		t.Fatalf("missing captured request: %+v", collection.Items)
-	}
-	for index, expected := range []int{200, 201} {
-		item := requests[index]
-		if len(item.Responses) != 1 || item.Responses[0].Code != expected || item.Responses[0].Body != `{"ok":true}` {
-			t.Fatalf("missing response example for request %d: %+v", index, item.Responses)
-		}
-		if len(item.Events) != 1 || item.Events[0].Listen != "test" || !strings.Contains(strings.Join(item.Events[0].Script.Exec, "\n"), "pm.response.to.have.status(") {
-			t.Fatalf("missing basic status check for request %d: %+v", index, item.Events)
-		}
-	}
-	if item := collection.Items[1].Items[0]; len(item.Responses) != 1 || item.Responses[0].Code != 404 {
-		t.Fatalf("missing second test response: %+v", item.Responses)
-	}
-}
-
 func executeCapturingStdout(t *testing.T, args []string) (int, []byte) {
 	t.Helper()
 	out, err := os.CreateTemp(t.TempDir(), "stdout-*")
@@ -189,7 +110,7 @@ func executeCapturingStdout(t *testing.T, args []string) (int, []byte) {
 }
 
 func TestTextReportReadsVerifiedArchive(t *testing.T) {
-	root := postmanBundleFixture(t)
+	root := httpBundleFixture(t)
 	code, output := executeCapturingStdout(t, []string{"report", "--bundle", root, "--format", "text"})
 	if code != 0 || !strings.Contains(string(output), "2 (2 passed, 0 failed, 0 skipped)") {
 		t.Fatalf("text summary failed: exit %d: %s", code, output)

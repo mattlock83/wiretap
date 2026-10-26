@@ -35,7 +35,7 @@ type checkComparison struct {
 // Count the assurance of each matched example, independently of presentation
 // limits. An unfamiliar kind must not silently acquire contract assurance.
 type checkAssurance struct {
-	httpValidation, httpProvider, protobuf, exampleOnly, unknown int
+	httpValidation, httpProvider, exampleOnly, unknown int
 }
 
 func (counts *checkAssurance) add(matches []assumptions.Match) {
@@ -45,8 +45,6 @@ func (counts *checkAssurance) add(matches []assumptions.Match) {
 			counts.httpValidation++
 		case "openapi_3_0_provider_contract":
 			counts.httpProvider++
-		case "protobuf_rules_and_observed_wire":
-			counts.protobuf++
 		case "unavailable":
 			counts.exampleOnly++
 		default:
@@ -56,7 +54,7 @@ func (counts *checkAssurance) add(matches []assumptions.Match) {
 }
 
 func (counts checkAssurance) String() string {
-	return fmt.Sprintf("Assurance: %d HTTP declaration and value checks; %d HTTP provider-spec checks; %d protobuf declaration and wire checks; %d example-only matches (schemas unavailable); %d matches with unknown assurance.", counts.httpValidation, counts.httpProvider, counts.protobuf, counts.exampleOnly, counts.unknown)
+	return fmt.Sprintf("Assurance: %d HTTP declaration and value checks; %d HTTP provider-spec checks; %d example-only matches (schemas unavailable); %d matches with unknown assurance.", counts.httpValidation, counts.httpProvider, counts.exampleOnly, counts.unknown)
 }
 
 // writeCheckFormat only presents a completed check. It never filters evidence,

@@ -18,7 +18,6 @@ import (
 	"github.com/getkin/kin-openapi/routers"
 	"github.com/getkin/kin-openapi/routers/legacy"
 	"github.com/mattlock83/wiretap/internal/artifact"
-	"github.com/mattlock83/wiretap/internal/grpccontract"
 	"github.com/mattlock83/wiretap/internal/openapivalidation"
 )
 
@@ -42,10 +41,7 @@ func applySchemaValidation(art *artifact.Artifact) {
 		return
 	}
 	issues := validateSchemas(art)
-	result := &artifact.SchemaValidation{Status: "pass", Unavailable: grpcUnavailableValidation(art)}
-	if len(result.Unavailable) > 0 {
-		result.Status = "partial"
-	}
+	result := &artifact.SchemaValidation{Status: "pass"}
 	for _, schema := range art.Schemas {
 		if schema.Source.Type == "omitted" {
 			result.Skipped = append(result.Skipped, schema.ID)
@@ -126,7 +122,6 @@ func validateSchemas(art *artifact.Artifact) []artifact.SchemaValidationError {
 	}
 
 	openapiByRole := map[string][]openapiSpec{}
-	protobufByRole := map[string][]artifact.SchemaRef{}
 	var issues []artifact.SchemaValidationError
 
 	for role, schemas := range roleSchemas {
@@ -136,8 +131,6 @@ func validateSchemas(art *artifact.Artifact) []artifact.SchemaValidationError {
 			}
 			typ := strings.ToLower(strings.TrimSpace(schema.Type))
 			switch typ {
-			case "protobuf":
-				protobufByRole[role] = append(protobufByRole[role], schema)
 			case "openapi":
 				spec, err := loadOpenAPISpec(schema)
 				if err != nil {
@@ -172,10 +165,6 @@ func validateSchemas(art *artifact.Artifact) []artifact.SchemaValidationError {
 	}
 
 	for _, flow := range art.Traffic {
-		if flow.Protocol == "grpc" {
-			issues = append(issues, validateGRPCFlow(flow, protobufByRole)...)
-			continue
-		}
 		if !strings.EqualFold(flow.Protocol, "http") {
 			continue
 		}
@@ -209,73 +198,6 @@ func validateSchemas(art *artifact.Artifact) []artifact.SchemaValidationError {
 		issues = append(issues, validateHTTPFlow(flow, candidates)...)
 	}
 
-	return issues
-}
-
-func validateGRPCFlow(flow artifact.Flow, byRole map[string][]artifact.SchemaRef) []artifact.SchemaValidationError {
-	role := "sut"
-	if flow.Channel == "sut_to_dependency" {
-		role = "dependency"
-	}
-	issue := func(phase, id, message string) artifact.SchemaValidationError {
-		return artifact.SchemaValidationError{FlowID: flow.ID, Channel: flow.Channel, Protocol: "grpc", Phase: phase, SchemaID: id, Message: message}
-	}
-	if flow.Request.GRPC == nil || flow.Response.GRPC == nil {
-		return []artifact.SchemaValidationError{issue("capture", "", "missing gRPC request or response evidence")}
-	}
-	var schema *artifact.SchemaRef
-	for i := range byRole[role] {
-		candidate := &byRole[role][i]
-		if role == "sut" || candidate.AssetID == flow.AssetID {
-			schema = candidate
-			break
-		}
-	}
-	if schema == nil {
-		return []artifact.SchemaValidationError{issue("schema", "", "no protobuf contract for boundary")}
-	}
-	data, err := os.ReadFile(schema.Source.Path)
-	if err != nil {
-		return []artifact.SchemaValidationError{issue("schema", schema.ID, err.Error())}
-	}
-	contract, err := grpccontract.Parse(data, schema.Services)
-	if err != nil {
-		return []artifact.SchemaValidationError{issue("schema", schema.ID, err.Error())}
-	}
-	method := contract.Methods[flow.Request.GRPC.Procedure]
-	var issues []artifact.SchemaValidationError
-	if method == nil {
-		issues = append(issues, issue("request", schema.ID, "procedure is not in selected service inventory"))
-	}
-	for _, side := range []struct {
-		name string
-		msg  *artifact.GrpcMessage
-	}{{"request", flow.Request.GRPC}, {"response", flow.Response.GRPC}} {
-		if o := side.msg.Observation; o != nil && !o.CountsComplete && o.Error != "" {
-			issues = append(issues, issue(side.name, schema.ID, o.Error))
-		}
-		for _, payload := range side.msg.Messages {
-			if payload.DecodeError != "" && payload.DecodeState != "unavailable" {
-				issues = append(issues, issue(side.name, schema.ID, fmt.Sprintf("message %d: %s", payload.Index, payload.DecodeError)))
-			}
-		}
-	}
-	if flow.Response.GRPC.HTTPStatus != http.StatusOK {
-		issues = append(issues, issue("response", schema.ID, fmt.Sprintf("gRPC transport returned HTTP %d", flow.Response.GRPC.HTTPStatus)))
-	}
-	if flow.Response.GRPC.StatusCode < 0 {
-		issues = append(issues, issue("response", schema.ID, "gRPC status is missing"))
-	}
-	if method != nil {
-		requestCount, requestKnown := grpcObservedCount(flow.Request.GRPC)
-		responseCount, responseKnown := grpcObservedCount(flow.Response.GRPC)
-		if !method.IsStreamingClient() && requestKnown && requestCount != 1 {
-			issues = append(issues, issue("request", schema.ID, "unary request must contain exactly one message"))
-		}
-		if !method.IsStreamingServer() && responseKnown && (responseCount > 1 || flow.Response.GRPC.StatusCode == 0 && responseCount != 1) {
-			issues = append(issues, issue("response", schema.ID, "unary response permits at most one message and requires one on OK"))
-		}
-	}
 	return issues
 }
 
@@ -479,40 +401,4 @@ func toHTTPHeader(headers artifact.Headers) http.Header {
 		}
 	}
 	return out
-}
-
-func grpcObservedCount(msg *artifact.GrpcMessage) (uint64, bool) {
-	if msg.Observation != nil {
-		return msg.Observation.CompleteFrames, msg.Observation.CountsComplete && msg.Observation.EOF && msg.Observation.Partial == nil
-	}
-	return uint64(len(msg.Messages)), !msg.CaptureTruncated
-}
-
-func grpcUnavailableValidation(art *artifact.Artifact) []artifact.SchemaValidationError {
-	var result []artifact.SchemaValidationError
-	for _, flow := range art.Traffic {
-		if flow.Protocol != "grpc" || flow.Interaction != nil {
-			continue
-		}
-		for _, side := range []struct {
-			name string
-			msg  *artifact.GrpcMessage
-		}{{"request", flow.Request.GRPC}, {"response", flow.Response.GRPC}} {
-			if side.msg == nil {
-				continue
-			}
-			add := func(reason string) {
-				result = append(result, artifact.SchemaValidationError{FlowID: flow.ID, Channel: flow.Channel, Protocol: "grpc", Phase: side.name, SchemaID: side.msg.SchemaRef, Message: reason})
-			}
-			if !artifact.GRPCDirectionComplete(side.msg, false) {
-				add("Full message validation is unavailable: direction incomplete, framing unknown, metadata limited or messages omitted")
-			}
-			for _, p := range side.msg.Messages {
-				if p.DecodeState == "unavailable" {
-					add(fmt.Sprintf("message %d: %s", p.Index, p.DecodeError))
-				}
-			}
-		}
-	}
-	return result
 }

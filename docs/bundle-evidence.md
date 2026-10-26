@@ -30,7 +30,7 @@ Each boundary includes:
 | `id` | The configured API/dependency ID, local to this system. An unidentified boundary uses `unknown`. |
 | `target_kind` | `mock`, `service` or `unknown`; this describes the test target. |
 | `configured` | Whether the boundary was declared through configuration or registered contracts. |
-| `protocols` | Known protocols, such as `http` or `grpc`; an empty array means unknown. |
+| `protocols` | Known protocols, such as `http` or an opaque event protocol; an empty array means unknown. |
 | `contracts` | Contract IDs, types and frozen source references, or an explicit `omitted` source. |
 | `observed_in` | IDs of committed test attempts containing traffic for this boundary. |
 
@@ -46,7 +46,7 @@ interactions. In each test file, `capture.traffic` entries identify their bounda
 through `interaction.boundary` for event recordings, or `channel` and `asset_id`
 for request/response recordings. A dependency event has boundary role
 `dependency`; a dependency request/response pair has `channel: sut_to_dependency`.
-HTTP exchanges identify methods/URLs; gRPC exchanges identify procedures.
+HTTP exchanges identify methods and URLs.
 Contracts list the declared operations, including unobserved ones.
 
 `inventory_scope: configured_and_observed` is deliberately limited: an empty
@@ -85,9 +85,7 @@ or uncaptured dependencies. Missing contract data for a boundary that does exist
 means unknown coverage, not an absent side or 100% coverage.
 
 These are bundle-format guarantees. Runtime configuration still requires a SUT
-boundary. The Playwright adapter routes its request/browser fixtures through that
-boundary; it does not add a dependency-only application configuration. Browser
-traffic appears only when it actually passes through a capture listener.
+boundary. Jest capture uses that boundary and records only traffic that passes through its capture listener.
 
 ## Authoritative records
 
@@ -104,7 +102,7 @@ identity and source provenance, optional capture `producer` and
 under `pending_tests`, and committed `{attempt_id, path, sha256}` records under
 `tests`. Test identities distinguish stable logical tests from individual
 attempt IDs. See the [machine interface](machine-interface.md) for identity and
-provenance fields. gRPC acquisition states are in `contract_resolutions`.
+provenance fields.
 The inventory is replaced atomically.
 A committed attempt refers to one immutable JSON file. Only listed attempts
 are read. Staging files and orphaned attempt files are ignored by ordinary
@@ -130,62 +128,6 @@ keeps declared operations visible even if the suite has no tests. Each
 `contracts/<hash>/manifest.json` records the set hash, root document, and all local
 document hashes. The reader checks the
 manifest identity and every file.
-
-For gRPC, the run inventory freezes each selected boundary's binary
-`FileDescriptorSet` under `contracts/<hash>/descriptor-set.protoset`, including
-its imported descriptors. The schema reference names the selected services and
-contract provenance. Each RPC flow has `protocol: grpc` and typed request and
-response messages with procedure, metadata, ordered Protobuf messages, trailers,
-HTTP/2 status and a separate gRPC application status. Decoded JSON and raw
-Protobuf message bytes are separate, hash-checked attachments with a message
-index. An application error can have HTTP 200 and a nonzero `grpc_status`.
-Legacy redacted payloads do not retain raw wire bytes.
-Run-level `contract_resolutions` retain each declared gRPC boundary while acquisition is
-`pending`, `resolved`, or `failed`. Unresolved boundaries have an unknown
-coverage denominator and explicit acquisition diagnostics. A complete
-run requires resolved contracts; each resolved entry must match its frozen
-descriptor and selected services.
-An empty Protobuf message still has a zero-byte wire attachment; it is distinct
-from a missing or incomplete message. Readers verify the projection against the
-frozen descriptor and wire message, and reject inconsistent protocol tags,
-schema references, ordered message indices, and duplicate attachment references.
-
-Rich RPC errors have a separate response `status_details` object. It records
-where the `google.rpc.Status` envelope arrived, its code/message, decoding state
-and ordered `Any` details. The terminal `grpc_status` stays authoritative;
-contradictory envelope codes are labelled `inconsistent`. A missing object means
-no retained status-detail metadata was observed; an empty envelope, malformed
-metadata and truncated evidence have distinct representations. Legacy records
-can also identify redacted evidence. Missing metadata in an incomplete capture is not proof that the server sent none.
-
-Custom detail types use the frozen boundary descriptors. Standard `google.rpc`
-error types absent from that boundary use a separately hashed auxiliary
-`FileDescriptorSet` attachment. The auxiliary set does not change the boundary
-contract bytes or semantic revision. Conflicting helper definitions are refused;
-unknown types remain opaque. No type URLs are fetched and no fresh reflection
-is needed to decode or rebuild the bundle.
-
-Status attachments use `kind: status-envelope`, `status-descriptors`,
-`status-detail-wire` or `status-detail-json`; the latter two use a zero-based
-`status_detail_index`. These indices are independent of application message
-indices. The binary metadata envelope moves into its attachment instead of
-also being retained in headers/trailers. Readers verify detail bytes against
-that envelope, descriptor hashes and ProtoJSON projections. Legacy redacted
-projections explicitly cannot make that original-byte verification claim.
-
-Raw envelope bytes, retained detail bytes, readable projections and captured
-response metadata share a 64 KiB budget. At most 256 detail records and a
-Protobuf recursion depth of 100 are supported. Auxiliary descriptors have the
-normal descriptor limits; they are shared schema data, not user payloads.
-Exhausted limits produce explicit truncated/unavailable detail states and never
-limit the bytes forwarded to the client. Error details are observations, not
-additional response messages or coverage conditions: a service declaration does
-not enumerate its allowed rich errors.
-
-Older redacted error records may contain only a modified projection, without
-original detail or envelope bytes. Those limitations remain explicit and do not
-support original-byte verification or replay. Current capture retains synthetic
-test data without redaction.
 
 Writers produce `3.1`. Readers accept supported `3.x` records subject to their
 structure and required capabilities. Older captures retain only the guarantees
@@ -222,7 +164,7 @@ while concrete observed paths and exchanges remain browsable.
 
 ## Generic event records
 
-A flow has exactly one representation: the existing HTTP/gRPC `request` and
+A flow has exactly one representation: the HTTP `request` and
 `response` pair, or an `interaction` containing ordered events. The event form
 does not require a response and does not flatten a stream into two lists.
 `protocol` on the flow identifies the API or messaging protocol; transport,
@@ -260,17 +202,7 @@ each direction. They do not establish global ordering across Kafka partitions,
 independent connections or systems. Retries and duplicate deliveries remain
 distinct events even if they reference the same payload hash.
 
-The generic event form can describe a bidirectional RPC by preserving client
-and server message interleaving, initial metadata, a client half-close and final trailers/status.
-For example, a provided API may observe `received message`, `sent message`,
-`received message`, `received half_close`, `sent message`, then `sent trailers`.
-The half-close ends only one sending direction. Cancellation, transport errors
-and missing terminal status remain distinguishable from a completed successful
-RPC. A capture stopped while the stream is open is incomplete. A terminal gRPC
-status is distinct from the HTTP/2 status. Message type and schema references
-record the known Protobuf decoding context. The generic reader validates event
-structure and references; it does not validate a gRPC state machine, infer a
-missing terminal status or treat `capture_state: complete` as protocol success.
+A generic stream preserves message interleaving, half-close, cancellation, errors and completion as separate observations. The reader validates ordering and references; `capture_state: complete` does not establish successful protocol execution or application behavior.
 
 Events carry named `payloads` so a Kafka key, value and binary header or an
 encoded message and decoded projection can coexist. Each payload records:
@@ -291,8 +223,7 @@ encoded message and decoded projection can coexist. Each payload records:
 - A body whose retained bytes use the existing content-addressed `.bin` store.
   `bodies` references use `phase: event`, `event_id` and `payload_name`.
 
-Payload `encoding` describes the message format, such as `avro`, `protobuf` or
-`json`. The body's `encoding` describes its storage representation; binary bodies
+Payload `encoding` describes the message format, such as `avro` or `json`. The body's `encoding` describes its storage representation; binary bodies
 use base64 before attachment extraction. An `empty` payload still has a zero-byte
 attachment. `null`, `redacted` and `unavailable` payloads have no retained body.
 For compatibility with older records, a redacted representation cannot retain
@@ -308,65 +239,16 @@ import or validated the schema's semantics.
 
 This envelope represents these protocols; it does not enable their live capture,
 semantic validation, replay or coverage adapters. Live capture and contract
-measurement currently cover HTTP/OpenAPI and native gRPC/Protobuf, including
-all four RPC shapes. Execution adapters are outside the local capture tool.
-Generic event recordings remain visible as unsupported for measurement and
-execution. Native gRPC uses its typed RPC record
-and the observation fields below; it does not duplicate payloads into generic events.
+measurement currently cover HTTP/OpenAPI. Execution adapters are outside the local capture tool. Generic event recordings remain visible as unsupported for measurement and execution.
 GraphQL `errors` can coexist with `data` and HTTP 200; Kafka acknowledgement does
 not prove downstream processing; a complete stream does not prove every message
 was asserted. Readers must preserve those distinctions.
-
-## Native gRPC observations
-
-Format 3.1 adds `grpc-observation.v1` and `grpc-status-details.v1` required
-capabilities. Older readers must reject these features rather than discard their
-meaning. The layout and HTTP evidence stay unchanged. Old captures without
-observation counters cannot establish streaming completeness.
-
-Native RPCs retain typed `request` and `response` records. Each direction has an
-`observation` with `complete_frames`, `retained_frames`, `omitted_frames`,
-`observed_bytes`, `counts_complete`, `eof` and `end`. Complete observed frames equal
-retained plus omitted frames. `end` distinguishes `open`, `eof`, `error` and
-`closed`; closing after an early response is not proof of EOF. Count completeness
-refers to the observed interval, not hypothetical later traffic. Framing errors
-make subsequent counts unknown. A partial frame has its index, header/payload
-byte counts and start observation, without a fabricated completion time.
-
-Retention stops at the first omitted frame. Retained indices are a contiguous
-wire prefix; `omitted: {first_index, count}` summarizes the remaining complete
-frames in bounded space. The observer counts zero-byte frames and oversized
-frames after retention stops. Partial frames are separate from complete counts.
-Each direction retains at most 1,024 complete messages and its byte budget.
-Decode work and readable projections have a finite aggregate budget too.
-
-Each retained message has an `observation` containing `wire_bytes`,
-`started_offset_ns`, `completed_offset_ns`, `start_sequence` and
-`complete_sequence`. Offsets use the invocation's monotonic start; `started_at`
-provides its UTC anchor. `grpc_events` references lifecycle observations through
-`sequence`, `offset_ns`, `direction` (`request`, `response`, `rpc`) and `kind`.
-Initial metadata, half-close, end, trailers, cancellation and errors share this
-observation order. Message bodies remain stored once, on their direction.
-Missing fields are unavailable, never inferred from array lengths or report time.
-
-`decode_state` distinguishes `decoded`, `invalid` and `unavailable`, with a
-`decode_error` reason for the latter two. Unsupported compression, capture limits,
-recursion limits or an unavailable JSON projection are not fabricated wire
-violations. `schema_validation.unavailable` explains partial checks; malformed
-Protobuf still fails validation. Retention, completeness and decoding limits
-prevent successful stream coverage even when the test itself passes.
-
-Loaders verify counter relationships, omission ranges, wire lengths, original
-indices, monotonic timing and sequence uniqueness, as well as the existing hashes,
-Protobuf bytes and JSON projections. A drain snapshot is immutable: subsequent
-traffic cannot update the committed attempt or migrate into the next test.
 
 ## External analysis and replay
 
 The bundle is a build artifact. External tools can read
 `tests/<attempt-id>.json`, frozen contracts and ordinary payload files. Sequence, stream events and correlation remain available without a second
-scenario representation. Wiretap exports Postman projections for supported HTTP
-and native gRPC exchanges; it does not execute those collections. Captured
+scenario representation. Wiretap exports Arazzo workflows for supported JSON/REST exchanges; it does not execute the workflows. Captured
 responses are observations, not exact-match assertions or permission to execute code.
 
 Authentication, fixture setup, substitutions and cleanup belong to project-owned
@@ -383,16 +265,3 @@ Each observation links back to an attempt path and flow ID, with phase, instance
 location, test name, outcome, message validation, capture completeness and
 transport failure details. See [contract coverage rules](contract-coverage-rules.md)
 for status meanings and unsupported measurement scopes.
-
-### gRPC contract readiness
-
-`bundle.json` includes `contract_resolutions` for declared gRPC boundaries before
-schema discovery: API ID, role, source, service selection and
-`contract_resolution` (`pending`, `failed`, `resolved`). Failed acquisition keeps
-the run open and the denominator unknown. A resolved entry must match a frozen
-Protobuf schema; a complete run cannot contain pending or failed contracts.
-Diagnostics omit reflection credentials and filesystem paths. Successful
-acquisition provenance is stored on the boundary's schema reference.
-
-Pending test records retain setup metadata and the attempt identity so interrupted
-work remains distinguishable from committed capture.

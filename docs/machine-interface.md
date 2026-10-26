@@ -2,7 +2,7 @@
 
 The raw capture is the authoritative input for assumption checks and external
 analysis.
-Postman collections and Arazzo workflows are executable/example projections. Coverage reports are
+Arazzo workflows are example projections. Coverage reports are
 versioned measurements of that evidence, not replacement recordings.
 
 ## CLI output and exit status
@@ -40,33 +40,21 @@ JSON and YAML coverage use report envelope `report_version: "1.0"`, described by
 [coverage-report.schema.json](coverage-report.schema.json). `producer` identifies
 the measuring binary. `capture` identifies the source run, archive format,
 revision, application, supplied build sources and original producer. Existing
-measurement `rules_version` fields still describe HTTP/protobuf condition rules.
+measurement `rules_version` fields still describe HTTP condition rules.
 Consumers must check these versions before interpreting keys or counts. Additive
 optional fields are compatible; changed meaning or required fields need a new
 report version. Exact-byte hashes establish integrity, not compatibility.
 
 ## Stable tests and attempts
 
-Use JavaScript `identity: {id, variant?, attemptOrdinal?}`, Go `Identity`, Python
-`identity={"id": ..., "variant": ..., "attempt_ordinal": ...}`, or HTTP
-`test_identity: {id, variant?, attempt_ordinal?}` for a stable logical test.
-IDs are local to the application; variants distinguish parameterized cases.
+Automatic Jest capture derives stable test identities. The HTTP spelling is `test_identity: {id, variant?, attempt_ordinal?}`. IDs are local to the application; variants distinguish parameterized cases.
 Supply a nonnegative attempt ordinal when the runner exposes retry ordering.
 Omission means ordering was not supplied, never a guessed successful or last
-attempt. Managed Go, Mocha, Playwright and pytest integrations number the first attempt
-as `1`; automatic Jest capture keeps retry identity but does not supply an
-ordinal. Custom HTTP/SDK integrations may use any consistent nonnegative
-sequence. Names remain display labels; random capture IDs identify executions.
+attempt. Automatic Jest capture keeps retry identity but does not supply an ordinal. Direct HTTP callers may use a consistent nonnegative sequence. Names remain display labels; random capture IDs identify executions.
 Identity is retained in pending attempts, completed test records and coverage
 samples.
 
-Managed adapters derive identities from their runner's test identity, including
-file/package and variant information where available. The lower-level
-`runTest`/`createTestAttempt` wrappers and `Runtime.StartTest` default to the full
-test name when it fits the 256-byte limit. Supply explicit IDs/variants for
-labels that change or repeat outside those adapters. Direct HTTP callers and
-older captures can omit identity; comparison then has only their supplied labels
-and execution evidence.
+Jest derives identities from the file and full test identity. Direct HTTP callers and older captures can omit identity; comparison then has only their supplied labels and execution evidence.
 
 ## Build provenance and provider mappings
 
@@ -105,8 +93,7 @@ An absent body differs from a present empty body. Zero original bytes in older
 captures may mean that size was not recorded. Older raw captures may carry
 `redactions`; coverage samples expose those legacy rules as `redaction_rules`.
 Per-message redaction flags also remain readable as legacy evidence limits. Current capture retains values unchanged. The `redacted`
-field is read-only compatibility metadata, not a capture option. gRPC messages also retain omission
-and decode diagnostics.
+field is read-only compatibility metadata, not a capture option.
 Follow raw evidence references for exact retained data and validation limitations.
 
 Run/attempt IDs, timestamps, trace IDs, ports, request IDs and durations are
@@ -125,21 +112,14 @@ or retained evidence can make a result `unverified`.
 consumer/provider pair, a local run against discovered peers under
 `--artifacts <root>`, or explicit same-build run sets. Discovery uses declared provider mappings and top-level
 application folders; it requires an unambiguous snapshot selection. Each pair
-reads complete archives and the selected projection inputs. `--input-format`
-selects `postman` (default) or `arazzo` for both sides. Arazzo supports JSON/REST
-boundaries and uses each archive's `exports/arazzo/arazzo.json` with its source
-companions by default; explicit pairs can override those paths with
-`--consumer-arazzo` and `--provider-arazzo`. Mixed-format comparisons are not
-supported. A passing result requires inputs verified against archive-derived
+reads complete archives and Arazzo workflows from `exports/arazzo/arazzo.json` with their source companions. Explicit pairs can override those paths with `--consumer-arazzo` and `--provider-arazzo`. A passing result requires inputs verified against archive-derived
 projections and selected mock scenarios supported by complete
 passing provider service tests. With only the provider's frozen OpenAPI 3.0
 contract it validates both concrete exchanges under that schema. With both
 contracts it also requires conservative equality of exercised validation rules
 and checks each exchange under its own schema. Coverage reports and
 condition fingerprints do not replace concrete request/response evidence.
-gRPC matches require selected-method declaration equality and observed wire
-cross-decoding in Postman mode. Arazzo selections cannot silently omit unsupported
-traffic from a boundary. The checker verifies the Arazzo document and source
+Arazzo selections cannot silently omit unsupported traffic from a boundary. The checker verifies the Arazzo document and source
 companions, then uses the archives for actual response bodies and headers,
 passing-test provenance, mappings and frozen schemas. It does not execute Arazzo
 workflow expressions or success criteria.
@@ -147,9 +127,7 @@ workflow expressions or success criteria.
 Use `--format json` for the versioned result, and `--output <file>` to save it.
 Pair, discovered-artifact and run-set results have `report_version: "1.0"` and
 `rules_version: "wiretap-assumptions-4"`. Check both versions and `scope` before
-interpreting a result. Version 4 respects explicit non-JSON HTTP media types:
-JSON-looking `text/plain` body bytes compare exactly; JSON media types and
-valid JSON without a content type retain JSON normalization.
+interpreting a result. JSON/REST workflow eligibility is checked before the comparison uses the complete retained response evidence.
 
 ### Shared-artifact result
 
@@ -198,12 +176,7 @@ the same report shape in each `comparisons` entry. A pair report has
 | `findings` | `uncovered`, `mismatch` or `unverified` findings with diagnostic code, message and applicable operation, evidence references and differences. |
 | `excluded_provider_evidence` | Provider evidence that could not qualify, with a reason for each exclusion. |
 
-Arazzo sources have `input_format: "arazzo"`; an omitted `input_format` means
-Postman. `collections` retains its array shape and is empty for Arazzo sources.
-An Arazzo source adds `arazzo` with the selected document path and, after source
-verification, `arazzo_files` with its companion paths. Those fields are omitted
-for Postman sources. Run-set member sources use the same fields; an empty shard
-with no eligible workflows may omit its default Arazzo document and path.
+Each source retains `arazzo`, the selected document path, and after verification `arazzo_files`, its companion paths. Run-set member sources use the same fields; an empty shard with no eligible workflows may omit its default document and path. The source also pins the archive revision and manifest digest.
 
 Each evidence reference includes `run_id`, `attempt_id`, `test_name`, optional
 `test_identity`, `flow_id`, `evidence_path` and `test_outcome`. Preserve the
@@ -224,7 +197,6 @@ Each match's `contract_check` is one of:
 | --- | --- |
 | `openapi_3_0_validation_rules` | Exercised HTTP request/response rules agree; each response and each request associated with a status below `400` validates against its own frozen schema. |
 | `openapi_3_0_provider_contract` | Consumer dependency schema is absent or explicitly omitted; both actual exchanges validate under the provider's frozen OpenAPI 3.0 contract, with the same negative-request exception. No independent consumer declarations are compared. |
-| `protobuf_rules_and_observed_wire` | Selected gRPC input/output declarations agree, including full reachable enum sets, and observed values survive cross-decoding under the opposite descriptors. |
 | `unavailable` | Both HTTP schemas are absent or explicitly omitted, so this is an example-only match. |
 
 The text report states how many verified matches are example-only. JSON
@@ -253,9 +225,6 @@ under `wiretap-assumptions-4`:
 | --- | --- | --- |
 | `provider_request_uncovered` | `uncovered` | No complete passing provider example matches this concrete request. This does not prove the request would fail at runtime. |
 | `provider_response_mismatch` | `mismatch` | Matching requests exist, but none has the mock's full response under the comparison policy. |
-| `provider_wire_mismatch` | `mismatch` | A prospective gRPC match fails request or response cross-decoding under the other side's frozen descriptor. |
-| `protobuf_contract_mismatch` | `mismatch` | Selected-method message or enum declarations differ after observed wire cross-decoding passes. |
-| `protobuf_contract_unavailable` | `unverified` | Required Protobuf declaration comparison is unavailable or cannot be completed reliably. |
 | `http_contract_mismatch` | `mismatch` | Declared validation rules differ on the exercised HTTP operation, selected status or media types, even if both examples satisfy them. |
 | `http_contract_violation` | `mismatch` | A checked HTTP response or qualifying request violates the applicable own or provider frozen schema. |
 | `http_contract_unavailable` | `unverified` | Required HTTP schemas/rules are unavailable, unsupported or cannot be checked reliably. |
@@ -268,8 +237,7 @@ under `wiretap-assumptions-4`:
 
 `differences` identifies response paths, exercised rules under
 `contract/request/...` or `contract/response/...`, `contract/validation` for a
-value-validation failure, `contract` for unavailable HTTP assurance,
-`protobuf/contract` for Protobuf declarations, or `protobuf/wire`. It does not
+value-validation failure, or `contract` for unavailable HTTP assurance. It does not
 classify a change as behaviorally breaking.
 Extra optional response fields, enum additions or relaxed bounds can fail this
 strict policy even when a consumer tolerates them. Findings retain up to ten
@@ -300,29 +268,11 @@ cased keys for one name, or multiple `Content-Type` values, prevent a reliable
 contract check as well. Nullable schemas combined with enum,
 `not` or composition are unverified because of validator ambiguity for null.
 
-Protobuf declaration comparison follows only the exercised method's static
-input/output graphs. It compares field kinds/numbers, cardinality, presence,
-oneofs, maps,
-defaults and full enum name/number sets, including unobserved fields and values.
-Syntax and enum open/closed semantics also participate. Ordinary declaration
-order is normalized, while a changed preferred alias label for a numeric enum
-value remains drift because it affects canonical ProtoJSON names. References
-are resolved. Declaration paths identify message names and field numbers under
-`protobuf/contract/messages/.../fields/...`, or enum names under
-`protobuf/contract/enums/...`; request/response entries link to message names.
-Unrelated services,
-methods and message definitions are not diffed. Custom option declarations are
-compared as opaque bytes; validation annotations are not executed against
-values. Dynamically referenced `Any` or rich-status-detail types need not be
-reached by the declaration traversal; this is not an entire-descriptor diff.
-Safe additive declarations or differently encoded equivalent custom
-options can therefore fail conservatively without proving a runtime break.
-
 ### Input errors and report files
 
 Incomplete runs, unverifiable provider identities and empty selections return
 an unverified result before projection verification. In an otherwise eligible
-comparison, missing, invalid or stale collections, Arazzo documents or Arazzo
+comparison, missing, invalid or stale Arazzo documents or Arazzo
 source companions are input errors. Failed or incomplete provider attempts cannot
 support a match; other complete passing attempts can establish agreement when
 projection verification succeeds. Arazzo regenerates strictly across the entire
@@ -336,7 +286,7 @@ report path rather than trusting an existing file after a failed invocation.
 `--output` requires an existing parent directory. Shared-artifact mode requires
 a destination outside the entire artifact root and the local input archive.
 Explicit pair mode requires a destination outside both archives and supplied
-Postman input directories. For Arazzo, keep output outside the containing export
+Arazzo input directories. Keep output outside the containing export
 tree even when selecting a document file explicitly; the tree's source companions
 are also protected, including when an early unverified result skips projection
 verification. Run-set output must be outside every member archive and cannot

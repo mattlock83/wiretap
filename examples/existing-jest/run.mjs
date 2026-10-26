@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
-import { createHTTPValidator, assertCapturedHTTP } from '../../tests/postman-compat/http-validation.cjs';
+import { createArazzoValidator, assertCapturedArazzo } from '../../tests/arazzo-compat/arazzo-validation.cjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '../..');
@@ -82,14 +82,11 @@ assert.equal(new Set(attempts.map(test => test.capture.testcase.identity.id)).si
 const summary = await fs.readFile(receipt.outputs.coverage.text, 'utf8');
 assert.match(summary, /property-api: 10\/10 operations exercised/);
 const require = createRequire(path.join(project, 'package.json'));
-const validateHTTP = createHTTPValidator(require('ajv'));
-let requestCount = 0;
-for (const file of receipt.outputs.postman) {
-  const collection = validateHTTP(await readJSON(file));
-  requestCount += assertCapturedHTTP(collection, attempts, receipt.bundle_path);
-}
+const validateArazzo = createArazzoValidator(require('ajv/dist/2020'));
+const document = validateArazzo(await readJSON(receipt.outputs.arazzo));
+const requestCount = assertCapturedArazzo(document, attempts, receipt.bundle_path, receipt.outputs.arazzo);
 assert.ok(requestCount >= 120);
 console.log(`Unchanged: 120 tests, 63 passed, 57 upstream failures. All 10 API operations captured.`);
-console.log(`Official Postman schema validated ${requestCount} requests; content matches captured requests and responses.`);
+console.log(`Official Arazzo schema validated ${requestCount} requests; requests and success criteria match captured evidence.`);
 console.log(`Receipt: ${path.join(project, 'artifacts/wiretap/last-run.json')}`);
 console.log(summary);

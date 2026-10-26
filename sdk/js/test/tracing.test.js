@@ -3,7 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
 const { once } = require('node:events');
-const { startCapture, bindTest } = require('../src');
+const { startCapture } = require('../src');
 const { BasicTracerProvider, SimpleSpanProcessor, InMemorySpanExporter, AlwaysOffSampler } = require('@opentelemetry/sdk-trace-base');
 async function fixture(t, config = {}) {
   const calls = [], requests = [];
@@ -136,15 +136,6 @@ test('shared suites do not stop the runtime, and manual sessions prevent prematu
   await runtime.setupTest({ name: 'manual' }); await assert.rejects(runtime.finishRun(), /teardown all/); await runtime.teardownTest();
   assert.deepEqual(await runtime.finishRun(), { status: 'shared' }); assert.equal(calls.some(x => x.path === '/v1/finishRun'), false);
 });
-test('node:test binding gives each concurrent callback its own session', async t => {
-  const { runtime } = await fixture(t); const registered = [];
-  const wrapped = bindTest(runtime, (name, fn) => registered.push(fn), { explicitSession: true });
-  for (const name of ['first', 'second']) wrapped(name, async (_, session) => {
-    await new Promise(resolve => setImmediate(resolve)); assert.equal(runtime.activeSession.sessionId, session.sessionId);
-  });
-  await Promise.all(registered.map(fn => fn({})));
-});
-
 test('falsy thrown values remain test failures even when cleanup also fails', async t => {
   const { runtime, calls } = await fixture(t, { teardown: { capture: { capture_incomplete: true } } });
   let rejected = false;

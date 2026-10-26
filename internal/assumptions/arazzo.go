@@ -65,7 +65,7 @@ func (s *snapshot) verifyArazzo(input, boundary string) (documentPath string, co
 	if err != nil {
 		return "", nil, fmt.Errorf("Arazzo document %q: %w", path, err)
 	}
-	actualValue, err := decodeCollectionJSON(data)
+	actualValue, err := decodeProjectionJSON(data)
 	if err != nil {
 		return "", nil, fmt.Errorf("Arazzo document %q: %w", path, err)
 	}
@@ -77,7 +77,7 @@ func (s *snapshot) verifyArazzo(input, boundary string) (documentPath string, co
 	if err != nil {
 		return "", nil, err
 	}
-	expectedValue, err := decodeCollectionJSON(encoded)
+	expectedValue, err := decodeProjectionJSON(encoded)
 	if err != nil {
 		return "", nil, fmt.Errorf("expected Arazzo document: %w", err)
 	}
@@ -102,8 +102,8 @@ func (s *snapshot) verifyArazzo(input, boundary string) (documentPath string, co
 	// Verify the entire selected package, including cyclic/shared companions,
 	// without resolving references or opening any path supplied by the document.
 	files := map[string][]byte{}
-	if len(expected.Files) > maxCollectionFiles {
-		return "", nil, fmt.Errorf("Arazzo export exceeds %d companion files", maxCollectionFiles)
+	if len(expected.Files) > maxProjectionFiles {
+		return "", nil, fmt.Errorf("Arazzo export exceeds %d companion files", maxProjectionFiles)
 	}
 	for _, file := range expected.Files {
 		if _, duplicate := files[file.Path]; duplicate {
@@ -146,14 +146,14 @@ func (s *snapshot) verifyArazzo(input, boundary string) (documentPath string, co
 			return "", nil, fmt.Errorf("Arazzo companion %q: %w", member, err)
 		}
 		total += int64(len(actualData))
-		if total > maxCollectionsBytes {
-			return "", nil, fmt.Errorf("Arazzo document and companions exceed %d MiB in total", maxCollectionsBytes>>20)
+		if total > maxProjectionsBytes {
+			return "", nil, fmt.Errorf("Arazzo document and companions exceed %d MiB in total", maxProjectionsBytes>>20)
 		}
-		actualJSON, err := decodeCollectionJSON(actualData)
+		actualJSON, err := decodeProjectionJSON(actualData)
 		if err != nil {
 			return "", nil, fmt.Errorf("Arazzo companion %q: %w", member, err)
 		}
-		wantedJSON, err := decodeCollectionJSON(files[member])
+		wantedJSON, err := decodeProjectionJSON(files[member])
 		if err != nil {
 			return "", nil, fmt.Errorf("expected Arazzo companion %q: %w", member, err)
 		}
@@ -320,7 +320,7 @@ func readArazzoFile(path, root string) ([]byte, error) {
 	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
 		return nil, errors.New("file escapes the Arazzo document directory")
 	}
-	return readCollection(path)
+	return readProjection(path)
 }
 
 func sameArazzoJSON(expected, actual any) error {

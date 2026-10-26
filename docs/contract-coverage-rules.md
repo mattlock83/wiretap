@@ -1,6 +1,6 @@
 # Contract coverage rules
 
-Wiretap measures contract conditions for HTTP/OpenAPI 3.0 and native gRPC messages under the scope
+Wiretap measures contract conditions for HTTP/OpenAPI 3.0 under the scope
 below. The numbered rules define the measurement contract, including how to
 report unsupported features and evidence limits. For a guide to reading the
 results, start with [capture artifacts and exports](artifacts.md).
@@ -60,10 +60,7 @@ comparison. A schema-free consumer dependency can instead earn
 `openapi_3_0_provider_contract` assurance from provider-schema value checks;
 there is no independent consumer declaration to diff. This does not
 retroactively create consumer contract coverage. With both HTTP schemas absent,
-a passing check is explicitly example-only. gRPC compares the selected method's
-reachable message/enum declarations alongside observed wire compatibility. Equal full enum sets do not
-prove the tests executed every value, and custom validation annotations are
-compared as opaque declarations rather than executed predicates.
+a passing check is explicitly example-only.
 
 An uncovered assumption means no qualifying provider example matches that
 request; it does not prove the provider would reject it. A response mismatch
@@ -77,55 +74,9 @@ See [issues the check finds](assumption-checks.md#issues-the-check-will-find),
 and [interpreting results](assumption-checks.md#interpreting-results) for concrete
 examples and the supported assurance claim.
 
-## Current measurement profiles
+## Current measurement profile
 
-Each spec records its own `rules_version`. HTTP keeps `wiretap-contract-1`;
-adding gRPC does not change existing HTTP keys. Protobuf uses
-`wiretap-protobuf-2` for these structural classes:
-
-| Family | Measured cases |
-| --- | --- |
-| Method | Every selected method, including unary, client-streaming, server-streaming and bidirectional methods. |
-| Field presence | Present/absent where Protobuf exposes presence; required fields have no valid absent target. Implicit proto3 scalar defaults have value coverage, not invented presence. |
-| Oneof | Each member and unset; synthetic optional-field oneofs are excluded. |
-| Enum | Distinct declared numeric values, collapsing aliases. Unknown numbers remain observations without expanding the denominator. |
-| Boolean | True and false. |
-| Repeated/map | Empty and nonempty, plus supported value conditions at exact item indices/map keys. |
-| Nested messages | Supported nonrecursive fields, with recursive/dynamic Any/expansion limits explicit. |
-
-Measurement decodes the verified wire payload against the frozen descriptor.
-ProtoJSON is a readable projection, never the measurement input. Keys include
-API identity, fully qualified procedure, profile, contract revision, phase and
-field-number path; readable field names and exact message indices accompany
-observations. One message can cover many conditions and has a combination
-fingerprint, without a Cartesian-product denominator.
-
-Custom validation options are preserved but not evaluated by passive structural
-coverage. Affected targets
-remain unknown and unsupported scope stays visible. Unknown wire fields,
-truncated, legacy-redacted or undecodable messages cannot earn payload assurance.
-A complete passing RPC with structurally valid messages and a terminal
-gRPC status can cover a method, including a legitimate non-OK outcome. An error
-without a result does not cover the success response fields. RPC codes are
-observations; Protobuf does not declare a mandatory set of error codes.
-No invalid-value targets are generated for mocks. Provider and dependency keys
-match when API identity, normalized
-contract and measurement profile match.
-
-Native streams require verified direction observations: complete framing, EOF,
-no omitted messages, valid terminal status and complete structurally valid
-payloads. Field observations and combination fingerprints identify the exact
-message index. A valid empty streaming direction has no payload conditions;
-it can still belong to an exercised method. A non-OK result cannot excuse extra
-messages on a non-streaming side. Incomplete, omitted, legacy-redacted or
-undecodable streams remain observations without successful credit. Capture limitations yield
-partial schema validation, distinct from an actual contract mismatch.
-
-There is no denominator for stream lengths or cross-message business rules.
-`wiretap-protobuf-2` changes measurement semantics; compare condition keys only
-with the same profile. Descriptor normalization stays `wiretap-protobuf-1`.
-
-The HTTP/OpenAPI rules follow.
+HTTP uses `wiretap-contract-1`. Conditions are derived from the frozen OpenAPI 3.0 contract; custom event evidence remains unmeasured.
 
 Supported: declared HTTP operations, exact/range/default response alternatives,
 media alternatives, JSON bodies, scalar path/query/header/cookie parameters and
@@ -467,14 +418,8 @@ The coverage model is protocol neutral; extraction is protocol specific:
 
 - HTTP uses route/method, parameters, request/response bodies, status, and media
   alternatives from the selected OpenAPI dialect.
-- gRPC uses fully qualified service/method, request/response messages,
-  and final status, with structural presence/value conditions. Length bounds
-  and business validation annotations remain outside the current measurement.
-- Streaming uses ordered message observations and explicit direction completion;
-  per-message conditions do not imply business sequence coverage.
 
-These are the current HTTP and native gRPC measurement boundaries. Generic
-event recordings for other protocols remain explicitly unmeasured.
+Generic event recordings remain explicitly unmeasured. HTTP request/response records are the supported extraction boundary.
 
 ## Measurement guarantees
 

@@ -21,7 +21,6 @@ import (
 	"github.com/getkin/kin-openapi/routers/legacy"
 	"github.com/mattlock83/wiretap/internal/artifact"
 	"github.com/mattlock83/wiretap/internal/bundle"
-	"github.com/mattlock83/wiretap/internal/grpccontract"
 	"github.com/mattlock83/wiretap/internal/version"
 
 	"gopkg.in/yaml.v3"
@@ -127,7 +126,6 @@ type SpecOperationSamples struct {
 type FlowSample struct {
 	TestIdentity       *artifact.TestIdentity `json:"test_identity,omitempty" yaml:"test_identity,omitempty"`
 	RedactionRules     []artifact.Redaction   `json:"redaction_rules,omitempty" yaml:"redaction_rules,omitempty"`
-	GRPCEvents         []artifact.GrpcEvent   `json:"grpc_events,omitempty" yaml:"grpc_events,omitempty"`
 	Interaction        *artifact.Interaction  `json:"interaction,omitempty" yaml:"interaction,omitempty"`
 	CaptureIncomplete  bool                   `json:"capture_incomplete,omitempty" yaml:"capture_incomplete,omitempty"`
 	RequestSpanID      string                 `json:"request_span_id,omitempty" yaml:"request_span_id,omitempty"`
@@ -163,21 +161,14 @@ type BodyAvailability struct {
 	Truncated       bool   `json:"truncated" yaml:"truncated"`
 }
 type InteractionMessage struct {
-	BodyInfo      *BodyAvailability           `json:"body_info,omitempty" yaml:"body_info,omitempty"`
-	StreamKind    string                      `json:"stream_kind,omitempty" yaml:"stream_kind,omitempty"`
-	Observation   *artifact.GrpcObservation   `json:"observation,omitempty" yaml:"observation,omitempty"`
-	StatusDetails *artifact.GrpcStatusDetails `json:"status_details,omitempty" yaml:"status_details,omitempty"`
-	Procedure     string                      `json:"procedure,omitempty" yaml:"procedure,omitempty"`
-	GRPCStatus    *int                        `json:"grpc_status,omitempty" yaml:"grpc_status,omitempty"`
-	HTTPStatus    int                         `json:"http_status,omitempty" yaml:"http_status,omitempty"`
-	Messages      []artifact.GrpcPayload      `json:"messages,omitempty" yaml:"messages,omitempty"`
-	Method        string                      `json:"method,omitempty" yaml:"method,omitempty"`
-	URL           string                      `json:"url,omitempty" yaml:"url,omitempty"`
-	Status        int                         `json:"status,omitempty" yaml:"status,omitempty"`
-	Headers       artifact.Headers            `json:"headers,omitempty" yaml:"headers,omitempty"`
-	Trailers      artifact.Headers            `json:"trailers,omitempty" yaml:"trailers,omitempty"`
-	Body          string                      `json:"body,omitempty" yaml:"body,omitempty"`
-	ArtifactBody  *artifact.Body              `json:"-" yaml:"-"`
+	BodyInfo     *BodyAvailability `json:"body_info,omitempty" yaml:"body_info,omitempty"`
+	Method       string            `json:"method,omitempty" yaml:"method,omitempty"`
+	URL          string            `json:"url,omitempty" yaml:"url,omitempty"`
+	Status       int               `json:"status,omitempty" yaml:"status,omitempty"`
+	Headers      artifact.Headers  `json:"headers,omitempty" yaml:"headers,omitempty"`
+	Trailers     artifact.Headers  `json:"trailers,omitempty" yaml:"trailers,omitempty"`
+	Body         string            `json:"body,omitempty" yaml:"body,omitempty"`
+	ArtifactBody *artifact.Body    `json:"-" yaml:"-"`
 }
 
 type loadedSchema struct {
@@ -185,7 +176,6 @@ type loadedSchema struct {
 	Source     string
 	Operations []string
 	OpenAPI    *openapiSpec
-	GRPC       *grpccontract.Contract
 	Exercised  map[string]struct{}
 }
 
@@ -475,22 +465,8 @@ func loadSchemas(schemas []artifact.SchemaRef) ([]*loadedSchema, []string) {
 			} else {
 				notes = append(notes, fmt.Sprintf("OpenAPI schema %q failed to load: %v", schema.ID, err))
 			}
-		} else if strings.EqualFold(schema.Type, "protobuf") {
-			if raw, err := os.ReadFile(schema.Source.Path); err == nil {
-				if contract, e := grpccontract.Parse(raw, schema.Services); e == nil {
-					entry.GRPC = contract
-					for method := range contract.Methods {
-						entry.Operations = append(entry.Operations, method)
-					}
-					sort.Strings(entry.Operations)
-				} else {
-					notes = append(notes, fmt.Sprintf("Protobuf schema %q failed to load: %v", schema.ID, e))
-				}
-			} else {
-				notes = append(notes, fmt.Sprintf("Protobuf schema %q failed to read: %v", schema.ID, err))
-			}
 		} else {
-			notes = append(notes, fmt.Sprintf("Schema %q has unsupported measurement type %q; only OpenAPI and Protobuf RPC coverage are supported. Its coverage denominator is unknown.", schema.ID, schema.Type))
+			notes = append(notes, fmt.Sprintf("Schema %q has unsupported measurement type %q; only OpenAPI coverage is supported. Its coverage denominator is unknown.", schema.ID, schema.Type))
 		}
 		seen[key] = entry
 	}
@@ -525,8 +501,6 @@ func markCoverage(entries []flowEntry, schemas []*loadedSchema, channel string) 
 				if op, ok := openapiOperationFromFlow(flow, schema.OpenAPI); ok {
 					schema.Exercised[op] = struct{}{}
 				}
-			} else if schema.GRPC != nil && flow.Protocol == "grpc" && grpcCoverageEligible(entry, schema) {
-				schema.Exercised[flow.Request.GRPC.Procedure] = struct{}{}
 			}
 		}
 	}
@@ -543,7 +517,7 @@ func exportSpecs(schemas []*loadedSchema, includeNotCovered bool, samples map[st
 		}
 		coverage := SpecCoverage{
 			Protocol:         schema.Ref.Protocol,
-			DenominatorKnown: schema.OpenAPI != nil || schema.GRPC != nil,
+			DenominatorKnown: schema.OpenAPI != nil,
 			SchemaSet:        schemaRevision(schema.Ref),
 			SchemaID:         schema.Ref.ID,
 			Role:             schema.Ref.Role,
@@ -612,8 +586,6 @@ func buildOperationSamples(entries []flowEntry, schemas []*loadedSchema, channel
 				continue
 			}
 			switch {
-			case schema.GRPC != nil && flow.Protocol == "grpc" && flow.Request.GRPC != nil && schema.GRPC.Methods[flow.Request.GRPC.Procedure] != nil:
-				raw = addSample(raw, schemaKey(schema.Ref), flow.Request.GRPC.Procedure, flowSampleFromFlow(entry))
 			case schema.Ref.Source.Type == "omitted":
 				if op := observedOperation(flow); op != "" {
 					raw = addSample(raw, schemaKey(schema.Ref), op, flowSampleFromFlow(entry))
@@ -692,9 +664,6 @@ func buildTestCaseCoverage(entries []flowEntry, providedSchemas, dependentSchema
 				if matched, ok := openapiOperationFromFlow(flow, schema.OpenAPI); ok {
 					op = matched
 				}
-			}
-			if schema.GRPC != nil && flow.Protocol == "grpc" && flow.Request.GRPC != nil && schema.GRPC.Methods[flow.Request.GRPC.Procedure] != nil {
-				op = flow.Request.GRPC.Procedure
 			}
 			if op == "" {
 				continue
@@ -775,7 +744,6 @@ func flowSampleFromFlow(entry flowEntry) FlowSample {
 	flow := entry.Flow
 	sample := FlowSample{
 		Interaction:        flow.Interaction,
-		GRPCEvents:         flow.GRPCEvents,
 		CaptureIncomplete:  entry.CaptureIncomplete,
 		TestCase:           entry.TestCase,
 		TestStatus:         entry.Status,
@@ -805,50 +773,7 @@ func flowSampleFromFlow(entry flowEntry) FlowSample {
 			sample.Response = httpMessageSample(flow.Response.HTTP)
 		}
 	}
-	if flow.Protocol == "grpc" {
-		if flow.Request.GRPC != nil {
-			sample.Request = grpcMessageSample(flow.Request.GRPC)
-		}
-		if flow.Response.GRPC != nil {
-			sample.Response = grpcMessageSample(flow.Response.GRPC)
-		}
-	}
 	return sample
-}
-
-func grpcMessageSample(msg *artifact.GrpcMessage) InteractionMessage {
-	if msg == nil {
-		return InteractionMessage{}
-	}
-	result := InteractionMessage{StreamKind: msg.StreamKind, Observation: msg.Observation, StatusDetails: msg.StatusDetails, Procedure: msg.Procedure, Method: msg.Procedure, URL: msg.Procedure, Headers: msg.Metadata, Trailers: msg.Trailers, Messages: msg.Messages, HTTPStatus: msg.HTTPStatus}
-	if msg.HTTPStatus != 0 {
-		status := msg.StatusCode
-		result.GRPCStatus = &status
-		result.Status = msg.StatusCode
-	}
-	if msg.StreamKind == "unary" && len(msg.Messages) == 1 {
-		result.Body = bodyPreview(msg.Messages[0].Body)
-	}
-	return result
-}
-
-func grpcCoverageEligible(entry flowEntry, schema *loadedSchema) bool {
-	flow := entry.Flow
-	if entry.Status != "pass" || entry.CaptureIncomplete || flow.TransportError != "" || flow.Request.GRPC == nil || flow.Response.GRPC == nil || flow.Request.GRPC.CaptureTruncated || flow.Response.GRPC.CaptureTruncated || flow.Response.GRPC.HTTPStatus != http.StatusOK || flow.Response.GRPC.StatusCode < 0 || flow.Response.GRPC.StatusCode > 16 {
-		return false
-	}
-	method := schema.GRPC.Methods[flow.Request.GRPC.Procedure]
-	if method == nil {
-		return false
-	}
-	requireObservation := method.IsStreamingClient() || method.IsStreamingServer()
-	if _, err := decodeGRPCDirection(flow.Request.GRPC, method.Input(), schema.GRPC, method.IsStreamingClient(), true, requireObservation); err != nil {
-		return false
-	}
-	if _, err := decodeGRPCDirection(flow.Response.GRPC, method.Output(), schema.GRPC, method.IsStreamingServer(), flow.Response.GRPC.StatusCode == 0, requireObservation); err != nil {
-		return false
-	}
-	return true
 }
 
 func httpMessageSample(msg *artifact.HttpMessage) InteractionMessage {
@@ -889,13 +814,6 @@ func schemaKey(schema artifact.SchemaRef) string {
 }
 
 func schemaRevision(schema artifact.SchemaRef) string {
-	if schema.Type == "protobuf" && schema.Source.Path != "" {
-		if raw, err := os.ReadFile(schema.Source.Path); err == nil {
-			if revision, err := grpccontract.SemanticRevision(raw, schema.Services); err == nil {
-				return revision
-			}
-		}
-	}
 	if schema.Source.Path != "" {
 		parent := filepath.Base(filepath.Dir(schema.Source.Path))
 		if len(parent) == 64 {

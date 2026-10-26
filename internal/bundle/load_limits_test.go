@@ -123,7 +123,7 @@ func expectLoadLimit(t *testing.T, root string, limits LoadLimits, field string)
 }
 
 func TestLoadRejectsOversizedFilesBeforeParsingOrHashing(t *testing.T) {
-	for _, resource := range []string{"run manifest", "capture", "contract", "contract manifest", "contract import", "HTTP payload", "event payload", "gRPC payload", "gRPC status payload"} {
+	for _, resource := range []string{"run manifest", "capture", "contract", "contract manifest", "contract import", "HTTP payload", "event payload"} {
 		t.Run(resource, func(t *testing.T) {
 			var root, target string
 			switch resource {
@@ -156,19 +156,7 @@ func TestLoadRejectsOversizedFilesBeforeParsingOrHashing(t *testing.T) {
 				}
 				root = w.Path()
 				target = filepath.Join(root, "payloads", digest([]byte("event body"))+".bin")
-			case "gRPC payload":
-				var attempt Attempt
-				root, attempt, _ = grpcBundleFixture(t)
-				target = filepath.Join(root, attempt.Bodies[0].Path)
-			case "gRPC status payload":
-				var attempt Attempt
-				root, attempt, _ = richBundleFixture(t)
-				for _, ref := range attempt.Bodies {
-					if ref.Kind == "status-envelope" {
-						target = filepath.Join(root, ref.Path)
-						break
-					}
-				}
+
 			}
 			if target == "" {
 				t.Fatal("fixture has no target attachment")
@@ -238,30 +226,6 @@ func TestLoadCountsManifestAndInventoriesBeforeFollowingReferences(t *testing.T)
 		// manifest's inventory must fail before following its missing import.
 		expectLoadLimit(t, w.Path(), LoadLimits{MaxFileReads: 3}, "file inventory")
 	})
-}
-
-func TestLoadGRPCDescriptorVerificationSharesReadBudget(t *testing.T) {
-	for _, rich := range []bool{false, true} {
-		t.Run(fmt.Sprintf("rich_status_%v", rich), func(t *testing.T) {
-			var root string
-			var attempt Attempt
-			if rich {
-				root, attempt, _ = richBundleFixture(t)
-			} else {
-				root, attempt, _ = grpcBundleFixture(t)
-			}
-			// Run manifest, two rounds of root/contract manifest/root integrity
-			// verification, capture, attachments, and descriptor revalidation.
-			reads := 9 + len(attempt.Bodies)
-			if rich {
-				reads++ // Status-detail verification also reads the descriptor.
-			}
-			if _, _, err := LoadWithLimits(root, LoadLimits{MaxFileReads: reads}); err != nil {
-				t.Fatalf("exact gRPC read budget: %v", err)
-			}
-			expectLoadLimit(t, root, LoadLimits{MaxFileReads: reads - 1}, "MaxFileReads")
-		})
-	}
 }
 
 func TestLoadLimitsValidateConfigurationAndPreserveIntegrityChecks(t *testing.T) {

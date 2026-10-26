@@ -8,7 +8,7 @@ import (
 )
 
 func TestEventInteractionsAreRetainedButExplicitlyUnmeasured(t *testing.T) {
-	flow := artifact.Flow{ID: "events", Protocol: "grpc", Interaction: &artifact.Interaction{Kind: "stream", StreamMode: "bidirectional", Boundary: artifact.BoundaryRef{Role: "dependency", ID: "chat"}, Transport: "http2", Operation: "/chat.Chat/Connect", CaptureState: "complete", Events: []artifact.InteractionEvent{{ID: "send", Direction: "sent", Kind: "message"}, {ID: "receive", Sequence: 1, Direction: "received", Kind: "message"}}}}
+	flow := artifact.Flow{ID: "events", Protocol: "websocket", Interaction: &artifact.Interaction{Kind: "stream", StreamMode: "bidirectional", Boundary: artifact.BoundaryRef{Role: "dependency", ID: "chat"}, Transport: "tcp", Operation: "chat", CaptureState: "complete", Events: []artifact.InteractionEvent{{ID: "send", Direction: "sent", Kind: "message"}, {ID: "receive", Sequence: 1, Direction: "received", Kind: "message"}}}}
 	capture := &artifact.Artifact{TestCase: artifact.TestCase{ID: "ui-test", Name: "chat UI", Status: "pass"}, Traffic: []artifact.Flow{flow}}
 	run := &bundle.Run{RunID: "run", RunState: "complete", Attempts: []bundle.AttemptRef{{AttemptID: "ui-test", FileRef: bundle.FileRef{Path: "tests/ui-test.json"}}}}
 	report, err := GenerateBundleSnapshot(t.TempDir(), run, []*artifact.Artifact{capture}, "UI", false)

@@ -7,12 +7,11 @@ const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const execute = promisify(execFile);
 
-for (const runner of ['node', 'jest']) test(`${runner} final outcomes include timeouts, hooks and validation`, async t => {
+test('Jest final outcomes include timeouts, hooks and validation', async t => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wiretap-outcomes-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const resultPath = path.join(dir, 'result.json');
-  const fixture = path.join(__dirname, 'fixtures', `${runner}-outcomes.cjs`);
-  const args = runner === 'node' ? ['--test', fixture] : [require.resolve('jest/bin/jest'), '--runInBand', '--config', JSON.stringify({
+  const args = [require.resolve('jest/bin/jest'), '--runInBand', '--config', JSON.stringify({
     rootDir: path.resolve(__dirname, '..'), testEnvironment: './jest-environment.js',
     testMatch: ['**/test/fixtures/jest-outcomes.cjs'], transform: {}
   })];
@@ -34,28 +33,18 @@ for (const runner of ['node', 'jest']) test(`${runner} final outcomes include ti
   assert.equal(outcomes.validation, 'pass');
   assert.equal(outcomes.timeout, 'fail');
   assert.ok(setups.every(call => call.body.explicit_session === false), 'serial fallback must stay available');
-  if (runner === 'node') {
-    assert.equal(result.beforeCounts.pass, 1, 'existing hooks must not run twice');
-    assert.equal(outcomes['hook failure'], 'fail');
-    assert.equal(outcomes['subtest failure'], 'fail');
-    assert.equal(outcomes.skip, 'skip');
-    const spans = Object.fromEntries(result.spans.map(span => [span.name, span.status]));
-    for (const name of ['hook failure', 'subtest failure', 'timeout']) assert.equal(spans[name], 2, name);
-    assert.equal(spans.validation, 1);
-  } else {
-    assert.equal(outcomes['test and capture cleanup fail'], 'fail');
-    assert.match(runnerFailure.stderr, /original test failure retained/);
-    assert.match(runnerFailure.stderr, /secondary capture cleanup failed/);
-    assert.equal(outcomes['never settles'], 'fail');
-    assert.equal(outcomes['assertion count'], 'fail');
-    assert.equal(outcomes['hooks hook failure'], 'fail');
-    assert.equal(outcomes['failed setup body never runs'], 'fail');
-    assert.equal(result.calls.some(call => call.path === '/must-not-run'), false);
-    for (const [name, prefix] of [['hooks hook failure', '/hook/'], ['failed setup body never runs', '/failed-setup/']]) {
-      const setup = setups.find(call => call.body.name === name);
-      const traffic = result.calls.filter(call => call.path.startsWith(prefix));
-      assert.equal(traffic.length, 2, `${name}: setup and cleanup must each run once`);
-      for (const call of traffic) assert.equal(call.traceparent.split('-')[1], setup.body.trace_context.traceparent.split('-')[1]);
-    }
+  assert.equal(outcomes['test and capture cleanup fail'], 'fail');
+  assert.match(runnerFailure.stderr, /original test failure retained/);
+  assert.match(runnerFailure.stderr, /secondary capture cleanup failed/);
+  assert.equal(outcomes['never settles'], 'fail');
+  assert.equal(outcomes['assertion count'], 'fail');
+  assert.equal(outcomes['hooks hook failure'], 'fail');
+  assert.equal(outcomes['failed setup body never runs'], 'fail');
+  assert.equal(result.calls.some(call => call.path === '/must-not-run'), false);
+  for (const [name, prefix] of [['hooks hook failure', '/hook/'], ['failed setup body never runs', '/failed-setup/']]) {
+    const setup = setups.find(call => call.body.name === name);
+    const traffic = result.calls.filter(call => call.path.startsWith(prefix));
+    assert.equal(traffic.length, 2, `${name}: setup and cleanup must each run once`);
+    for (const call of traffic) assert.equal(call.traceparent.split('-')[1], setup.body.trace_context.traceparent.split('-')[1]);
   }
 });

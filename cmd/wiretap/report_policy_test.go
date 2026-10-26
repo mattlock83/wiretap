@@ -10,7 +10,7 @@ import (
 )
 
 func TestReportPolicyEmitsCoverageOnFailureAndIsOptIn(t *testing.T) {
-	archive := postmanBundleFixture(t)
+	archive := httpBundleFixture(t)
 	policy := filepath.Join(t.TempDir(), "policy.json")
 	if err := os.WriteFile(policy, []byte(`{"policy_version":"1.0","require_complete":true,"apis":[{"api_id":"missing-api","origin":"provided","required_operations":["GET /items"]}]}`), 0600); err != nil {
 		t.Fatal(err)
@@ -48,7 +48,7 @@ func TestCoveragePolicyRejectsUnknownKeysAndTrailingDocuments(t *testing.T) {
 		if err := os.WriteFile(path, []byte(input), 0600); err != nil {
 			t.Fatal(err)
 		}
-		code, _ := executeCapturingStdout(t, []string{"report", "--bundle", postmanBundleFixture(t), "--policy", path})
+		code, _ := executeCapturingStdout(t, []string{"report", "--bundle", httpBundleFixture(t), "--policy", path})
 		if code != 2 {
 			t.Fatalf("invalid policy accepted (%d): %s", code, input)
 		}

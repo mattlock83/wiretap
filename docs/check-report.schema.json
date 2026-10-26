@@ -93,18 +93,6 @@
           "type": "string",
           "pattern": "^[a-f0-9]{64}$"
         },
-        "collections": {
-          "type": [
-            "array",
-            "null"
-          ],
-          "items": {
-            "type": "string"
-          }
-        },
-        "input_format": {
-          "enum": ["postman", "arazzo"]
-        },
         "arazzo": {
           "type": "string"
         },
@@ -126,9 +114,9 @@
         "run_id",
         "snapshot_revision",
         "run_state",
-        "manifest_sha256",
-        "collections"
-      ]
+        "manifest_sha256"
+      ],
+      "additionalProperties": false
     },
     "counts": {
       "type": "object",

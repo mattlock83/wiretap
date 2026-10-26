@@ -2,7 +2,6 @@ package bundle
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,7 +17,6 @@ import (
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/mattlock83/wiretap/internal/artifact"
 	"github.com/mattlock83/wiretap/internal/fileuri"
-	"github.com/mattlock83/wiretap/internal/grpccontract"
 	"github.com/mattlock83/wiretap/internal/schemajson"
 )
 
@@ -39,6 +37,9 @@ type schemaManifest struct {
 }
 
 func validateSchemaBoundary(ref artifact.SchemaRef) error {
+	if strings.EqualFold(strings.TrimSpace(ref.Type), "protobuf") || artifact.UnsupportedRPCProtocol(ref.Protocol) {
+		return fmt.Errorf("native gRPC and protobuf contracts are unsupported")
+	}
 	if ref.Role != "sut" && ref.Role != "provided" && ref.Role != "dependency" {
 		return fmt.Errorf("contract %q has unsupported boundary role %q", ref.ID, ref.Role)
 	}
@@ -52,8 +53,6 @@ func (w *Writer) freezeSchema(ref artifact.SchemaRef) (artifact.SchemaRef, error
 		return ref, err
 	}
 	switch ref.Type {
-	case "protobuf":
-		return w.freezeProtobuf(ref)
 	case "avro", "asyncapi", "graphql":
 		return w.freezeContractPackage(ref)
 	case "openapi":
@@ -246,53 +245,6 @@ func (w *Writer) freezeSchema(ref artifact.SchemaRef) (artifact.SchemaRef, error
 	if err := loaded.Validate(context.Background()); err != nil {
 		return ref, fmt.Errorf("validate frozen schema: %w", err)
 	}
-	return ref, nil
-}
-
-func (w *Writer) freezeProtobuf(ref artifact.SchemaRef) (artifact.SchemaRef, error) {
-	var raw []byte
-	var err error
-	switch ref.Source.Type {
-	case "protobuf_inline":
-		raw, err = base64.StdEncoding.DecodeString(ref.Source.Content)
-	case "file":
-		// Generated attempts reuse their parent's frozen contract. Require its
-		// content identity so rereading a changed file cannot alter that contract.
-		if ref.Source.Format != "file_descriptor_set" || ref.Source.SHA256 == "" {
-			return ref, errors.New("frozen protobuf schema requires descriptor format and hash")
-		}
-		raw, err = os.ReadFile(ref.Source.Path)
-	default:
-		return ref, fmt.Errorf("protobuf schema requires a resolved descriptor set")
-	}
-	if err != nil {
-		return ref, err
-	}
-	contract, err := grpccontract.Parse(raw, ref.Services)
-	if err != nil {
-		return ref, fmt.Errorf("validate descriptor set: %w", err)
-	}
-	if ref.Source.SHA256 != "" && ref.Source.SHA256 != contract.SHA256 {
-		return ref, errors.New("descriptor set hash mismatch")
-	}
-	if ref.AssetSHA != "" && ref.AssetSHA != contract.SHA256 {
-		return ref, errors.New("descriptor asset hash mismatch")
-	}
-	base := "contracts/" + contract.SHA256
-	rel := base + "/descriptor-set.protoset"
-	if err := writeContent(w.root, rel, raw); err != nil {
-		return ref, err
-	}
-	manifest := schemaManifest{SetHash: contract.SHA256, Root: rel, Files: []schemaFile{{Path: rel, SHA256: contract.SHA256}}}
-	data, err := json.MarshalIndent(manifest, "", "  ")
-	if err != nil {
-		return ref, err
-	}
-	if err := writeContent(w.root, base+"/manifest.json", append(data, '\n')); err != nil {
-		return ref, err
-	}
-	ref.Source = artifact.SchemaSource{Type: "file", Path: filepath.Join(w.root, filepath.FromSlash(rel)), SHA256: contract.SHA256, Format: "file_descriptor_set"}
-	ref.AssetSHA = contract.SHA256
 	return ref, nil
 }
 

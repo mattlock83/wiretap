@@ -13,11 +13,10 @@ export interface Dependency {
   assetName?: string;
   upstreamUrl: string;
   upstreamKind?: 'mock' | 'service' | 'unknown';
-  protocol?: 'http' | 'grpc';
   schema?: Schema;
   schemas?: Schema[];
   /** HTTP dependency schemas are optional by default. True requires one;
-   * supplied schemas are always validated. gRPC still requires a contract. */
+   * supplied schemas are always validated. */
   schemaRequired?: boolean;
 }
 export interface TestIdentity { id: string; variant?: string; attemptOrdinal?: number; }
@@ -31,7 +30,6 @@ export interface TestOptions {
   /** The HTTP SUT schema remains required by default. */
   schemaRequired?: boolean;
   sutBaseUrl?: string;
-  sutProtocol?: 'http' | 'grpc';
   dependencies?: Record<string, Dependency> | Dependency[];
   apiId?: string;
   sutTargetKind?: 'mock' | 'service' | 'unknown';
@@ -56,8 +54,6 @@ export interface CaptureOptions extends TestOptions {
 /** Framework-neutral options remain compatible with existing callers. */
 export interface Config extends CaptureOptions {
   manageRuntime?: boolean;
-  autoHooks?: boolean;
-  testApi?: { test: Function; before: Function; after: Function };
 }
 export interface Session {
   span: Span;
@@ -87,15 +83,12 @@ export interface Runtime {
   report(options?: { bundlePath?: string }): Promise<CaptureResponse>;
   finishRun(options?: { outputs?: OutputOptions }): Promise<CaptureResponse>;
 }
-export interface OutputOptions { coverage?: ('json' | 'yaml' | 'text')[]; postman?: boolean; arazzo?: boolean; postman_options?: { omit_incomplete?: boolean; grpc?: Record<string, { url?: string; proto_root?: string; proto_file?: string }> }; }
+export interface OutputOptions { coverage?: ('json' | 'yaml' | 'text')[]; arazzo?: boolean; }
 export interface OutputResult {
   bundle_path: string;
   coverage: Record<string, string>;
-  postman: string[];
-  postman_files?: string[];
   arazzo?: string;
   arazzo_files?: string[];
-  postman_omissions?: { attempt_id: string; flow_id: string; protocol: string; message: string }[];
   errors: { format: string; message: string }[];
 }
 export interface TestAttempt {
@@ -104,20 +97,6 @@ export interface TestAttempt {
   /** Call from the framework's completion hook, including failures/timeouts. */
   finish(outcome?: { status?: 'pass' | 'fail' | 'skip'; error?: unknown }): Promise<CaptureResponse>;
 }
-export interface TestFunction {
-  (name: string, callback: (context: any, session: Session) => unknown): unknown;
-  (name: string, options: Record<string, unknown>, callback: (context: any, session: Session) => unknown): unknown;
-}
-export interface Suite {
-  test: TestFunction;
-  readonly runtime: Runtime;
-  readonly sutUrl: string;
-  dependencyUrl(assetId: string): string;
-  start(): Promise<Runtime>;
-  close(): Promise<unknown>;
-  report(options?: Parameters<Runtime['report']>[0]): Promise<CaptureResponse>;
-}
+/** Internal runtime connection used by the Jest environment. */
 export function startCapture(config?: Config): Promise<Runtime>;
-export function createNodeTestSuite(config?: Config): Suite;
-export function bindTest(runtime: Runtime | (() => Runtime), testFn: Function, defaults?: TestOptions): TestFunction;
 export function initializeTracing(options?: { instrumentation?: boolean }): void;

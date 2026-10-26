@@ -1,119 +1,44 @@
 # Wiretap architecture
 
-Wiretap captures HTTP and native gRPC exchanges during existing tests. The test
-framework owns execution, outcomes, fixtures and assertions. Managed SDK
-integrations own their Wiretap process; project-owned harnesses can use the
-control API directly. Existing SUT/mock processes stay with the harness unless
-an SDK adapter is configured to host an HTTP handler.
-Wiretap owns forwarding, correlation, contract validation and raw capture storage.
-Framework outcomes remain independent of validation findings. Configuration and
-incomplete-capture errors still fail integration setup or cleanup.
+Wiretap captures HTTP exchanges during existing Jest tests. Jest owns execution, fixtures, assertions and outcomes. Its adapter manages the local runtime and optionally hosts an HTTP handler inside Jest. Wiretap forwards traffic, correlates attempts, validates contracts and stores evidence. Validation findings stay separate from test outcomes; capture/setup/cleanup failures still fail integration.
 
 ## Components
 
 | Component | Responsibility |
 | --- | --- |
-| `cmd/wiretap` | Host the control service; local setup checks, offline reports/checks, exports and CA utilities. |
-| `sdk/js`, `sdk/go`, `sdk/python` | Runner integration, owned or external runtime lifecycle, standard trace context and artifact locations. |
-| `internal/app` | Run/test sessions, dependency routes, draining and schema validation. |
-| `internal/proxy`, `internal/capture` | Forward traffic and retain bounded evidence. |
+| `cmd/wiretap` | Control service, setup checks, reports, exports and offline checks. |
+| `sdk/js` | Jest config/environment, lifecycle, final outcomes and trace context. |
+| `internal/app` | Run/test sessions, dependency routes, drain and validation. |
+| `internal/proxy`, `internal/capture` | HTTP/HTTPS forwarding and bounded retained bodies. |
 | `internal/tracecontext` | W3C context parsing and propagation. |
-| `internal/artifact` | Shared in-memory capture model. |
-| `internal/bundle` | Run inventory, immutable attempt JSON, frozen contracts, payloads and integrity checks. |
-| `internal/coverage` | Operation/contract-condition coverage from verified evidence, explicit gates and baseline diffs. |
-| `internal/assumptions` | Verify mock exchanges and exercised rules against provider tests and Postman projections. |
-| `internal/runset` | Pin and validate same-build archive groups while preserving per-run evidence. |
-| `internal/postman` | HTTP v2.1 and native gRPC v3 collection exports. |
-| `internal/project` | Discover and resolve `.wiretap.yaml` for the runtime. |
-| `internal/core` | Runtime configuration and component lifecycle. |
-
-Capture has one session map, admission path and drain procedure. The runtime
-exposes a control listener and capture listeners. It forwards inbound calls to
-one configured SUT and dependency calls to declared upstreams. The
-[HTTP API](runtime-api.md) works directly; SDKs integrate with existing frameworks
-without replacing their HTTP/gRPC clients.
+| `internal/artifact` | Capture model and opaque event evidence. |
+| `internal/bundle` | Inventories, immutable attempts, contracts, payloads and integrity. |
+| `internal/coverage` | Operation/condition measurement, policies and baseline differences. |
+| `internal/arazzo` | JSON/REST workflow export with portable OpenAPI sources. |
+| `internal/assumptions` | Verify Arazzo projections and compare consumer/provider evidence. |
+| `internal/runset` | Pin and verify same-build archive groups. |
+| `internal/project`, `internal/core` | Configuration and runtime lifecycle. |
 
 ## A run
 
-1. The managed SDK adapter or project harness starts Wiretap. The harness keeps
-   its SUT/mock startup, or an SDK hosts the supplied HTTP handler. Capture
-   listeners provide the addresses used by test and application clients.
-2. Test setup registers a named attempt, contracts and a fresh trace context.
-3. Proxies forward requests and responses while retaining bounded evidence.
-4. Teardown stops admission, drains accepted exchanges, validates messages and
-   commits the immutable attempt JSON with its outcome and capture diagnostics.
-5. After all attempts and their cleanup finish, one suite owner finalizes the run
-   and configured exports. A managed owner then stops its process. Interrupted
-   and pending work remains distinguishable from completed capture.
+1. The Jest suite owner starts Wiretap on allocated local control/capture ports. The adapter hosts its configured app handler, or the project harness hosts the API.
+2. Test setup registers an attempt, contracts and fresh trace context before per-test work.
+3. The proxy forwards requests/responses and retains a bounded prefix (4 MiB per body by default). Delivery continues beyond that retained limit.
+4. Teardown stops new admission, drains accepted exchanges, validates them and commits immutable attempt JSON with final framework outcome.
+5. After test files and cleanup finish, one owner finalizes the archive and outputs, then stops its runtime.
 
-The default drain timeout is five seconds. HTTP request/response delivery streams
-through the proxy; the default retained prefix is 4 MiB per body. gRPC observation
-is incremental with byte/message limits. Retained payloads are unchanged; the
-runtime is for isolated tests with synthetic data and dummy secrets.
-These are evidence limits rather than limits on delivered traffic.
+Interrupted runs and pending attempts remain distinguishable. The parent stdin lifeline requests graceful shutdown after owner death; abrupt process termination can still leave unfinished exports or an open archive.
 
-## Correlation and adoption
+## Correlation
 
-A test attempt is the root of a trace. W3C `traceparent`/`tracestate` carry context
-across the SUT when its server and outbound clients propagate them. Wiretap
-session IDs select capture sessions at its boundary; the application does not
-need to propagate a special identifier.
+W3C `traceparent`/`tracestate` identify test ownership through the application's server and outbound clients. Session IDs select capture at Wiretap's boundary. Concurrent tests sharing a SUT need trace propagation and fixture isolation. Otherwise use sequential capture or isolated runtimes. A shared trace alone may not establish which inbound request caused a dependency call: inferred relationships are labelled, and ambiguity stays visible. See [tracing](otel-adoption.md).
 
-Parallel tests can share a SUT and dependency routes with working trace
-propagation. The harness still owns state/mock isolation. Without propagation,
-use sequential capture with one active test or isolated workers/runtimes. Drain
-or isolate late background work. A trace identifies the owning test but may not
-establish which inbound request caused an outbound call; inferred relationships
-are labelled and ambiguous relationships remain unset. See
-[tracing adoption](otel-adoption.md).
+## Evidence and derived outputs
 
-## Artifacts and reports
+A run contains `bundle.json`, immutable `tests/`, frozen `contracts/` and retained `payloads/`. Readers verify hashes, capabilities and inventory before coverage, Arazzo export or checks. Preserve the complete directory. Generic event interactions can be stored as opaque evidence; they have no automatic adapter and remain unmeasured.
 
-A run directory contains versioned JSON evidence, frozen OpenAPI documents or
-Protobuf descriptor sets, and retained payload attachments. `bundle.json` records
-attempt references, inventory, source provenance, run state and integrity hashes.
-Readers verify these inputs before calculating coverage or exporting Postman
-collections. Copy the complete directory to preserve the evidence graph.
+The main HTTP API requires OpenAPI unless explicitly omitted. Dependencies can capture without a schema; supplying one enables validation and coverage. Missing contracts produce unknown denominators rather than invented rules. Arazzo export supports eligible JSON/REST traffic and can fail when required capture evidence is incomplete or unrepresentable.
 
-`wiretap report` and `wiretap export` default to JSON coverage and support YAML
-and Postman output; `--format text` gives a compact coverage summary. They run
-offline without the original workspace or servers.
-`POST /v1/report` exposes JSON coverage through the control API. See the
-[format reference](bundle-evidence.md) and [artifact/export guide](artifacts.md).
+The [assumption checker](assumption-checks.md) verifies Arazzo documents against archives, then compares each selected mock request and paired response with complete passing provider service tests. It uses explicit pairs, uniquely selected mapped peers or same-build run sets. The provider's frozen OpenAPI 3.0 contract can validate schema-free consumer examples. Both contracts additionally permit exercised-rule comparison. Both omitted contracts yield example-only assurance.
 
-OpenAPI is required for the main HTTP API under test by default; its explicit
-`schema_required: false` opt-out remains available. HTTP dependencies require no
-spec unless `schema_required: true` is set. Adding one opts into validation and
-contract coverage; an omitted one records skipped validation and an unknown
-denominator. Supplied specs always validate. gRPC requires descriptors from
-reflection, local sources or descriptor sets and cannot opt out.
-
-## Meaning and limits
-
-Coverage records which declared operations and finite supported conditions had
-qualifying evidence. Conditions observed together remain linked per message;
-this does not claim exhaustive combinations. Failed/incomplete captures and
-unsupported semantics remain visible. See [coverage rules](contract-coverage-rules.md).
-
-Dependency records retain mock/service provenance. They show what the target
-returned during a test, without proving provider agreement or identifying which
-fields the SUT consumed. Provider mappings retain the intended cross-project
-identity without claiming agreement. The offline
-[assumption checker](assumption-checks.md) verifies exported collections against
-their archives and compares selected mock scenarios with complete passing
-provider service tests. It accepts explicit pairs or discovers mapped peers
-from a local artifact root grouped by application ID, requiring unique selected
-snapshots rather than merging run history. It requires request and response agreement within the
-same exchange and reports missing evidence as a failure. The provider's frozen
-OpenAPI 3.0 contract can validate both exchanges without a consumer dependency
-spec. With both contracts present, it additionally compares exercised rules
-and validates each exchange under its own schema. Native gRPC cross-decodes
-observed messages with opposite descriptors and compares the selected method's
-reachable message and enum declarations. HTTP with both schemas absent can
-only earn a marked example-only match.
-Wiretap does not execute or generate tests.
-
-HTTP and native gRPC support capture, validation and coverage, including all four
-RPC shapes. Connect wire format, gRPC-Web, messaging and GraphQL capture adapters
-are not supported. See the [gRPC support record](grpc-support.md) and
-[HTTPS trust guide](https-trust.md).
+Coverage measures declared cases exercised by eligible observations. Checks establish agreement for selected examples and supported rules. Neither establishes arbitrary business behavior or which mock response fields the application consumed. See [coverage rules](contract-coverage-rules.md), [check limits](assumption-checks.md#what-the-check-will-not-establish) and [support](support.md).

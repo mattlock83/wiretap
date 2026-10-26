@@ -255,7 +255,7 @@ func Digest(root string) (string, error) {
 }
 
 // Coverage keeps per-run reports intact and unions stable condition keys. The
-// denominator is counted once; test attempts and Postman files remain separate.
+// denominator is counted once; test attempts and Arazzo documents remain separate.
 type Coverage struct {
 	ReportVersion string             `json:"report_version"`
 	Producer      version.Producer   `json:"producer"`

@@ -4,63 +4,18 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"strconv"
+	"strings"
 )
-
-func (m GrpcMessage) MarshalJSON() ([]byte, error) {
-	type alias GrpcMessage
-	raw, err := json.Marshal(alias(m))
-	if err != nil {
-		return nil, err
-	}
-	if m.HTTPStatus == 0 {
-		return raw, nil
-	}
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &fields); err != nil {
-		return nil, err
-	}
-	fields["grpc_status"] = json.RawMessage(strconv.Itoa(m.StatusCode))
-	return json.Marshal(fields)
-}
-
-func (m *GrpcMessage) UnmarshalJSON(data []byte) error {
-	type alias GrpcMessage
-	var decoded alias
-	if err := json.Unmarshal(data, &decoded); err != nil {
-		return err
-	}
-	if decoded.HTTPStatus != 0 {
-		var fields map[string]json.RawMessage
-		if err := json.Unmarshal(data, &fields); err != nil {
-			return err
-		}
-		if status, ok := fields["grpc_status"]; !ok || bytes.Equal(bytes.TrimSpace(status), []byte("null")) {
-			return fmt.Errorf("gRPC response requires explicit grpc_status")
-		}
-	}
-	*m = GrpcMessage(decoded)
-	return nil
-}
 
 // MarshalJSON encodes the protocol-specific message.
 func (m Message) MarshalJSON() ([]byte, error) {
-	if m.HTTP != nil && m.GRPC != nil {
-		return nil, fmt.Errorf("message contains both HTTP and gRPC payloads")
-	}
 	if m.HTTP != nil {
 		return json.Marshal(m.HTTP)
-	}
-	if m.GRPC != nil {
-		if m.GRPC.Kind != "grpc" {
-			return nil, fmt.Errorf("invalid gRPC message kind %q", m.GRPC.Kind)
-		}
-		return json.Marshal(m.GRPC)
 	}
 	return []byte("null"), nil
 }
 
-// UnmarshalJSON requires an explicit tag for gRPC; untagged messages are HTTP.
+// UnmarshalJSON accepts HTTP messages and rejects unsupported message kinds.
 func (m *Message) UnmarshalJSON(data []byte) error {
 	if m == nil {
 		return nil
@@ -75,20 +30,11 @@ func (m *Message) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(trimmed, &probe); err != nil {
 		return err
 	}
-	if _, ok := probe["kind"]; ok {
-		var msg GrpcMessage
-		if err := json.Unmarshal(trimmed, &msg); err != nil {
-			return err
-		}
-		if msg.Kind != "grpc" {
-			return fmt.Errorf("unknown message kind %q", msg.Kind)
-		}
-		m.GRPC = &msg
-		return nil
-	}
-	for _, key := range []string{"procedure", "grpc_status", "messages"} {
-		if _, ok := probe[key]; ok {
-			return fmt.Errorf("gRPC message requires explicit kind tag")
+	for key := range probe {
+		for _, removed := range []string{"kind", "procedure", "grpc_status", "messages"} {
+			if strings.EqualFold(key, removed) {
+				return fmt.Errorf("unsupported message field %q; only HTTP messages are supported", key)
+			}
 		}
 	}
 	var msg HttpMessage
@@ -96,5 +42,104 @@ func (m *Message) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	m.HTTP = &msg
+	return nil
+}
+
+// UnmarshalJSON rejects native RPC evidence before legacy fields can be ignored.
+func (f *Flow) UnmarshalJSON(data []byte) error {
+	type plain Flow
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	for key, raw := range fields {
+		if strings.EqualFold(key, "grpc_events") {
+			return fmt.Errorf("native gRPC capture evidence is unsupported")
+		}
+		if strings.EqualFold(key, "protocol") {
+			var protocol string
+			if err := json.Unmarshal(raw, &protocol); err != nil {
+				return err
+			}
+			if UnsupportedRPCProtocol(protocol) {
+				return fmt.Errorf("native gRPC capture evidence is unsupported")
+			}
+		}
+	}
+	var value plain
+	if err := json.Unmarshal(data, &value); err != nil {
+		return err
+	}
+	if UnsupportedRPCProtocol(value.Protocol) {
+		return fmt.Errorf("native gRPC capture evidence is unsupported")
+	}
+	*f = Flow(value)
+	return nil
+}
+
+// UnmarshalJSON rejects removed RPC contracts and acquisition metadata instead
+// of silently discarding them while decoding an HTTP contract.
+func (ref *SchemaRef) UnmarshalJSON(data []byte) error {
+	type plain SchemaRef
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	for key, raw := range fields {
+		for _, removed := range []string{"services", "acquired_from", "acquisition"} {
+			if strings.EqualFold(key, removed) {
+				return fmt.Errorf("native gRPC contract field %q is unsupported", key)
+			}
+		}
+		if strings.EqualFold(key, "type") || strings.EqualFold(key, "protocol") {
+			var value string
+			if err := json.Unmarshal(raw, &value); err != nil {
+				return err
+			}
+			if strings.EqualFold(key, "type") && strings.EqualFold(strings.TrimSpace(value), "protobuf") || strings.EqualFold(key, "protocol") && UnsupportedRPCProtocol(value) {
+				return fmt.Errorf("native gRPC and protobuf contracts are unsupported")
+			}
+		}
+	}
+	var value plain
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&value); err != nil {
+		return err
+	}
+	*ref = SchemaRef(value)
+	return nil
+}
+
+// UnmarshalJSON accepts portable contract sources and rejects removed protobuf
+// discovery inputs instead of treating them as inert HTTP source metadata.
+func (source *SchemaSource) UnmarshalJSON(data []byte) error {
+	type plain SchemaSource
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	for key, raw := range fields {
+		if strings.EqualFold(key, "import_paths") {
+			return fmt.Errorf("protobuf import paths are unsupported")
+		}
+		if strings.EqualFold(key, "type") || strings.EqualFold(key, "format") {
+			var value string
+			if err := json.Unmarshal(raw, &value); err != nil {
+				return err
+			}
+			switch strings.ToLower(strings.TrimSpace(value)) {
+			case "protobuf_inline", "proto", "protobuf", "descriptor_set", "file_descriptor_set", "reflection":
+				return fmt.Errorf("protobuf contract sources are unsupported")
+			}
+		}
+	}
+	var value plain
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&value); err != nil {
+		return err
+	}
+	*source = SchemaSource(value)
 	return nil
 }

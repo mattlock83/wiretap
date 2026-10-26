@@ -199,8 +199,12 @@
     "bodyInfo": {
       "type": "object",
       "properties": {
-        "omitted": {"type": "boolean"},
-        "redacted": {"type": "boolean"},
+        "omitted": {
+          "type": "boolean"
+        },
+        "redacted": {
+          "type": "boolean"
+        },
         "present": {
           "type": "boolean"
         },
@@ -252,39 +256,10 @@
         },
         "trailers": {
           "type": "object"
-        },
-        "procedure": {
-          "type": "string"
-        },
-        "grpc_status": {
-          "description": "Observed terminal gRPC status, or -1 when no terminal status was observed.",
-          "type": "integer",
-          "minimum": -1
-        },
-        "http_status": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "messages": {
-          "type": [
-            "array",
-            "null"
-          ],
-          "items": {
-            "type": "object"
-          }
-        },
-        "stream_kind": {
-          "type": "string"
-        },
-        "observation": {
-          "type": "object"
-        },
-        "status_details": {
-          "type": "object"
         }
       },
-      "required": []
+      "required": [],
+      "additionalProperties": false
     },
     "flow": {
       "type": "object",

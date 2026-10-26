@@ -32,10 +32,7 @@ function normalizeProxyConfig(config = {}) {
 
 function schemaConfiguration(config = {}, allowInherited = false) {
   const schemas = Array.isArray(config.schemas) ? config.schemas : [];
-  if (config.sutProtocol === "grpc") {
-    if (config.schemaRequired === false) throw new Error("gRPC requires a Protobuf contract");
-    return { schemas };
-  }
+  if (Object.hasOwn(config, "sutProtocol")) throw new Error("sutProtocol was removed; Wiretap supports HTTP APIs");
   if (schemas.length === 0 && config.schemaRequired !== false && !allowInherited) {
     throw new Error("OpenAPI schemas are required; supply schemas or explicitly set schemaRequired: false for this API");
   }
@@ -64,8 +61,7 @@ function normalizeDependencies(value) {
     if (seen.has(assetId)) throw new Error(`dependency assetId "${assetId}" is declared more than once`);
     seen.add(assetId);
     const upstreamUrl = pickFirstString(dependency.upstreamUrl);
-    const protocol = pickFirstString(dependency.protocol) || "http";
-    if (!["http", "grpc"].includes(protocol)) throw new Error(`dependency "${assetId}" protocol must be http or grpc`);
+    if (Object.hasOwn(dependency, "protocol")) throw new Error(`dependency "${assetId}" protocol was removed; Wiretap supports HTTP APIs`);
     let parsed;
     try { parsed = new URL(upstreamUrl); } catch (_) { /* validated below */ }
     if (!parsed || !["http:", "https:"].includes(parsed.protocol)) {
@@ -76,10 +72,7 @@ function normalizeDependencies(value) {
     if (dependency.schemaRequired != null && typeof dependency.schemaRequired !== "boolean") {
       throw new Error(`dependency "${assetId}" schemaRequired must be a boolean`);
     }
-    if (protocol === "grpc" && dependency.schemaRequired === false) {
-      throw new Error(`dependency "${assetId}" requires a Protobuf contract`);
-    }
-    if (protocol === "http" && schemas.length === 0 && dependency.schemaRequired === true) {
+    if (schemas.length === 0 && dependency.schemaRequired === true) {
       throw new Error(`dependency "${assetId}" requires an OpenAPI schema`);
     }
     const assetName = pickFirstString(dependency.assetName);
@@ -91,7 +84,6 @@ function normalizeDependencies(value) {
       asset_id: assetId,
       ...(assetName ? { asset_name: assetName } : {}),
       upstream_kind: upstreamKind,
-      ...(protocol === "grpc" ? { protocol } : {}),
       ...(typeof dependency.schemaRequired === "boolean" ? { schema_required: dependency.schemaRequired } : {}),
       upstream_url: upstreamUrl,
       ...(schemas.length > 0 ? { schemas } : {})
@@ -105,8 +97,6 @@ class Runtime {
     this.client = client;
     this.runtimeInfo = runtimeInfo;
     this.defaultSutBaseUrl = config.sutBaseUrl || null;
-    this.sutProtocol = config.sutProtocol || "http";
-    if (!["http", "grpc"].includes(this.sutProtocol)) throw new Error("sutProtocol must be http or grpc");
     const schemaConfig = schemaConfiguration(config);
     this.defaultSchemas = [...schemaConfig.schemas];
     this.schemaRequired = config.schemaRequired;
@@ -209,12 +199,12 @@ class Runtime {
 
   async setupTest(options = {}) {
     rejectRemovedRedactions(options);
+    if (Object.hasOwn(options, "sutProtocol")) throw new Error("sutProtocol was removed; Wiretap supports HTTP APIs");
     const owner = this.sessions.getStore() || this;
     if (owner.closed) throw new Error("capture attempt is already closed");
     if (this.activeSession || owner.setupPending) throw new Error("a capture session is already active");
     const selectedSchemas = Array.isArray(options.schemas) ? options.schemas : this.defaultSchemas;
-    const sutProtocol = options.sutProtocol || this.sutProtocol;
-    const schemaConfig = schemaConfiguration({ schemas: selectedSchemas, schemaRequired: options.schemaRequired ?? this.schemaRequired, sutProtocol });
+    const schemaConfig = schemaConfiguration({ schemas: selectedSchemas, schemaRequired: options.schemaRequired ?? this.schemaRequired });
     const dependencies = options.dependencies === undefined
       ? this.defaultDependencies
       : normalizeDependencies(options.dependencies);
@@ -229,7 +219,6 @@ class Runtime {
       test_source: options.testSource || this.testSource,
       sut_source: options.sutSource || this.sutSource,
       sut_base_url: options.sutBaseUrl || this.defaultSutBaseUrl,
-      ...(sutProtocol === "grpc" ? { sut_protocol: "grpc" } : {}),
       explicit_session: Boolean(options.explicitSession ?? this.explicitSession),
       schemas: schemaConfig.schemas,
       schema_required: options.schemaRequired ?? this.schemaRequired,
@@ -306,7 +295,6 @@ async function startCapture(config = {}) {
   const resolved = {
     application: defaults.application,
     sutBaseUrl: defaults.sut_base_url,
-    sutProtocol: defaults.sut_protocol,
     apiId: defaults.api_id,
     sutTargetKind: defaults.sut_target_kind,
     schemas: defaults.schemas,
@@ -318,7 +306,6 @@ async function startCapture(config = {}) {
       assetName: dependency.asset_name,
       upstreamUrl: dependency.upstream_url,
       upstreamKind: dependency.upstream_kind,
-      protocol: dependency.protocol,
       schemas: dependency.schemas,
       schema: dependency.schema,
       schemaRequired: dependency.schema_required
@@ -328,64 +315,4 @@ async function startCapture(config = {}) {
   return new Runtime(client, resolved, runtimeInfo);
 }
 
-function bindTest(runtimeOrGetter, testFn, defaults = {}) {
-  rejectRemovedRedactions(defaults);
-  const resolveRuntime = typeof runtimeOrGetter === "function" ? runtimeOrGetter : () => runtimeOrGetter;
-  if (typeof testFn !== "function") throw new Error("bindTest requires a test function");
-  return function wiretapTest(name, optionsOrFn, maybeFn) {
-    const fn = typeof optionsOrFn === "function" ? optionsOrFn : maybeFn;
-    const testOptions = typeof optionsOrFn === "function" ? undefined : optionsOrFn;
-    rejectRemovedRedactions(testOptions);
-    const run = async (t) => {
-      const runtime = resolveRuntime();
-      if (!runtime) throw new Error("bindTest could not resolve a Wiretap runtime");
-      if (typeof t?.test === "function" && typeof t?.after === "function") {
-        return require("./node-test").runNodeTest(runtime, t, name, fn, defaults);
-      }
-      return runtime.runTest(name, session => fn(t, session), defaults);
-    };
-    return testOptions === undefined ? testFn(name, run) : testFn(name, testOptions, run);
-  };
-}
-
-function createNodeTestSuite(config = {}) {
-  rejectRemovedRedactions(config);
-  schemaConfiguration(config, true);
-  normalizeDependencies(config.dependencies);
-  const testApi = config.testApi || require("node:test");
-  if (!testApi || typeof testApi.test !== "function" || typeof testApi.before !== "function" || typeof testApi.after !== "function") {
-    throw new Error("createNodeTestSuite testApi must provide test, before, and after functions");
-  }
-  let runtime = null;
-  let starting = null;
-  const runtimeConfig = { ...config };
-  delete runtimeConfig.testApi;
-  delete runtimeConfig.testDefaults;
-  delete runtimeConfig.autoHooks;
-  const suite = {
-    async start() {
-      if (runtime) return runtime;
-      if (!starting) starting = startCapture(runtimeConfig).then((value) => (runtime = value)).finally(() => { starting = null; });
-      return starting;
-    },
-    async close() {
-      if (starting) await starting;
-      if (!runtime) return { status: "idle" };
-      const active = runtime;
-      runtime = null;
-      return active.finishRun();
-    },
-    get runtime() { if (!runtime) throw new Error("Wiretap capture runtime is not started yet"); return runtime; },
-    get sutUrl() { return this.runtime.sutUrl; },
-    dependencyUrl(assetId) { return this.runtime.dependencyUrl(assetId); },
-    report(options) { return this.runtime.report(options); }
-  };
-  suite.test = bindTest(() => runtime, testApi.test, config.testDefaults || {});
-  if (config.autoHooks !== false) {
-    testApi.before(() => suite.start());
-    testApi.after(() => suite.close());
-  }
-  return suite;
-}
-
-module.exports = { startCapture, bindTest, createNodeTestSuite, initializeTracing: tracing.initializeTracing };
+module.exports = { startCapture, initializeTracing: tracing.initializeTracing };

@@ -5,7 +5,7 @@ application:
 output_dir: artifacts/wiretap
 outputs:
   coverage: [json, text]
-  postman: true
+  arazzo: true
 sut:
   id: property-api
   kind: service

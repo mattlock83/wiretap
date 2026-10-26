@@ -33,7 +33,7 @@ func (a *App) testDefaults() setupTestRequest {
 	if id == "" {
 		id = "sut"
 	}
-	out := setupTestRequest{TestSource: maps.Clone(cfg.TestSource), SUTSource: maps.Clone(cfg.SUTSource), APIID: id, SUTBaseURL: cfg.SUT.TargetURL(), SUTTargetKind: cfg.SUT.Kind, SUTProtocol: cfg.SUT.Protocol, Schemas: cfg.SUT.Schemas(id, "sut"), SchemaRequired: cfg.SUT.SchemaRequired}
+	out := setupTestRequest{TestSource: maps.Clone(cfg.TestSource), SUTSource: maps.Clone(cfg.SUTSource), APIID: id, SUTBaseURL: cfg.SUT.TargetURL(), SUTTargetKind: cfg.SUT.Kind, Schemas: cfg.SUT.Schemas(id, "sut"), SchemaRequired: cfg.SUT.SchemaRequired}
 
 	if cfg.Application != nil {
 		application := *cfg.Application
@@ -41,7 +41,7 @@ func (a *App) testDefaults() setupTestRequest {
 	}
 	for _, id := range cfg.DependencyIDs() {
 		dep := cfg.Dependencies[id]
-		out.Dependencies = append(out.Dependencies, dependencyRegistration{AssetID: id, AssetName: dep.Name, UpstreamURL: dep.TargetURL(), UpstreamKind: dep.Kind, Protocol: dep.Protocol, Schemas: dep.Schemas(id, "dependency"), SchemaRequired: dep.SchemaRequired})
+		out.Dependencies = append(out.Dependencies, dependencyRegistration{AssetID: id, AssetName: dep.Name, UpstreamURL: dep.TargetURL(), UpstreamKind: dep.Kind, Schemas: dep.Schemas(id, "dependency"), SchemaRequired: dep.SchemaRequired})
 	}
 	return out
 }

@@ -35,8 +35,8 @@ func writeTextReport(w io.Writer, report *Report) error {
 		out.WriteString("No test attempts were recorded; declared operations below remain untested.\n")
 	}
 	if traffic, known := capturedTraffic(report); known {
-		fmt.Fprintf(&out, "Captured interactions: %d (%d HTTP, %d gRPC, %d other)\n", traffic.http+traffic.grpc+traffic.other, traffic.http, traffic.grpc, traffic.other)
-		if report.ArtifactCount > 0 && traffic.http+traffic.grpc+traffic.other == 0 {
+		fmt.Fprintf(&out, "Captured interactions: %d (%d HTTP, %d other)\n", traffic.http+traffic.other, traffic.http, traffic.other)
+		if report.ArtifactCount > 0 && traffic.http+traffic.other == 0 {
 			if outcomes["pass"] == report.ArtifactCount {
 				out.WriteString("WARNING: Tests passed, but no network traffic was captured.\n")
 			} else {
@@ -162,7 +162,7 @@ func writeTextReport(w io.Writer, report *Report) error {
 // Traffic is recorded once per attempt here, including exchanges that have no
 // matching schema. Operation/condition samples can repeat or omit exchanges,
 // so those samples cannot establish a captured-interaction count.
-func capturedTraffic(report *Report) (counts struct{ http, grpc, other int }, known bool) {
+func capturedTraffic(report *Report) (counts struct{ http, other int }, known bool) {
 	attempts := map[string]bool{}
 	for _, test := range report.TestCases {
 		for _, attempt := range test.Attempts {
@@ -175,8 +175,6 @@ func capturedTraffic(report *Report) (counts struct{ http, grpc, other int }, kn
 			switch flow.Protocol {
 			case "http":
 				counts.http++
-			case "grpc":
-				counts.grpc++
 			default:
 				counts.other++
 			}

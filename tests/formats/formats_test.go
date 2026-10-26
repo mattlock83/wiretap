@@ -100,12 +100,6 @@ func TestPublicReportSchemas(t *testing.T) {
 	}
 	validate(t, "check-report", pair)
 	validate(t, "check-report", &assumptions.StoreReport{Producer: pair.Producer, ReportVersion: pair.ReportVersion, RulesVersion: pair.RulesVersion, Mode: pair.Mode, Scope: "discovered_consumer_provider_relationships", ArtifactsPath: t.TempDir(), Compatible: pair.Compatible, Counts: pair.Counts, Comparisons: []*assumptions.Report{pair}})
-	arazzoPair, err := assumptions.Check(t.Context(), assumptions.Options{Mode: "consumer", Consumer: consumer, Provider: provider, InputFormat: "arazzo"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	validate(t, "check-report", arazzoPair)
-	validate(t, "check-report", &assumptions.StoreReport{Producer: arazzoPair.Producer, ReportVersion: arazzoPair.ReportVersion, RulesVersion: arazzoPair.RulesVersion, Mode: arazzoPair.Mode, Scope: "discovered_consumer_provider_relationships", ArtifactsPath: t.TempDir(), Compatible: arazzoPair.Compatible, Counts: arazzoPair.Counts, Comparisons: []*assumptions.Report{arazzoPair}})
 	create := func(path string) string {
 		target := filepath.Join(t.TempDir(), "set.json")
 		manifest, err := runset.Create(t.Context(), []string{path}, target)
@@ -128,9 +122,4 @@ func TestPublicReportSchemas(t *testing.T) {
 		t.Fatal(err)
 	}
 	validate(t, "check-report", set)
-	arazzoSet, err := assumptions.CheckRunSetsWithFormat(t.Context(), consumerSet, providerSet, "consumer", "", nil, "arazzo")
-	if err != nil {
-		t.Fatal(err)
-	}
-	validate(t, "check-report", arazzoSet)
 }

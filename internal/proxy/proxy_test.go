@@ -1,13 +1,16 @@
 package proxy
 
 import (
+	"bufio"
 	"bytes"
 	"crypto/tls"
 	"crypto/x509"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -460,5 +463,63 @@ func TestHTTPSMITMUpstreamErrorReturnsBadGatewayAndRecordsError(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for recorded exchange")
+	}
+}
+
+func TestUnsupportedGRPCRequestsAreNeverForwardedOrCaptured(t *testing.T) {
+	for _, mediaType := range []string{"application/grpc", "application/grpc+proto", "application/grpc+json", "application/grpc-web+proto", "Application/GRPC; charset=utf-8"} {
+		t.Run(mediaType, func(t *testing.T) {
+			var forwarded atomic.Int32
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { forwarded.Add(1); w.WriteHeader(http.StatusOK) }))
+			defer upstream.Close()
+			recorder := &recordingRecorder{exchanges: make(chan HTTPExchange, 1)}
+			server := NewServer(Config{ReverseTarget: upstream.URL, Recorder: recorder})
+			defer server.Stop(t.Context())
+			for _, path := range []string{"/inventory.Inventory/Get", "/__wiretap/dep/inventory/inventory.Inventory/Get", upstream.URL + "/inventory.Inventory/Get"} {
+				req := httptest.NewRequest(http.MethodPost, path, strings.NewReader("frame"))
+				req.Header.Set("Content-Type", mediaType)
+				response := httptest.NewRecorder()
+				server.ServeHTTP(response, req)
+				if response.Code != http.StatusUnsupportedMediaType || !strings.Contains(response.Body.String(), "gRPC is not supported") {
+					t.Fatalf("got %d %s", response.Code, response.Body.String())
+				}
+			}
+			if forwarded.Load() != 0 {
+				t.Fatal("unsupported RPC reached upstream")
+			}
+			select {
+			case exchange := <-recorder.exchanges:
+				t.Fatalf("unsupported RPC was captured as HTTP: %+v", exchange)
+			default:
+			}
+		})
+	}
+}
+
+func TestUnsupportedGRPCInsideTLSProxyTunnelIsRejected(t *testing.T) {
+	server := NewServer(Config{})
+	client, peer := net.Pipe()
+	defer peer.Close()
+	completed := make(chan bool, 1)
+	go func() {
+		defer client.Close()
+		req := httptest.NewRequest(http.MethodPost, "https://inventory.test/inventory.Inventory/Get", strings.NewReader("frame"))
+		req.Header.Set("Content-Type", "application/grpc+proto")
+		completed <- server.proxyTLSRequest(client, req)
+	}()
+	response, err := http.ReadResponse(bufio.NewReader(peer), &http.Request{Method: http.MethodPost})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != http.StatusUnsupportedMediaType || !strings.Contains(string(body), "gRPC is not supported") {
+		t.Fatalf("got %d %s", response.StatusCode, body)
+	}
+	if <-completed {
+		t.Fatal("unsupported RPC left tunnel open")
 	}
 }

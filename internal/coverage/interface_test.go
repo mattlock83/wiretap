@@ -83,26 +83,26 @@ func validatePublishedReportSchema(t *testing.T, report *Report) (*jsonschema.Sc
 	return schema, document.(map[string]any)
 }
 
-func TestCoverageReportIncompleteGRPCMatchesPublishedSchema(t *testing.T) {
+func TestHTTPBodyAvailabilityRetainsRedactionAndOmission(t *testing.T) {
+	info := bodyAvailability(&artifact.Body{Omitted: true, Redacted: true, OriginalBytes: 150})
+	if !info.Present || !info.Omitted || !info.Redacted || info.Truncated || info.RetainedBytes != 0 {
+		t.Fatalf("ambiguous body availability: %+v", info)
+	}
+}
+
+func TestCoverageReportIncompleteHTTPMatchesPublishedSchema(t *testing.T) {
 	ordinal := 0
 	capture := &artifact.Artifact{
-		Version:           2,
-		CaptureIncomplete: true,
+		Version: 2, CaptureIncomplete: true,
 		TestCase: artifact.TestCase{
-			ID: "incomplete-attempt", Name: "mixed incomplete capture", Status: "fail",
+			ID: "incomplete-attempt", Name: "incomplete capture", Status: "fail",
 			StartedAt: time.Date(2026, 10, 24, 1, 2, 3, 0, time.UTC),
 			Identity:  &artifact.TestIdentity{ID: "orders/create", Variant: "transport-failure", AttemptOrdinal: &ordinal},
 		},
-		Traffic: []artifact.Flow{
-			{ID: "incomplete-rpc", Protocol: "grpc", Channel: "test_to_sut", TransportError: "connection reset before trailers",
-				Request:  artifact.Message{GRPC: &artifact.GrpcMessage{Kind: "grpc", Procedure: "/example.Service/Call", StatusCode: -1}},
-				Response: artifact.Message{GRPC: &artifact.GrpcMessage{Kind: "grpc", Procedure: "/example.Service/Call", HTTPStatus: 200, StatusCode: -1}},
-			},
-			{ID: "http-request", Protocol: "http", Channel: "test_to_sut",
-				Request:  artifact.Message{HTTP: &artifact.HttpMessage{Method: "POST", URL: "http://sut/orders", Body: &artifact.Body{Text: "{", Encoding: "utf8", OriginalBytes: 100, Truncated: true}}},
-				Response: artifact.Message{HTTP: &artifact.HttpMessage{Status: 400}},
-			},
-		},
+		Traffic: []artifact.Flow{{ID: "http-request", Protocol: "http", Channel: "test_to_sut",
+			Request:  artifact.Message{HTTP: &artifact.HttpMessage{Method: "POST", URL: "http://sut/orders", Body: &artifact.Body{Text: "{", Encoding: "utf8", OriginalBytes: 100, Truncated: true}}},
+			Response: artifact.Message{HTTP: &artifact.HttpMessage{Status: 400}},
+		}},
 	}
 	run := &bundle.Run{EvidenceVersion: "3.1", RunID: "incomplete-schema-run", Revision: 1, RunState: "interrupted", Attempts: []bundle.AttemptRef{{AttemptID: capture.TestCase.ID, FileRef: bundle.FileRef{Path: "tests/incomplete-attempt.json"}}}}
 	report, err := GenerateBundleSnapshot(t.TempDir(), run, []*artifact.Artifact{capture}, "Orders", false)
@@ -110,36 +110,15 @@ func TestCoverageReportIncompleteGRPCMatchesPublishedSchema(t *testing.T) {
 		t.Fatal(err)
 	}
 	validatePublishedReportSchema(t, report)
-	if len(report.TestCases) != 1 || len(report.TestCases[0].Traffic) != 2 {
-		t.Fatalf("nonempty generated report lost flows: %+v", report.TestCases)
+	if len(report.TestCases) != 1 || len(report.TestCases[0].Traffic) != 1 {
+		t.Fatalf("generated report lost flow: %+v", report.TestCases)
 	}
-	foundRPC, foundHTTP := false, false
-	for _, flow := range report.TestCases[0].Traffic {
-		if flow.TestIdentity == nil || flow.TestIdentity.ID != "orders/create" || flow.TestIdentity.AttemptOrdinal == nil || *flow.TestIdentity.AttemptOrdinal != 0 {
-			t.Fatalf("generated report lost stable test identity: %+v", flow)
-		}
-		switch flow.FlowID {
-		case "incomplete-rpc":
-			foundRPC = true
-			if flow.Response.GRPCStatus == nil || *flow.Response.GRPCStatus != -1 || !flow.CaptureIncomplete {
-				t.Fatalf("missing terminal status was changed or hidden: %+v", flow)
-			}
-		case "http-request":
-			foundHTTP = true
-			body := flow.Request.BodyInfo
-			if body == nil || !body.Present || !body.Truncated || body.Encoding != "utf8" || body.RetainedBytes != 1 || body.OriginalBytes != 100 || flow.Response.BodyInfo == nil || flow.Response.BodyInfo.Present {
-				t.Fatalf("generated report lost HTTP body availability: %+v", flow)
-			}
-		}
+	flow := report.TestCases[0].Traffic[0]
+	if !flow.CaptureIncomplete || flow.TestIdentity == nil || flow.TestIdentity.ID != "orders/create" || flow.TestIdentity.AttemptOrdinal == nil || *flow.TestIdentity.AttemptOrdinal != 0 {
+		t.Fatalf("generated report lost incomplete state or test identity: %+v", flow)
 	}
-	if !foundRPC || !foundHTTP {
-		t.Fatal("generated report omitted a protocol")
-	}
-}
-
-func TestHTTPBodyAvailabilityRetainsRedactionAndOmission(t *testing.T) {
-	info := bodyAvailability(&artifact.Body{Omitted: true, Redacted: true, OriginalBytes: 150})
-	if !info.Present || !info.Omitted || !info.Redacted || info.Truncated || info.RetainedBytes != 0 {
-		t.Fatalf("ambiguous body availability: %+v", info)
+	body := flow.Request.BodyInfo
+	if body == nil || !body.Present || !body.Truncated || body.Encoding != "utf8" || body.RetainedBytes != 1 || body.OriginalBytes != 100 || flow.Response.BodyInfo == nil || flow.Response.BodyInfo.Present {
+		t.Fatalf("generated report lost HTTP body availability: %+v", flow)
 	}
 }

@@ -13,10 +13,9 @@ import (
 	"github.com/mattlock83/wiretap/internal/artifact"
 	"github.com/mattlock83/wiretap/internal/assumptions"
 	"github.com/mattlock83/wiretap/internal/bundle"
-	"github.com/mattlock83/wiretap/internal/postman"
 )
 
-// Produce actual complete, portable archives with their own Postman exports.
+// Produce actual complete, portable archives with their own Arazzo exports.
 func cliStoreArchive(t *testing.T, root, application string, mappings map[string]bundle.ProviderRef, response string) string {
 	t.Helper()
 	writer, err := bundle.New(t.TempDir())
@@ -61,25 +60,7 @@ func cliStoreArchive(t *testing.T, root, application string, mappings map[string
 	if err := writer.Finalize("complete"); err != nil {
 		t.Fatal(err)
 	}
-	exports, err := postman.GenerateAll(writer.Path(), "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	directory := filepath.Join(writer.Path(), "exports", "postman")
-	if err := os.MkdirAll(directory, 0755); err != nil {
-		t.Fatal(err)
-	}
-	for _, export := range exports {
-		file, err := os.Create(filepath.Join(directory, export.Filename))
-		if err != nil {
-			t.Fatal(err)
-		}
-		writeErr := postman.WriteExport(file, export)
-		closeErr := file.Close()
-		if writeErr != nil || closeErr != nil {
-			t.Fatalf("write collection: %v / %v", writeErr, closeErr)
-		}
-	}
+	cliWriteCheckArazzo(t, writer.Path(), filepath.Join(writer.Path(), "exports", "arazzo"))
 	destination := filepath.Join(root, application, "tested-build", filepath.Base(writer.Path()))
 	if err := os.MkdirAll(filepath.Dir(destination), 0755); err != nil {
 		t.Fatal(err)
@@ -173,7 +154,7 @@ func TestCLISharedArtifactsRejectsMixedInputModes(t *testing.T) {
 		{"provider", "--consumer", "c", "--provider", "p", "--artifacts", "root"},
 		{"consumer", "--artifacts", "root"},
 		{"provider", "--artifacts", "root"},
-		{"consumer", "--consumer", "c", "--artifacts", "root", "--consumer-collection", "collection.json"},
+		{"consumer", "--consumer", "c", "--artifacts", "root", "--consumer-arazzo", "collection.json"},
 		{"provider", "--provider", "p", "--artifacts", "root", "--provider-collection", "collection.json"},
 		{"provider", "--provider", "p", "--artifacts", "root", "--dependency", "stock"},
 	} {
@@ -183,12 +164,12 @@ func TestCLISharedArtifactsRejectsMixedInputModes(t *testing.T) {
 	}
 }
 
-func TestCLISharedArtifactsRequiresEachSelectedRunsOwnPostmanExports(t *testing.T) {
+func TestCLISharedArtifactsRequiresEachSelectedRunsOwnArazzoExports(t *testing.T) {
 	root := t.TempDir()
 	provider := cliStoreArchive(t, root, "inventory", nil, `{"ok":true}`)
 	consumer := cliStoreArchive(t, t.TempDir(), "orders", map[string]bundle.ProviderRef{"stock": {ApplicationID: "inventory", APIID: "inventory-http"}}, `{"ok":true}`)
 	// A matching collection elsewhere in the store must not mask missing exports.
-	if err := os.Rename(filepath.Join(provider, "exports", "postman"), filepath.Join(root, "old-collections")); err != nil {
+	if err := os.Rename(filepath.Join(provider, "exports", "arazzo"), filepath.Join(root, "old-collections")); err != nil {
 		t.Fatal(err)
 	}
 	code, data := executeCapturingStdout(t, []string{"check", "consumer", "--consumer", consumer, "--artifacts", root, "--format", "json"})

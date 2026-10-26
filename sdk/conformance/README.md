@@ -1,17 +1,15 @@
-# SDK conformance contract
+# Jest lifecycle conformance
 
 [scenarios.json](scenarios.json) defines the lifecycle and ownership behavior
-shared by SDKs. It is a language-neutral test contract, not a replacement for
-the runtime API or a universal test-runner implementation. Framework adapters
-still use their runner's final completion and fixture hooks.
+used by the Jest integration and its internal runtime owner. Jest supplies final
+outcomes and fixture hooks; these vectors verify ownership and capture cleanup.
 
 Use the scenarios whose `applies_to` contains the component under test. Invalid
 receipt vectors overlay their `set` object onto an otherwise valid receipt.
 Platform-specific tests additionally cover missing bundle directories, malformed
-JSON, readiness files from another process, and deadlines. Go, JavaScript and
-Python managed owner tests consume these vectors directly. See the
-[SDK authoring guide](../../docs/sdk-authoring.md) for the control API and
-framework lifecycle contract.
+JSON, readiness files from another process, and deadlines. The Jest SDK
+managed-owner tests consume these vectors directly. See the
+[Jest guide](../js/docs/jest.md) for integration and lifecycle details.
 
 Owners start a local executable through a private readiness directory and a
 stdin lifeline. Readiness must identify the owned child and an HTTP loopback
@@ -34,7 +32,6 @@ fixture failure records `fail`. Negative contract-validation evidence alone
 does not change a passing framework outcome. Identities remain stable across
 retries, with increasing attempt ordinals and a fresh trace per attempt.
 
-The optional capabilities probe describes API `1.0`. The Python SDK checks it
-before starting a run and accepts a `404` response from older v1 runtimes.
-Go and JavaScript use their established endpoints without the probe. All
-conformance commands prepare and test local artifacts; none publish packages.
+The optional capabilities probe describes API `1.0`. The Jest integration
+uses the established lifecycle endpoints. All conformance commands prepare
+and test local artifacts; none publish packages.
