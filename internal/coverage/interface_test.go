@@ -15,7 +15,7 @@ import (
 
 func TestMachineReportRetainsIdentityAndBodyAvailability(t *testing.T) {
 	ordinal := 2
-	capture := &artifact.Artifact{Version: 2, TestCase: artifact.TestCase{ID: "attempt", Name: "a display label", StartedAt: time.Now(), Status: "fail", Identity: &artifact.TestIdentity{ID: "orders/create", Variant: "invalid", AttemptOrdinal: &ordinal}}, Traffic: []artifact.Flow{{ID: "flow", Protocol: "http", Channel: "test_to_sut", Request: artifact.Message{HTTP: &artifact.HttpMessage{Method: "POST", URL: "http://sut/orders", Body: &artifact.Body{Text: "{", Encoding: "utf8", OriginalBytes: 100, Truncated: true}}}, Response: artifact.Message{HTTP: &artifact.HttpMessage{Status: 400}}}}}
+	capture := &artifact.Artifact{Version: 2, TestCase: artifact.TestCase{ID: "attempt", Name: "a display label", StartedAt: time.Now(), Status: "fail", Identity: &artifact.TestIdentity{ID: "orders/create", Variant: "invalid", AttemptOrdinal: &ordinal}}, Traffic: []artifact.Flow{{ID: "flow", Protocol: "http", Channel: "test_to_sut", Request: &artifact.HttpMessage{Method: "POST", URL: "http://sut/orders", Body: &artifact.Body{Text: "{", Encoding: "utf8", OriginalBytes: 100, Truncated: true}}, Response: &artifact.HttpMessage{Status: 400}}}}
 	run := &bundle.Run{EvidenceVersion: "3.1", RunID: "run", Revision: 1, RunState: "complete", Attempts: []bundle.AttemptRef{{AttemptID: "attempt", FileRef: bundle.FileRef{Path: "tests/attempt.json"}}}, Producer: &version.Producer{Name: "wiretap", Version: "capture-version"}, SUTSource: map[string]any{"revision": "app-commit"}}
 	report, err := GenerateBundleSnapshot(t.TempDir(), run, []*artifact.Artifact{capture}, "Orders", false)
 	if err != nil {
@@ -100,8 +100,8 @@ func TestCoverageReportIncompleteHTTPMatchesPublishedSchema(t *testing.T) {
 			Identity:  &artifact.TestIdentity{ID: "orders/create", Variant: "transport-failure", AttemptOrdinal: &ordinal},
 		},
 		Traffic: []artifact.Flow{{ID: "http-request", Protocol: "http", Channel: "test_to_sut",
-			Request:  artifact.Message{HTTP: &artifact.HttpMessage{Method: "POST", URL: "http://sut/orders", Body: &artifact.Body{Text: "{", Encoding: "utf8", OriginalBytes: 100, Truncated: true}}},
-			Response: artifact.Message{HTTP: &artifact.HttpMessage{Status: 400}},
+			Request:  &artifact.HttpMessage{Method: "POST", URL: "http://sut/orders", Body: &artifact.Body{Text: "{", Encoding: "utf8", OriginalBytes: 100, Truncated: true}},
+			Response: &artifact.HttpMessage{Status: 400},
 		}},
 	}
 	run := &bundle.Run{EvidenceVersion: "3.1", RunID: "incomplete-schema-run", Revision: 1, RunState: "interrupted", Attempts: []bundle.AttemptRef{{AttemptID: capture.TestCase.ID, FileRef: bundle.FileRef{Path: "tests/incomplete-attempt.json"}}}}

@@ -1,10 +1,10 @@
-const { owners, projectKey, callHook } = require('./jest-hooks');
+const { owner, setOwner, projectKey, callHook } = require('./jest-hooks');
 const { printCompletionSummary } = require('./completion-summary');
 
 module.exports = async function wiretapGlobalTeardown(globalConfig, projectConfig) {
   const key = projectKey(projectConfig);
-  const entry = owners().get(key);
-  if (!entry) return;
+  const entry = owner();
+  if (!entry || entry.key !== key) return;
   if (!entry.closing) entry.closing = (async () => {
     let failure;
     try {
@@ -22,7 +22,7 @@ module.exports = async function wiretapGlobalTeardown(globalConfig, projectConfi
       }
       process.removeListener('SIGINT', entry.onInterrupt);
       process.removeListener('SIGTERM', entry.onTerminate);
-      owners().delete(key);
+      if (owner() === entry) setOwner(undefined);
     }
     if (failure) throw failure;
   })();

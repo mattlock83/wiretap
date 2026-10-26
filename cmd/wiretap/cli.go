@@ -10,7 +10,6 @@ import (
 
 	"github.com/mattlock83/wiretap/internal/app"
 	"github.com/mattlock83/wiretap/internal/bundle"
-	"github.com/mattlock83/wiretap/internal/core"
 	"github.com/mattlock83/wiretap/internal/project"
 	wiretaptls "github.com/mattlock83/wiretap/internal/tls"
 )
@@ -114,25 +113,12 @@ Capture options:`)
 	if len(flags.Args()) > 0 {
 		return fmt.Errorf("%w: unexpected arguments: Wiretap hosts the HTTP API; run tests with your existing test framework", errUsage)
 	}
-	cfg := core.DefaultConfig()
 	projectConfig, err := project.Load(*configPath)
 	if err != nil {
 		return fmt.Errorf("%w: %v", errUsage, err)
 	}
-	if projectConfig != nil {
-		if projectConfig.HTTPListen != "" {
-			cfg.HTTP.ListenAddr = projectConfig.HTTPListen
-		}
-		if projectConfig.ProxyListen != "" {
-			cfg.Proxy.ListenAddr = projectConfig.ProxyListen
-		}
-		cfg.Artifact.OutputDir = projectConfig.OutputDir
-		cfg.Proxy.CABaseDir = projectConfig.CADir
-	}
-	if err := applyEnv(&cfg); err != nil {
-		return fmt.Errorf("%w: %v", errUsage, err)
-	}
-	if err := cfg.Validate(); err != nil {
+	cfg, err := resolveRuntimeConfig(projectConfig)
+	if err != nil {
 		return fmt.Errorf("%w: %v", errUsage, err)
 	}
 	if command == "ca" {

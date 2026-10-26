@@ -44,19 +44,14 @@ from the clean-package Jest checks.
 
 ## Retain complete archives
 
-Use an explicit outputs configuration:
-
-```yaml
-outputs:
-  coverage: [json, text, html]
-  arazzo: true
-```
+Finalization automatically generates JSON and HTML coverage and eligible Arazzo
+workflows.
 
 Keep `bundle.json`, `tests/`, `contracts/`, `payloads/`, `exports/`, the archive's
 `last-run.json` and its bounded `wiretap.log` together. Copying only coverage or
 Arazzo files loses evidence needed for compatibility checks. Use the canonical
-receipt inside each run to identify its exact output paths; the parent directory's
-latest receipt is advisory when multiple Jest runs share the output root.
+receipt inside each run to identify its exact output paths. Jest prints that
+run's archive path to stderr; separate jobs retain separate receipts.
 
 Incomplete captures can fail strict Arazzo export even when coverage succeeds.
 Do not turn a failed capture or export into a passing CI job. Retain the evidence

@@ -47,7 +47,7 @@ paths:
 
 func contractFixture(schema, body string) (*bundle.Run, *artifact.Artifact) {
 	ref := artifact.SchemaRef{ID: "orders-schema", Role: "sut", Type: "openapi", Source: artifact.SchemaSource{Type: "inline", Content: schema}}
-	a := &artifact.Artifact{Version: 1, TestCase: artifact.TestCase{ID: "attempt", Name: "creates order", Status: "pass"}, Schemas: []artifact.SchemaRef{ref}, Traffic: []artifact.Flow{{ID: "flow", Protocol: "http", Channel: "test_to_sut", Request: artifact.Message{HTTP: &artifact.HttpMessage{Method: "POST", URL: "http://provider/orders", Headers: artifact.Headers{"Content-Type": {"application/json"}}, Body: &artifact.Body{Text: `{"name":"example"}`}}}, Response: artifact.Message{HTTP: &artifact.HttpMessage{Status: 200, Headers: artifact.Headers{"Content-Type": {"application/json"}}, Body: &artifact.Body{Text: body}}}}}}
+	a := &artifact.Artifact{Version: 1, TestCase: artifact.TestCase{ID: "attempt", Name: "creates order", Status: "pass"}, Schemas: []artifact.SchemaRef{ref}, Traffic: []artifact.Flow{{ID: "flow", Protocol: "http", Channel: "test_to_sut", Request: &artifact.HttpMessage{Method: "POST", URL: "http://provider/orders", Headers: artifact.Headers{"Content-Type": {"application/json"}}, Body: &artifact.Body{Text: `{"name":"example"}`}}, Response: &artifact.HttpMessage{Status: 200, Headers: artifact.Headers{"Content-Type": {"application/json"}}, Body: &artifact.Body{Text: body}}}}}
 	run := &bundle.Run{RunID: "run", APIID: "orders", RunState: "complete", Schemas: []artifact.SchemaRef{ref}, Attempts: []bundle.AttemptRef{{AttemptID: "attempt", FileRef: bundle.FileRef{Path: "tests/attempt.json"}}}}
 	return run, a
 }
@@ -79,7 +79,7 @@ func measureContractFixture(t *testing.T, run *bundle.Run, captures []*artifact.
 		copyCapture.Schemas = freeze(capture.Schemas)
 		copyCaptures[i] = &copyCapture
 	}
-	return buildContractCoverage(&copyRun, copyCaptures)
+	return buildContractCoverage(&copyRun, copyCaptures, contractCache{})
 }
 
 func freezeCoverageSchema(t *testing.T, ref artifact.SchemaRef) artifact.SchemaRef {
@@ -184,12 +184,12 @@ func TestContractQualityAndOutcomes(t *testing.T) {
 		{"failed", "not_covered", func(_ *bundle.Run, a *artifact.Artifact) { a.TestCase.Status = "fail" }},
 		{"incomplete", "not_covered", func(_ *bundle.Run, a *artifact.Artifact) { a.CaptureIncomplete = true }},
 		{"transport", "not_covered", func(_ *bundle.Run, a *artifact.Artifact) { a.Traffic[0].TransportError = "connection failed" }},
-		{"truncated", "unknown", func(_ *bundle.Run, a *artifact.Artifact) { a.Traffic[0].Response.HTTP.Body.Truncated = true }},
+		{"truncated", "unknown", func(_ *bundle.Run, a *artifact.Artifact) { a.Traffic[0].Response.Body.Truncated = true }},
 		{"redacted", "unknown", func(_ *bundle.Run, a *artifact.Artifact) {
 			a.Redactions = []artifact.Redaction{{Field: "response.body.status", Rule: "mask", Replacement: "pending"}}
 		}},
 		{"invalid", "not_covered", func(_ *bundle.Run, a *artifact.Artifact) {
-			a.Traffic[0].Response.HTTP.Body.Text = `{"status":"pending","items":[],"reference":"invalid"}`
+			a.Traffic[0].Response.Body.Text = `{"status":"pending","items":[],"reference":"invalid"}`
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -209,7 +209,7 @@ func TestContractQualityAndOutcomes(t *testing.T) {
 
 func TestContractIndependentPhasesAndResponseAlternatives(t *testing.T) {
 	run, a := contractFixture(conditionsSpec, `{"status":"pending","items":[],"reference":"ORD-123"}`)
-	a.Traffic[0].Request.HTTP.Body.Text = `{}`
+	a.Traffic[0].Request.Body.Text = `{}`
 	s := measureContractFixture(t, run, []*artifact.Artifact{a}).Specs[0]
 	requireTargetState(t, s, "response", "/properties/status", "enum", `"pending"`, "covered")
 	requireTargetState(t, s, "request", "/requestBody", "presence", "present", "not_covered")
@@ -217,7 +217,7 @@ func TestContractIndependentPhasesAndResponseAlternatives(t *testing.T) {
 		t.Fatalf("expected request violation: %+v", s.Violations)
 	}
 	for _, status := range []int{404, 503} {
-		a.Traffic[0].Response.HTTP = &artifact.HttpMessage{Status: status}
+		a.Traffic[0].Response = &artifact.HttpMessage{Status: status}
 		s = measureContractFixture(t, run, []*artifact.Artifact{a}).Specs[0]
 		alternative := "4XX"
 		if status == 503 {
@@ -424,7 +424,7 @@ func TestFrozenContractKeysSurviveDifferentRepoPaths(t *testing.T) {
 
 func TestContractRepeatedParametersAndPrecisionAreUnknown(t *testing.T) {
 	run, a := contractFixture(conditionsSpec, `{"status":"pending","items":[],"reference":"ORD-123"}`)
-	a.Traffic[0].Request.HTTP.URL += "?mode=fast&mode=slow"
+	a.Traffic[0].Request.URL += "?mode=fast&mode=slow"
 	s := measureContractFixture(t, run, []*artifact.Artifact{a}).Specs[0]
 	requireTargetState(t, s, "request", "/parameters/query/mode/schema", "enum", `"fast"`, "unknown")
 	run, a = contractFixture(simpleResponseSpec(`{type: integer, minimum: 9007199254740993}`), `9007199254740994`)
@@ -449,8 +449,8 @@ paths:
         '204': {description: empty}
 `
 	run, a := contractFixture(schema, "")
-	a.Traffic[0].Request.HTTP = &artifact.HttpMessage{Method: "GET", URL: "http://provider/orders/a%252Fb"}
-	a.Traffic[0].Response.HTTP = &artifact.HttpMessage{Status: 204}
+	a.Traffic[0].Request = &artifact.HttpMessage{Method: "GET", URL: "http://provider/orders/a%252Fb"}
+	a.Traffic[0].Response = &artifact.HttpMessage{Status: 204}
 	s := measureContractFixture(t, run, []*artifact.Artifact{a}).Specs[0]
 	requireTargetState(t, s, "request", "/parameters/path/id/schema", "enum", `"a%2Fb"`, "covered")
 	if len(s.Violations) != 0 {
@@ -468,4 +468,9 @@ func TestContractStructuredViolationsKeepConstraintAndInstance(t *testing.T) {
 	if v.Constraint != "pattern" || !strings.HasSuffix(v.SchemaLocation, "/properties/reference") || v.Evidence.InstanceLocation != "/body/reference" {
 		t.Fatalf("missing structured violation: %+v", v)
 	}
+}
+
+func loadOpenAPISpec(ref artifact.SchemaRef) (*openapiSpec, error) {
+	prepared := (contractCache{}).load(ref)
+	return prepared.spec, prepared.loadErr
 }

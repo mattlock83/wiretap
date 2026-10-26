@@ -18,8 +18,8 @@ import (
 
 func checkFixtureFlow() artifact.Flow {
 	flow := httpNormalizationFixture()
-	flow.Request.HTTP.URL = "http://127.0.0.1:1234/items/a%2Fb?q=one&a=first"
-	flow.Response.HTTP.Trailers = nil
+	flow.Request.URL = "http://127.0.0.1:1234/items/a%2Fb?q=one&a=first"
+	flow.Response.Trailers = nil
 	return flow
 }
 
@@ -135,10 +135,10 @@ func findingCode(report *Report, code string) bool {
 func TestCheckConsumerObligationsIgnoreExtraProviderExamples(t *testing.T) {
 	consumer := checkFixtureFlow()
 	provider := cloneNormalizationFlow(t, consumer)
-	provider.Request.HTTP.URL = "https://provider.example/items/a%2Fb?a=first&q=one"
-	provider.Request.HTTP.Headers["Traceparent"] = []string{"provider-trace"}
+	provider.Request.URL = "https://provider.example/items/a%2Fb?a=first&q=one"
+	provider.Request.Headers["Traceparent"] = []string{"provider-trace"}
 	extra := cloneNormalizationFlow(t, provider)
-	extra.Request.HTTP.URL = "https://provider.example/unrelated"
+	extra.Request.URL = "https://provider.example/unrelated"
 	opts := checkHTTPPair(t, []*artifact.Artifact{checkCapture(false, consumer)}, []*artifact.Artifact{checkCapture(true, provider, extra)})
 
 	t.Run("explicit pair", func(t *testing.T) {
@@ -163,9 +163,9 @@ func TestCheckDistinguishesMissingScenarioFromResponseMismatch(t *testing.T) {
 		t.Run(kind, func(t *testing.T) {
 			consumer, provider := checkFixtureFlow(), checkFixtureFlow()
 			if kind == "request" {
-				consumer.Request.HTTP.Body.Text = `{"amount":2,"items":[1,null]}`
+				consumer.Request.Body.Text = `{"amount":2,"items":[1,null]}`
 			} else {
-				consumer.Response.HTTP.Body.Text = `{"available":false,"status":"pending","items":[1,2]}`
+				consumer.Response.Body.Text = `{"available":false,"status":"pending","items":[1,2]}`
 			}
 			report := mustCheck(t, checkHTTPPair(t, []*artifact.Artifact{checkCapture(false, consumer)}, []*artifact.Artifact{checkCapture(true, provider)}))
 			if report.Compatible || report.Counts.Verified != 0 || len(report.Findings) != 1 {
@@ -184,9 +184,9 @@ func TestCheckDistinguishesMissingScenarioFromResponseMismatch(t *testing.T) {
 
 func TestCheckDoesNotSpliceResponsesAcrossProviderTests(t *testing.T) {
 	consumer, first, second := checkFixtureFlow(), checkFixtureFlow(), checkFixtureFlow()
-	consumer.Response.HTTP.Body.Text = `{"available":true,"status":"shipped"}`
-	first.Response.HTTP.Body.Text = `{"available":true,"status":"pending"}`
-	second.Response.HTTP.Body.Text = `{"available":false,"status":"shipped"}`
+	consumer.Response.Body.Text = `{"available":true,"status":"shipped"}`
+	first.Response.Body.Text = `{"available":true,"status":"pending"}`
+	second.Response.Body.Text = `{"available":false,"status":"shipped"}`
 	report := mustCheck(t, checkHTTPPair(t, []*artifact.Artifact{checkCapture(false, consumer)}, []*artifact.Artifact{checkCapture(true, first), checkCapture(true, second)}))
 	if report.Compatible || report.Counts.Mismatched != 1 || len(report.Findings[0].Provider) != 2 {
 		t.Fatalf("independent provider facts were combined into a fictional matching exchange: %+v", report)
@@ -340,7 +340,7 @@ func TestCheckDependencySelectionAndManifestPaths(t *testing.T) {
 
 func TestCheckExplicitHeaderExceptionsAndCancellation(t *testing.T) {
 	consumer, provider := checkFixtureFlow(), checkFixtureFlow()
-	provider.Request.HTTP.Headers["Authorization"] = []string{"Bearer other-dummy"}
+	provider.Request.Headers["Authorization"] = []string{"Bearer other-dummy"}
 	opts := checkHTTPPair(t, []*artifact.Artifact{checkCapture(false, consumer)}, []*artifact.Artifact{checkCapture(true, provider)})
 	if report := mustCheck(t, opts); report.Compatible || report.Counts.Uncovered != 1 {
 		t.Fatalf("application authorization was silently ignored: %+v", report)

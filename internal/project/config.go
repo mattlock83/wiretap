@@ -13,7 +13,6 @@ import (
 
 	"github.com/mattlock83/wiretap/internal/artifact"
 	"github.com/mattlock83/wiretap/internal/bundle"
-	"github.com/mattlock83/wiretap/internal/runoutput"
 
 	"gopkg.in/yaml.v3"
 )
@@ -63,7 +62,6 @@ type Config struct {
 	SUT              API                           `yaml:"sut"`
 	Dependencies     map[string]API                `yaml:"dependencies"`
 	Path             string                        `yaml:"-"`
-	Outputs          *runoutput.Config             `yaml:"outputs,omitempty"`
 }
 
 // Load discovers .wiretap.yaml in the working directory or its ancestors.
@@ -115,11 +113,6 @@ func Decode(raw []byte, path string) (*Config, error) {
 	}
 	if cfg.Version != 1 {
 		return nil, fmt.Errorf("%s: version must be 1", path)
-	}
-	if cfg.Outputs != nil {
-		if err := cfg.Outputs.Validate(); err != nil {
-			return nil, err
-		}
 	}
 	if cfg.Application != nil && strings.TrimSpace(cfg.Application.Name) == "" && strings.TrimSpace(cfg.Application.ID) == "" {
 		return nil, fmt.Errorf("%s: application requires a name or ID", path)

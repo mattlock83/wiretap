@@ -10,6 +10,8 @@ import (
 	"os"
 	"sort"
 	"strings"
+
+	"github.com/mattlock83/wiretap/internal/strictjson"
 )
 
 const (
@@ -44,75 +46,10 @@ func readProjection(path string) ([]byte, error) {
 }
 
 func decodeProjectionJSON(data []byte) (any, error) {
-	if !validJSONUnicode(data) {
-		return nil, errors.New("JSON must contain valid UTF-8 and paired Unicode surrogate escapes")
-	}
-	d := json.NewDecoder(bytes.NewReader(data))
-	d.UseNumber()
-	nodes := 0
-	var read func(int) (any, error)
-	read = func(depth int) (any, error) {
-		nodes++
-		if depth > maxProjectionDepth || nodes > maxProjectionNodes {
-			return nil, errors.New("JSON exceeds nesting or item limits")
-		}
-		token, err := d.Token()
-		if err != nil {
-			return nil, err
-		}
-		delim, compound := token.(json.Delim)
-		if !compound {
-			return token, nil
-		}
-		switch delim {
-		case '{':
-			object := map[string]any{}
-			for d.More() {
-				keyToken, err := d.Token()
-				if err != nil {
-					return nil, err
-				}
-				key, ok := keyToken.(string)
-				if !ok {
-					return nil, errors.New("JSON object key must be a string")
-				}
-				if _, exists := object[key]; exists {
-					return nil, fmt.Errorf("duplicate JSON key %q", key)
-				}
-				object[key], err = read(depth + 1)
-				if err != nil {
-					return nil, err
-				}
-			}
-			if token, err := d.Token(); err != nil || token != json.Delim('}') {
-				return nil, errors.New("invalid JSON object")
-			}
-			return object, nil
-		case '[':
-			array := []any{}
-			for d.More() {
-				value, err := read(depth + 1)
-				if err != nil {
-					return nil, err
-				}
-				array = append(array, value)
-			}
-			if token, err := d.Token(); err != nil || token != json.Delim(']') {
-				return nil, errors.New("invalid JSON array")
-			}
-			return array, nil
-		default:
-			return nil, errors.New("invalid JSON delimiter")
-		}
-	}
-	value, err := read(0)
-	if err != nil {
-		return nil, err
-	}
-	if _, err := d.Token(); err != io.EOF {
-		return nil, errors.New("projection must contain one JSON value")
-	}
-	return value, nil
+	return strictjson.Decode(data, strictjson.Options{
+		MaxDepth: maxProjectionDepth, MaxNodes: maxProjectionNodes,
+		Unicode: strictjson.RequireValidUnicode,
+	})
 }
 
 func writeCanonicalJSON(out *bytes.Buffer, value any) error {

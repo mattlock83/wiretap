@@ -1,8 +1,9 @@
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 
-const ownerKey = Symbol.for('wiretap.jest.managedOwners');
-function owners() { return globalThis[ownerKey] ??= new Map(); }
+const ownerKey = Symbol.for('wiretap.jest.managedOwner');
+function owner() { return globalThis[ownerKey]; }
+function setOwner(entry) { globalThis[ownerKey] = entry; }
 function projectKey(projectConfig) { return projectConfig.id || projectConfig.rootDir; }
 
 async function callHook(specifier, globalConfig, projectConfig) {
@@ -23,4 +24,4 @@ async function callHook(specifier, globalConfig, projectConfig) {
   return hook(globalConfig, projectConfig);
 }
 
-module.exports = { owners, projectKey, callHook };
+module.exports = { owner, setOwner, projectKey, callHook };

@@ -26,9 +26,9 @@ func TestBundleInventoryIncludesUnusedAndObservedDependencies(t *testing.T) {
 		t.Fatal(err)
 	}
 	art := &artifact.Artifact{Version: 1, TestCase: tc, Schemas: refs, Traffic: []artifact.Flow{
-		{ID: "request", Channel: "test_to_sut", Protocol: "http", Request: artifact.Message{HTTP: &artifact.HttpMessage{Method: "POST", URL: "http://sut/orders"}}},
-		{ID: "stock-call", Channel: "sut_to_dependency", AssetID: "stock", Protocol: "http", Request: artifact.Message{HTTP: &artifact.HttpMessage{Method: "GET", URL: "http://stock/items"}}},
-		{ID: "unregistered-call", Channel: "sut_to_dependency", AssetID: "unregistered", Protocol: "http", Request: artifact.Message{HTTP: &artifact.HttpMessage{Method: "GET", URL: "http://other/items"}}},
+		{ID: "request", Channel: "test_to_sut", Protocol: "http", Request: &artifact.HttpMessage{Method: "POST", URL: "http://sut/orders"}},
+		{ID: "stock-call", Channel: "sut_to_dependency", AssetID: "stock", Protocol: "http", Request: &artifact.HttpMessage{Method: "GET", URL: "http://stock/items"}},
+		{ID: "unregistered-call", Channel: "sut_to_dependency", AssetID: "unregistered", Protocol: "http", Request: &artifact.HttpMessage{Method: "GET", URL: "http://other/items"}},
 	}}
 	if _, err := w.Commit(art); err != nil {
 		t.Fatal(err)

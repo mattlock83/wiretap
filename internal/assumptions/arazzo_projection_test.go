@@ -12,7 +12,7 @@ import (
 )
 
 func arazzoCheckFlow() artifact.Flow {
-	return artifact.Flow{Protocol: "http", Request: artifact.Message{HTTP: &artifact.HttpMessage{Method: "POST", URL: "https://stock.example/items?mode=%24inputs.literal", Headers: artifact.Headers{"Content-Type": {"application/json"}, "X-Test": {"{$steps.literal}"}}, Body: &artifact.Body{Text: `{"id":18446744073709551615,"literal":"{$inputs.literal}"}`}}}, Response: artifact.Message{HTTP: &artifact.HttpMessage{Status: 200, Headers: artifact.Headers{"Content-Type": {"application/json"}}, Body: &artifact.Body{Text: `{"available":true}`}}}}
+	return artifact.Flow{Protocol: "http", Request: &artifact.HttpMessage{Method: "POST", URL: "https://stock.example/items?mode=%24inputs.literal", Headers: artifact.Headers{"Content-Type": {"application/json"}, "X-Test": {"{$steps.literal}"}}, Body: &artifact.Body{Text: `{"id":18446744073709551615,"literal":"{$inputs.literal}"}`}}, Response: &artifact.HttpMessage{Status: 200, Headers: artifact.Headers{"Content-Type": {"application/json"}}, Body: &artifact.Body{Text: `{"available":true}`}}}
 }
 
 func writeCheckArazzo(t *testing.T, root string) (string, *arazzo.Export) {
@@ -241,7 +241,7 @@ func TestVerifyArazzoRejectsMissingTamperedAndUnsafeCompanions(t *testing.T) {
 func TestVerifyArazzoAllowsUnselectedBoundariesAndOnlyReadsSelectedSources(t *testing.T) {
 	capture := checkCapture(false, arazzoCheckFlow(), arazzoCheckFlow())
 	capture.Traffic[1].Channel, capture.Traffic[1].AssetID = "test_to_sut", ""
-	capture.Traffic[1].Request.HTTP.URL = "https://shop.example/checkout"
+	capture.Traffic[1].Request.URL = "https://shop.example/checkout"
 	root := writeCheckArchive(t, consumerCheckIdentity(), "complete", capture)
 	path, export := writeCheckArazzo(t, root)
 	var ignoredSource string
@@ -278,8 +278,8 @@ func TestVerifyArazzoAllowsUnselectedBoundariesAndOnlyReadsSelectedSources(t *te
 
 func TestVerifyArazzoRejectsPartiallyRepresentedSelectedTraffic(t *testing.T) {
 	capture := checkCapture(false, arazzoCheckFlow(), arazzoCheckFlow())
-	capture.Traffic[1].Response.HTTP.Headers["Content-Type"] = []string{"text/plain"}
-	capture.Traffic[1].Response.HTTP.Body.Text = "plain response"
+	capture.Traffic[1].Response.Headers["Content-Type"] = []string{"text/plain"}
+	capture.Traffic[1].Response.Body.Text = "plain response"
 	root := writeCheckArchive(t, consumerCheckIdentity(), "complete", capture)
 	writeCheckArazzo(t, root)
 	if _, _, err := loadArazzoCheckSnapshot(t, root).verifyArazzo("", "stock"); err == nil || !strings.Contains(err.Error(), "not completely representable") {

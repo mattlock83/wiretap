@@ -7,20 +7,9 @@ import (
 	"strings"
 )
 
-// MarshalJSON encodes the protocol-specific message.
-func (m Message) MarshalJSON() ([]byte, error) {
-	if m.HTTP != nil {
-		return json.Marshal(m.HTTP)
-	}
-	return []byte("null"), nil
-}
-
 // UnmarshalJSON accepts HTTP messages and rejects unsupported message kinds.
-func (m *Message) UnmarshalJSON(data []byte) error {
-	if m == nil {
-		return nil
-	}
-	*m = Message{}
+func (m *HttpMessage) UnmarshalJSON(data []byte) error {
+	*m = HttpMessage{}
 	trimmed := bytes.TrimSpace(data)
 	if bytes.Equal(trimmed, []byte("null")) || len(trimmed) == 0 {
 		return nil
@@ -37,11 +26,12 @@ func (m *Message) UnmarshalJSON(data []byte) error {
 			}
 		}
 	}
-	var msg HttpMessage
+	type plain HttpMessage
+	var msg plain
 	if err := json.Unmarshal(trimmed, &msg); err != nil {
 		return err
 	}
-	m.HTTP = &msg
+	*m = HttpMessage(msg)
 	return nil
 }
 

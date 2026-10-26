@@ -153,14 +153,19 @@ class Runtime {
   }
 }
 
-async function startCapture(config = {}) {
+function attachCapture(config = {}) {
   if (!config || typeof config !== "object" || Array.isArray(config)) throw new Error("startCapture config must be an object");
   rejectRemovedRedactions(config);
   tracing.initializeTracing({ instrumentation: config.instrumentation !== false });
   capturePayload(config);
   const client = new CoreClient({ baseUrl: config.baseUrl, timeoutMs: config.timeoutMs });
-  await client.startRun({ proxy: normalizeProxyConfig(config), application: config.application });
   return new Runtime(client, config);
 }
 
-module.exports = { startCapture, initializeTracing: tracing.initializeTracing };
+async function startCapture(config = {}) {
+  const runtime = attachCapture(config);
+  await runtime.client.startRun({ proxy: normalizeProxyConfig(config), application: config.application });
+  return runtime;
+}
+
+module.exports = { startCapture, attachCapture, initializeTracing: tracing.initializeTracing };

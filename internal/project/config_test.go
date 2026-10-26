@@ -148,7 +148,8 @@ func TestRemovedRuntimeAndExportOptionsAreRejected(t *testing.T) {
 		{"upstream TLS", "sut: {schema_required: false, upstream_tls: {ca_file: server.crt}}", "field upstream_tls"},
 		{"schema source", "sut: {schema: {source: reflection}}", "cannot unmarshal"},
 		{"null schema", "sut: {schema: null}", "explicit null"},
-		{"Postman output", "sut: {schema_required: false}\noutputs: {postman: true}", "postman"},
+		{"Postman output", "sut: {schema_required: false}\noutputs: {postman: true}", "field outputs"},
+		{"output selection", "sut: {schema_required: false}\noutputs: {coverage: [json]}", "field outputs"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := Decode([]byte("version: 1\n"+tc.body+"\n"), filepath.Join(t.TempDir(), ".wiretap.yaml"))

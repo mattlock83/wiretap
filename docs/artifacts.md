@@ -4,16 +4,16 @@ Wiretap writes one portable directory per run under `./artifacts` by default.
 Set `output_dir` in `.wiretap.yaml` or `WIRETAP_OUTPUT_DIR` to choose another
 parent directory. SDK/API responses return the exact `bundle_path`.
 
-Each test teardown commits an immutable JSON recording. The Jest integration finalizes the run and configured exports after test
+Each test teardown commits an immutable JSON recording. The Jest integration finalizes the run and its exports after test
 cleanup, then stops its Wiretap process. With a project-owned runtime, one suite owner calls
 `/v1/finishRun` after every worker finishes. Keep the complete directory when sharing it or
 uploading it to CI so its contracts and payload references remain valid. Managed
 runs also write `last-run.json` with exact archive/export paths and a bounded
 `wiretap.log` inside each run directory. This isolates receipts for concurrent
-Jest runs. The SDK also writes an advisory latest receipt in the output parent; use the archive-local receipt
-when selecting a particular run. Preserve the complete run directory.
+Jest runs. Use the archive-local receipt when selecting a particular run.
+Preserve the complete run directory.
 
-After successful finalization, Jest prints the archive and exact configured
+After successful finalization, Jest prints the archive and exact
 coverage and Arazzo paths from the completion receipt to stderr.
 Failed tests keep their original
 outcome even when capture and export finish successfully.
@@ -238,8 +238,8 @@ type or a matching frozen OpenAPI operation.
 Non-JSON HTTP traffic is excluded. A run with no eligible workflows
 does not produce an automatic Arazzo output.
 
-Select `outputs.arazzo: true` to generate `exports/arazzo/arazzo.json` at suite
-finalization. `exports/result.json` returns its exact path in `arazzo` and source
+Suite finalization automatically generates `exports/arazzo/arazzo.json` when
+eligible traffic is present. `exports/result.json` returns its exact path in `arazzo` and source
 paths in `arazzo_files`. `--format all` includes Arazzo when eligible JSON/REST
 traffic is present. Export errors are reported independently from coverage errors.
 
@@ -259,14 +259,9 @@ selected boundary cannot be silently excluded from a passing check. See
 [Arazzo check inputs](assumption-checks.md#arazzo-check-inputs)
 for explicit paths and run-set usage.
 
-Automatic exports default to JSON/text/HTML coverage and eligible Arazzo workflows.
-Configure them explicitly with:
-
-```yaml
-outputs:
-  coverage: [json, text, html]
-  arazzo: true
-```
+Automatic exports always include JSON and HTML coverage plus eligible Arazzo
+workflows. There are no output-selection settings. Generate text explicitly with
+`wiretap report --bundle <run> --format text`.
 
 Coverage and Arazzo errors remain separate in `exports/result.json`; successful
 coverage paths remain available when Arazzo export fails.

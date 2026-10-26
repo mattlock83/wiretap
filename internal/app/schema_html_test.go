@@ -33,16 +33,16 @@ paths:
 				Schemas:  []artifact.SchemaRef{ref},
 				Traffic: []artifact.Flow{{
 					ID: "flow", Protocol: "http", Channel: "test_to_sut",
-					Request: artifact.Message{HTTP: &artifact.HttpMessage{
+					Request: &artifact.HttpMessage{
 						Method: "DELETE", URL: "http://provider/properties/example",
-					}},
-					Response: artifact.Message{HTTP: &artifact.HttpMessage{
+					},
+					Response: &artifact.HttpMessage{
 						Status: 200, Headers: artifact.Headers{"Content-Type": {"text/html; charset=utf-8"}},
 						Body: &artifact.Body{Text: tc.body},
-					}},
+					},
 				}},
 			}
-			applySchemaValidation(capture)
+			validateTestCapture(t, capture)
 			if capture.TestCase.Status != "pass" || capture.SchemaValidation.Status != tc.want {
 				t.Fatalf("test status=%s validation=%+v", capture.TestCase.Status, capture.SchemaValidation)
 			}

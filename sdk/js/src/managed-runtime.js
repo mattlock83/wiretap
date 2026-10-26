@@ -54,6 +54,7 @@ function abortError(signal) {
 
 /** Own one local Wiretap process. The application and test runner remain caller-owned. */
 async function startManagedRuntime(options = {}) {
+  if (Object.hasOwn(options, 'outputs')) throw new Error('outputs configuration was removed; automatic exports always include JSON, HTML and Arazzo');
   const cwd = path.resolve(options.cwd || process.cwd());
   const startupTimeoutMs = duration(options.startupTimeoutMs, 30000, 'startupTimeoutMs');
   const timeoutMs = duration(options.timeoutMs, 30000, 'timeoutMs');
@@ -104,7 +105,7 @@ async function startManagedRuntime(options = {}) {
       const fail = error => { if (failure) retainCleanupError(failure, error); else failure = error; };
       try {
         if (runtimeInfo) {
-          receipt = await client.finishRun({ outputs: options.outputs });
+          receipt = await client.finishRun();
           if (receipt?.status !== 'complete' || !sameRun(receipt, runtimeInfo)) {
             throw new Error('Wiretap finishRun returned an incomplete or mismatched run receipt');
           }
@@ -120,13 +121,6 @@ async function startManagedRuntime(options = {}) {
           if (receipt !== undefined) {
             const data = `${JSON.stringify(receipt, null, 2)}\n`;
             await writeArtifact(artifactDir, 'last-run.json', data);
-            // Compatibility discovery snapshot only. Each run's authoritative
-            // receipt and log stay inside its own archive and cannot collide.
-            if (sameRun(receipt, runtimeInfo)) {
-              const latestDir = outputDir || path.dirname(artifactDir);
-              await fs.mkdir(latestDir, { recursive: true });
-              await writeArtifact(latestDir, 'last-run.json', data);
-            }
           }
         }
       } catch (error) { fail(error); }

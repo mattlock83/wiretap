@@ -38,8 +38,8 @@ paths:
 		}
 		capture := &artifact.Artifact{Version: 1, TestCase: attempt, Schemas: frozen, Traffic: []artifact.Flow{{
 			ID: "flow-1", Protocol: "http", Channel: channel, AssetID: assetID,
-			Request:  artifact.Message{HTTP: &artifact.HttpMessage{Method: "GET", URL: "http://inventory/items"}},
-			Response: artifact.Message{HTTP: &artifact.HttpMessage{Status: 200, Body: &artifact.Body{Text: `{"available":true}`}}},
+			Request:  &artifact.HttpMessage{Method: "GET", URL: "http://inventory/items"},
+			Response: &artifact.HttpMessage{Status: 200, Body: &artifact.Body{Text: `{"available":true}`}},
 		}}}
 		if _, err := writer.Commit(capture); err != nil {
 			t.Fatal(err)

@@ -75,7 +75,7 @@ func TestPublicReportSchemas(t *testing.T) {
 		if err := writer.Configure(identity); err != nil {
 			t.Fatal(err)
 		}
-		capture := &artifact.Artifact{Version: 1, TestCase: artifact.TestCase{ID: "attempt", Name: "test", StartedAt: time.Now(), Status: "pass"}, Traffic: []artifact.Flow{{ID: "flow", Protocol: "http", Channel: channel, AssetID: asset, Request: artifact.Message{HTTP: &artifact.HttpMessage{Method: "GET", URL: "http://example/items"}}, Response: artifact.Message{HTTP: &artifact.HttpMessage{Status: 200, Headers: artifact.Headers{"Content-Type": {"application/json"}}, Body: &artifact.Body{Text: `{}`}}}}}}
+		capture := &artifact.Artifact{Version: 1, TestCase: artifact.TestCase{ID: "attempt", Name: "test", StartedAt: time.Now(), Status: "pass"}, Traffic: []artifact.Flow{{ID: "flow", Protocol: "http", Channel: channel, AssetID: asset, Request: &artifact.HttpMessage{Method: "GET", URL: "http://example/items"}, Response: &artifact.HttpMessage{Status: 200, Headers: artifact.Headers{"Content-Type": {"application/json"}}, Body: &artifact.Body{Text: `{}`}}}}}
 		schemas, err := writer.Register(capture.TestCase, nil)
 		if err != nil {
 			t.Fatal(err)
@@ -99,10 +99,10 @@ func TestPublicReportSchemas(t *testing.T) {
 		}
 		validate(t, "bundle-evidence", attempt)
 		// Transport failures still belong to the HTTP archive, even without a reply.
-		attempt.Capture.Traffic[0].Response = artifact.Message{}
+		attempt.Capture.Traffic[0].Response = nil
 		attempt.Capture.Traffic[0].TransportError = "connection reset"
 		validate(t, "bundle-evidence", attempt)
-		result, err := runoutput.Generate(t.Context(), writer.Path(), runoutput.Defaults())
+		result, err := runoutput.Generate(t.Context(), writer.Path())
 		if err != nil {
 			t.Fatal(err)
 		}

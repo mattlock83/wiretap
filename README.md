@@ -44,7 +44,6 @@ Point the shared client at capture, for example `supertest(process.env.WIRETAP_S
 version: 1
 application: {id: orders-app, name: Orders}
 output_dir: artifacts/wiretap
-outputs: {coverage: [json, text, html], arazzo: true}
 sut:
   id: orders
   kind: service
@@ -60,14 +59,13 @@ For parallel tests sharing an application, propagate W3C trace context through i
 | Output | Purpose |
 | --- | --- |
 | `bundle.json`, `tests/`, `contracts/`, `payloads/` | Captured requests/responses, final outcomes, validation diagnostics and frozen contracts. |
-| `exports/coverage.txt` | Compact outcomes, exercised operations, gaps and unknowns. |
 | `exports/coverage.json` | Detailed operation and contract-condition evidence. |
 | `exports/coverage.html` | Offline dashboard with API coverage, gaps and linked test runs. |
 | `exports/arazzo/arazzo.json` and companions | JSON/REST workflows with portable OpenAPI sources. |
 | `exports/result.json` | Exact export paths and errors. |
 | `last-run.json`, `wiretap.log` inside the run | Managed completion receipt and bounded runtime log. |
 
-Retain the complete run directory. Use the archive path returned by the adapter; the output root's latest receipt is advisory when runs overlap. Reports and exports also work offline:
+Retain the complete run directory. Use the archive path returned and printed by the adapter; its receipt stays inside that run. Reports and exports also work offline:
 
 ```sh
 wiretap report --bundle ./artifacts/wiretap/run-... --format text

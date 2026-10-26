@@ -29,7 +29,6 @@ Put `.wiretap.yaml` and your API contract in the Jest project:
 version: 1
 application: {id: my-api}
 output_dir: artifacts/wiretap
-outputs: {coverage: [json, text, html], arazzo: true}
 sut:
   id: my-api
   kind: service
@@ -67,15 +66,15 @@ Jest environment used by the adapter.
 After successful finalization, the adapter prints exact archive, coverage and
 Arazzo paths to stderr. Retain the complete output directory in CI on success
 and failure. Each unique run contains its canonical `last-run.json` receipt,
-bounded `wiretap.log`, captured traffic, frozen contracts and exports. The
-output-root receipt is an advisory latest snapshot; concurrent runs keep their
-own records. Read `bundle_path`, `outputs.coverage`, `outputs.arazzo` and
+bounded `wiretap.log`, captured traffic, frozen contracts and exports. Concurrent
+runs keep independent records. Read `bundle_path`, `outputs.coverage`, `outputs.arazzo` and
 `outputs.arazzo_files` from the receipt for exact artifact paths.
 
-Coverage defaults to JSON, text and HTML. Open `outputs.coverage.html` directly
+Every completed run exports JSON and HTML coverage plus eligible Arazzo workflows.
+Open `outputs.coverage.html` directly
 in a browser for API coverage, condition gaps and linked test runs. The dashboard
-works offline; no report server is needed. Set the `withWiretap` option `outputs.coverage` or
-project `outputs.coverage` to select formats.
+works offline; no report server is needed. To print a text summary later, use
+`wiretap report --bundle <archive> --format text`.
 
 The owned process keeps a stdin lifeline to Wiretap. If Jest dies, EOF asks
 Wiretap to preserve an interrupted archive. Abrupt termination cannot complete

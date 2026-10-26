@@ -35,7 +35,7 @@ func TestGeneratedDocumentsConformToOfficialArazzoSchema(t *testing.T) {
 		if frozen {
 			name = "frozen"
 			refs = []artifact.SchemaRef{{ID: "items", Role: "sut", Type: "openapi", Source: artifact.SchemaSource{Type: "inline", Content: frozenSchema}}}
-			flow.Request.HTTP.URL = "http://local.test/v2/items/42?limit=2"
+			flow.Request.URL = "http://local.test/v2/items/42?limit=2"
 		}
 		t.Run(name, func(t *testing.T) {
 			root := captureArchive(t, refs, &artifact.Artifact{TestCase: artifact.TestCase{ID: "attempt", Name: "read item"}, Traffic: []artifact.Flow{flow}})

@@ -1,9 +1,10 @@
 function validateCaptureOptions(options) {
   if (Object.hasOwn(options, 'testDefaults')) throw new Error('Pass capture settings directly; testDefaults was removed');
-  if (Object.hasOwn(options, 'outputs')) throw new Error('Set outputs in the withWiretap options or .wiretap.yaml');
+  if (Object.hasOwn(options, 'outputs')) throw new Error('outputs configuration was removed; automatic exports always include JSON, HTML and Arazzo');
 }
 
 function withWiretap(config = {}, options = {}) {
+  validateCaptureOptions(options);
   if (config.projects) throw new Error('Managed Wiretap supports a single Jest project; run projects separately');
   if (config.watch || config.watchAll) throw new Error('Managed Wiretap capture requires a single Jest run; disable watch mode');
   const environment = require.resolve('../jest-environment');

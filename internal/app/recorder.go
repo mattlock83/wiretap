@@ -5,19 +5,17 @@ import (
 	"compress/flate"
 	"compress/gzip"
 	"compress/zlib"
-	"crypto/sha256"
 	"encoding/base64"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 	"sync"
 	"time"
 	"unicode/utf8"
 
 	"github.com/mattlock83/wiretap/internal/artifact"
+	"github.com/mattlock83/wiretap/internal/bundle"
 	"github.com/mattlock83/wiretap/internal/capture"
 	"github.com/mattlock83/wiretap/internal/proxy"
 	"go.opentelemetry.io/otel/trace"
@@ -35,7 +33,7 @@ type TestCaseStore struct {
 
 // CaptureSink stores registered attempts in a runtime-owned run.
 type CaptureSink interface {
-	Register(artifact.TestCase, []artifact.SchemaRef) ([]artifact.SchemaRef, error)
+	RegisterPrepared(artifact.TestCase, []artifact.SchemaRef) ([]bundle.PreparedSchema, error)
 	Commit(*artifact.Artifact) (string, error)
 }
 
@@ -46,11 +44,15 @@ func (s *TestCaseStore) RegisterActive() error {
 		return errors.New("no active test case")
 	}
 	tc := artifact.TestCase{Identity: s.active.identity, ID: s.active.id, Name: s.active.name, StartedAt: s.active.startedAt, Tags: s.active.tags, Meta: s.active.meta}
-	frozen, err := s.sink.Register(tc, s.active.schemas)
+	prepared, err := s.sink.RegisterPrepared(tc, s.active.schemas)
 	if err != nil {
 		return err
 	}
-	s.active.schemas = frozen
+	s.active.specs = preparedValidation(prepared)
+	s.active.schemas = make([]artifact.SchemaRef, 0, len(prepared))
+	for _, schema := range prepared {
+		s.active.schemas = append(s.active.schemas, schema.Ref)
+	}
 	return nil
 }
 
@@ -73,6 +75,7 @@ type testCaseState struct {
 	sutBaseURL         string
 	flows              []artifact.Flow
 	schemas            []artifact.SchemaRef
+	specs              []openapiSpec
 }
 
 func NewTestCaseStore(sink CaptureSink, maxBodyBytes int64) *TestCaseStore {
@@ -171,7 +174,7 @@ func (s *TestCaseStore) FinishCase(status string, env *artifact.Environment) (*a
 		art.TestCase.RootSpanID = state.root.SpanID().String()
 	}
 
-	applySchemaValidation(art)
+	applySchemaValidation(art, state.specs)
 
 	path, err := s.sink.Commit(art)
 	if err != nil {
@@ -194,41 +197,11 @@ func (s *TestCaseStore) AddSchema(ref artifact.SchemaRef) artifact.SchemaRef {
 		s.schemaSeq++
 		ref.ID = fmt.Sprintf("schema-%d", s.schemaSeq)
 	}
-	fillSchemaSHA(&ref)
 	if ref.AssetName == "" {
 		ref.AssetName = ref.ID
 	}
-	if ref.AssetSHA == "" {
-		ref.AssetSHA = ref.Source.SHA256
-	}
 	s.active.schemas = append(s.active.schemas, ref)
 	return ref
-}
-
-// fillSchemaSHA computes the content hash for file/inline schemas when the
-// caller did not provide one, making attached schema versions identifiable.
-func fillSchemaSHA(ref *artifact.SchemaRef) {
-	if ref == nil || strings.TrimSpace(ref.Source.SHA256) != "" {
-		return
-	}
-	switch strings.ToLower(strings.TrimSpace(ref.Source.Type)) {
-	case "inline":
-		if content := ref.Source.Content; content != "" {
-			sum := sha256.Sum256([]byte(content))
-			ref.Source.SHA256 = hex.EncodeToString(sum[:])
-		}
-	case "file":
-		path := strings.TrimSpace(ref.Source.Path)
-		if path == "" {
-			return
-		}
-		data, err := os.ReadFile(resolvePath(path))
-		if err != nil {
-			return
-		}
-		sum := sha256.Sum256(data)
-		ref.Source.SHA256 = hex.EncodeToString(sum[:])
-	}
 }
 
 func (s *TestCaseStore) RecordHTTP(exchange proxy.HTTPExchange) {
@@ -272,7 +245,7 @@ func (s *TestCaseStore) flowFromProxy(exchange proxy.HTTPExchange) artifact.Flow
 		StartedAt:      exchange.StartedAt,
 		DurationMS:     exchange.Duration.Milliseconds(),
 		TransportError: exchange.Error,
-		Request: artifact.Message{HTTP: &artifact.HttpMessage{
+		Request: &artifact.HttpMessage{
 			Method:   exchange.Method,
 			URL:      exchange.URL,
 			Headers:  reqHeaders,
@@ -282,8 +255,8 @@ func (s *TestCaseStore) flowFromProxy(exchange proxy.HTTPExchange) artifact.Flow
 				exchange.RequestBodyBytes,
 				exchange.RequestBodyTruncated,
 			), s.maxBodyBytes),
-		}},
-		Response: artifact.Message{HTTP: &artifact.HttpMessage{
+		},
+		Response: &artifact.HttpMessage{
 			Status:   exchange.Status,
 			Headers:  respHeaders,
 			Trailers: cloneHeaders(exchange.ResponseTrailers),
@@ -292,7 +265,7 @@ func (s *TestCaseStore) flowFromProxy(exchange proxy.HTTPExchange) artifact.Flow
 				exchange.ResponseBodyBytes,
 				exchange.ResponseBodyTruncated,
 			), s.maxBodyBytes),
-		}},
+		},
 	}
 }
 

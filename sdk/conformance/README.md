@@ -20,9 +20,8 @@ successful finalization must name the same run and archive and say `complete`.
 An HTTP export error may retain available output paths, but remains a failure.
 
 Each run owns `<bundle_path>/last-run.json` and a bounded `wiretap.log` in that
-same directory. A shared output-root `last-run.json` may remain for compatibility
-as an advisory latest snapshot; it can race with other owners and must never
-replace the archive-local record. A forced process kill or unsuccessful child
+same directory. The runner prints the exact archive path; there is no shared
+output-root receipt. A forced process kill or unsuccessful child
 exit fails cleanup even if an export receipt was already returned.
 
 Adapters preserve the runner's original test failure and report secondary

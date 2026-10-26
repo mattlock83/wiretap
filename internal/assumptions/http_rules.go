@@ -1,7 +1,6 @@
 package assumptions
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -11,6 +10,7 @@ import (
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/mattlock83/wiretap/internal/artifact"
+	"github.com/mattlock83/wiretap/internal/strictjson"
 )
 
 type contractCheckProblem struct {
@@ -109,7 +109,7 @@ func (c *httpContract) rules(flow artifact.Flow) (string, error) {
 		if ref.Value == nil {
 			return "", fmt.Errorf("unresolved request body")
 		}
-		body, err := p.content(ref.Value.Content, httpHeader(flow.Request.HTTP.Headers, "Content-Type"), "contract/request/body")
+		body, err := p.content(ref.Value.Content, httpHeader(flow.Request.Headers, "Content-Type"), "contract/request/body")
 		if err != nil {
 			return "", err
 		}
@@ -120,12 +120,12 @@ func (c *httpContract) rules(flow artifact.Flow) (string, error) {
 	if responses == nil {
 		return "", fmt.Errorf("operation has no declared responses")
 	}
-	ref := responses.Status(flow.Response.HTTP.Status)
+	ref := responses.Status(flow.Response.Status)
 	if ref == nil {
 		ref = responses.Default()
 	}
 	if ref == nil || ref.Value == nil {
-		return "", fmt.Errorf("response status %d is not declared", flow.Response.HTTP.Status)
+		return "", fmt.Errorf("response status %d is not declared", flow.Response.Status)
 	}
 	headers := map[string]any{}
 	for _, name := range sortedRuleKeys(ref.Value.Headers) {
@@ -145,7 +145,7 @@ func (c *httpContract) rules(flow artifact.Flow) (string, error) {
 		headers[param.Name] = value
 	}
 	response["headers"] = headers
-	body, err := p.content(ref.Value.Content, httpHeader(flow.Response.HTTP.Headers, "Content-Type"), "contract/response/body")
+	body, err := p.content(ref.Value.Content, httpHeader(flow.Response.Headers, "Content-Type"), "contract/response/body")
 	if err != nil {
 		return "", err
 	}
@@ -264,13 +264,13 @@ func (p *ruleProjector) schema(ref *openapi3.SchemaRef, path string, depth int) 
 			if err != nil {
 				return nil, err
 			}
-			decoder := json.NewDecoder(bytes.NewReader(data))
-			decoder.UseNumber()
-			value, err := normalizeJSONValue(decoder, 0)
+			value, err := strictjson.Decode(data, strictjson.Options{
+				MaxDepth: 256, MaxNodes: len(data) + 1,
+			})
 			if err != nil {
 				return nil, err
 			}
-			canonical, err := json.Marshal(value)
+			canonical, err := json.Marshal(normalizeNumbers(value))
 			if err != nil {
 				return nil, err
 			}

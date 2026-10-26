@@ -63,7 +63,7 @@ func TestObservedSourceRetainsRequestMediaTypes(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, media := range []string{"application/json", "application/vnd.orders+json"} {
-		flow := artifact.Flow{Request: artifact.Message{HTTP: &artifact.HttpMessage{Method: "POST", Headers: artifact.Headers{"Content-Type": {media}}, Body: &artifact.Body{Text: `{}`}}}, Response: artifact.Message{HTTP: &artifact.HttpMessage{Status: 200}}}
+		flow := artifact.Flow{Request: &artifact.HttpMessage{Method: "POST", Headers: artifact.Headers{"Content-Type": {media}}, Body: &artifact.Body{Text: `{}`}}, Response: &artifact.HttpMessage{Status: 200}}
 		if err := observedStep(source, flow, requestURL, &Step{}, func(any) string { return "$inputs.body" }); err != nil {
 			t.Fatal(err)
 		}
@@ -77,7 +77,7 @@ func TestObservedSourceRetainsRequestMediaTypes(t *testing.T) {
 }
 
 func TestStepRejectsAmbiguousContentType(t *testing.T) {
-	flow := artifact.Flow{Request: artifact.Message{HTTP: &artifact.HttpMessage{URL: "https://example.test/orders", Headers: artifact.Headers{"Content-Type": {"application/json"}, "content-type": {"text/plain"}}}}}
+	flow := artifact.Flow{Request: &artifact.HttpMessage{URL: "https://example.test/orders", Headers: artifact.Headers{"Content-Type": {"application/json"}, "content-type": {"text/plain"}}}}
 	_, _, err := makeStep(nil, nil, flow, nil, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "Content-Type") {
 		t.Fatalf("wanted ambiguous Content-Type failure, got %v", err)

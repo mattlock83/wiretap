@@ -69,8 +69,7 @@ async function fixture(t, behavior = {}) {
 
 test('managed runtime uses owned ephemeral listeners and returns the exact once-only receipt', async t => {
   const f = await fixture(t);
-  const outputs = { coverage: ['text'], arazzo: true };
-  const runtime = await startManagedRuntime({ binary: '/custom/wiretap', config: '.wiretap.yaml', cwd: f.outputDir, outputDir: f.outputDir, outputs });
+  const runtime = await startManagedRuntime({ binary: '/custom/wiretap', config: '.wiretap.yaml', cwd: f.outputDir, outputDir: f.outputDir });
   assert.equal(runtime.baseUrl, 'http://127.0.0.1:12345/');
   assert.equal(runtime.sutUrl, 'http://127.0.0.1:23456');
   assert.equal(f.spawned.binary, '/custom/wiretap');
@@ -84,10 +83,10 @@ test('managed runtime uses owned ephemeral listeners and returns the exact once-
   assert.equal(runtime.close(), first);
   assert.deepEqual(await first, f.receipt);
   assert.deepEqual(f.calls.map(c => c.path), ['/v1/startRun', '/v1/finishRun']);
-  assert.deepEqual(f.calls.at(-1).body.outputs, outputs);
+  assert.deepEqual(f.calls.at(-1).body, {});
   assert.equal(f.spawned.child.stdin.destroyed, true);
   assert.deepEqual(f.signals, []);
-  assert.deepEqual(JSON.parse(await fs.readFile(path.join(f.outputDir, 'last-run.json'))), f.receipt);
+  await assert.rejects(fs.stat(path.join(f.outputDir, 'last-run.json')), { code: 'ENOENT' });
   assert.deepEqual(JSON.parse(await fs.readFile(path.join(f.receipt.bundle_path, 'last-run.json'))), f.receipt);
   await fs.access(path.join(f.receipt.bundle_path, 'wiretap.log'));
   await assert.rejects(fs.stat(path.join(f.outputDir, 'wiretap.log')), { code: 'ENOENT' });
@@ -104,7 +103,7 @@ test('export failure preserves partial receipt and force kills a child that igno
   });
   assert.equal(f.spawned.child.stdin.destroyed, true);
   assert.deepEqual(f.signals, ['SIGKILL']);
-  assert.equal(JSON.parse(await fs.readFile(path.join(f.outputDir, 'last-run.json'))).error, 'export failed');
+  await assert.rejects(fs.stat(path.join(f.outputDir, 'last-run.json')), { code: 'ENOENT' });
   assert.equal(JSON.parse(await fs.readFile(path.join(f.receipt.bundle_path, 'last-run.json'))).error, 'export failed');
 });
 
@@ -120,8 +119,7 @@ test('concurrent owners retain independent canonical receipts and logs', async t
     assert.deepEqual(JSON.parse(await fs.readFile(path.join(receipt.bundle_path, 'last-run.json'))), receipt);
     assert.equal(await fs.readFile(path.join(receipt.bundle_path, 'wiretap.log'), 'utf8'), index ? 'second owner log' : 'first owner log');
   }
-  const latest = JSON.parse(await fs.readFile(path.join(f.outputDir, 'last-run.json')));
-  assert.ok(f.receipts.some(receipt => receipt.run_id === latest.run_id));
+  await assert.rejects(fs.stat(path.join(f.outputDir, 'last-run.json')), { code: 'ENOENT' });
 });
 
 test('owner.receipt_isolation: process log retains at most 64 KiB of bytes', async t => {
@@ -225,6 +223,27 @@ test('withWiretap preserves the existing runner configuration and guards unsafe 
   assert.equal(withWiretap({ maxWorkers: 2 }, { explicitSession: true }).maxWorkers, 2);
   assert.throws(() => withWiretap({ testEnvironment: 'jsdom' }), /Node test environment/);
   assert.throws(() => withWiretap({ watch: true }), /single Jest run/);
+});
+
+test('removed output options fail before spawning a runtime', async t => {
+  const f = await fixture(t);
+  await assert.rejects(startManagedRuntime({ outputs: {} }), /automatic exports always/);
+  assert.equal(f.spawned, undefined);
+});
+
+test('a managed owner is isolated by project key and finalizes once', async t => {
+  const f = await fixture(t);
+  t.mock.method(process.stderr, 'write', () => true);
+  const config = { ...withWiretap({ rootDir: f.outputDir }), id: 'owner-project' };
+  const other = { ...config, id: 'other-project' };
+  t.after(() => teardown({}, config));
+  await setup({ maxWorkers: 1 }, config);
+  await assert.rejects(setup({ maxWorkers: 1 }, other), /one Jest project per process/);
+  await teardown({}, other);
+  assert.equal(f.spawned.child.stdin.destroyed, false, 'another project cannot close the owner');
+  await Promise.all([teardown({}, config), teardown({}, config)]);
+  assert.deepEqual(f.calls.map(call => call.path), ['/v1/startRun', '/v1/finishRun']);
+  assert.equal(f.spawned.child.stdin.destroyed, true);
 });
 
 test('Jest composes existing hooks, restores environment and stops Wiretap after export failure', async t => {

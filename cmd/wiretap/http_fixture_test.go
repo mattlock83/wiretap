@@ -27,13 +27,13 @@ func httpMockBundleFixture(t *testing.T) string {
 			channel, host = "test_to_sut", "sut"
 		}
 		return artifact.Flow{ID: id, AssetID: asset, Protocol: "http", Channel: channel, StartedAt: start.Add(offset),
-			Request:  artifact.Message{HTTP: &artifact.HttpMessage{Method: "GET", URL: "http://" + host + path}},
-			Response: artifact.Message{HTTP: &artifact.HttpMessage{Status: status, Body: &artifact.Body{Text: `{"asset":"` + asset + `"}`}}},
+			Request:  &artifact.HttpMessage{Method: "GET", URL: "http://" + host + path},
+			Response: &artifact.HttpMessage{Status: status, Body: &artifact.Body{Text: `{"asset":"` + asset + `"}`}},
 		}
 	}
 	first := flow("z-earlier", "inventory", "/first", 201, time.Second)
-	first.Request.HTTP.Method = "POST"
-	first.Request.HTTP.Body = &artifact.Body{Text: `{"sku":"one"}`}
+	first.Request.Method = "POST"
+	first.Request.Body = &artifact.Body{Text: `{"sku":"one"}`}
 	schemas := []artifact.SchemaRef{
 		{ID: "inventory-api", Role: "dependency", AssetID: "inventory", AssetName: "Inventory", Type: "openapi", Source: artifact.SchemaSource{Type: "omitted"}},
 		{ID: "catalog-api", Role: "dependency", AssetID: "catalog", AssetName: "Catalog", Type: "openapi", Source: artifact.SchemaSource{Type: "omitted"}},

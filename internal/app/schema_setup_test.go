@@ -4,10 +4,13 @@ import (
 	"bytes"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/mattlock83/wiretap/internal/artifact"
+	"github.com/mattlock83/wiretap/internal/bundle"
 )
 
 func TestSchemaSetupRequiresSpecsUnlessExplicitlyOmitted(t *testing.T) {
@@ -44,6 +47,9 @@ paths: {}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			err := validateSchemaSetup(test.schemas, test.allowMissing)
+			if err == nil {
+				_, err = prepareTestSchemas(t, test.schemas)
+			}
 			if test.want == "" {
 				if err != nil {
 					t.Fatalf("validate schema setup: %v", err)
@@ -88,5 +94,57 @@ func TestRemovedControlOptionsAreRejectedBeforeRunStarts(t *testing.T) {
 				t.Fatal("unsupported RPC started capture")
 			}
 		})
+	}
+}
+
+func prepareTestSchemas(t *testing.T, refs []artifact.SchemaRef) ([]bundle.PreparedSchema, error) {
+	t.Helper()
+	writer, err := bundle.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return writer.RegisterPrepared(artifact.TestCase{ID: "schema-validation"}, refs)
+}
+
+func validateTestCapture(t *testing.T, capture *artifact.Artifact) {
+	t.Helper()
+	prepared, err := prepareTestSchemas(t, capture.Schemas)
+	if err != nil {
+		t.Fatal(err)
+	}
+	capture.Schemas = nil
+	for _, schema := range prepared {
+		capture.Schemas = append(capture.Schemas, schema.Ref)
+	}
+	applySchemaValidation(capture, preparedValidation(prepared))
+}
+
+func TestSetupReadsEachContractOnceAndReusesItForValidation(t *testing.T) {
+	var reads atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reads.Add(1)
+		_, _ = w.Write([]byte(negativeRequestSpec))
+	}))
+	defer server.Close()
+	control, instance := dependencyCaptureRuntime(t)
+	for attempt := range 2 {
+		session := postDependencyJSON(t, control.URL, "/v1/setupTest", map[string]any{
+			"name":    "prepared contract",
+			"schemas": []artifact.SchemaRef{{ID: "orders", Type: "openapi", Source: artifact.SchemaSource{Type: "url", URL: server.URL}}},
+		})
+		if got := reads.Load(); got != int32(attempt+1) {
+			t.Fatalf("setup read contract %d times for %d attempts", got, attempt+1)
+		}
+		instance.sessionsMu.Lock()
+		store := instance.sessions[session["session_id"].(string)].Store
+		instance.sessionsMu.Unlock()
+		store.mu.Lock()
+		store.active.flows = []artifact.Flow{{ID: "health", Protocol: "http", Channel: "test_to_sut", Request: &artifact.HttpMessage{Method: "GET", URL: "http://provider/health"}, Response: &artifact.HttpMessage{Status: 200}}}
+		store.mu.Unlock()
+		finished := postDependencyJSON(t, control.URL, "/v1/teardownTest", map[string]any{"session_id": session["session_id"], "status": "pass"})
+		capture := dependencyArtifact(t, finished)
+		if capture.SchemaValidation.Status != "pass" || reads.Load() != int32(attempt+1) {
+			t.Fatal("finish did not validate against its already prepared contract")
+		}
 	}
 }

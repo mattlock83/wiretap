@@ -103,8 +103,8 @@ func TestRunFinalizationVerifiesRawArchive(t *testing.T) {
 				}
 				capture := &artifact.Artifact{Version: 2, TestCase: testcase, Schemas: schemas, Traffic: []artifact.Flow{{
 					ID: "flow-1", Protocol: "http", Channel: "test_to_sut",
-					Request:  artifact.Message{HTTP: &artifact.HttpMessage{Method: "GET", URL: "http://sut.test/"}},
-					Response: artifact.Message{HTTP: &artifact.HttpMessage{Status: 200, Body: &artifact.Body{Text: "retained payload"}}},
+					Request:  &artifact.HttpMessage{Method: "GET", URL: "http://sut.test/"},
+					Response: &artifact.HttpMessage{Status: 200, Body: &artifact.Body{Text: "retained payload"}},
 				}}}
 				if _, err := writer.Commit(capture); err != nil {
 					t.Fatal(err)
@@ -151,7 +151,7 @@ func TestRunFinalizationVerifiesRawArchive(t *testing.T) {
 				if shutdown == "interrupt" {
 					wantState = "interrupted"
 				}
-				if run.RunState != wantState || len(captures) != 1 || captures[0].Traffic[0].Response.HTTP.Body.Text != "retained payload" {
+				if run.RunState != wantState || len(captures) != 1 || captures[0].Traffic[0].Response.Body.Text != "retained payload" {
 					t.Fatalf("finalized archive lost state or capture: %+v", run)
 				}
 			})

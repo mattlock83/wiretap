@@ -39,8 +39,8 @@ func cliCheckArchiveWithContracts(t *testing.T, consumer bool, path string, stat
 	}
 	capture := &artifact.Artifact{Version: 1, TestCase: artifact.TestCase{ID: "attempt", Name: "checks inventory", Status: "pass", StartedAt: time.Now().UTC()}, Traffic: []artifact.Flow{{
 		ID: "call", Protocol: "http", Channel: channel, AssetID: asset,
-		Request:  artifact.Message{HTTP: &artifact.HttpMessage{Method: "GET", URL: "http://local.test" + path, Headers: artifact.Headers{"Accept": {"application/json"}}}},
-		Response: artifact.Message{HTTP: &artifact.HttpMessage{Status: status, Headers: artifact.Headers{"Content-Type": {"application/json"}}, Body: &artifact.Body{Text: response}}},
+		Request:  &artifact.HttpMessage{Method: "GET", URL: "http://local.test" + path, Headers: artifact.Headers{"Accept": {"application/json"}}},
+		Response: &artifact.HttpMessage{Status: status, Headers: artifact.Headers{"Content-Type": {"application/json"}}, Body: &artifact.Body{Text: response}},
 	}}}
 	capture.Schemas, err = writer.Register(capture.TestCase, schemas)
 	if err != nil {

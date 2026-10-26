@@ -42,11 +42,11 @@ func httpBundleFixture(t *testing.T) string {
 	flow := func(id, method, url string, status int, offset time.Duration) artifact.Flow {
 		return artifact.Flow{
 			ID: id, Protocol: "http", Channel: "test_to_sut", StartedAt: start.Add(offset),
-			Request: artifact.Message{HTTP: &artifact.HttpMessage{Method: method, URL: url}},
-			Response: artifact.Message{HTTP: &artifact.HttpMessage{
+			Request: &artifact.HttpMessage{Method: method, URL: url},
+			Response: &artifact.HttpMessage{
 				Status: status, Headers: artifact.Headers{"Content-Type": {"application/json"}},
 				Body: &artifact.Body{Text: `{"ok":true}`},
-			}},
+			},
 		}
 	}
 	dependency := flow("dependency", "GET", "http://dependency/private", 200, 2*time.Second)

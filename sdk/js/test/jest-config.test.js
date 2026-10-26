@@ -25,14 +25,14 @@ test('Jest app option preserves setup ordering without passing the handler to th
     assert.throws(() => withWiretap({}, { capture }), /captureJest in setupFilesAfterEnv/);
   }
   const outputs = { coverage: ['json', 'html'], arazzo: true };
-  assert.equal(withWiretap({}, { outputs }).testEnvironmentOptions.wiretap.managed.outputs, outputs);
-  for (const [capture, error] of [[{ outputs }, /withWiretap options/], [{ testDefaults: {} }, /settings directly/]]) {
+  assert.throws(() => withWiretap({}, { outputs }), /automatic exports always/);
+  for (const [capture, error] of [[{ outputs }, /automatic exports always/], [{ testDefaults: {} }, /settings directly/]]) {
     assert.throws(() => withWiretap({}, { capture }), error);
     assert.throws(() => captureJest(capture), error);
   }
 });
 
-for (const format of ['commonjs', 'esm']) test(`Jest app option loads ${format} mocked handlers inside each VM before user suite hooks`, async t => {
+for (const [format, override] of [['commonjs'], ['esm'], ['commonjs', 'baseUrl'], ['commonjs', 'proxy']]) test(`Jest app option loads ${format} mocked handlers with ${override || 'managed attachment'} before user suite hooks`, async t => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'wiretap-jest-app-'));
   t.after(() => fs.rm(directory, { recursive: true, force: true }));
   let target, activeSession;
@@ -54,9 +54,9 @@ for (const format of ['commonjs', 'esm']) test(`Jest app option loads ${format} 
     calls.push({ path: req.url, body });
     res.setHeader('content-type', 'application/json');
     if (req.url === '/v1/startRun') {
-      target = body.proxy.target_url;
       res.end(JSON.stringify({ sut_url: `${baseUrl}/api` }));
     } else if (req.url === '/v1/setupTest') {
+      target = body.sut_base_url;
       activeSession = `app-${calls.length}`;
       res.end(JSON.stringify({ session_id: activeSession, name: body.name, sut_url: `${baseUrl}/api` }));
     } else if (req.url === '/v1/teardownTest') {
@@ -107,7 +107,9 @@ for (const format of ['commonjs', 'esm']) test(`Jest app option loads ${format} 
         rootDir: __dirname, transform: {}, testMatch: ['**/*.spec.cjs'],
         setupFilesAfterEnv: ['<rootDir>/first.cjs', '<rootDir>/second.cjs'],
         testEnvironmentOptions: { wiretap: { schemaRequired: false } }
-      }, { app: '<rootDir>/app.${format === 'esm' ? 'mjs' : 'cjs'}' });
+      }, { app: '<rootDir>/app.${format === 'esm' ? 'mjs' : 'cjs'}',
+        capture: ${JSON.stringify(override === 'baseUrl' ? { baseUrl } : override === 'proxy' ? { proxy: { targetUrl: 'http://explicit-proxy.test' } } : {})}
+      });
       // This regression supplies a control server; managed process ownership is
       // independently exercised by managed-runtime.test.js and the real demo.
       delete config.globalSetup;
@@ -128,7 +130,9 @@ for (const format of ['commonjs', 'esm']) test(`Jest app option loads ${format} 
     child.once('close', resolve);
   }).finally(() => clearTimeout(timeout));
   assert.equal(code, 0, output);
-  assert.equal(calls.filter(call => call.path === '/v1/startRun').length, 2);
+  const starts = calls.filter(call => call.path === '/v1/startRun');
+  assert.equal(starts.length, override ? 2 : 0);
+  if (override === 'proxy') assert.ok(starts.every(call => call.body.proxy.target_url === 'http://explicit-proxy.test'));
   const setups = calls.filter(call => call.path === '/v1/setupTest');
   assert.equal(setups.length, 2);
   assert.equal(new Set(setups.map(call => call.body.test_identity.id)).size, 2);

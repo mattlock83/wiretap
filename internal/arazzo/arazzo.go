@@ -14,13 +14,13 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/getkin/kin-openapi/routers"
 	"github.com/getkin/kin-openapi/routers/legacy"
 	"github.com/mattlock83/wiretap/internal/artifact"
 	"github.com/mattlock83/wiretap/internal/bundle"
+	"github.com/mattlock83/wiretap/internal/strictjson"
 )
 
 type Document struct {
@@ -148,7 +148,7 @@ func GenerateSnapshot(run *bundle.Run, captures []*artifact.Artifact, sutName st
 	for _, capture := range captures {
 		groups := map[string][]artifact.Flow{}
 		for _, flow := range capture.Traffic {
-			if flow.Protocol != "http" || flow.Request.HTTP == nil {
+			if flow.Protocol != "http" || flow.Request == nil {
 				continue
 			}
 			boundary := "sut"
@@ -228,8 +228,8 @@ func GenerateSnapshot(run *bundle.Run, captures []*artifact.Artifact, sutName st
 }
 
 func makeStep(run *bundle.Run, capture *artifact.Artifact, flow artifact.Flow, sources map[string]*sourceSpec, files map[string][]byte, input func(any) string) (Step, bool, error) {
-	step := Step{FlowID: flow.ID, URL: flow.Request.HTTP.URL, Headers: flow.Request.HTTP.Headers}
-	req, res := flow.Request.HTTP, flow.Response.HTTP
+	step := Step{FlowID: flow.ID, URL: flow.Request.URL, Headers: flow.Request.Headers}
+	req, res := flow.Request, flow.Response
 	// A non-JSON representation is outside the requested JSON/REST export.
 	jsonEvidence := false
 	for _, message := range []*artifact.HttpMessage{req, res} {
@@ -506,7 +506,7 @@ func observedStep(source *sourceSpec, flow artifact.Flow, u *url.URL, step *Step
 		item = map[string]any{}
 		paths[path] = item
 	}
-	method := strings.ToLower(flow.Request.HTTP.Method)
+	method := strings.ToLower(flow.Request.Method)
 	switch method {
 	case "get", "post", "put", "patch", "delete", "head", "options", "trace":
 	default:
@@ -518,7 +518,7 @@ func observedStep(source *sourceSpec, flow artifact.Flow, u *url.URL, step *Step
 		item[method] = op
 	}
 	responses := op["responses"].(map[string]any)
-	responses[strconv.Itoa(flow.Response.HTTP.Status)] = map[string]any{"description": "Captured response"}
+	responses[strconv.Itoa(flow.Response.Status)] = map[string]any{"description": "Captured response"}
 	params := map[string]any{}
 	if existing, ok := op["parameters"].([]any); ok {
 		for _, entry := range existing {
@@ -538,11 +538,11 @@ func observedStep(source *sourceSpec, flow artifact.Flow, u *url.URL, step *Step
 		params["query:"+name] = map[string]any{"name": name, "in": "query", "schema": map[string]any{"type": "string"}}
 		step.Parameters = append(step.Parameters, Parameter{Name: name, In: "query", Value: input(values[0])})
 	}
-	for _, name := range sortedKeys(flow.Request.HTTP.Headers) {
-		if omitHeader(name, flow.Request.HTTP) {
+	for _, name := range sortedKeys(flow.Request.Headers) {
+		if omitHeader(name, flow.Request) {
 			continue
 		}
-		values := headerValues(flow.Request.HTTP.Headers, name)
+		values := headerValues(flow.Request.Headers, name)
 		if len(values) == 0 {
 			continue
 		}
@@ -558,13 +558,13 @@ func observedStep(source *sourceSpec, flow artifact.Flow, u *url.URL, step *Step
 		ordered = append(ordered, params[key])
 	}
 	op["parameters"] = ordered
-	if bodyPresent(flow.Request.HTTP.Body) {
+	if bodyPresent(flow.Request.Body) {
 		body, ok := op["requestBody"].(map[string]any)
 		if !ok {
 			body = map[string]any{"content": map[string]any{}}
 			op["requestBody"] = body
 		}
-		body["content"].(map[string]any)[contentType(flow.Request.HTTP.Headers)] = map[string]any{"schema": map[string]any{}}
+		body["content"].(map[string]any)[contentType(flow.Request.Headers)] = map[string]any{"schema": map[string]any{}}
 	}
 	step.OperationPath = operationPath(source.name, path, method)
 	return nil
@@ -654,85 +654,15 @@ func jsonBody(body *artifact.Body) (any, error) {
 			return nil, err
 		}
 	}
-	if !utf8.Valid(raw) {
-		return nil, errors.New("captured JSON body contains invalid UTF-8")
-	}
-	// Validate syntax and the standard decoder's nesting limit before walking
-	// tokens, which also guards the recursive duplicate-member check below.
-	if !json.Valid(raw) {
-		return nil, errors.New("invalid captured JSON body: expected exactly one JSON value")
-	}
-	decoder := json.NewDecoder(strings.NewReader(string(raw)))
-	decoder.UseNumber()
-	value, err := jsonValue(decoder)
+	value, err := strictjson.Decode(raw, strictjson.Options{
+		MaxDepth: 10000, MaxNodes: len(raw) + 1, Unicode: strictjson.RequireUTF8,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("invalid captured JSON body: %w", err)
-	}
-	if _, err := decoder.Token(); err != io.EOF {
-		return nil, errors.New("captured body must contain exactly one JSON value")
 	}
 	return value, nil
 }
 
-// JSON objects with duplicate names have no lossless map representation. Refuse
-// those captures instead of silently replacing the earlier member's value.
-func jsonValue(decoder *json.Decoder) (any, error) {
-	token, err := decoder.Token()
-	if err != nil {
-		return nil, err
-	}
-	delimiter, compound := token.(json.Delim)
-	if !compound {
-		return token, nil
-	}
-	switch delimiter {
-	case '{':
-		object := map[string]any{}
-		for decoder.More() {
-			key, err := decoder.Token()
-			if err != nil {
-				return nil, err
-			}
-			name, ok := key.(string)
-			if !ok {
-				return nil, errors.New("JSON object key must be a string")
-			}
-			if _, exists := object[name]; exists {
-				return nil, fmt.Errorf("duplicate JSON object key %q", name)
-			}
-			value, err := jsonValue(decoder)
-			if err != nil {
-				return nil, err
-			}
-			object[name] = value
-		}
-		if closing, err := decoder.Token(); err != nil || closing != json.Delim('}') {
-			if err != nil {
-				return nil, err
-			}
-			return nil, errors.New("JSON object is not closed")
-		}
-		return object, nil
-	case '[':
-		array := []any{}
-		for decoder.More() {
-			value, err := jsonValue(decoder)
-			if err != nil {
-				return nil, err
-			}
-			array = append(array, value)
-		}
-		if closing, err := decoder.Token(); err != nil || closing != json.Delim(']') {
-			if err != nil {
-				return nil, err
-			}
-			return nil, errors.New("JSON array is not closed")
-		}
-		return array, nil
-	default:
-		return nil, errors.New("unexpected JSON closing delimiter")
-	}
-}
 func sortedKeys[V any](values map[string]V) []string {
 	keys := make([]string, 0, len(values))
 	for key := range values {

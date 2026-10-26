@@ -16,6 +16,7 @@ import (
 	"github.com/mattlock83/wiretap/internal/arazzo"
 	"github.com/mattlock83/wiretap/internal/bundle"
 	"github.com/mattlock83/wiretap/internal/coverage"
+	"github.com/mattlock83/wiretap/internal/strictjson"
 	"gopkg.in/yaml.v3"
 )
 
@@ -233,66 +234,11 @@ const maxInputDepth = 128
 const maxInputNodes = 1_000_000
 
 func jsonObject(data []byte) (map[string]any, error) {
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.UseNumber()
-	nodes := 0
-	var read func(int) (any, error)
-	read = func(depth int) (any, error) {
-		nodes++
-		if depth > maxInputDepth || nodes > maxInputNodes {
-			return nil, errors.New("JSON input exceeds its nesting or value budget")
-		}
-		token, err := decoder.Token()
-		if err != nil {
-			return nil, err
-		}
-		if delimiter, ok := token.(json.Delim); ok {
-			switch delimiter {
-			case '{':
-				object := map[string]any{}
-				for decoder.More() {
-					keyToken, err := decoder.Token()
-					if err != nil {
-						return nil, err
-					}
-					key, ok := keyToken.(string)
-					if !ok {
-						return nil, errors.New("invalid JSON object key")
-					}
-					if _, exists := object[key]; exists {
-						return nil, fmt.Errorf("duplicate JSON key %q", key)
-					}
-					value, err := read(depth + 1)
-					if err != nil {
-						return nil, err
-					}
-					object[key] = value
-				}
-				_, err := decoder.Token()
-				return object, err
-			case '[':
-				array := []any{}
-				for decoder.More() {
-					value, err := read(depth + 1)
-					if err != nil {
-						return nil, err
-					}
-					array = append(array, value)
-				}
-				_, err := decoder.Token()
-				return array, err
-			default:
-				return nil, errors.New("unexpected JSON delimiter")
-			}
-		}
-		return token, nil
-	}
-	value, err := read(0)
+	value, err := strictjson.Decode(data, strictjson.Options{
+		MaxDepth: maxInputDepth, MaxNodes: maxInputNodes,
+	})
 	if err != nil {
 		return nil, err
-	}
-	if _, err := decoder.Token(); err != io.EOF {
-		return nil, errors.New("extra JSON content")
 	}
 	object, ok := value.(map[string]any)
 	if !ok {

@@ -23,8 +23,8 @@ components:
     bearer: {type: http, scheme: bearer}
 `}}
 	for _, tc := range []struct{ body, want string }{{`{"quantity":1}`, "pass"}, {`{"quantity":0}`, "fail"}} {
-		a := &artifact.Artifact{TestCase: artifact.TestCase{Status: "pass"}, Schemas: []artifact.SchemaRef{ref}, Traffic: []artifact.Flow{{ID: "flow", Protocol: "http", Channel: "test_to_sut", Request: artifact.Message{HTTP: &artifact.HttpMessage{Method: "POST", URL: "http://provider/orders", Headers: artifact.Headers{"Content-Type": {"application/json"}, "Authorization": {"Bearer example"}}, Body: &artifact.Body{Text: tc.body}}}, Response: artifact.Message{HTTP: &artifact.HttpMessage{Status: 200}}}}}
-		applySchemaValidation(a)
+		a := &artifact.Artifact{TestCase: artifact.TestCase{Status: "pass"}, Schemas: []artifact.SchemaRef{ref}, Traffic: []artifact.Flow{{ID: "flow", Protocol: "http", Channel: "test_to_sut", Request: &artifact.HttpMessage{Method: "POST", URL: "http://provider/orders", Headers: artifact.Headers{"Content-Type": {"application/json"}, "Authorization": {"Bearer example"}}, Body: &artifact.Body{Text: tc.body}}, Response: &artifact.HttpMessage{Status: 200}}}}
+		validateTestCapture(t, a)
 		if a.TestCase.Status != "pass" || a.SchemaValidation.Status != tc.want {
 			t.Fatalf("body=%s status=%s validation=%+v", tc.body, a.TestCase.Status, a.SchemaValidation)
 		}

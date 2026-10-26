@@ -172,10 +172,10 @@ func TestExternalDependencyCaptureCorrelatesBothTrafficDirections(t *testing.T) 
 	if inbound.TraceID == "" || downstream.TraceID != inbound.TraceID || !strings.Contains(observedTrace, inbound.TraceID) {
 		t.Fatalf("trace correlation failed: inbound=%q dependency=%q upstream=%q", inbound.TraceID, downstream.TraceID, observedTrace)
 	}
-	if downstream.Request.HTTP.URL != upstream.URL+"/api/items?fixed=yes&include=stock" {
-		t.Fatalf("recorded dependency URL = %q", downstream.Request.HTTP.URL)
+	if downstream.Request.URL != upstream.URL+"/api/items?fixed=yes&include=stock" {
+		t.Fatalf("recorded dependency URL = %q", downstream.Request.URL)
 	}
-	if downstream.Request.HTTP.Body.Text != `{"sku":"widget"}` || downstream.Response.HTTP.Body.Text != `{"available":true}` {
+	if downstream.Request.Body.Text != `{"sku":"widget"}` || downstream.Response.Body.Text != `{"available":true}` {
 		t.Fatalf("dependency payload capture failed: %#v", downstream)
 	}
 	if art.SchemaValidation == nil || art.SchemaValidation.Status != "pass" {
@@ -275,7 +275,7 @@ func TestDependencyUpstreamFailureRecords502AndTransportError(t *testing.T) {
 	art := dependencyArtifact(t, postDependencyJSON(t, control.URL, "/v1/teardownTest", map[string]any{
 		"session_id": session["session_id"], "status": "fail",
 	}))
-	if len(art.Traffic) != 1 || art.Traffic[0].Response.HTTP.Status != http.StatusBadGateway || art.Traffic[0].TransportError == "" {
+	if len(art.Traffic) != 1 || art.Traffic[0].Response.Status != http.StatusBadGateway || art.Traffic[0].TransportError == "" {
 		t.Fatalf("dependency failure was not captured truthfully: %#v", art.Traffic)
 	}
 }

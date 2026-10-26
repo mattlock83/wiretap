@@ -17,7 +17,7 @@ import (
 )
 
 func jsonFlow(id, method, address string) artifact.Flow {
-	return artifact.Flow{ID: id, Protocol: "http", Channel: "test_to_sut", StartedAt: time.Date(2026, 10, 26, 1, 0, 0, 0, time.UTC), Request: artifact.Message{HTTP: &artifact.HttpMessage{Method: method, URL: address}}, Response: artifact.Message{HTTP: &artifact.HttpMessage{Status: 200, Headers: artifact.Headers{"Content-Type": {"application/json"}}, Body: &artifact.Body{Text: `{"ok":true}`}}}}
+	return artifact.Flow{ID: id, Protocol: "http", Channel: "test_to_sut", StartedAt: time.Date(2026, 10, 26, 1, 0, 0, 0, time.UTC), Request: &artifact.HttpMessage{Method: method, URL: address}, Response: &artifact.HttpMessage{Status: 200, Headers: artifact.Headers{"Content-Type": {"application/json"}}, Body: &artifact.Body{Text: `{"ok":true}`}}}
 }
 
 func captureArchive(t *testing.T, schemas []artifact.SchemaRef, captures ...*artifact.Artifact) string {
@@ -48,11 +48,11 @@ func captureArchive(t *testing.T, schemas []artifact.SchemaRef, captures ...*art
 
 func TestObservedWorkflowsKeepAttemptsBoundariesAndLiterals(t *testing.T) {
 	one := jsonFlow("z-first", "POST", "http://sut/items?name=%24inputs.literal")
-	one.Request.HTTP.Headers = artifact.Headers{"Content-Type": {"application/json"}, "X-Test": {"{$steps.literal}"}, "Authorization": {"Bearer synthetic"}}
-	one.Request.HTTP.Body = &artifact.Body{Text: `{"id":18446744073709551615,"literal":"{$inputs.literal}"}`}
+	one.Request.Headers = artifact.Headers{"Content-Type": {"application/json"}, "X-Test": {"{$steps.literal}"}, "Authorization": {"Bearer synthetic"}}
+	one.Request.Body = &artifact.Body{Text: `{"id":18446744073709551615,"literal":"{$inputs.literal}"}`}
 	two := jsonFlow("a-second", "GET", "http://sut/items/%2F")
 	two.StartedAt = one.StartedAt.Add(time.Second)
-	two.Response.HTTP.Status = 404
+	two.Response.Status = 404
 	mock := jsonFlow("mock", "GET", "http://inventory/items")
 	mock.Channel = "sut_to_dependency"
 	mock.AssetID = "inventory"
@@ -177,8 +177,8 @@ paths:
 
 func TestFrozenOpenAPIMapsLocalHostAndOperationServer(t *testing.T) {
 	flow := jsonFlow("read", "GET", "http://local.test/v2/items/42?limit=2")
-	flow.Request.HTTP.Headers = artifact.Headers{"X-Mode": {"fast"}, "cookie": {"session=synthetic"}}
-	flow.Response.HTTP = &artifact.HttpMessage{Status: 204}
+	flow.Request.Headers = artifact.Headers{"X-Mode": {"fast"}, "cookie": {"session=synthetic"}}
+	flow.Response = &artifact.HttpMessage{Status: 204}
 	root := captureArchive(t, []artifact.SchemaRef{{ID: "items", Role: "sut", Type: "openapi", Source: artifact.SchemaSource{Type: "inline", Content: frozenSchema}}}, &artifact.Artifact{TestCase: artifact.TestCase{ID: "test"}, Traffic: []artifact.Flow{flow}})
 	export, err := Generate(root, "")
 	if err != nil {
@@ -201,25 +201,25 @@ func TestExportRejectsUnrepresentableJSONCaptures(t *testing.T) {
 	for name, change := range map[string]func(*artifact.Artifact){
 		"incomplete":         func(a *artifact.Artifact) { a.CaptureIncomplete = true },
 		"transport":          func(a *artifact.Artifact) { a.Traffic[0].TransportError = "connection failed" },
-		"missing response":   func(a *artifact.Artifact) { a.Traffic[0].Response.HTTP = nil },
-		"truncated":          func(a *artifact.Artifact) { a.Traffic[0].Response.HTTP.Body.Truncated = true },
-		"omitted":            func(a *artifact.Artifact) { a.Traffic[0].Response.HTTP.Body.Omitted = true },
-		"invalid JSON":       func(a *artifact.Artifact) { a.Traffic[0].Response.HTTP.Body.Text = `{"invalid"` },
-		"duplicate JSON key": func(a *artifact.Artifact) { a.Traffic[0].Response.HTTP.Body.Text = `{"x":1,"x":2}` },
-		"two JSON values":    func(a *artifact.Artifact) { a.Traffic[0].Response.HTTP.Body.Text = `{} {}` },
+		"missing response":   func(a *artifact.Artifact) { a.Traffic[0].Response = nil },
+		"truncated":          func(a *artifact.Artifact) { a.Traffic[0].Response.Body.Truncated = true },
+		"omitted":            func(a *artifact.Artifact) { a.Traffic[0].Response.Body.Omitted = true },
+		"invalid JSON":       func(a *artifact.Artifact) { a.Traffic[0].Response.Body.Text = `{"invalid"` },
+		"duplicate JSON key": func(a *artifact.Artifact) { a.Traffic[0].Response.Body.Text = `{"x":1,"x":2}` },
+		"two JSON values":    func(a *artifact.Artifact) { a.Traffic[0].Response.Body.Text = `{} {}` },
 		"invalid UTF8": func(a *artifact.Artifact) {
-			a.Traffic[0].Response.HTTP.Body.Bytes = "Iv8i"
-			a.Traffic[0].Response.HTTP.Body.Text = ""
+			a.Traffic[0].Response.Body.Bytes = "Iv8i"
+			a.Traffic[0].Response.Body.Text = ""
 		},
-		"repeated query": func(a *artifact.Artifact) { a.Traffic[0].Request.HTTP.URL += "?id=1&id=2" },
+		"repeated query": func(a *artifact.Artifact) { a.Traffic[0].Request.URL += "?id=1&id=2" },
 		"ambiguous content type": func(a *artifact.Artifact) {
-			a.Traffic[0].Response.HTTP.Headers["content-type"] = []string{"application/xml"}
+			a.Traffic[0].Response.Headers["content-type"] = []string{"application/xml"}
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			flow := jsonFlow("flow", "POST", "http://sut/items")
-			flow.Request.HTTP.Headers = artifact.Headers{"Content-Type": {"application/json"}}
-			flow.Request.HTTP.Body = &artifact.Body{Text: `{}`}
+			flow.Request.Headers = artifact.Headers{"Content-Type": {"application/json"}}
+			flow.Request.Body = &artifact.Body{Text: `{}`}
 			capture := &artifact.Artifact{TestCase: artifact.TestCase{ID: "test"}, Traffic: []artifact.Flow{flow}}
 			change(capture)
 			root := captureArchive(t, nil, capture)
@@ -232,14 +232,14 @@ func TestExportRejectsUnrepresentableJSONCaptures(t *testing.T) {
 
 func TestExportSkipsNonJSONAndMergesObservedMediaTypes(t *testing.T) {
 	xml := jsonFlow("xml", "GET", "http://sut/xml")
-	xml.Response.HTTP.Headers["Content-Type"] = []string{"application/xml"}
-	xml.Response.HTTP.Body.Text = "<ok/>"
+	xml.Response.Headers["Content-Type"] = []string{"application/xml"}
+	xml.Response.Body.Text = "<ok/>"
 	flow := jsonFlow("one", "POST", "http://sut/items")
-	flow.Request.HTTP.Headers = artifact.Headers{"Content-Type": {"application/json"}}
-	flow.Request.HTTP.Body = &artifact.Body{Text: `null`}
+	flow.Request.Headers = artifact.Headers{"Content-Type": {"application/json"}}
+	flow.Request.Body = &artifact.Body{Text: `null`}
 	two := jsonFlow("two", "POST", "http://sut/items")
-	two.Request.HTTP.Headers = artifact.Headers{"Content-Type": {"application/problem+json"}}
-	two.Request.HTTP.Body = &artifact.Body{Text: `{}`}
+	two.Request.Headers = artifact.Headers{"Content-Type": {"application/problem+json"}}
+	two.Request.Body = &artifact.Body{Text: `{}`}
 	root := captureArchive(t, nil, &artifact.Artifact{TestCase: artifact.TestCase{ID: "test"}, Traffic: []artifact.Flow{xml, flow, two}})
 	export, err := Generate(root, "")
 	if err != nil {

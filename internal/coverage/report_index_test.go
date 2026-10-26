@@ -28,8 +28,8 @@ paths:
 	omitted := artifact.SchemaRef{ID: "inventory", Role: "dependency", Type: "openapi", AssetID: "inventory", Source: artifact.SchemaSource{Type: "omitted"}}
 	flow := func(id, channel, assetID, address string) artifact.Flow {
 		return artifact.Flow{ID: id, Protocol: "http", Channel: channel, AssetID: assetID,
-			Request:  artifact.Message{HTTP: &artifact.HttpMessage{Method: "GET", URL: address}},
-			Response: artifact.Message{HTTP: &artifact.HttpMessage{Status: 200}}}
+			Request:  &artifact.HttpMessage{Method: "GET", URL: address},
+			Response: &artifact.HttpMessage{Status: 200}}
 	}
 	first := &artifact.Artifact{
 		TestCase: artifact.TestCase{ID: "first", Name: "reads order", Status: "fail"},
@@ -52,7 +52,7 @@ paths:
 		},
 	}
 	empty := &artifact.Artifact{TestCase: artifact.TestCase{ID: "empty", Name: "fails before request", Status: "fail"}}
-	providedGroup, dependentGroup, cases, _ := buildCoverageWithSchemas([]artifactEntry{{Doc: first}, {Doc: second}, {Doc: empty}}, []artifact.SchemaRef{unregistered})
+	providedGroup, dependentGroup, cases, _ := buildCoverageWithSchemas([]artifactEntry{{Doc: first}, {Doc: second}, {Doc: empty}}, []artifact.SchemaRef{unregistered}, contractCache{})
 	if len(cases) != 2 || cases[0].Name != empty.TestCase.Name || len(cases[0].Attempts) != 1 || len(cases[0].Traffic) != 0 {
 		t.Fatalf("traffic-free attempt lost: %+v", cases)
 	}

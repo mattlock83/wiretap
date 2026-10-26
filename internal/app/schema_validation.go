@@ -9,25 +9,21 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
-	"path/filepath"
 	"strings"
 
-	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/getkin/kin-openapi/openapi3filter"
 	"github.com/getkin/kin-openapi/routers"
-	"github.com/getkin/kin-openapi/routers/legacy"
 	"github.com/mattlock83/wiretap/internal/artifact"
+	"github.com/mattlock83/wiretap/internal/bundle"
 	"github.com/mattlock83/wiretap/internal/openapivalidation"
 )
 
 type openapiSpec struct {
 	ref    artifact.SchemaRef
-	doc    *openapi3.T
 	router routers.Router
 }
 
-func applySchemaValidation(art *artifact.Artifact) {
+func applySchemaValidation(art *artifact.Artifact, specs []openapiSpec) {
 	if art == nil {
 		return
 	}
@@ -36,7 +32,7 @@ func applySchemaValidation(art *artifact.Artifact) {
 		art.SchemaValidation = &artifact.SchemaValidation{Status: "skipped"}
 		return
 	}
-	issues := validateSchemas(art)
+	issues := validateSchemas(art, specs)
 	result := &artifact.SchemaValidation{Status: "pass"}
 	for _, schema := range art.Schemas {
 		if schema.Source.Type == "omitted" {
@@ -69,74 +65,37 @@ func validateSchemaSetup(schemas []artifact.SchemaRef, allowMissing bool) error 
 		if !strings.EqualFold(strings.TrimSpace(schema.Type), "openapi") {
 			return fmt.Errorf("schema %d (%q) must have type openapi", index+1, schema.ID)
 		}
-		if _, err := loadOpenAPISpec(schema); err != nil {
-			return fmt.Errorf("OpenAPI schema %q is invalid or unreadable: %w", schema.ID, err)
-		}
 	}
 	return nil
 }
 
-func validateSchemas(art *artifact.Artifact) []artifact.SchemaValidationError {
-	if art == nil {
-		return nil
+// preparedValidation reuses the routers constructed before attempt registration.
+func preparedValidation(prepared []bundle.PreparedSchema) []openapiSpec {
+	var specs []openapiSpec
+	for _, schema := range prepared {
+		if schema.Router != nil {
+			specs = append(specs, openapiSpec{ref: schema.Ref, router: schema.Router})
+		}
 	}
-	roleSchemas := map[string][]artifact.SchemaRef{}
-	for _, schema := range art.Schemas {
-		role := strings.TrimSpace(schema.Role)
+	return specs
+}
+
+func validateSchemas(art *artifact.Artifact, specs []openapiSpec) []artifact.SchemaValidationError {
+	var issues []artifact.SchemaValidationError
+	openapiByRole := map[string][]openapiSpec{}
+	for _, spec := range specs {
+		role := spec.ref.Role
 		if role == "" {
 			role = "sut"
 		}
-		roleSchemas[role] = append(roleSchemas[role], schema)
-	}
-
-	openapiByRole := map[string][]openapiSpec{}
-	var issues []artifact.SchemaValidationError
-
-	for role, schemas := range roleSchemas {
-		for _, schema := range schemas {
-			if schema.Source.Type == "omitted" {
-				continue
-			}
-			typ := strings.ToLower(strings.TrimSpace(schema.Type))
-			switch typ {
-			case "openapi":
-				spec, err := loadOpenAPISpec(schema)
-				if err != nil {
-					issues = append(issues, artifact.SchemaValidationError{
-						Protocol: "http",
-						Channel:  roleToChannel(role),
-						Phase:    "schema",
-						SchemaID: schema.ID,
-						Message:  err.Error(),
-					})
-					continue
-				}
-				openapiByRole[role] = append(openapiByRole[role], spec)
-			case "":
-				issues = append(issues, artifact.SchemaValidationError{
-					Protocol: typ,
-					Channel:  roleToChannel(role),
-					Phase:    "schema",
-					SchemaID: schema.ID,
-					Message:  fmt.Sprintf("schema type %q is not supported; use openapi", schema.Type),
-				})
-			default:
-				issues = append(issues, artifact.SchemaValidationError{
-					Protocol: typ,
-					Channel:  roleToChannel(role),
-					Phase:    "schema",
-					SchemaID: schema.ID,
-					Message:  fmt.Sprintf("unknown schema type %q", schema.Type),
-				})
-			}
-		}
+		openapiByRole[role] = append(openapiByRole[role], spec)
 	}
 
 	for _, flow := range art.Traffic {
 		if !strings.EqualFold(flow.Protocol, "http") {
 			continue
 		}
-		if flow.Request.HTTP == nil || flow.Response.HTTP == nil {
+		if flow.Request == nil || flow.Response == nil {
 			continue
 		}
 		role := "sut"
@@ -207,8 +166,8 @@ func validateHTTPFlow(flow artifact.Flow, specs []openapiSpec) []artifact.Schema
 }
 
 func validateHTTPAgainstSpec(flow artifact.Flow, spec openapiSpec) (error, error) {
-	msg := flow.Request.HTTP
-	respMsg := flow.Response.HTTP
+	msg := flow.Request
+	respMsg := flow.Response
 	if msg == nil || respMsg == nil {
 		return errors.New("missing http messages"), nil
 	}
@@ -271,72 +230,6 @@ func validateHTTPAgainstSpec(flow artifact.Flow, spec openapiSpec) (error, error
 		},
 	}
 	return requestErr, openapivalidation.ValidateResponse(context.Background(), resp)
-}
-
-func loadOpenAPISpec(ref artifact.SchemaRef) (openapiSpec, error) {
-	loader := openapi3.NewLoader()
-	loader.IsExternalRefsAllowed = true
-
-	var doc *openapi3.T
-	var err error
-	path := strings.TrimSpace(ref.Source.Path)
-	urlStr := strings.TrimSpace(ref.Source.URL)
-	content := strings.TrimSpace(ref.Source.Content)
-
-	switch strings.ToLower(ref.Source.Type) {
-	case "file":
-		if path == "" {
-			return openapiSpec{}, errors.New("openapi schema path required")
-		}
-		path = resolvePath(path)
-		doc, err = loader.LoadFromFile(path)
-	case "url":
-		if urlStr == "" {
-			return openapiSpec{}, errors.New("openapi schema url required")
-		}
-		uri, parseErr := url.Parse(urlStr)
-		if parseErr != nil {
-			return openapiSpec{}, parseErr
-		}
-		doc, err = loader.LoadFromURI(uri)
-	case "inline":
-		if content == "" {
-			return openapiSpec{}, errors.New("openapi schema content required")
-		}
-		doc, err = loader.LoadFromData([]byte(content))
-	default:
-		return openapiSpec{}, errors.New("unsupported openapi source type")
-	}
-	if err != nil {
-		return openapiSpec{}, err
-	}
-	if err := doc.Validate(context.Background()); err != nil {
-		return openapiSpec{}, err
-	}
-
-	router, err := legacy.NewRouter(doc)
-	if err != nil {
-		return openapiSpec{}, err
-	}
-	return openapiSpec{ref: ref, doc: doc, router: router}, nil
-}
-
-func resolvePath(path string) string {
-	if filepath.IsAbs(path) {
-		return path
-	}
-	cwd, err := os.Getwd()
-	if err != nil {
-		return path
-	}
-	return filepath.Join(cwd, path)
-}
-
-func roleToChannel(role string) string {
-	if strings.EqualFold(role, "dependency") {
-		return "sut_to_dependency"
-	}
-	return "test_to_sut"
 }
 
 func bodyBytes(body *artifact.Body) []byte {

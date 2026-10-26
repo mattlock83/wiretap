@@ -24,7 +24,7 @@ func TestInitCreatesLoadableConfigWithoutOtherFiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if configured == nil || configured.Application.ID != "orders" || configured.SUT.URL != "http://127.0.0.1:8080/api" || configured.SUT.Schema != filepath.Join(root, "schemas", "orders.yaml") || !configured.Outputs.Arazzo || len(configured.Outputs.Coverage) != 3 {
+	if configured == nil || configured.Application.ID != "orders" || configured.SUT.URL != "http://127.0.0.1:8080/api" || configured.SUT.Schema != filepath.Join(root, "schemas", "orders.yaml") {
 		t.Fatalf("unexpected generated configuration: %+v", configured)
 	}
 	entries, err := os.ReadDir(root)

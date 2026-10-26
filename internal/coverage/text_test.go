@@ -61,7 +61,7 @@ func TestTextSummaryWarnsWhenRecordedTestsCaptureNoTraffic(t *testing.T) {
 			for i, status := range statuses {
 				entries = append(entries, artifactEntry{Doc: &artifact.Artifact{TestCase: artifact.TestCase{ID: fmt.Sprint(i), Name: "same parameterized test", Status: status}}})
 			}
-			report, err := generateFromEntries(entries, nil, "example", false, time.Time{})
+			report, err := generateFromEntries(entries, nil, "example", false, time.Time{}, contractCache{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -85,7 +85,7 @@ func TestTextSummaryCountsCapturedTrafficWithoutDependingOnSchemas(t *testing.T)
 	report, err := generateFromEntries([]artifactEntry{
 		{Doc: &artifact.Artifact{TestCase: artifact.TestCase{ID: "first", Name: "same name", Status: "pass"}, Traffic: []artifact.Flow{{ID: "http", Protocol: "http"}, {ID: "event", Protocol: "kafka"}}}},
 		{Doc: &artifact.Artifact{TestCase: artifact.TestCase{ID: "second", Name: "same name", Status: "fail"}, Traffic: []artifact.Flow{{ID: "other", Protocol: "websocket"}}}},
-	}, nil, "example", false, time.Time{})
+	}, nil, "example", false, time.Time{}, contractCache{})
 	if err != nil {
 		t.Fatal(err)
 	}

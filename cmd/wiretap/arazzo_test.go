@@ -250,13 +250,13 @@ func arazzoBundleFixture(t *testing.T, withSchema bool, protocol string) string 
 		Version: 1, TestCase: artifact.TestCase{ID: "items", Name: "reads items", StartedAt: started, Status: "pass"},
 		Traffic: []artifact.Flow{{
 			ID: "read-items", Protocol: "http", Channel: "test_to_sut", StartedAt: started,
-			Request:  artifact.Message{HTTP: &artifact.HttpMessage{Method: "GET", URL: "http://sut/items"}},
-			Response: artifact.Message{HTTP: &artifact.HttpMessage{Status: 200, Headers: artifact.Headers{"Content-Type": {"application/json"}}, Body: &artifact.Body{Text: `{"items":[]}`}}},
+			Request:  &artifact.HttpMessage{Method: "GET", URL: "http://sut/items"},
+			Response: &artifact.HttpMessage{Status: 200, Headers: artifact.Headers{"Content-Type": {"application/json"}}, Body: &artifact.Body{Text: `{"items":[]}`}},
 		}},
 	}
 	if protocol == "html" {
-		capture.Traffic[0].Response.HTTP.Headers = artifact.Headers{"Content-Type": {"text/html"}}
-		capture.Traffic[0].Response.HTTP.Body = &artifact.Body{Text: "<html></html>"}
+		capture.Traffic[0].Response.Headers = artifact.Headers{"Content-Type": {"text/html"}}
+		capture.Traffic[0].Response.Body = &artifact.Body{Text: "<html></html>"}
 	}
 	var schemas []artifact.SchemaRef
 	if withSchema {

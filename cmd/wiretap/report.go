@@ -66,7 +66,11 @@ func reportCommand(args []string) error {
 		if err != nil {
 			return fmt.Errorf("%w: run set: %v", errUsage, err)
 		}
-		data, err := json.MarshalIndent(set.Coverage(), "", "  ")
+		report, err := set.Coverage(context.Background())
+		if err != nil {
+			return err
+		}
+		data, err := json.MarshalIndent(report, "", "  ")
 		if err != nil {
 			return err
 		}
@@ -97,8 +101,7 @@ func reportCommand(args []string) error {
 		if outputPath != "" || outputDir != "" || sutName != "" || includeArtifacts {
 			return fmt.Errorf("%w: all writes standard outputs inside the capture archive; use --bundle only", errUsage)
 		}
-		config := runoutput.Defaults()
-		result, exportErr := runoutput.Generate(context.Background(), bundlePath, config)
+		result, exportErr := runoutput.Generate(context.Background(), bundlePath)
 		if result != nil {
 			if err := json.NewEncoder(os.Stdout).Encode(result); err != nil {
 				return err

@@ -110,7 +110,10 @@ class WiretapEnvironment extends TestEnvironment {
       const name = fullTestName(test);
       const { autoCapture, app, managed, globalSetup, globalTeardown, ...defaults } = this.captureOptions;
       const config = { ...defaults, ...this.global.__wiretapCaptureConfig };
-      this.runtime ||= sdk.startCapture(config);
+      // Global setup starts the managed run before workers launch. Explicit
+      // control/proxy overrides still configure their chosen runtime.
+      this.runtime ||= managed && config.baseUrl === undefined && config.proxy === undefined
+        ? Promise.resolve().then(() => sdk.attachCapture(config)) : sdk.startCapture(config);
       const pending = this.runtime.then(runtime => runtime.createTestAttempt(name, {
         ...config,
         identity: config.identity ?? this.automaticIdentities.get(test),

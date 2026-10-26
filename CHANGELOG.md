@@ -50,6 +50,15 @@
   arrays in the Jest SDK, with explicit empty overrides preserved.
 - Remove unused boundary registration and consolidate setup, lifecycle and local
   release documentation.
+- Give managed Jest one startup owner and retain standalone capture support.
+- Always generate JSON/HTML coverage and eligible Arazzo at finalization; remove
+  output-selection settings. Text reports remain available through the CLI.
+- Keep completion receipts inside their exact archive; remove the shared
+  output-parent `last-run.json`.
+- Share strict JSON decoding, prepare frozen contracts once per registration,
+  and defer run-set coverage generation until a report is requested.
+- Flatten the internal HTTP message model while preserving archive JSON, and
+  share runtime configuration resolution between startup and diagnostics.
 
 ### Fixes
 

@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"github.com/mattlock83/wiretap/internal/project"
-	"github.com/mattlock83/wiretap/internal/runoutput"
 	"gopkg.in/yaml.v3"
 )
 
@@ -41,15 +40,14 @@ func initCommand(args []string) error {
 		Application struct {
 			ID string `yaml:"id"`
 		} `yaml:"application"`
-		OutputDir string           `yaml:"output_dir"`
-		Outputs   runoutput.Config `yaml:"outputs"`
+		OutputDir string `yaml:"output_dir"`
 		SUT       struct {
 			ID     string `yaml:"id"`
 			URL    string `yaml:"url"`
 			Kind   string `yaml:"kind"`
 			Schema string `yaml:"schema"`
 		} `yaml:"sut"`
-	}{Version: 1, OutputDir: "artifacts", Outputs: runoutput.Defaults()}
+	}{Version: 1, OutputDir: "artifacts"}
 	configuration.Application.ID = strings.TrimSpace(*application)
 	configuration.SUT.ID = "sut"
 	configuration.SUT.URL = *sutURL

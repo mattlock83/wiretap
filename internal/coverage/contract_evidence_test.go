@@ -16,9 +16,9 @@ func TestContractEvidencePreservesQualityAndValidation(t *testing.T) {
 		{"incomplete", "valid", func(a *artifact.Artifact) { a.CaptureIncomplete = true }},
 		{"transport", "valid", func(a *artifact.Artifact) { a.Traffic[0].TransportError = "connection failed" }},
 		{"invalid", "invalid", func(a *artifact.Artifact) {
-			a.Traffic[0].Response.HTTP.Body.Text = `{"status":"pending","items":[],"reference":"bad"}`
+			a.Traffic[0].Response.Body.Text = `{"status":"pending","items":[],"reference":"bad"}`
 		}},
-		{"truncated", "unknown", func(a *artifact.Artifact) { a.Traffic[0].Response.HTTP.Body.Truncated = true }},
+		{"truncated", "unknown", func(a *artifact.Artifact) { a.Traffic[0].Response.Body.Truncated = true }},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			run, a := contractFixture(conditionsSpec, `{"status":"pending","items":[],"reference":"ORD-123"}`)

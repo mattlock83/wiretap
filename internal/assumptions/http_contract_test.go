@@ -51,7 +51,7 @@ func loadAssumptionHTTPContract(t *testing.T, document string) *httpContract {
 }
 
 func validatingHTTPFlow() artifact.Flow {
-	return artifact.Flow{Protocol: "http", Request: artifact.Message{HTTP: &artifact.HttpMessage{Method: "POST", URL: "http://127.0.0.1:45678/api/orders/one", Headers: artifact.Headers{"Content-Type": {"application/json"}}, Body: &artifact.Body{Text: validContractHTTPBody}}}, Response: artifact.Message{HTTP: &artifact.HttpMessage{Status: 200, Headers: artifact.Headers{"Content-Type": {"application/json"}}, Body: &artifact.Body{Text: validContractHTTPBody}}}}
+	return artifact.Flow{Protocol: "http", Request: &artifact.HttpMessage{Method: "POST", URL: "http://127.0.0.1:45678/api/orders/one", Headers: artifact.Headers{"Content-Type": {"application/json"}}, Body: &artifact.Body{Text: validContractHTTPBody}}, Response: &artifact.HttpMessage{Status: 200, Headers: artifact.Headers{"Content-Type": {"application/json"}}, Body: &artifact.Body{Text: validContractHTTPBody}}}
 }
 
 func TestHTTPContractRoutesDifferentOriginsAndKeepsServerBasePaths(t *testing.T) {
@@ -67,7 +67,7 @@ func TestHTTPContractRoutesDifferentOriginsAndKeepsServerBasePaths(t *testing.T)
 	if contract.doc.Servers[0].URL != "https://provider.example:8443/api" {
 		t.Fatal("routing mutated the frozen document")
 	}
-	flow.Request.HTTP.URL = "http://other.local/orders/one"
+	flow.Request.URL = "http://other.local/orders/one"
 	if err := contract.validate(t.Context(), flow); err == nil {
 		t.Fatal("declared base path was silently removed")
 	}
@@ -94,9 +94,9 @@ func TestHTTPContractRejectsObservedTypeEnumLengthPatternAndBoundsViolations(t *
 		for _, phase := range []string{"request", "response"} {
 			t.Run(name+"/"+phase, func(t *testing.T) {
 				flow := validatingHTTPFlow()
-				message := flow.Request.HTTP
+				message := flow.Request
 				if phase == "response" {
-					message = flow.Response.HTTP
+					message = flow.Response
 				}
 				message.Body.Text = body
 				err := contract.validate(t.Context(), flow)
@@ -111,12 +111,12 @@ func TestHTTPContractRejectsObservedTypeEnumLengthPatternAndBoundsViolations(t *
 func TestHTTPContractPreservesNegativeRequestExamplesAndValidatesErrorResponses(t *testing.T) {
 	contract := loadAssumptionHTTPContract(t, validatingHTTPDocument(validatingHTTPBodySchema))
 	flow := validatingHTTPFlow()
-	flow.Request.HTTP.Body.Text = `{"invalid":`
-	flow.Response.HTTP.Status, flow.Response.HTTP.Body.Text = 400, `{"error":"invalid request"}`
+	flow.Request.Body.Text = `{"invalid":`
+	flow.Response.Status, flow.Response.Body.Text = 400, `{"error":"invalid request"}`
 	if err := contract.validate(t.Context(), flow); err != nil {
 		t.Fatalf("deliberately invalid 400 request was rejected: %v", err)
 	}
-	flow.Response.HTTP.Body.Text = `{"error":123}`
+	flow.Response.Body.Text = `{"error":123}`
 	if err := contract.validate(t.Context(), flow); err == nil || !strings.Contains(err.Error(), "response violates") {
 		t.Fatalf("error response escaped validation: %v", err)
 	}
@@ -130,12 +130,12 @@ func TestHTTPContractNoBodyGETHEADAnd204(t *testing.T) {
 		status int
 	}{{"GET", 200}, {"GET", 304}, {"HEAD", 200}, {"DELETE", 204}} {
 		t.Run(fmt.Sprintf("%s/%d", entry.method, entry.status), func(t *testing.T) {
-			flow := artifact.Flow{Protocol: "http", Request: artifact.Message{HTTP: &artifact.HttpMessage{Method: entry.method, URL: "http://local:3000/health"}}, Response: artifact.Message{HTTP: &artifact.HttpMessage{Status: entry.status}}}
+			flow := artifact.Flow{Protocol: "http", Request: &artifact.HttpMessage{Method: entry.method, URL: "http://local:3000/health"}, Response: &artifact.HttpMessage{Status: entry.status}}
 			if err := contract.validate(t.Context(), flow); err != nil {
 				t.Fatal(err)
 			}
 			if entry.method == "HEAD" || entry.status == 204 || entry.status == 304 {
-				flow.Response.HTTP.Body = &artifact.Body{Text: "unexpected"}
+				flow.Response.Body = &artifact.Body{Text: "unexpected"}
 				if err := contract.validate(t.Context(), flow); err == nil {
 					t.Fatal("forbidden response body passed")
 				}
@@ -147,11 +147,11 @@ func TestHTTPContractNoBodyGETHEADAnd204(t *testing.T) {
 func TestHTTPContractUsesSharedHTMLResponseDecoder(t *testing.T) {
 	doc := `{"openapi":"3.0.3","info":{"title":"HTML","version":"1"},"paths":{"/":{"delete":{"responses":{"200":{"description":"OK","content":{"text/html":{"schema":{"type":"string","enum":["Property deleted"]}}}}}}}}}`
 	contract := loadAssumptionHTTPContract(t, doc)
-	flow := artifact.Flow{Protocol: "http", Request: artifact.Message{HTTP: &artifact.HttpMessage{Method: "DELETE", URL: "http://local/"}}, Response: artifact.Message{HTTP: &artifact.HttpMessage{Status: 200, Headers: artifact.Headers{"Content-Type": {"text/html; charset=utf-8"}}, Body: &artifact.Body{Text: "Property deleted"}}}}
+	flow := artifact.Flow{Protocol: "http", Request: &artifact.HttpMessage{Method: "DELETE", URL: "http://local/"}, Response: &artifact.HttpMessage{Status: 200, Headers: artifact.Headers{"Content-Type": {"text/html; charset=utf-8"}}, Body: &artifact.Body{Text: "Property deleted"}}}
 	if err := contract.validate(t.Context(), flow); err != nil {
 		t.Fatal(err)
 	}
-	flow.Response.HTTP.Body.Text = "Tenant deleted"
+	flow.Response.Body.Text = "Tenant deleted"
 	if err := contract.validate(t.Context(), flow); err == nil {
 		t.Fatal("wrong HTML enum value passed")
 	}
@@ -292,25 +292,25 @@ func TestHTTPContractRefusesRoundedRulesAndObservedNumbers(t *testing.T) {
 	}
 	contract := loadAssumptionHTTPContract(t, validatingHTTPDocument(`{"type":"integer"}`))
 	flow := validatingHTTPFlow()
-	flow.Request.HTTP.Body.Text, flow.Response.HTTP.Body.Text = "9007199254740993", "1"
+	flow.Request.Body.Text, flow.Response.Body.Text = "9007199254740993", "1"
 	if err := contract.validate(t.Context(), flow); !errors.Is(err, errHTTPContractUnavailable) {
 		t.Fatalf("rounded request passed: %v", err)
 	}
-	flow.Request.HTTP.Body.Text, flow.Response.HTTP.Body.Text = "1", "9007199254740993"
+	flow.Request.Body.Text, flow.Response.Body.Text = "1", "9007199254740993"
 	if err := contract.validate(t.Context(), flow); !errors.Is(err, errHTTPContractUnavailable) {
 		t.Fatalf("rounded response passed: %v", err)
 	}
-	flow.Response.HTTP.Body.Text = "1"
-	flow.Response.HTTP.Headers["X-Rate"] = []string{"9007199254740993"}
+	flow.Response.Body.Text = "1"
+	flow.Response.Headers["X-Rate"] = []string{"9007199254740993"}
 	if err := contract.validate(t.Context(), flow); !errors.Is(err, errHTTPContractUnavailable) {
 		t.Fatalf("rounded response header passed: %v", err)
 	}
 	document := strings.Replace(validatingHTTPDocument(`{"type":"integer"}`), `"post":{"requestBody"`, `"post":{"parameters":[{"name":"n","in":"query","schema":{"type":"integer"}}],"requestBody"`, 1)
 	contract = loadAssumptionHTTPContract(t, document)
 	flow = validatingHTTPFlow()
-	flow.Request.HTTP.Body.Text, flow.Response.HTTP.Body.Text = "1", "1"
+	flow.Request.Body.Text, flow.Response.Body.Text = "1", "1"
 	for _, number := range []string{"9007199254740993", "1e999"} {
-		flow.Request.HTTP.URL = "http://local/api/orders/one?n=" + number
+		flow.Request.URL = "http://local/api/orders/one?n=" + number
 		if err := contract.validate(t.Context(), flow); !errors.Is(err, errHTTPContractUnavailable) {
 			t.Fatalf("rounded query parameter passed: %v", err)
 		}
@@ -338,8 +338,8 @@ func TestHTTPContractRefusesUnguardedComplexAndContentNumericParameters(t *testi
 		document := strings.Replace(validatingHTTPDocument(`{"type":"integer"}`), `"post":{"requestBody"`, `"post":{"parameters":[`+parameter+`],"requestBody"`, 1)
 		contract := loadAssumptionHTTPContract(t, document)
 		flow := validatingHTTPFlow()
-		flow.Request.HTTP.Body.Text, flow.Response.HTTP.Body.Text = "1", "1"
-		flow.Request.HTTP.URL = "http://local/api/orders/one?filter%5Bcount%5D=9007199254740993&filter=%7B%22count%22%3A9007199254740993%7D"
+		flow.Request.Body.Text, flow.Response.Body.Text = "1", "1"
+		flow.Request.URL = "http://local/api/orders/one?filter%5Bcount%5D=9007199254740993&filter=%7B%22count%22%3A9007199254740993%7D"
 		if err := contract.validate(t.Context(), flow); !errors.Is(err, errHTTPContractUnavailable) {
 			t.Fatalf("complex parameter acquired numeric assurance: %v", err)
 		}
@@ -347,8 +347,8 @@ func TestHTTPContractRefusesUnguardedComplexAndContentNumericParameters(t *testi
 	document := strings.Replace(validatingHTTPDocument(`{"type":"integer"}`), `"X-Rate":{"schema":{"type":"integer","minimum":0}}`, `"X-Rate":{"content":{"application/json":{"schema":{"type":"integer"}}}}`, 1)
 	contract := loadAssumptionHTTPContract(t, document)
 	flow := validatingHTTPFlow()
-	flow.Request.HTTP.Body.Text, flow.Response.HTTP.Body.Text = "1", "1"
-	flow.Response.HTTP.Headers["X-Rate"] = []string{"9007199254740993"}
+	flow.Request.Body.Text, flow.Response.Body.Text = "1", "1"
+	flow.Response.Headers["X-Rate"] = []string{"9007199254740993"}
 	if err := contract.validate(t.Context(), flow); !errors.Is(err, errHTTPContractUnavailable) {
 		t.Fatalf("content response header acquired numeric assurance: %v", err)
 	}
@@ -360,7 +360,7 @@ func TestHTTPContractDoesNotCertifyAmbiguousNullableConstraints(t *testing.T) {
 		contract, err := new(httpContractVerifier).load(t.Context(), ref)
 		if err == nil {
 			flow := validatingHTTPFlow()
-			flow.Request.HTTP.Body.Text, flow.Response.HTTP.Body.Text = "null", "null"
+			flow.Request.Body.Text, flow.Response.Body.Text = "null", "null"
 			err = contract.validate(t.Context(), flow)
 		}
 		if !errors.Is(err, errHTTPContractUnavailable) || !strings.Contains(err.Error(), "null-validation") {

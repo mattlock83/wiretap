@@ -55,7 +55,7 @@ paths:
 			if capture.TestCase.Status != "pass" || capture.SchemaValidation.Status != wantValidation {
 				t.Fatalf("capture changed framework outcome or validation: %s / %s", capture.TestCase.Status, capture.SchemaValidation.Status)
 			}
-			if len(capture.Traffic) != 1 || capture.Traffic[0].Response.HTTP == nil || capture.Traffic[0].Response.HTTP.Body == nil || capture.Traffic[0].Response.HTTP.Body.Text != `{"value":42}` {
+			if len(capture.Traffic) != 1 || capture.Traffic[0].Response == nil || capture.Traffic[0].Response.Body == nil || capture.Traffic[0].Response.Body.Text != `{"value":42}` {
 				t.Fatalf("archive lost actual mock response: %+v", capture.Traffic)
 			}
 			if !supplied {

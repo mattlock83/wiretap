@@ -13,28 +13,6 @@ import (
 	"github.com/mattlock83/wiretap/internal/version"
 )
 
-type Config struct {
-	Coverage []string `json:"coverage,omitempty" yaml:"coverage,omitempty"`
-	Arazzo   bool     `json:"arazzo,omitempty" yaml:"arazzo,omitempty"`
-}
-
-func Defaults() Config {
-	return Config{Coverage: []string{"json", "text", "html"}, Arazzo: true}
-}
-func (c Config) Validate() error {
-	seen := map[string]bool{}
-	for _, format := range c.Coverage {
-		if format != "json" && format != "text" && format != "html" {
-			return fmt.Errorf("outputs.coverage: unsupported format %q", format)
-		}
-		if seen[format] {
-			return fmt.Errorf("outputs.coverage: duplicate format %q", format)
-		}
-		seen[format] = true
-	}
-	return nil
-}
-
 type Diagnostic struct {
 	Format  string `json:"format"`
 	Message string `json:"message"`
@@ -51,10 +29,7 @@ type Result struct {
 
 // Generate keeps successful outputs available when another exporter fails. It
 // never changes the recording or silently turns missing exports into success.
-func Generate(ctx context.Context, archive string, cfg Config) (*Result, error) {
-	if err := cfg.Validate(); err != nil {
-		return nil, err
-	}
+func Generate(ctx context.Context, archive string) (*Result, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -77,17 +52,13 @@ func Generate(ctx context.Context, archive string, cfg Config) (*Result, error) 
 		result.Errors = append(result.Errors, Diagnostic{format, err.Error()})
 		failures = append(failures, fmt.Errorf("%s export: %w", format, err))
 	}
-	for _, format := range cfg.Coverage {
+	for _, format := range []string{"json", "html"} {
 		data, err := snapshot.Coverage(ctx, format)
 		if snapshot.reportErr != nil {
 			fail("coverage", err)
 			break
 		}
-		extension := format
-		if format == "text" {
-			extension = "txt"
-		}
-		name := "coverage." + extension
+		name := "coverage." + format
 		if err == nil {
 			err = writeOutput(name, data)
 		}
@@ -97,31 +68,29 @@ func Generate(ctx context.Context, archive string, cfg Config) (*Result, error) 
 			result.Coverage[format] = filepath.Join(writer.Directory, name)
 		}
 	}
-	if cfg.Arazzo {
-		err := ctx.Err()
-		if err == nil {
-			var generated *arazzo.Export
-			generated, err = snapshot.Arazzo()
-			if err == nil && generated != nil && generated.Document != nil {
-				var files []archiveoutput.File
-				files, err = ArazzoFiles(generated, "arazzo.json")
-				if err == nil {
-					for i := range files {
-						files[i].Name = filepath.Join("arazzo", filepath.FromSlash(files[i].Name))
-					}
-					err = writer.Write(ctx, files)
+	err = ctx.Err()
+	if err == nil {
+		var generated *arazzo.Export
+		generated, err = snapshot.Arazzo()
+		if err == nil && generated != nil && generated.Document != nil {
+			var files []archiveoutput.File
+			files, err = ArazzoFiles(generated, "arazzo.json")
+			if err == nil {
+				for i := range files {
+					files[i].Name = filepath.Join("arazzo", filepath.FromSlash(files[i].Name))
 				}
-				if err == nil {
-					result.Arazzo = filepath.Join(writer.Directory, files[len(files)-1].Name)
-					for _, file := range files[:len(files)-1] {
-						result.ArazzoFiles = append(result.ArazzoFiles, filepath.Join(writer.Directory, file.Name))
-					}
+				err = writer.Write(ctx, files)
+			}
+			if err == nil {
+				result.Arazzo = filepath.Join(writer.Directory, files[len(files)-1].Name)
+				for _, file := range files[:len(files)-1] {
+					result.ArazzoFiles = append(result.ArazzoFiles, filepath.Join(writer.Directory, file.Name))
 				}
 			}
 		}
-		if err != nil {
-			fail("arazzo", err)
-		}
+	}
+	if err != nil {
+		fail("arazzo", err)
 	}
 	// A small receipt names this invocation's outputs and any failures. Consumers
 	// use these exact paths instead of guessing the newest run or scanning a dir.

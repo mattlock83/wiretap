@@ -122,7 +122,7 @@ func apiInventory(run Run, captures []*artifact.Artifact) ([]API, []API) {
 			a.ObservedIn = uniqueString(a.ObservedIn, capture.TestCase.ID)
 			protocol := flow.Protocol
 			if protocol == "" {
-				if flow.Request.HTTP != nil {
+				if flow.Request != nil {
 					protocol = "http"
 				}
 			}

@@ -238,7 +238,11 @@ func (a *App) handleSetupTest(w http.ResponseWriter, r *http.Request) {
 	if err := store.RegisterActive(); err != nil {
 		store.AbortCase()
 		a.sessionsMu.Unlock()
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		status := http.StatusInternalServerError
+		if errors.Is(err, bundle.ErrSchema) {
+			status = http.StatusBadRequest
+		}
+		writeJSON(w, status, map[string]string{"error": err.Error()})
 		return
 	}
 	session := &runtimeSession{Root: root, CaseID: tc.ID, drained: make(chan struct{}), ID: sessionID, Name: name, Store: store, SUTBaseURL: payload.SUTBaseURL, Dependencies: dependencies, Explicit: payload.ExplicitSession, CreatedAt: time.Now().UTC()}
@@ -359,22 +363,10 @@ func (a *App) handleFinishRun(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 		return
 	}
-	var payload struct {
-		Outputs *runoutput.Config `json:"outputs,omitempty"`
-	}
+	var payload struct{}
 	if err := decodeStrictJSON(r, &payload); err != nil && !errors.Is(err, io.EOF) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
 		return
-	}
-	selected := payload.Outputs
-	if selected == nil && a.project != nil {
-		selected = a.project.Outputs
-	}
-	if selected != nil {
-		if err := selected.Validate(); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
-			return
-		}
 	}
 	runID := ""
 	if current := a.currentBundle(); current != nil {
@@ -393,14 +385,12 @@ func (a *App) handleFinishRun(w http.ResponseWriter, r *http.Request) {
 	if archivePath != "" {
 		response["bundle_path"] = archivePath
 		response["run_id"] = runID
-		if selected != nil {
-			outputs, err := runoutput.Generate(r.Context(), archivePath, *selected)
-			response["outputs"] = outputs
-			if err != nil {
-				response["error"] = err.Error()
-				writeJSON(w, http.StatusConflict, response)
-				return
-			}
+		outputs, err := runoutput.Generate(r.Context(), archivePath)
+		response["outputs"] = outputs
+		if err != nil {
+			response["error"] = err.Error()
+			writeJSON(w, http.StatusConflict, response)
+			return
 		}
 	}
 	writeJSON(w, http.StatusOK, response)

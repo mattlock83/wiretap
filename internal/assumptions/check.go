@@ -516,7 +516,7 @@ func (s *snapshot) samples(channel, dependency string) []sample {
 			}
 			var schema *artifact.SchemaRef
 			schemaProblem := ""
-			if flow.Request.HTTP != nil {
+			if flow.Request != nil {
 				for i := range capture.Schemas {
 					ref := &capture.Schemas[i]
 					if ref.Type != "openapi" || !(channel == "test_to_sut" && (ref.Role == "sut" || ref.Role == "provided" && ref.AssetID == flow.AssetID) || channel == "sut_to_dependency" && ref.Role == "dependency" && ref.AssetID == dependency) {
@@ -545,10 +545,10 @@ func (s *snapshot) samples(channel, dependency string) []sample {
 }
 
 func operation(flow artifact.Flow) string {
-	if flow.Request.HTTP != nil {
-		u, err := url.Parse(flow.Request.HTTP.URL)
+	if flow.Request != nil {
+		u, err := url.Parse(flow.Request.URL)
 		if err == nil {
-			return flow.Request.HTTP.Method + " " + u.EscapedPath()
+			return flow.Request.Method + " " + u.EscapedPath()
 		}
 	}
 	return flow.Protocol

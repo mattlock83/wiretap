@@ -39,8 +39,8 @@ func buildIdentity(identity bundle.Identity, revision string) bundle.Identity {
 
 func TestRunSetChecksShardsWithoutSplicingExchanges(t *testing.T) {
 	first, second := checkFixtureFlow(), checkFixtureFlow()
-	second.Request.HTTP.URL = "https://provider.example/second"
-	second.Response.HTTP.Body.Text = `{"different":true}`
+	second.Request.URL = "https://provider.example/second"
+	second.Response.Body.Text = `{"different":true}`
 	consumer := writeCheckArchive(t, consumerCheckIdentity(), "complete", checkCapture(false, first, second))
 	firstProvider := writeCheckArchive(t, buildIdentity(providerCheckIdentity(), "build-1"), "complete", checkCapture(true, cloneNormalizationFlow(t, first)))
 	secondProvider := writeCheckArchive(t, buildIdentity(providerCheckIdentity(), "build-1"), "complete", checkCapture(true, cloneNormalizationFlow(t, second)))
@@ -167,7 +167,7 @@ func TestRunSetRejectsChangedFrozenContractsWithinOneBuild(t *testing.T) {
 
 func TestRunSetKeepsConsumerObligationsIndependentWithSharedProvider(t *testing.T) {
 	matching, mismatch := checkFixtureFlow(), checkFixtureFlow()
-	mismatch.Response.HTTP.Body.Text = `{"different":true}`
+	mismatch.Response.Body.Text = `{"different":true}`
 	first := writeCheckArchive(t, buildIdentity(consumerCheckIdentity(), "one"), "complete", checkCapture(false, matching))
 	second := writeCheckArchive(t, buildIdentity(consumerCheckIdentity(), "one"), "complete", checkCapture(false, mismatch))
 	provider := writeCheckArchive(t, providerCheckIdentity(), "complete", checkCapture(true, checkFixtureFlow()))

@@ -123,7 +123,6 @@ const configured: JestConfig = withWiretap(existing, {
   binary: 'wiretap', config: '.wiretap.yaml', outputDir: 'artifacts',
   app: '<rootDir>/app.cjs',
   capture: { schemaRequired: false },
-  outputs: { coverage: ['json', 'text', 'html'], arazzo: true },
 });
 void configured;
 
@@ -186,7 +185,7 @@ try {
   await Promise.all([
     write('jest.config.cjs', `module.exports = require('@wiretap/sdk/jest').withWiretap({
       testMatch: ['**/outcomes.spec.cjs'], transform: {}, globalSetup: './setup.cjs', globalTeardown: './teardown.cjs'
-    }, { app: '<rootDir>/app.cjs', outputs: { coverage: ['json', 'text', 'html'], arazzo: true } });\n`),
+    }, { app: '<rootDir>/app.cjs' });\n`),
     write('setup.cjs', marker + `module.exports = async () => { mark('setup'); process.env.USER_SETUP = 'ready'; };\n`),
     write('teardown.cjs', marker + `module.exports = async () => { mark('teardown'); };\n`),
     write('outcomes.spec.cjs', `
@@ -213,9 +212,12 @@ try {
   const markers = (await fs.readFile(path.join(directory, 'hooks.jsonl'), 'utf8')).trim().split('\n').map(JSON.parse);
   assert.equal(markers[0], 'setup');
   assert.ok(markers.includes('teardown'), `${runner} lost the user's teardown`);
-  const latest = await readJSON(path.join(directory, 'artifacts', 'last-run.json'));
-  const receipt = await readJSON(path.join(latest.bundle_path, 'last-run.json'));
-  assert.deepEqual(receipt, latest, 'the latest snapshot must reference an archive-local receipt');
+  const archives = [...result.stderr.matchAll(/^Wiretap archive: ([^\r\n]+)$/gm)].map(match => match[1]);
+  assert.equal(archives.length, 1, 'the managed runner must print its exact archive path once');
+  assert.ok(path.isAbsolute(archives[0]));
+  const receipt = await readJSON(path.join(archives[0], 'last-run.json'));
+  assert.equal(receipt.bundle_path, archives[0]);
+  await assert.rejects(fs.access(path.join(directory, 'artifacts', 'last-run.json')), { code: 'ENOENT' });
   await fs.access(path.join(receipt.bundle_path, 'wiretap.log'));
   assert.equal(receipt.status, 'complete', `${runner}: ${JSON.stringify(receipt)}`);
   assert.deepEqual(receipt.outputs.errors, []);
@@ -237,7 +239,9 @@ try {
   assert.equal(new Set(named('retries').map(testcase => testcase.identity.id)).size, 1);
   assert.equal(new Set(cases.map(testcase => testcase.identity.id)).size, 3);
   assert.ok(named('cleanup failure').every(testcase => testcase.status === 'fail'), `${runner} lost the cleanup outcome`);
-  assert.match(await fs.readFile(receipt.outputs.coverage.text, 'utf8'), /smoke-api: 1\/1 operations exercised/);
+  assert.deepEqual(Object.keys(receipt.outputs.coverage).sort(), ['html', 'json']);
+  const textReport = await mustRun(binary, ['report', '--bundle', receipt.bundle_path, '--format', 'text']);
+  assert.match(textReport.stdout, /smoke-api: 1\/1 operations exercised/);
   assert.ok(await readJSON(receipt.outputs.coverage.json));
   assert.equal(path.basename(receipt.outputs.coverage.html), 'coverage.html');
   const dashboard = await fs.readFile(receipt.outputs.coverage.html, 'utf8');

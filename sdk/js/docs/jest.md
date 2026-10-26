@@ -30,13 +30,12 @@ const api = supertest(process.env.WIRETAP_SUT_URL || app);
 ```
 
 Keep your test files, assertions, mocks and ordinary Jest callbacks. Configure
-the API contract and exports in `.wiretap.yaml`:
+the API contract in `.wiretap.yaml`:
 
 ```yaml
 version: 1
 application: {id: my-api}
 output_dir: artifacts/wiretap
-outputs: {coverage: [json, text, html], arazzo: true}
 sut:
   id: my-api
   kind: service
@@ -80,9 +79,11 @@ module.exports = withWiretap(existingConfig);
 Each unique run archive contains its canonical `last-run.json` receipt and a
 bounded `wiretap.log`. The receipt gives the exact archive, coverage report and
 Arazzo workflow paths. Keep the complete output directory in CI, including
-failed runs. The output-root `last-run.json` remains an advisory latest snapshot;
+failed runs. Use the archive path printed to stderr to locate that run's receipt;
 concurrent owners retain independent records inside their archives.
-Coverage defaults to JSON, text and HTML. Open the receipt's
+Every completed run exports JSON and HTML coverage plus eligible Arazzo workflows.
+Text summaries remain available through `wiretap report --bundle <archive> --format text`.
+Open the receipt's
 `outputs.coverage.html` directly in a browser to inspect API coverage and the
 test runs behind each condition. The dashboard works offline. The coverage JSON
 can also [rebuild it with specs and Arazzo](https://github.com/mattlock83/wiretap/blob/main/docs/artifacts.md#offline-html-dashboard).
@@ -103,7 +104,9 @@ propagation through every relevant SUT boundary. Jest `.concurrent` tests also
 require that propagation. Custom environments and watch mode are unsupported. Run separate Jest projects
 individually, then combine their archives with a run set.
 Existing global setup runs before Wiretap starts; existing global teardown runs
-after Wiretap finalizes. Use per-test hooks for requests that should be captured.
+after Wiretap finalizes. Test-file environments attach to this started runtime.
+Explicit capture `baseUrl` or `proxy` options still configure their selected
+runtime. Use per-test hooks for requests that should be captured.
 
 ## Dynamic fixtures and session settings
 
@@ -125,14 +128,7 @@ captureJest({
 For serializable capture overrides, use the configuration's `capture` option,
 for example `{ capture: { tags: ['integration'] } }`. Dynamic callbacks and a
 custom tracer provider belong in `captureJest`, because Jest serializes its
-configuration when starting workers. Set output formats alongside `capture`:
-
-```js
-withWiretap(existingConfig, {
-  capture: { tags: ['integration'] },
-  outputs: { coverage: ['json', 'text', 'html'], arazzo: true },
-});
-```
+configuration when starting workers.
 
 Go applies project defaults. Omit a capture option to inherit it; `schemas: []`
 or `dependencies: {}` explicitly clears that list for the test, and

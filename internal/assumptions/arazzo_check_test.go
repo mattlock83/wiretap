@@ -14,8 +14,8 @@ import (
 
 func integrationArazzoFlow() artifact.Flow {
 	flow := httpNormalizationFixture()
-	flow.Request.HTTP.URL = "http://consumer.test/items?currency=AUD"
-	flow.Response.HTTP.Trailers = nil
+	flow.Request.URL = "http://consumer.test/items?currency=AUD"
+	flow.Response.Trailers = nil
 	return flow
 }
 
@@ -59,14 +59,14 @@ func TestArazzoChecksUseCompleteArchiveResponsesWithArazzo(t *testing.T) {
 	for _, scenario := range []string{"compatible", "response body", "response header", "request", "ignored header"} {
 		t.Run(scenario, func(t *testing.T) {
 			consumer, provider := integrationArazzoFlow(), integrationArazzoFlow()
-			provider.Request.HTTP.URL = "https://provider.test/items?currency=AUD"
+			provider.Request.URL = "https://provider.test/items?currency=AUD"
 			switch scenario {
 			case "response body":
-				provider.Response.HTTP.Body.Text = `{"available":false,"status":"pending","items":[1,2]}`
+				provider.Response.Body.Text = `{"available":false,"status":"pending","items":[1,2]}`
 			case "response header", "ignored header":
-				provider.Response.HTTP.Headers["X-Business"] = []string{"different"}
+				provider.Response.Headers["X-Business"] = []string{"different"}
 			case "request":
-				provider.Request.HTTP.Body.Text = `{"amount":2,"items":[1,null]}`
+				provider.Request.Body.Text = `{"amount":2,"items":[1,null]}`
 			}
 			opts := arazzoPair(t, consumer, provider)
 			if scenario == "ignored header" {
@@ -145,8 +145,8 @@ func TestArazzoChecksKeepFailedProviderAndIdentityUnverified(t *testing.T) {
 
 func TestArazzoCheckSelectionAppliesToRunSets(t *testing.T) {
 	first, second := integrationArazzoFlow(), integrationArazzoFlow()
-	second.Request.HTTP.URL = "http://consumer.test/other"
-	second.Response.HTTP.Body.Text = `{"other":true}`
+	second.Request.URL = "http://consumer.test/other"
+	second.Response.Body.Text = `{"other":true}`
 	consumer := writeCheckArchive(t, mappedConsumerCheckIdentity(), "complete", checkCapture(false, first, second))
 	providerOne := writeCheckArchive(t, buildIdentity(providerCheckIdentity(), "one"), "complete", checkCapture(true, cloneNormalizationFlow(t, first)))
 	providerTwo := writeCheckArchive(t, buildIdentity(providerCheckIdentity(), "one"), "complete", checkCapture(true, cloneNormalizationFlow(t, second)))

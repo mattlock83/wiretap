@@ -26,7 +26,7 @@ func failedRun(t *testing.T, changes ...func(*artifact.Artifact)) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	capture := &artifact.Artifact{Version: 2, TestCase: tc, Schemas: frozen, Traffic: []artifact.Flow{{ID: "f-1", Protocol: "http", Channel: "test_to_sut", Request: artifact.Message{HTTP: &artifact.HttpMessage{Method: "GET", URL: "http://sut.test/orders"}}, Response: artifact.Message{HTTP: &artifact.HttpMessage{Status: 503, Headers: artifact.Headers{"Content-Type": {"application/json"}}, Body: &artifact.Body{Text: `{"error":"unavailable"}`}}}}}}
+	capture := &artifact.Artifact{Version: 2, TestCase: tc, Schemas: frozen, Traffic: []artifact.Flow{{ID: "f-1", Protocol: "http", Channel: "test_to_sut", Request: &artifact.HttpMessage{Method: "GET", URL: "http://sut.test/orders"}, Response: &artifact.HttpMessage{Status: 503, Headers: artifact.Headers{"Content-Type": {"application/json"}}, Body: &artifact.Body{Text: `{"error":"unavailable"}`}}}}}
 	for _, change := range changes {
 		change(capture)
 	}
@@ -39,17 +39,17 @@ func failedRun(t *testing.T, changes ...func(*artifact.Artifact)) string {
 	return writer.Path()
 }
 
-func TestFailedAttemptsProduceEverySelectedOutput(t *testing.T) {
+func TestFailedAttemptsProduceFixedOutputs(t *testing.T) {
 	root := failedRun(t)
 	before, err := os.ReadFile(filepath.Join(root, "bundle.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := Generate(t.Context(), root, Config{Coverage: []string{"json", "text", "html"}, Arazzo: true})
+	result, err := Generate(t.Context(), root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(result.Coverage) != 3 || result.Arazzo == "" || len(result.Errors) != 0 {
+	if len(result.Coverage) != 2 || result.Arazzo == "" || len(result.Errors) != 0 {
 		t.Fatalf("wrong outputs: %+v", result)
 	}
 	var report coverage.Report
@@ -59,10 +59,6 @@ func TestFailedAttemptsProduceEverySelectedOutput(t *testing.T) {
 	}
 	if report.ArtifactCount != 1 || len(report.TestCases) != 1 || report.TestCases[0].Attempts[0].Status != "fail" {
 		t.Fatalf("lost failed attempt: %+v", report)
-	}
-	textReport, err := os.ReadFile(result.Coverage["text"])
-	if err != nil || filepath.Ext(result.Coverage["text"]) != ".txt" || !strings.Contains(string(textReport), "1 failed") {
-		t.Fatalf("missing readable failed-run summary: %s, %v", textReport, err)
 	}
 	html, err := os.ReadFile(result.Coverage["html"])
 	if err != nil || !strings.Contains(string(html), `data-wiretap-report="coverage"`) || !strings.Contains(string(html), "a failed test") {
@@ -84,7 +80,7 @@ func TestFailedAttemptsProduceEverySelectedOutput(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Regeneration replaces generated files without disturbing raw capture.
-	if _, err := Generate(t.Context(), root, Defaults()); err != nil {
+	if _, err := Generate(t.Context(), root); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -97,7 +93,7 @@ func TestOutputFailureRetainsCoverageAndArchive(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "exports", "arazzo"), []byte("keep"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	result, err := Generate(t.Context(), root, Defaults())
+	result, err := Generate(t.Context(), root)
 	if err == nil || len(result.Errors) == 0 || result.Coverage["json"] == "" || result.Arazzo != "" {
 		t.Fatalf("failure hidden or coverage lost: %+v %v", result, err)
 	}
@@ -114,13 +110,13 @@ func TestOutputFailureRetainsCoverageAndArchive(t *testing.T) {
 	}
 }
 
-func TestHTMLFailureRetainsJSONTextAndArazzo(t *testing.T) {
+func TestHTMLFailureRetainsJSONAndArazzo(t *testing.T) {
 	root := failedRun(t)
 	if err := os.MkdirAll(filepath.Join(root, "exports", "coverage.html"), 0700); err != nil {
 		t.Fatal(err)
 	}
-	result, err := Generate(t.Context(), root, Defaults())
-	if err == nil || result.Coverage["html"] != "" || result.Coverage["json"] == "" || result.Coverage["text"] == "" || result.Arazzo == "" || len(result.Errors) != 1 || result.Errors[0].Format != "coverage.html" {
+	result, err := Generate(t.Context(), root)
+	if err == nil || result.Coverage["html"] != "" || result.Coverage["json"] == "" || result.Arazzo == "" || len(result.Errors) != 1 || result.Errors[0].Format != "coverage.html" {
 		t.Fatalf("HTML failure hid other outputs: %+v, %v", result, err)
 	}
 	if _, _, err := bundle.Load(root); err != nil {
@@ -134,7 +130,7 @@ func TestOutputDirectorySymlinkCannotWriteOutsideArchive(t *testing.T) {
 	if err := os.Symlink(outside, filepath.Join(root, "exports")); err != nil {
 		t.Skip(err)
 	}
-	if _, err := Generate(t.Context(), root, Defaults()); err == nil {
+	if _, err := Generate(t.Context(), root); err == nil {
 		t.Fatal("accepted exports symlink")
 	}
 	entries, err := os.ReadDir(outside)
@@ -148,7 +144,7 @@ func TestAutomaticOutputsProtectSourceBackedByExports(t *testing.T) {
 		for _, alias := range []string{"source symlink", "output hardlink"} {
 			t.Run(target+"/"+alias, func(t *testing.T) {
 				root := failedRun(t)
-				outputs, err := Generate(t.Context(), root, Defaults())
+				outputs, err := Generate(t.Context(), root)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -179,7 +175,7 @@ func TestAutomaticOutputsProtectSourceBackedByExports(t *testing.T) {
 				} else if err := os.Link(source, output); err != nil {
 					t.Skip(err)
 				}
-				if _, err := Generate(t.Context(), root, Defaults()); err == nil {
+				if _, err := Generate(t.Context(), root); err == nil {
 					t.Fatal("accepted export that aliases capture evidence")
 				}
 				if after, err := os.ReadFile(source); err != nil || string(after) != string(before) {
@@ -196,14 +192,14 @@ func TestAutomaticOutputsProtectSourceBackedByExports(t *testing.T) {
 func jsonRESTRun(t *testing.T) string {
 	t.Helper()
 	return failedRun(t, func(c *artifact.Artifact) {
-		c.Traffic[0].Response.HTTP.Headers = map[string][]string{"Content-Type": {"application/json"}}
-		c.Traffic[0].Response.HTTP.Body = &artifact.Body{Text: `{"error":"unavailable"}`}
+		c.Traffic[0].Response.Headers = map[string][]string{"Content-Type": {"application/json"}}
+		c.Traffic[0].Response.Body = &artifact.Body{Text: `{"error":"unavailable"}`}
 	})
 }
 
 func TestAutomaticArazzoIncludesDocumentAndSchemaCompanions(t *testing.T) {
 	root := jsonRESTRun(t)
-	result, err := Generate(t.Context(), root, Defaults())
+	result, err := Generate(t.Context(), root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -275,10 +271,10 @@ func TestArazzoCompanionPublicationFailurePreservesWorkflow(t *testing.T) {
 
 func TestAutomaticArazzoSkipsNonJSONTraffic(t *testing.T) {
 	root := failedRun(t, func(c *artifact.Artifact) {
-		c.Traffic[0].Response.HTTP.Headers = artifact.Headers{"Content-Type": {"text/plain"}}
-		c.Traffic[0].Response.HTTP.Body = &artifact.Body{Text: "unavailable"}
+		c.Traffic[0].Response.Headers = artifact.Headers{"Content-Type": {"text/plain"}}
+		c.Traffic[0].Response.Body = &artifact.Body{Text: "unavailable"}
 	})
-	result, err := Generate(t.Context(), root, Defaults())
+	result, err := Generate(t.Context(), root)
 	if err != nil || result.Arazzo != "" || len(result.ArazzoFiles) != 0 || len(result.Errors) != 0 {
 		t.Fatalf("non-JSON traffic should not export Arazzo: %+v, %v", result, err)
 	}
@@ -295,7 +291,7 @@ func TestAutomaticArazzoFailureRetainsOtherOutputs(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "exports", "arazzo"), []byte("keep"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	result, err := Generate(t.Context(), root, Defaults())
+	result, err := Generate(t.Context(), root)
 	if err == nil || result.Arazzo != "" || len(result.ArazzoFiles) != 0 || len(result.Errors) != 1 || result.Errors[0].Format != "arazzo" || result.Coverage["json"] == "" {
 		t.Fatalf("Arazzo failure lost other exports: %+v, %v", result, err)
 	}

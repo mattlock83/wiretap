@@ -49,7 +49,6 @@ Add `.wiretap.yaml` to your test project:
 version: 1
 application: {id: orders-service, name: Orders}
 output_dir: artifacts/wiretap
-outputs: {coverage: [json, text, html], arazzo: true}
 sut:
   id: orders-http
   kind: service
@@ -113,8 +112,8 @@ wiretap init --sut-url http://127.0.0.1:8080 \
 wiretap doctor
 ```
 
-`init` writes a new `.wiretap.yaml` with JSON/text/HTML coverage and Arazzo
-outputs. It refuses to overwrite existing files or symlinks; `--output path`
+`init` writes a new `.wiretap.yaml`. Finalization produces JSON/HTML coverage
+and eligible Arazzo workflows automatically. It refuses to overwrite existing files or symlinks; `--output path`
 selects a new path and `--output -` prints YAML. Parent directories must exist.
 Paths in the generated configuration resolve relative to that file.
 
@@ -140,7 +139,7 @@ complete run directory, including failed test attempts:
 | `tests/` | Immutable recordings and outcomes for each attempt. |
 | `contracts/` | Frozen OpenAPI contracts and their imports. |
 | `payloads/` | Retained request and response bytes. |
-| `exports/coverage.json` and `coverage.txt` | API and contract-condition coverage. |
+| `exports/coverage.json` | API and contract-condition coverage. |
 | `exports/coverage.html` | Offline API coverage and test-run dashboard. |
 | `exports/arazzo/` | Eligible JSON/REST workflows and OpenAPI source companions. |
 | `last-run.json` and `wiretap.log` | This run's receipt and bounded runtime log. |

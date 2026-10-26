@@ -57,7 +57,7 @@
     {
       "id": "owner.receipt_isolation",
       "applies_to": ["managed_owner"],
-      "expect": {"canonical_receipt": "<bundle_path>/last-run.json", "canonical_log": "<bundle_path>/wiretap.log", "log_retention_bytes": 65536, "shared_root_latest_authoritative": false, "concurrent_runs_preserve_each_receipt": true}
+      "expect": {"canonical_receipt": "<bundle_path>/last-run.json", "canonical_log": "<bundle_path>/wiretap.log", "log_retention_bytes": 65536, "shared_root_receipt": false, "concurrent_runs_preserve_each_receipt": true}
     },
     {
       "id": "attempt.identity",

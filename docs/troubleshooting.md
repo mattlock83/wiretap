@@ -84,8 +84,8 @@ disappears, EOF requests graceful shutdown so the runtime stops and preserves
 an interrupted raw archive with pending attempts.
 
 Abrupt termination cannot finish normal exports or save the owner's completion
-receipt. `last-run.json` can be absent or left from an earlier run; inspect
-`bundle.json` instead of treating that receipt as proof of current completion.
+receipt. The archive's `last-run.json` can be absent; inspect its `bundle.json`
+to determine whether capture completed or was interrupted.
 Retain the full output directory and runtime log. If Wiretap itself is killed
 before graceful shutdown finishes, its archive can remain open. Normal managed
 shutdown waits for the child only up to its shutdown timeout, then force-kills it.

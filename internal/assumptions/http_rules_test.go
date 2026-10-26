@@ -37,13 +37,13 @@ func httpRulesResponse(document map[string]any) map[string]any {
 func httpRulesCapture(t *testing.T, provider bool, document map[string]any, value string) *artifact.Artifact {
 	t.Helper()
 	flow := checkFixtureFlow()
-	flow.Request.HTTP.URL = "http://consumer.test/items?tenant=shop"
+	flow.Request.URL = "http://consumer.test/items?tenant=shop"
 	if provider {
-		flow.Request.HTTP.URL = "https://provider.test/items?tenant=shop"
+		flow.Request.URL = "https://provider.test/items?tenant=shop"
 	}
-	flow.Request.HTTP.Headers["X-Tenant"] = []string{"shop"}
-	flow.Response.HTTP.Headers["X-Rule"] = []string{"shared"}
-	flow.Request.HTTP.Body.Text, flow.Response.HTTP.Body.Text = `{"value":`+value+`}`, `{"value":`+value+`}`
+	flow.Request.Headers["X-Tenant"] = []string{"shop"}
+	flow.Response.Headers["X-Rule"] = []string{"shared"}
+	flow.Request.Body.Text, flow.Response.Body.Text = `{"value":`+value+`}`, `{"value":`+value+`}`
 	capture := checkCapture(provider, flow)
 	if document != nil {
 		operation := httpRulesOperation(document)
@@ -223,9 +223,9 @@ func TestCheckHTTPAmbiguousCapturedMediaTypesPreventArazzoVerification(t *testin
 				consumer := httpRulesCapture(t, false, nil, `"shared"`)
 				provider := httpRulesCapture(t, true, document, `"shared"`)
 				for _, capture := range []*artifact.Artifact{consumer, provider} {
-					message := capture.Traffic[0].Request.HTTP
+					message := capture.Traffic[0].Request
 					if phase == "response" {
-						message = capture.Traffic[0].Response.HTTP
+						message = capture.Traffic[0].Response
 					}
 					if variant == "case variants" {
 						message.Headers["content-type"] = []string{"text/plain"}
@@ -305,7 +305,7 @@ func TestCheckHTTPProviderContractValidatesEachActualExchange(t *testing.T) {
 			if invalidSide == "provider" {
 				invalid = provider
 			}
-			invalid.Traffic[0].Request.HTTP.Headers["X-Tenant"] = []string{"x"}
+			invalid.Traffic[0].Request.Headers["X-Tenant"] = []string{"x"}
 			options := checkHTTPPair(t, []*artifact.Artifact{consumer}, []*artifact.Artifact{provider})
 			// Explicit normalization exceptions do not excuse a declared rule
 			// violation in either original, complete recorded exchange.
@@ -328,7 +328,7 @@ func TestCheckHTTPProviderOnlyContractAllowsIntentionalInvalidRequestError(t *te
 	responses["400"] = responses["200"]
 	delete(responses, "200")
 	consumer, provider := httpRulesCapture(t, false, nil, `"invalid request"`), httpRulesCapture(t, true, document, `"invalid request"`)
-	consumer.Traffic[0].Response.HTTP.Status, provider.Traffic[0].Response.HTTP.Status = 400, 400
+	consumer.Traffic[0].Response.Status, provider.Traffic[0].Response.Status = 400, 400
 	options := checkHTTPPair(t, []*artifact.Artifact{consumer}, []*artifact.Artifact{provider})
 	report := mustCheck(t, options)
 	if !report.Compatible || len(report.Matches) != 1 || report.Matches[0].ContractCheck != "openapi_3_0_provider_contract" {

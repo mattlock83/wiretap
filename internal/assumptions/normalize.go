@@ -1,19 +1,17 @@
 package assumptions
 
 import (
-	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io"
 	"math/big"
 	"mime"
 	"net/url"
 	"sort"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/mattlock83/wiretap/internal/artifact"
+	"github.com/mattlock83/wiretap/internal/strictjson"
 )
 
 // IgnoredHeaders are transport, framing and tracing fields excluded from
@@ -61,7 +59,7 @@ func normalizeFlow(flow artifact.Flow, ignoreHeaders []string) (request, respons
 }
 
 func normalizeHTTP(flow artifact.Flow, ignored map[string]bool) (any, any, error) {
-	req, res := flow.Request.HTTP, flow.Response.HTTP
+	req, res := flow.Request, flow.Response
 	if req == nil || res == nil {
 		return nil, nil, fmt.Errorf("complete HTTP request and response are required")
 	}
@@ -174,85 +172,15 @@ func normalizeBody(body *artifact.Body) (normalizedBody, error) {
 	if err != nil {
 		return normalizedBody{}, err
 	}
-	if !validJSONUnicode(raw) {
-		return normalizedBody{Representation: "bytes", Value: base64.StdEncoding.EncodeToString(raw)}, nil
-	}
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	decoder.UseNumber()
-	value, err := normalizeJSONValue(decoder, 0)
+	value, err := strictjson.Decode(raw, strictjson.Options{
+		MaxDepth: 256, MaxNodes: len(raw) + 1, Unicode: strictjson.RequireValidUnicode,
+	})
 	if err == nil {
-		if _, trailing := decoder.Token(); trailing == io.EOF {
-			return normalizedBody{Representation: "json", Value: value}, nil
-		}
+		return normalizedBody{Representation: "json", Value: normalizeNumbers(value)}, nil
 	}
 	// Non-JSON (including invalid or duplicate-key JSON negative examples) is
 	// compared byte for byte, without guessing a parser's interpretation.
 	return normalizedBody{Representation: "bytes", Value: base64.StdEncoding.EncodeToString(raw)}, nil
-}
-
-// encoding/json replaces invalid UTF-8 and unpaired surrogate escapes with the
-// replacement character. Keep those negative examples as exact retained bytes
-// rather than allowing distinct malformed strings to become equal examples.
-// JSON grammar is still checked by the caller's ordinary decoder.
-func validJSONUnicode(raw []byte) bool {
-	if !utf8.Valid(raw) {
-		return false
-	}
-	codeUnit := func(raw []byte) (uint16, bool) {
-		var result uint16
-		for _, c := range raw {
-			result <<= 4
-			switch {
-			case c >= '0' && c <= '9':
-				result += uint16(c - '0')
-			case c >= 'a' && c <= 'f':
-				result += uint16(c-'a') + 10
-			case c >= 'A' && c <= 'F':
-				result += uint16(c-'A') + 10
-			default:
-				return 0, false
-			}
-		}
-		return result, true
-	}
-	inString := false
-	for i := 0; i < len(raw); i++ {
-		if raw[i] == '"' {
-			inString = !inString
-			continue
-		}
-		if !inString || raw[i] != '\\' {
-			continue
-		}
-		i++
-		if i >= len(raw) {
-			return false
-		}
-		if raw[i] != 'u' {
-			continue
-		}
-		if i+4 >= len(raw) {
-			return false
-		}
-		value, valid := codeUnit(raw[i+1 : i+5])
-		if !valid {
-			return false
-		}
-		i += 4
-		if value >= 0xd800 && value <= 0xdbff {
-			if i+6 >= len(raw) || raw[i+1] != '\\' || raw[i+2] != 'u' {
-				return false
-			}
-			low, valid := codeUnit(raw[i+3 : i+7])
-			if !valid || low < 0xdc00 || low > 0xdfff {
-				return false
-			}
-			i += 6
-		} else if value >= 0xdc00 && value <= 0xdfff {
-			return false
-		}
-	}
-	return true
 }
 
 func retainedBodyBytes(body *artifact.Body) ([]byte, error) {
@@ -284,61 +212,22 @@ func normalizeWireBody(body *artifact.Body) (normalizedBody, error) {
 	return normalizedBody{Representation: "bytes", Value: base64.StdEncoding.EncodeToString(raw)}, nil
 }
 
-func normalizeJSONValue(decoder *json.Decoder, depth int) (any, error) {
-	if depth > 256 {
-		return nil, fmt.Errorf("JSON nesting exceeds normalization limit")
-	}
-	token, err := decoder.Token()
-	if err != nil {
-		return nil, err
-	}
-	switch token := token.(type) {
+// Number normalization belongs to comparison semantics; the shared decoder
+// retains the exact spelling for export and display callers.
+func normalizeNumbers(value any) any {
+	switch value := value.(type) {
 	case json.Number:
-		return normalizeNumber(token), nil
-	case json.Delim:
-		switch token {
-		case '{':
-			object := map[string]any{}
-			for decoder.More() {
-				name, err := decoder.Token()
-				if err != nil {
-					return nil, err
-				}
-				key, ok := name.(string)
-				if !ok {
-					return nil, fmt.Errorf("invalid JSON object key")
-				}
-				if _, exists := object[key]; exists {
-					return nil, fmt.Errorf("duplicate JSON object key")
-				}
-				value, err := normalizeJSONValue(decoder, depth+1)
-				if err != nil {
-					return nil, err
-				}
-				object[key] = value
-			}
-			if end, err := decoder.Token(); err != nil || end != json.Delim('}') {
-				return nil, fmt.Errorf("incomplete JSON object")
-			}
-			return object, nil
-		case '[':
-			array := []any{}
-			for decoder.More() {
-				value, err := normalizeJSONValue(decoder, depth+1)
-				if err != nil {
-					return nil, err
-				}
-				array = append(array, value)
-			}
-			if end, err := decoder.Token(); err != nil || end != json.Delim(']') {
-				return nil, fmt.Errorf("incomplete JSON array")
-			}
-			return array, nil
+		return normalizeNumber(value)
+	case map[string]any:
+		for key, item := range value {
+			value[key] = normalizeNumbers(item)
 		}
-		return nil, fmt.Errorf("unexpected JSON delimiter")
-	default:
-		return token, nil
+	case []any:
+		for i, item := range value {
+			value[i] = normalizeNumbers(item)
+		}
 	}
+	return value
 }
 
 // Normalize decimal notation without float conversion or exponent expansion.

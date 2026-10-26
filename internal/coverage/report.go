@@ -191,7 +191,8 @@ func GenerateBundleSnapshot(bundlePath string, run *bundle.Run, captures []*arti
 	for i, capture := range captures {
 		entries = append(entries, artifactEntry{Path: filepath.Join(bundlePath, filepath.FromSlash(run.Attempts[i].Path)), Doc: capture})
 	}
-	report, err := generateFromEntries(entries, run.Schemas, sutName, includeArtifacts, run.UpdatedAt)
+	cache := contractCache{}
+	report, err := generateFromEntries(entries, run.Schemas, sutName, includeArtifacts, run.UpdatedAt, cache)
 	if err != nil {
 		return nil, err
 	}
@@ -230,16 +231,16 @@ func GenerateBundleSnapshot(bundlePath string, run *bundle.Run, captures []*arti
 		report.Artifacts[i] = portable(report.Artifacts[i])
 	}
 	report.Capture = &CaptureSource{ProviderMappings: run.ProviderMappings, FormatVersion: run.EvidenceVersion, RunID: run.RunID, Revision: run.Revision, State: run.RunState, Producer: run.Producer, Application: run.Application, TestSource: run.TestSource, SUTSource: run.SUTSource}
-	report.Contracts = buildContractCoverage(run, captures)
+	report.Contracts = buildContractCoverage(run, captures, cache)
 	return report, nil
 }
 
-func generateFromEntries(entries []artifactEntry, extraSchemas []artifact.SchemaRef, sutName string, includeArtifacts bool, generatedAt time.Time) (*Report, error) {
+func generateFromEntries(entries []artifactEntry, extraSchemas []artifact.SchemaRef, sutName string, includeArtifacts bool, generatedAt time.Time, cache contractCache) (*Report, error) {
 	if sutName == "" {
 		sutName = inferSUTName(entries)
 	}
 
-	provided, dependent, testcases, notes := buildCoverageWithSchemas(entries, extraSchemas)
+	provided, dependent, testcases, notes := buildCoverageWithSchemas(entries, extraSchemas, cache)
 
 	report := &Report{ReportVersion: ReportVersion, Producer: version.Current(),
 		GeneratedAt:   generatedAt,
@@ -291,7 +292,7 @@ func inferSUTName(entries []artifactEntry) string {
 	return "SUT"
 }
 
-func buildCoverageWithSchemas(entries []artifactEntry, extraSchemas []artifact.SchemaRef) (SpecCoverageGroup, SpecCoverageGroup, []TestCaseCoverage, []string) {
+func buildCoverageWithSchemas(entries []artifactEntry, extraSchemas []artifact.SchemaRef, cache contractCache) (SpecCoverageGroup, SpecCoverageGroup, []TestCaseCoverage, []string) {
 	var notes []string
 	flowEntries := []flowEntry{}
 	schemas := append([]artifact.SchemaRef{}, extraSchemas...)
@@ -314,9 +315,9 @@ func buildCoverageWithSchemas(entries []artifactEntry, extraSchemas []artifact.S
 		schemas = append(schemas, entry.Doc.Schemas...)
 	}
 
-	providedSchemas, providedNotes := loadSchemas(filterSchemas(schemas, "sut"))
+	providedSchemas, providedNotes := loadSchemas(filterSchemas(schemas, "sut"), cache)
 	notes = append(notes, providedNotes...)
-	dependentSchemas, dependentNotes := loadSchemas(filterSchemas(schemas, "dependency"))
+	dependentSchemas, dependentNotes := loadSchemas(filterSchemas(schemas, "dependency"), cache)
 	notes = append(notes, dependentNotes...)
 
 	testcases := indexCoverage(flowEntries, providedSchemas, dependentSchemas)
@@ -388,7 +389,7 @@ func flowMatchesSchemaBoundary(flow artifact.Flow, schema artifact.SchemaRef) bo
 	return schema.AssetID == "" || flow.AssetID == "" || schema.AssetID == flow.AssetID
 }
 
-func loadSchemas(schemas []artifact.SchemaRef) ([]*loadedSchema, []string) {
+func loadSchemas(schemas []artifact.SchemaRef, cache contractCache) ([]*loadedSchema, []string) {
 	seen := map[string]*loadedSchema{}
 	var notes []string
 	for _, schema := range schemas {
@@ -404,7 +405,8 @@ func loadSchemas(schemas []artifact.SchemaRef) ([]*loadedSchema, []string) {
 		if schema.Source.Type == "omitted" {
 			notes = append(notes, fmt.Sprintf("API %q explicitly omits its OpenAPI schema; validation is skipped and coverage is unknown.", schema.ID))
 		} else if strings.EqualFold(schema.Type, "openapi") {
-			if spec, err := loadOpenAPISpec(schema); err == nil {
+			prepared := cache.load(schema)
+			if spec, err := prepared.spec, prepared.loadErr; err == nil {
 				entry.OpenAPI = spec
 				entry.Operations = openapiOperations(spec)
 			} else {
@@ -636,11 +638,11 @@ func flowSampleFromFlow(entry flowEntry) FlowSample {
 		TransportError: flow.TransportError,
 	}
 	if flow.Protocol == "http" {
-		if flow.Request.HTTP != nil {
-			sample.Request = httpMessageSample(flow.Request.HTTP)
+		if flow.Request != nil {
+			sample.Request = httpMessageSample(flow.Request)
 		}
-		if flow.Response.HTTP != nil {
-			sample.Response = httpMessageSample(flow.Response.HTTP)
+		if flow.Response != nil {
+			sample.Response = httpMessageSample(flow.Response)
 		}
 	}
 	return sample
@@ -717,7 +719,7 @@ func openapiOperationFromFlow(flow artifact.Flow, spec *openapiSpec) (string, bo
 	if spec == nil || spec.Router == nil {
 		return "", false
 	}
-	msg := flow.Request.HTTP
+	msg := flow.Request
 	if msg == nil {
 		return "", false
 	}
@@ -774,11 +776,7 @@ func openapiOperations(spec *openapiSpec) []string {
 	return ops
 }
 
-func loadOpenAPISpec(ref artifact.SchemaRef) (*openapiSpec, error) {
-	root, files, err := bundle.OpenAPIFiles(ref)
-	if err != nil {
-		return nil, err
-	}
+func parseOpenAPISpec(root string, files map[string][]byte) (*openapiSpec, error) {
 	doc, err := bundle.ParseOpenAPI(context.Background(), root, files)
 	if err != nil {
 		return nil, err
@@ -805,10 +803,10 @@ func diffOps(allOps []string, covered map[string][]FlowSample) []string {
 
 // Without a schema these are observed concrete paths, never inferred contract operations.
 func observedOperation(flow artifact.Flow) string {
-	if flow.Protocol != "http" || flow.Request.HTTP == nil {
+	if flow.Protocol != "http" || flow.Request == nil {
 		return ""
 	}
-	req := flow.Request.HTTP
+	req := flow.Request
 	uri, err := url.Parse(req.URL)
 	if err != nil || req.Method == "" {
 		return ""

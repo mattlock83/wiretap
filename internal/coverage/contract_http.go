@@ -201,7 +201,7 @@ func contractRequest(msg *artifact.HttpMessage) (*http.Request, error) {
 	return req, err
 }
 func (b *contractBuilder) measureHTTP(spec *openapiSpec, plans map[string]*contractHTTPPlan, a *artifact.Artifact, f artifact.Flow, e ContractEvidence) {
-	req, err := contractRequest(f.Request.HTTP)
+	req, err := contractRequest(f.Request)
 	if err != nil {
 		b.violation("", e, "operation", err.Error())
 		return
@@ -224,10 +224,10 @@ func (b *contractBuilder) measureHTTP(spec *openapiSpec, plans map[string]*contr
 		e.InstanceLocation = ""
 		e.Reason = ""
 		e.Validation = "unknown"
-		msg := f.Request.HTTP
+		msg := f.Request
 		mp := &p.request
 		if phase == "response" {
-			msg = f.Response.HTTP
+			msg = f.Response
 			mp = nil
 			if msg != nil {
 				key := strconv.Itoa(msg.Status)

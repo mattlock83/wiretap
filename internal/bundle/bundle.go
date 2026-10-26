@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/mattlock83/wiretap/internal/artifact"
+	"github.com/mattlock83/wiretap/internal/strictjson"
 	"github.com/mattlock83/wiretap/internal/version"
 )
 
@@ -276,8 +277,21 @@ func (w *Writer) Snapshot() Run {
 }
 
 // Register freezes schemas before traffic admission and records the pending test.
-// Its returned schema paths are suitable for live validation against the snapshot.
+// Call RegisterPrepared when live validation also needs the parsed documents.
 func (w *Writer) Register(tc artifact.TestCase, schemas []artifact.SchemaRef) ([]artifact.SchemaRef, error) {
+	prepared, err := w.RegisterPrepared(tc, schemas)
+	if err != nil {
+		return nil, err
+	}
+	refs := make([]artifact.SchemaRef, 0, len(prepared))
+	for _, schema := range prepared {
+		refs = append(refs, schema.Ref)
+	}
+	return refs, nil
+}
+
+// RegisterPrepared freezes and validates all contracts before publishing a pending attempt.
+func (w *Writer) RegisterPrepared(tc artifact.TestCase, schemas []artifact.SchemaRef) ([]PreparedSchema, error) {
 	if err := tc.Identity.Validate(); err != nil {
 		return nil, err
 	}
@@ -299,11 +313,11 @@ func (w *Writer) Register(tc artifact.TestCase, schemas []artifact.SchemaRef) ([
 			return nil, fmt.Errorf("attempt %q already committed", tc.ID)
 		}
 	}
-	frozen := make([]artifact.SchemaRef, 0, len(schemas))
+	frozen := make([]PreparedSchema, 0, len(schemas))
 	for _, schema := range schemas {
 		ref, err := w.freezeSchema(schema)
 		if err != nil {
-			return nil, fmt.Errorf("freeze schema %q: %w", schema.ID, err)
+			return nil, fmt.Errorf("%w %q: %w", ErrSchema, schema.ID, err)
 		}
 		frozen = append(frozen, ref)
 	}
@@ -320,8 +334,8 @@ func (w *Writer) Register(tc artifact.TestCase, schemas []artifact.SchemaRef) ([
 	}
 	previous := w.run
 	w.run.Pending = append(w.run.Pending, PendingAttempt{Identity: tc.Identity, AttemptID: tc.ID, Name: tc.Name, StartedAt: tc.StartedAt, Meta: meta})
-	for _, ref := range frozen {
-		stored := ref
+	for _, schema := range frozen {
+		stored := schema.Ref
 		if stored.Source.Path != "" {
 			stored.Source.Path, _ = filepath.Rel(w.root, stored.Source.Path)
 			stored.Source.Path = filepath.ToSlash(stored.Source.Path)
@@ -354,10 +368,11 @@ func (w *Writer) RegisterSchemas(schemas []artifact.SchemaRef) error {
 	}
 	refs := make([]artifact.SchemaRef, 0, len(schemas))
 	for _, schema := range schemas {
-		ref, err := w.freezeSchema(schema)
+		prepared, err := w.freezeSchema(schema)
 		if err != nil {
-			return err
+			return fmt.Errorf("%w %q: %w", ErrSchema, schema.ID, err)
 		}
+		ref := prepared.Ref
 		if ref.Source.Path != "" {
 			rel, err := filepath.Rel(w.root, ref.Source.Path)
 			if err != nil || !validRelative(rel) {
@@ -446,16 +461,16 @@ func (w *Writer) Commit(art *artifact.Artifact) (string, error) {
 	for i := range copyArt.Traffic {
 		flow := &copyArt.Traffic[i]
 		for _, phase := range []string{"request", "response"} {
-			var msg *artifact.Message
+			var msg *artifact.HttpMessage
 			if phase == "request" {
-				msg = &flow.Request
+				msg = flow.Request
 			} else {
-				msg = &flow.Response
+				msg = flow.Response
 			}
-			if msg.HTTP == nil || msg.HTTP.Body == nil {
+			if msg == nil || msg.Body == nil {
 				continue
 			}
-			body := msg.HTTP.Body
+			body := msg.Body
 			var raw []byte
 			representation := ""
 			if body.Bytes != "" {
@@ -728,18 +743,18 @@ func loadWithReader(root string, reader *archiveReader) (*Run, []*artifact.Artif
 			if flow == nil {
 				return nil, nil, fmt.Errorf("body references missing flow %q", bodyRef.FlowID)
 			}
-			var msg *artifact.Message
+			var msg *artifact.HttpMessage
 			switch bodyRef.Phase {
 			case "request":
-				msg = &flow.Request
+				msg = flow.Request
 			case "response":
-				msg = &flow.Response
+				msg = flow.Response
 			default:
 				return nil, nil, fmt.Errorf("invalid body phase %q", bodyRef.Phase)
 			}
 			var body *artifact.Body
-			if msg.HTTP != nil {
-				body = msg.HTTP.Body
+			if msg != nil {
+				body = msg.Body
 			}
 			if body == nil {
 				return nil, nil, fmt.Errorf("body %q missing in interaction", key)
@@ -766,9 +781,9 @@ func loadWithReader(root string, reader *archiveReader) (*Run, []*artifact.Artif
 		for _, flow := range attempt.Capture.Traffic {
 			for _, part := range []struct {
 				name string
-				msg  artifact.Message
+				msg  *artifact.HttpMessage
 			}{{"request", flow.Request}, {"response", flow.Response}} {
-				if part.msg.HTTP != nil && part.msg.HTTP.Body != nil && (part.msg.HTTP.Body.Text != "" || part.msg.HTTP.Body.Bytes != "") && !seenBodies[flow.ID+"/"+part.name] {
+				if part.msg != nil && part.msg.Body != nil && (part.msg.Body.Text != "" || part.msg.Body.Bytes != "") && !seenBodies[flow.ID+"/"+part.name] {
 					return nil, nil, fmt.Errorf("inline body data without attachment for flow %q", flow.ID)
 				}
 			}
@@ -935,58 +950,8 @@ func readRef(root string, ref FileRef, readFile func(string) ([]byte, error)) ([
 }
 
 func rejectDuplicateKeys(data []byte) error {
-	dec := json.NewDecoder(bytes.NewReader(data))
-	var walk func() error
-	walk = func() error {
-		tok, err := dec.Token()
-		if err != nil {
-			return err
-		}
-		delim, ok := tok.(json.Delim)
-		if !ok {
-			return nil
-		}
-		switch delim {
-		case '{':
-			keys := map[string]bool{}
-			for dec.More() {
-				keyToken, err := dec.Token()
-				if err != nil {
-					return err
-				}
-				key, ok := keyToken.(string)
-				if !ok {
-					return errors.New("invalid JSON object key")
-				}
-				if keys[key] {
-					return fmt.Errorf("duplicate JSON key %q", key)
-				}
-				keys[key] = true
-				if err := walk(); err != nil {
-					return err
-				}
-			}
-			_, err := dec.Token()
-			return err
-		case '[':
-			for dec.More() {
-				if err := walk(); err != nil {
-					return err
-				}
-			}
-			_, err := dec.Token()
-			return err
-		default:
-			return fmt.Errorf("unexpected JSON delimiter %q", delim)
-		}
-	}
-	if err := walk(); err != nil {
-		return err
-	}
-	if _, err := dec.Token(); err != io.EOF {
-		return errors.New("extra JSON content")
-	}
-	return nil
+	_, err := strictjson.Decode(data, strictjson.Options{MaxDepth: 10000, MaxNodes: len(data) + 1})
+	return err
 }
 
 func sortRefs(refs []AttemptRef) {

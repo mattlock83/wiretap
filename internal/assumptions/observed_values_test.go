@@ -38,9 +38,9 @@ func TestCheckObservedTypesEnumsAndLengthsFailInBothModes(t *testing.T) {
 			for _, phase := range []string{"request", "response"} {
 				t.Run(phase, func(t *testing.T) {
 					consumer, provider := checkFixtureFlow(), checkFixtureFlow()
-					consumerMessage, providerMessage := consumer.Request.HTTP, provider.Request.HTTP
+					consumerMessage, providerMessage := consumer.Request, provider.Request
 					if phase == "response" {
-						consumerMessage, providerMessage = consumer.Response.HTTP, provider.Response.HTTP
+						consumerMessage, providerMessage = consumer.Response, provider.Response
 					}
 					consumerMessage.Body.Text = `{"field":` + tc.consumer + `}`
 					providerMessage.Body.Text = `{"field":` + tc.provider + `}`
@@ -79,9 +79,9 @@ func TestCheckRejectsNonJSONBodies(t *testing.T) {
 		for _, phase := range []string{"request", "response"} {
 			t.Run(media+"/"+phase, func(t *testing.T) {
 				consumer, provider := checkFixtureFlow(), checkFixtureFlow()
-				cm, pm := consumer.Request.HTTP, provider.Request.HTTP
+				cm, pm := consumer.Request, provider.Request
 				if phase == "response" {
-					cm, pm = consumer.Response.HTTP, provider.Response.HTTP
+					cm, pm = consumer.Response, provider.Response
 				}
 				cm.Headers["Content-Type"], pm.Headers["Content-Type"] = []string{media}, []string{media}
 				cm.Body.Text, pm.Body.Text = "1", "1.0"

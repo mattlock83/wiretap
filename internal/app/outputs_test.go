@@ -26,7 +26,7 @@ func TestFinishRunProducesOutputsAndPreservesFailedAttempts(t *testing.T) {
 	}
 	response.Body.Close()
 	attempt := postDependencyJSON(t, control.URL, "/v1/teardownTest", map[string]any{"session_id": session["session_id"], "status": "fail"})
-	finished := postDependencyJSON(t, control.URL, "/v1/finishRun", map[string]any{"outputs": runoutput.Defaults()})
+	finished := postDependencyJSON(t, control.URL, "/v1/finishRun", map[string]any{})
 	validateControlResponse(t, "finish", finished)
 	validateControlResponse(t, "exports", finished["outputs"])
 	if finished["bundle_path"] != attempt["bundle_path"] {
@@ -46,7 +46,7 @@ func TestFinishRunProducesOutputsAndPreservesFailedAttempts(t *testing.T) {
 		}
 	}
 	captured := dependencyArtifact(t, attempt)
-	if captured.TestCase.Status != "fail" || captured.Traffic[0].Response.HTTP.Status != 503 {
+	if captured.TestCase.Status != "fail" || captured.Traffic[0].Response.Status != 503 {
 		t.Fatal("failed evidence changed")
 	}
 }
@@ -65,7 +65,7 @@ func TestFinishRunExportsObservedJSONRESTAsArazzo(t *testing.T) {
 	}
 	_ = response.Body.Close()
 	postDependencyJSON(t, control.URL, "/v1/teardownTest", map[string]any{"session_id": session["session_id"], "status": "pass"})
-	finished := postDependencyJSON(t, control.URL, "/v1/finishRun", map[string]any{"outputs": runoutput.Config{Arazzo: true}})
+	finished := postDependencyJSON(t, control.URL, "/v1/finishRun", map[string]any{})
 	validateControlResponse(t, "finish", finished)
 	validateControlResponse(t, "exports", finished["outputs"])
 	data, _ := json.Marshal(finished["outputs"])

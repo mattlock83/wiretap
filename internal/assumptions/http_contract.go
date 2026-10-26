@@ -147,7 +147,7 @@ func loadHTTPContractFiles(ctx context.Context, ref *artifact.SchemaRef) (map[st
 }
 
 func (c *httpContract) input(flow artifact.Flow) (*openapi3filter.RequestValidationInput, error) {
-	message := flow.Request.HTTP
+	message := flow.Request
 	if message == nil || c == nil || c.router == nil {
 		return nil, errors.New("HTTP request and frozen contract router are required")
 	}
@@ -190,7 +190,7 @@ func (c *httpContract) validate(ctx context.Context, flow artifact.Flow) error {
 	for _, entry := range []struct {
 		phase   string
 		message *artifact.HttpMessage
-	}{{"request", flow.Request.HTTP}, {"response", flow.Response.HTTP}} {
+	}{{"request", flow.Request}, {"response", flow.Response}} {
 		if entry.message != nil {
 			if err := unambiguousHTTPHeaders(entry.message.Headers); err != nil {
 				return fmt.Errorf("%s: %w", entry.phase, err)
@@ -201,12 +201,12 @@ func (c *httpContract) validate(ctx context.Context, flow artifact.Flow) error {
 	if err != nil {
 		return err
 	}
-	response := flow.Response.HTTP
+	response := flow.Response
 	if response == nil {
 		return errors.New("HTTP response evidence is required")
 	}
 	if response.Status < 400 {
-		if err := preciseHTTPBody(flow.Request.HTTP); err != nil {
+		if err := preciseHTTPBody(flow.Request); err != nil {
 			return fmt.Errorf("request: %w", err)
 		}
 		if err := preciseHTTPParameters(input); err != nil {

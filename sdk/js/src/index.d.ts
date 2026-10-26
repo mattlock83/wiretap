@@ -63,7 +63,6 @@ export interface CaptureResponse {
   attempt_path?: string;
   [key: string]: unknown;
 }
-export interface OutputOptions { coverage?: ('json' | 'text' | 'html')[]; arazzo?: boolean; }
 export interface OutputResult {
   bundle_path: string;
   coverage: Record<string, string>;

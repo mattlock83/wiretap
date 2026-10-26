@@ -108,13 +108,13 @@ type SchemaSource struct {
 
 // Flow captures one request/response exchange.
 type Flow struct {
-	ID         string    `json:"id"`
-	Protocol   string    `json:"protocol"`
-	Channel    string    `json:"channel"`
-	StartedAt  time.Time `json:"started_at,omitempty"`
-	DurationMS int64     `json:"duration_ms,omitempty"`
-	Request    Message   `json:"request"`
-	Response   Message   `json:"response"`
+	ID         string       `json:"id"`
+	Protocol   string       `json:"protocol"`
+	Channel    string       `json:"channel"`
+	StartedAt  time.Time    `json:"started_at,omitempty"`
+	DurationMS int64        `json:"duration_ms,omitempty"`
+	Request    *HttpMessage `json:"request"`
+	Response   *HttpMessage `json:"response"`
 	// AssetID identifies the externally owned dependency receiving this flow.
 	AssetID string `json:"asset_id,omitempty"`
 	// TraceID correlates the captured exchange with application traces and logs.
@@ -139,11 +139,6 @@ type DependencyAssumption struct {
 	ProviderCheck  struct {
 		Status string `json:"status"`
 	} `json:"provider_check"`
-}
-
-// Message wraps HTTP message payloads.
-type Message struct {
-	HTTP *HttpMessage
 }
 
 // HttpMessage represents a request or response payload.

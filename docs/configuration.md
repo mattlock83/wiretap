@@ -6,7 +6,6 @@ Check in one `.wiretap.yaml` at the test project root. Wiretap discovers it in t
 version: 1
 application: {name: Orders, id: orders-app}
 output_dir: artifacts/wiretap
-outputs: {coverage: [json, text, html], arazzo: true}
 sut:
   id: orders
   url: ${SUT_BASE_URL}
@@ -50,7 +49,7 @@ It hosts the control API and waits for lifecycle calls. It does not choose or la
 
 The Jest adapter starts capture once, registers each test attempt before its per-test work, records its final runner outcome after cleanup, then finalizes after all files/workers finish. One suite owner controls a shared runtime. The adapter uses one worker by default; parallel workers and `.concurrent` tests need explicit sessions and trace propagation through the SUT. See [tracing](otel-adoption.md).
 
-Finalization completes the raw archive and configured exports. Managed shutdown closes a parent stdin lifeline and waits for the child; unsuccessful exits or forced termination fail cleanup. If the owner dies, EOF asks the runtime to preserve an interrupted archive. Abrupt termination cannot guarantee exports or a completion receipt; killing the runtime can leave an open archive. Retain the entire output root in CI.
+Finalization completes the raw archive and automatic exports. Managed shutdown closes a parent stdin lifeline and waits for the child; unsuccessful exits or forced termination fail cleanup. If the owner dies, EOF asks the runtime to preserve an interrupted archive. Abrupt termination cannot guarantee exports or a completion receipt; killing the runtime can leave an open archive. Retain the entire output root in CI.
 
 ## Schema defaults by boundary
 
@@ -106,7 +105,7 @@ Checks use Arazzo on both sides and require complete raw archives. Defaults are 
 
 ## Automatic outputs
 
-`outputs: {coverage: [json, text, html], arazzo: true}` is the default. It generates coverage and Arazzo after finalization. Open the receipt's `outputs.coverage.html` in a browser for the offline dashboard. The completion receipt and `exports/result.json` name exact paths and errors. Each export is independent; one failure retains other successful outputs but fails finalization/cleanup. Raw evidence remains available for an offline retry:
+Finalization always generates JSON and HTML coverage, plus Arazzo for eligible JSON/REST traffic. Output-selection settings are rejected. Open the receipt's `outputs.coverage.html` in a browser for the offline dashboard. The archive-local completion receipt and `exports/result.json` name exact paths and errors. Each export is independent; one failure retains other successful outputs but fails finalization/cleanup. Raw evidence remains available for an offline retry:
 
 ```sh
 wiretap report --bundle ./artifacts/wiretap/run-... --format all

@@ -13,7 +13,6 @@ import (
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/mattlock83/wiretap/internal/bundle"
-	"github.com/mattlock83/wiretap/internal/core"
 	"github.com/mattlock83/wiretap/internal/fileuri"
 	"github.com/mattlock83/wiretap/internal/project"
 	"github.com/mattlock83/wiretap/internal/schemajson"
@@ -88,21 +87,7 @@ func inspectSetup(ctx context.Context, path string) doctorReport {
 		report.ConfigPath = configured.Path
 	}
 	report.add("config", report.ConfigPath, err)
-	config := core.DefaultConfig()
-	if configured != nil {
-		if configured.HTTPListen != "" {
-			config.HTTP.ListenAddr = configured.HTTPListen
-		}
-		if configured.ProxyListen != "" {
-			config.Proxy.ListenAddr = configured.ProxyListen
-		}
-		config.Artifact.OutputDir = configured.OutputDir
-		config.Proxy.CABaseDir = configured.CADir
-	}
-	err = applyEnv(&config)
-	if err == nil {
-		err = config.Validate()
-	}
+	config, err := resolveRuntimeConfig(configured)
 	report.add("runtime", fmt.Sprintf("HTTP %s; proxy %s; capture limit %d bytes per body (0 = unlimited)", config.HTTP.ListenAddr, config.Proxy.ListenAddr, config.Capture.MaxBodyBytes), err)
 	_, err = bundle.ConfiguredLoadLimits()
 	report.add("archive_limits", "archive loading and output inventory budgets are valid", err)

@@ -14,7 +14,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getkin/kin-openapi/openapi3"
+	"github.com/getkin/kin-openapi/routers"
+	"github.com/getkin/kin-openapi/routers/legacy"
 	"github.com/mattlock83/wiretap/internal/artifact"
 	"github.com/mattlock83/wiretap/internal/fileuri"
 	"github.com/mattlock83/wiretap/internal/schemajson"
@@ -46,38 +47,48 @@ func validateSchemaBoundary(ref artifact.SchemaRef) error {
 	return nil
 }
 
+// PreparedSchema contains the exact frozen contract used to admit an attempt.
+// Router retains the document validated during preparation for live validation.
+type PreparedSchema struct {
+	Ref    artifact.SchemaRef
+	Router routers.Router
+}
+
+// ErrSchema identifies a supplied contract that could not be prepared.
+var ErrSchema = errors.New("invalid or unreadable OpenAPI schema")
+
 // freezeSchema loads transitive file/URL references and rewrites them to
 // deterministic local names. The snapshot is used for live validation too.
-func (w *Writer) freezeSchema(ref artifact.SchemaRef) (artifact.SchemaRef, error) {
+func (w *Writer) freezeSchema(ref artifact.SchemaRef) (PreparedSchema, error) {
 	if err := validateSchemaBoundary(ref); err != nil {
-		return ref, err
+		return PreparedSchema{Ref: ref}, err
 	}
 	var rootURL *url.URL
 	switch strings.ToLower(ref.Source.Type) {
 	case "omitted":
 		if ref.Source.Path != "" || ref.Source.URL != "" || ref.Source.Content != "" || ref.Source.SHA256 != "" {
-			return ref, errors.New("omitted schema cannot contain a source")
+			return PreparedSchema{Ref: ref}, errors.New("omitted schema cannot contain a source")
 		}
-		return ref, nil
+		return PreparedSchema{Ref: ref}, nil
 	case "file":
 		var err error
 		rootURL, err = fileuri.FromPath(ref.Source.Path)
 		if err != nil {
-			return ref, err
+			return PreparedSchema{Ref: ref}, err
 		}
 	case "url":
 		var err error
 		rootURL, err = url.Parse(ref.Source.URL)
 		if err != nil {
-			return ref, err
+			return PreparedSchema{Ref: ref}, err
 		}
 		if rootURL.User != nil {
-			return ref, errors.New("schema URL credentials are not supported")
+			return PreparedSchema{Ref: ref}, errors.New("schema URL credentials are not supported")
 		}
 	case "inline":
 		rootURL = &url.URL{Scheme: "wiretap-inline", Host: digest([]byte(ref.Source.Content))}
 	default:
-		return ref, fmt.Errorf("unsupported schema source %q", ref.Source.Type)
+		return PreparedSchema{Ref: ref}, fmt.Errorf("unsupported schema source %q", ref.Source.Type)
 	}
 	type sourceDoc struct {
 		uri   *url.URL
@@ -147,7 +158,7 @@ func (w *Writer) freezeSchema(ref artifact.SchemaRef) (artifact.SchemaRef, error
 		inline = []byte(ref.Source.Content)
 	}
 	if err := collect(rootURL, inline); err != nil {
-		return ref, err
+		return PreparedSchema{Ref: ref}, err
 	}
 	keys := make([]string, 0, len(docs))
 	for key := range docs {
@@ -159,7 +170,7 @@ func (w *Writer) freezeSchema(ref artifact.SchemaRef) (artifact.SchemaRef, error
 	for _, key := range keys {
 		data, err := json.Marshal(docs[key].value)
 		if err != nil {
-			return ref, err
+			return PreparedSchema{Ref: ref}, err
 		}
 		identity += digest([]byte(key)) + ":" + digest(data) + "/"
 	}
@@ -167,6 +178,7 @@ func (w *Writer) freezeSchema(ref artifact.SchemaRef) (artifact.SchemaRef, error
 	base := "contracts/" + setHash
 	filename := func(key string) string { return "doc-" + digest([]byte(key))[:20] + ".json" }
 	manifest := schemaManifest{SetHash: setHash}
+	files := make(map[string][]byte, len(keys))
 	for _, key := range keys {
 		doc := docs[key]
 		var rewrite func(any)
@@ -178,8 +190,10 @@ func (w *Writer) freezeSchema(ref artifact.SchemaRef) (artifact.SchemaRef, error
 					if err == nil {
 						resolved := doc.uri.ResolveReference(parsed)
 						fragment := resolved.EscapedFragment()
-						resolved.Fragment = ""
-						if resolved.String() != key {
+						resolved.Fragment, resolved.RawFragment = "", ""
+						if resolved.String() == key {
+							v["$ref"] = "#" + fragment
+						} else {
 							v["$ref"] = filename(resolved.String())
 							if fragment != "" {
 								v["$ref"] = v["$ref"].(string) + "#" + fragment
@@ -199,12 +213,13 @@ func (w *Writer) freezeSchema(ref artifact.SchemaRef) (artifact.SchemaRef, error
 		rewrite(doc.value)
 		data, err := json.MarshalIndent(doc.value, "", "  ")
 		if err != nil {
-			return ref, err
+			return PreparedSchema{Ref: ref}, err
 		}
 		data = append(data, '\n')
 		rel := base + "/" + filename(key)
+		files[rel] = data
 		if err := writeContent(w.root, rel, data); err != nil {
-			return ref, err
+			return PreparedSchema{Ref: ref}, err
 		}
 		sourceName := "openapi.json"
 		if doc.uri.Scheme == rootURL.Scheme && doc.uri.Host == rootURL.Host && doc.uri.Path != "" {
@@ -220,25 +235,27 @@ func (w *Writer) freezeSchema(ref artifact.SchemaRef) (artifact.SchemaRef, error
 		}
 	}
 	if ref.Source.Path == "" {
-		return ref, errors.New("root schema snapshot was not created")
+		return PreparedSchema{Ref: ref}, errors.New("root schema snapshot was not created")
 	}
 	data, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {
-		return ref, err
+		return PreparedSchema{Ref: ref}, err
 	}
 	if err := writeContent(w.root, base+"/manifest.json", append(data, '\n')); err != nil {
-		return ref, err
+		return PreparedSchema{Ref: ref}, err
 	}
-	loader := openapi3.NewLoader()
-	loader.IsExternalRefsAllowed = true
-	loaded, err := loader.LoadFromFile(ref.Source.Path)
+	loaded, err := ParseOpenAPI(context.Background(), manifest.Root, files)
 	if err != nil {
-		return ref, fmt.Errorf("load frozen schema: %w", err)
+		return PreparedSchema{Ref: ref}, fmt.Errorf("load frozen schema: %w", err)
 	}
 	if err := loaded.Validate(context.Background()); err != nil {
-		return ref, fmt.Errorf("validate frozen schema: %w", err)
+		return PreparedSchema{Ref: ref}, fmt.Errorf("validate frozen schema: %w", err)
 	}
-	return ref, nil
+	router, err := legacy.NewRouter(loaded)
+	if err != nil {
+		return PreparedSchema{Ref: ref}, fmt.Errorf("route frozen schema: %w", err)
+	}
+	return PreparedSchema{Ref: ref, Router: router}, nil
 }
 
 func fetchSchema(uri *url.URL) ([]byte, error) {

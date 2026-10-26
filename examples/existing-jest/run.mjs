@@ -35,7 +35,7 @@ async function run(command, args, { cwd = root, env = process.env, log, allowFai
   }).finally(() => clearTimeout(timer));
   if (log) await fs.writeFile(path.join(directory, log), stdout + stderr);
   if (!allowFailure) assert.equal(code, 0, `${command} failed: ${stderr}\n${stdout}`);
-  return { code, stdout };
+  return { code, stdout, stderr };
 }
 const readJSON = async file => JSON.parse(await fs.readFile(file, 'utf8'));
 await run('git', ['clone', '--quiet', upstream, project]);
@@ -70,7 +70,13 @@ assert.deepEqual(outcomes(after), outcomes(before), 'capture changed existing te
 assert.equal(captured.code, baseline.code, 'capture changed the Jest exit code');
 await run('git', ['diff', '--exit-code', '--', 'tests/'], { cwd: project });
 
-const receipt = await readJSON(path.join(project, 'artifacts/wiretap/last-run.json'));
+const archives = [...captured.stderr.matchAll(/^Wiretap archive: ([^\r\n]+)$/gm)].map(match => match[1]);
+assert.equal(archives.length, 1, 'the managed runner must print its exact archive path once');
+assert.ok(path.isAbsolute(archives[0]));
+const receiptPath = path.join(archives[0], 'last-run.json');
+const receipt = await readJSON(receiptPath);
+assert.equal(receipt.bundle_path, archives[0]);
+await assert.rejects(fs.access(path.join(project, 'artifacts/wiretap/last-run.json')), { code: 'ENOENT' });
 assert.equal(receipt.status, 'complete');
 assert.deepEqual(receipt.outputs.errors, []);
 const bundle = await readJSON(path.join(receipt.bundle_path, 'bundle.json'));
@@ -79,7 +85,8 @@ const attempts = await Promise.all(bundle.tests.map(test => readJSON(path.join(r
 assert.equal(attempts.filter(test => test.capture.testcase.status === 'pass').length, 63);
 assert.equal(attempts.filter(test => test.capture.testcase.status === 'fail').length, 57);
 assert.equal(new Set(attempts.map(test => test.capture.testcase.identity.id)).size, 120, 'distinct tests need distinct identities');
-const summary = await fs.readFile(receipt.outputs.coverage.text, 'utf8');
+assert.deepEqual(Object.keys(receipt.outputs.coverage).sort(), ['html', 'json']);
+const summary = (await run(binary, ['report', '--bundle', receipt.bundle_path, '--format', 'text'])).stdout;
 assert.match(summary, /property-api: 10\/10 operations exercised/);
 assert.equal(path.basename(receipt.outputs.coverage.html), 'coverage.html');
 const dashboard = await fs.readFile(receipt.outputs.coverage.html, 'utf8');
@@ -94,5 +101,5 @@ assert.ok(requestCount >= 120);
 console.log(`Unchanged: 120 tests, 63 passed, 57 upstream failures. All 10 API operations captured.`);
 console.log(`Official Arazzo schema validated ${requestCount} requests; requests and success criteria match captured evidence.`);
 console.log(`HTML report: ${receipt.outputs.coverage.html}`);
-console.log(`Receipt: ${path.join(project, 'artifacts/wiretap/last-run.json')}`);
+console.log(`Receipt: ${receiptPath}`);
 console.log(summary);

@@ -66,7 +66,7 @@ export failures surface as integration errors. When cleanup also fails, Jest
 keeps the original assertion failure and reports both errors. A skipped test
 that never starts creates no attempt.
 
-Canonical receipts and bounded logs belong inside each archive. The latest
-receipt in the output parent is advisory when runs overlap. Runtime/version
+Canonical receipts and bounded logs belong inside each archive. Jest prints the
+exact archive and output paths for each run. Runtime/version
 fields are documented in the [runtime API](runtime-api.md) and
 [compatibility policy](support.md#format-compatibility).

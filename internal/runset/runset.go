@@ -43,7 +43,7 @@ type Archive struct {
 	Path     string
 	Digest   string
 	Run      *bundle.Run
-	Report   *coverage.Report
+	report   *coverage.Report
 	Captures []*artifact.Artifact
 }
 type Set struct {
@@ -173,17 +173,10 @@ func load(ctx context.Context, manifest Manifest, directory string) (*Set, error
 		if len(manifest.Members) > 1 && !knownBuild(run.SUTSource) {
 			return nil, errors.New("multiple run set members require matching sut_source.revision or sut_source.build_id; declare the tested build in .wiretap.yaml")
 		}
-		report, err := coverage.GenerateBundleSnapshot(root, run, captures, "", false)
+		contracts, err := coverage.ContractIdentities(ctx, run, captures)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("run set member %q contracts: %w", path, err)
 		}
-		contracts := []string{}
-		if report.Contracts != nil {
-			for _, spec := range report.Contracts.Specs {
-				contracts = append(contracts, strings.Join([]string{spec.APIID, spec.SchemaID, spec.Origin, spec.TargetKind, spec.RulesVersion, spec.Revision}, "\x00"))
-			}
-		}
-		sort.Strings(contracts)
 		current := []any{run.Application.ID, run.APIID, run.SUTTargetKind, run.SUTSource, run.TestSource, run.DependencyKinds, run.ProviderMappings, contracts}
 		if identity != nil && !reflect.DeepEqual(identity, current) {
 			return nil, errors.New("run set members must share application/API, tested build, test source, boundary kinds, provider mappings and frozen contracts")
@@ -192,7 +185,7 @@ func load(ctx context.Context, manifest Manifest, directory string) (*Set, error
 		if after, err := Digest(root); err != nil || after != digest {
 			return nil, fmt.Errorf("run set member %q changed during loading", path)
 		}
-		set.Archives = append(set.Archives, Archive{Path: root, Digest: digest, Run: run, Report: report, Captures: captures})
+		set.Archives = append(set.Archives, Archive{Path: root, Digest: digest, Run: run, Captures: captures})
 	}
 	// Member order carries no priority. Stable ordering makes the selected
 	// witness and aggregate evidence independent of --bundle/manifest order.
@@ -278,15 +271,32 @@ type Condition struct {
 	Evidence     []coverage.ContractEvidence `json:"evidence,omitempty"`
 }
 
-func (s *Set) Coverage() Coverage {
+func (s *Set) Coverage(ctx context.Context) (Coverage, error) {
 	result := Coverage{ReportVersion: Version, Producer: version.Current(), Scope: "same_build_run_set", Members: []*coverage.Report{}, Conditions: []Condition{}}
 	conditions := map[string]*Condition{}
-	for _, archive := range s.Archives {
-		result.Members = append(result.Members, archive.Report)
-		if archive.Report.Contracts == nil {
+	for i := range s.Archives {
+		archive := &s.Archives[i]
+		if err := ctx.Err(); err != nil {
+			return Coverage{}, err
+		}
+		if archive.report == nil {
+			if digest, err := Digest(archive.Path); err != nil || digest != archive.Digest {
+				return Coverage{}, fmt.Errorf("run set member %q changed before coverage", archive.Path)
+			}
+			report, err := coverage.GenerateBundleSnapshot(archive.Path, archive.Run, archive.Captures, "", false)
+			if err != nil {
+				return Coverage{}, err
+			}
+			if digest, err := Digest(archive.Path); err != nil || digest != archive.Digest {
+				return Coverage{}, fmt.Errorf("run set member %q changed during coverage", archive.Path)
+			}
+			archive.report = report
+		}
+		result.Members = append(result.Members, archive.report)
+		if archive.report.Contracts == nil {
 			continue
 		}
-		for _, spec := range archive.Report.Contracts.Specs {
+		for _, spec := range archive.report.Contracts.Specs {
 			for _, target := range spec.Targets {
 				key := strings.Join([]string{spec.APIID, spec.SchemaID, spec.Origin, target.Key}, "\x00")
 				condition := conditions[key]
@@ -307,7 +317,7 @@ func (s *Set) Coverage() Coverage {
 	for _, key := range keys {
 		result.Conditions = append(result.Conditions, *conditions[key])
 	}
-	return result
+	return result, nil
 }
 
 // A concrete witness covers a condition; without one, uncertainty must survive

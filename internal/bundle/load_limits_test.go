@@ -60,8 +60,8 @@ func httpLimitsFixture(t *testing.T, attempts int) (string, Run, []Attempt) {
 		}
 		capture := &artifact.Artifact{Version: 1, TestCase: tc, Traffic: []artifact.Flow{{
 			ID: "flow", Protocol: "http", Channel: "test_to_sut",
-			Request:  artifact.Message{HTTP: &artifact.HttpMessage{Method: "POST", URL: "http://orders/orders", Body: &artifact.Body{Text: "shared body"}}},
-			Response: artifact.Message{HTTP: &artifact.HttpMessage{Status: 200, Body: &artifact.Body{Text: "shared body"}}},
+			Request:  &artifact.HttpMessage{Method: "POST", URL: "http://orders/orders", Body: &artifact.Body{Text: "shared body"}},
+			Response: &artifact.HttpMessage{Status: 200, Body: &artifact.Body{Text: "shared body"}},
 		}}}
 		if _, err := w.Commit(capture); err != nil {
 			t.Fatal(err)
@@ -256,7 +256,7 @@ func TestLoadDefaultsAcceptMultiAttemptSuite(t *testing.T) {
 	}
 	for _, capture := range captures {
 		flow := capture.Traffic[0]
-		if flow.Request.HTTP.Body.Text != "shared body" || flow.Response.HTTP.Body.Text != "shared body" {
+		if flow.Request.Body.Text != "shared body" || flow.Response.Body.Text != "shared body" {
 			t.Fatalf("attempt %s lost retained payloads", capture.TestCase.ID)
 		}
 	}

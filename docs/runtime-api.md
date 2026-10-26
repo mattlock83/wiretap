@@ -183,9 +183,11 @@ mutate the attempt or enter another session. Await background work first.
 
 ## Reports
 
-Run finalization generates configured JSON/text/HTML coverage and eligible Arazzo
+Run finalization always generates JSON/HTML coverage and eligible Arazzo
 workflows. Their paths are returned under `outputs`. To regenerate outputs from
 a saved archive, use `wiretap report`; see [capture artifacts and exports](artifacts.md).
+`finishRun` accepts an empty body or `{}`; output-selection options are rejected.
+Text reports remain available through `wiretap report --format text`.
 
 ## Proxy certificate
 

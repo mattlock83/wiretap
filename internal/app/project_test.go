@@ -61,14 +61,14 @@ func TestSchemaExceptionDoesNotWeakenOtherAPIsOrIgnoreInvalidSpecs(t *testing.T)
 	if _, _, err := normalizeDependencies([]dependencyRegistration{{AssetID: "required", UpstreamURL: "http://dep", SchemaRequired: &required}}); err == nil {
 		t.Fatal("schema requirement lost")
 	}
-	if _, _, err := normalizeDependencies([]dependencyRegistration{{AssetID: "invalid", UpstreamURL: "http://dep", Schemas: []artifact.SchemaRef{{Type: "openapi", Source: artifact.SchemaSource{Type: "inline", Content: "bad schema"}}}}}); err == nil {
+	if _, err := prepareTestSchemas(t, []artifact.SchemaRef{{Type: "openapi", Role: "dependency", Source: artifact.SchemaSource{Type: "inline", Content: "bad schema"}}}); err == nil {
 		t.Fatal("invalid supplied schema ignored")
 	}
 	art := &artifact.Artifact{TestCase: artifact.TestCase{Status: "pass"}, Schemas: schemas, Traffic: []artifact.Flow{
-		{ID: "optional", Protocol: "http", Channel: "sut_to_dependency", AssetID: "optional", Request: artifact.Message{HTTP: &artifact.HttpMessage{Method: "GET", URL: "http://dep/anything"}}, Response: artifact.Message{HTTP: &artifact.HttpMessage{Status: 200}}},
-		{ID: "strict", Protocol: "http", Channel: "sut_to_dependency", AssetID: "strict", Request: artifact.Message{HTTP: &artifact.HttpMessage{Method: "GET", URL: "http://dep/not-in-spec"}}, Response: artifact.Message{HTTP: &artifact.HttpMessage{Status: 200}}},
+		{ID: "optional", Protocol: "http", Channel: "sut_to_dependency", AssetID: "optional", Request: &artifact.HttpMessage{Method: "GET", URL: "http://dep/anything"}, Response: &artifact.HttpMessage{Status: 200}},
+		{ID: "strict", Protocol: "http", Channel: "sut_to_dependency", AssetID: "strict", Request: &artifact.HttpMessage{Method: "GET", URL: "http://dep/not-in-spec"}, Response: &artifact.HttpMessage{Status: 200}},
 	}}
-	applySchemaValidation(art)
+	validateTestCapture(t, art)
 	if art.SchemaValidation.Status != "fail" || art.TestCase.Status != "pass" || len(art.SchemaValidation.Skipped) != 1 {
 		t.Fatalf("strict validation lost: %#v", art.SchemaValidation)
 	}

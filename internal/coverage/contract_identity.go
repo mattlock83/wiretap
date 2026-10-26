@@ -1,17 +1,19 @@
 package coverage
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"math/big"
 	"net/url"
-	"os"
+	"path"
+	"sort"
 	"strconv"
 	"strings"
 
 	"github.com/mattlock83/wiretap/internal/artifact"
-	"github.com/mattlock83/wiretap/internal/fileuri"
+	"github.com/mattlock83/wiretap/internal/bundle"
 	"github.com/mattlock83/wiretap/internal/schemajson"
 )
 
@@ -19,32 +21,26 @@ import (
 // Frozen storage hashes include original source URIs, which are provenance, not
 // contract identity. Sorted traversal preserves refs and cycles without copying
 // recursive schemas or depending on repository paths and generated filenames.
-func contractRevision(ref artifact.SchemaRef) (string, bool, error) {
+func contractRevisionFiles(ctx context.Context, rootPath string, files map[string][]byte) (string, bool, error) {
 	type document struct {
 		uri   *url.URL
 		value any
 	}
-	if ref.Source.Type != "file" {
-		return "", false, fmt.Errorf("Contract identity requires a frozen file")
-	}
-	root, err := fileuri.FromPath(ref.Source.Path)
-	if err != nil {
-		return "", false, err
-	}
+	root := &url.URL{Scheme: "file", Path: "/" + rootPath}
 	ids := map[string]int{root.String(): 0}
 	docs := []document{{uri: root}}
 	imprecise := map[string]bool{}
 	for i := 0; i < len(docs); i++ {
-		if docs[i].uri.Scheme != "file" {
+		if err := ctx.Err(); err != nil {
+			return "", false, err
+		}
+		uri := docs[i].uri
+		if uri.Scheme != "file" || uri.Host != "" || uri.RawQuery != "" || uri.Opaque != "" || uri.User != nil {
 			return "", false, fmt.Errorf("Unfrozen external schema reference")
 		}
-		name, err := fileuri.Path(docs[i].uri)
-		if err != nil {
-			return "", false, err
-		}
-		raw, err := os.ReadFile(name)
-		if err != nil {
-			return "", false, err
+		raw, ok := files[strings.TrimPrefix(path.Clean(uri.Path), "/")]
+		if !ok {
+			return "", false, fmt.Errorf("Contract reference is absent from frozen manifest")
 		}
 		value, err := schemajson.Decode(raw)
 		if err != nil {
@@ -238,4 +234,93 @@ func contractPrecision(documents []any, imprecise map[string]bool) bool {
 		return true
 	}
 	return len(documents) > 0 && walk(documents[0], 0, "", "document")
+}
+
+// ContractIdentities verifies the frozen contracts of a loaded archive without
+// building coverage targets or measuring captured traffic.
+func ContractIdentities(ctx context.Context, run *bundle.Run, captures []*artifact.Artifact) ([]string, error) {
+	refs := append([]artifact.SchemaRef{}, run.Schemas...)
+	for _, capture := range captures {
+		refs = append(refs, capture.Schemas...)
+	}
+	revisions := map[string]string{}
+	seen := map[string]bool{}
+	identities := []string{}
+	for _, ref := range refs {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		id, origin, kind, ok := contractBoundary(run, ref)
+		if !ok {
+			continue
+		}
+		revision := schemaRevision(ref)
+		if ref.Source.Type != "omitted" && ref.Type == "openapi" {
+			key := schemaKey(ref)
+			var found bool
+			revision, found = revisions[key]
+			if !found {
+				root, files, err := bundle.OpenAPIFilesWithLimits(ctx, ref, bundle.LoadLimits{})
+				if err != nil {
+					return nil, err
+				}
+				revision, _, err = contractRevisionFiles(ctx, root, files)
+				if err != nil {
+					return nil, err
+				}
+				revisions[key] = revision
+			}
+		}
+		identity := strings.Join([]string{id, ref.ID, origin, kind, ContractRulesVersion, revision}, "\x00")
+		if !seen[identity] {
+			identities = append(identities, identity)
+			seen[identity] = true
+		}
+	}
+	sort.Strings(identities)
+	return identities, nil
+}
+
+func contractBoundary(run *bundle.Run, ref artifact.SchemaRef) (id, origin, kind string, ok bool) {
+	if ref.Role != "sut" && ref.Role != "provided" && ref.Role != "dependency" {
+		return "", "", "", false
+	}
+	id, origin, kind = run.APIID, "provided", run.SUTTargetKind
+	if ref.Role == "provided" || id == "" {
+		id = ref.AssetID
+	}
+	if ref.Role == "dependency" {
+		id, origin, kind = ref.AssetID, "dependency", run.DependencyKinds[ref.AssetID]
+	}
+	if kind == "" {
+		kind = "unknown"
+	}
+	return id, origin, kind, true
+}
+
+// A report uses one verified file graph for its operation index, condition
+// measurement and canonical identity. No input is reopened just for hashing.
+type contractPreparation struct {
+	revision    string
+	precise     bool
+	identityErr error
+	spec        *openapiSpec
+	loadErr     error
+}
+type contractCache map[string]contractPreparation
+
+func (cache contractCache) load(ref artifact.SchemaRef) contractPreparation {
+	key := schemaKey(ref)
+	if prepared, ok := cache[key]; ok {
+		return prepared
+	}
+	prepared := contractPreparation{}
+	root, files, err := bundle.OpenAPIFiles(ref)
+	prepared.loadErr, prepared.identityErr = err, err
+	if err == nil {
+		prepared.revision, prepared.precise, prepared.identityErr = contractRevisionFiles(context.Background(), root, files)
+		prepared.spec, prepared.loadErr = parseOpenAPISpec(root, files)
+	}
+	cache[key] = prepared
+	return prepared
 }

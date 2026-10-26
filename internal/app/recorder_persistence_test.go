@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/mattlock83/wiretap/internal/artifact"
+	"github.com/mattlock83/wiretap/internal/bundle"
 )
 
 type failOnceCaptureSink struct {
@@ -12,8 +13,8 @@ type failOnceCaptureSink struct {
 	id      string
 }
 
-func (s *failOnceCaptureSink) Register(_ artifact.TestCase, refs []artifact.SchemaRef) ([]artifact.SchemaRef, error) {
-	return refs, nil
+func (s *failOnceCaptureSink) RegisterPrepared(_ artifact.TestCase, refs []artifact.SchemaRef) ([]bundle.PreparedSchema, error) {
+	return nil, nil
 }
 
 func (s *failOnceCaptureSink) Commit(art *artifact.Artifact) (string, error) {

@@ -1,6 +1,7 @@
 package coverage
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -62,7 +63,7 @@ func TestContractPrecisionChecksReachableExternalSchemas(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "models.yaml"), []byte("types:\n  Amount:\n    type: integer\n    minimum: 9007199254740993\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	_, precise, err := contractRevision(artifact.SchemaRef{Source: artifact.SchemaSource{Type: "file", Path: path}})
+	_, precise, err := contractRevision(freezeCoverageSchema(t, artifact.SchemaRef{Source: artifact.SchemaSource{Type: "file", Path: path}}))
 	if err != nil || precise {
 		t.Fatalf("reachable imprecise bound was missed: precise=%v err=%v", precise, err)
 	}
@@ -86,4 +87,12 @@ func TestFrozenContractRetainsImpreciseDecimalConstraint(t *testing.T) {
 	if s.DenominatorKnown || s.Counts["family:unsupported"].Unsupported == 0 {
 		t.Fatalf("freezing hid the supplied constraint's precision: %+v", s)
 	}
+}
+
+func contractRevision(ref artifact.SchemaRef) (string, bool, error) {
+	root, files, err := bundle.OpenAPIFiles(ref)
+	if err != nil {
+		return "", false, err
+	}
+	return contractRevisionFiles(context.Background(), root, files)
 }

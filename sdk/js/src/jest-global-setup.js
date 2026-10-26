@@ -1,5 +1,5 @@
 const { startManagedRuntime } = require('./managed-runtime');
-const { owners, projectKey, callHook } = require('./jest-hooks');
+const { owner, setOwner, projectKey, callHook } = require('./jest-hooks');
 
 module.exports = async function wiretapGlobalSetup(globalConfig, projectConfig) {
   const options = projectConfig.testEnvironmentOptions.wiretap;
@@ -8,12 +8,12 @@ module.exports = async function wiretapGlobalSetup(globalConfig, projectConfig) 
   if (globalConfig.maxWorkers > 1 && !options.explicitSession) {
     throw new Error('Parallel Wiretap workers require explicitSession: true and propagated trace context; otherwise use --runInBand');
   }
-  if (owners().size) throw new Error('Managed Wiretap supports one Jest project per process');
+  if (owner()) throw new Error('Managed Wiretap supports one Jest project per process');
   await callHook(options.globalSetup, globalConfig, projectConfig);
   const previousEnv = { WIRETAP_BASE_URL: process.env.WIRETAP_BASE_URL, WIRETAP_SUT_URL: process.env.WIRETAP_SUT_URL };
   const abort = new AbortController();
-  const entry = { previousEnv, abort };
-  owners().set(projectKey(projectConfig), entry);
+  const entry = { key: projectKey(projectConfig), previousEnv, abort };
+  setOwner(entry);
   const stopForSignal = signal => {
     if (entry.interrupted) return;
     entry.interrupted = true;

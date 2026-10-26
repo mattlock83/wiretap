@@ -78,6 +78,7 @@ func TestOnlyCurrentControlRoutesAndFieldsAreAccepted(t *testing.T) {
 		"/v1/startRun":     {"target_url": "http://sut.test"},
 		"/v1/setupTest":    {"name": "old schema field", "sut_schemas": []any{}},
 		"/v1/teardownTest": {"session_id": "unused", "unknown": true},
+		"/v1/finishRun":   {"outputs": map[string]any{"coverage": []string{"json"}}},
 	} {
 		apiStatus(t, control.URL, path, payload, http.StatusBadRequest)
 	}

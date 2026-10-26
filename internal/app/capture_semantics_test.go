@@ -98,11 +98,11 @@ func TestInvalidRequestDoesNotHideInvalidResponse(t *testing.T) {
 		TestCase: artifact.TestCase{Status: "pass"},
 		Schemas:  []artifact.SchemaRef{{ID: "orders", Role: "sut", Type: "openapi", Source: artifact.SchemaSource{Type: "inline", Content: negativeRequestSpec}}},
 		Traffic: []artifact.Flow{{ID: "exchange", Protocol: "http", Channel: "test_to_sut",
-			Request:  artifact.Message{HTTP: &artifact.HttpMessage{Method: "POST", URL: "http://orders/orders", Headers: artifact.Headers{"Content-Type": {"application/json"}}, Body: &artifact.Body{Text: `{"quantity":0}`}}},
-			Response: artifact.Message{HTTP: &artifact.HttpMessage{Status: 400, Headers: artifact.Headers{"Content-Type": {"application/json"}}, Body: &artifact.Body{Text: `{"error":"unexpected rejection"}`}}},
+			Request:  &artifact.HttpMessage{Method: "POST", URL: "http://orders/orders", Headers: artifact.Headers{"Content-Type": {"application/json"}}, Body: &artifact.Body{Text: `{"quantity":0}`}},
+			Response: &artifact.HttpMessage{Status: 400, Headers: artifact.Headers{"Content-Type": {"application/json"}}, Body: &artifact.Body{Text: `{"error":"unexpected rejection"}`}},
 		}},
 	}
-	applySchemaValidation(capture)
+	validateTestCapture(t, capture)
 	if capture.TestCase.Status != "pass" || len(capture.SchemaValidation.Errors) != 2 {
 		t.Fatalf("both validation phases must remain visible independently of the framework outcome: %#v", capture)
 	}

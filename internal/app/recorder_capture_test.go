@@ -66,23 +66,29 @@ func TestFlowFromProxyCarriesCaptureMetadataAndError(t *testing.T) {
 		Status: http.StatusBadGateway, ResponseBody: []byte("resp"), ResponseBodyBytes: 13, ResponseBodyTruncated: true,
 		Error: "dial tcp: connection refused",
 	})
-	if flow.Request.HTTP == nil || !flow.Request.HTTP.Body.Truncated || flow.Request.HTTP.Body.OriginalBytes != 12 {
-		t.Fatalf("request body = %#v", flow.Request.HTTP)
+	if flow.Request == nil || !flow.Request.Body.Truncated || flow.Request.Body.OriginalBytes != 12 {
+		t.Fatalf("request body = %#v", flow.Request)
 	}
-	if flow.Response.HTTP == nil || !flow.Response.HTTP.Body.Truncated || flow.Response.HTTP.Body.OriginalBytes != 13 {
-		t.Fatalf("response body = %#v", flow.Response.HTTP)
+	if flow.Response == nil || !flow.Response.Body.Truncated || flow.Response.Body.OriginalBytes != 13 {
+		t.Fatalf("response body = %#v", flow.Response)
 	}
 	if flow.TransportError == "" {
 		t.Fatal("expected transport error")
 	}
 }
 
-func TestFillSchemaSHAInline(t *testing.T) {
+func TestRegistrationAssignsFrozenSchemaIdentity(t *testing.T) {
 	store := testRecorder(t, capture.DefaultMaxBodyBytes)
 	_, _ = store.StartCase("sha-case", nil, nil, "")
-	stored := store.AddSchema(artifact.SchemaRef{ID: "sut-openapi", Role: "sut", Type: "openapi", Source: artifact.SchemaSource{Type: "inline", Content: "openapi: 3.0.0"}})
-	if stored.Source.SHA256 == "" {
-		t.Fatal("expected inline schema sha256")
+	schema := *permissiveDependencySchema()
+	schema.Role = "dependency"
+	schema.AssetID = "inventory-api"
+	store.AddSchema(schema)
+	if err := store.RegisterActive(); err != nil {
+		t.Fatal(err)
+	}
+	if len(store.active.schemas) != 1 || store.active.schemas[0].Source.SHA256 == "" || store.active.schemas[0].Source.SHA256 != store.active.schemas[0].AssetSHA {
+		t.Fatal("registration did not assign the frozen contract hash")
 	}
 }
 

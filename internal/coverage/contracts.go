@@ -139,7 +139,7 @@ func (t *ContractTarget) observe(e ContractEvidence) {
 	}
 }
 
-func buildContractCoverage(run *bundle.Run, captures []*artifact.Artifact) *ContractCoverage {
+func buildContractCoverage(run *bundle.Run, captures []*artifact.Artifact, cache contractCache) *ContractCoverage {
 	out := &ContractCoverage{RulesVersion: ContractRulesVersion, RunID: run.RunID, RunState: run.RunState, SnapshotRevision: run.Revision, Complete: run.RunState == "complete" && len(run.Pending) == 0, Scope: "registered supplied contracts only; observed conditions are not compatibility or assertion proof", Specs: []*ContractSpec{}}
 	refs := append([]artifact.SchemaRef{}, run.Schemas...)
 	for _, a := range captures {
@@ -148,38 +148,21 @@ func buildContractCoverage(run *bundle.Run, captures []*artifact.Artifact) *Cont
 			out.Complete = false
 		}
 	}
-	type identityResult struct {
-		revision string
-		precise  bool
-		err      error
-	}
-	identities := map[string]identityResult{}
+	identities := map[string]contractPreparation{}
 	for _, ref := range refs {
-		key := schemaKey(ref)
-		if _, ok := identities[key]; ok || ref.Source.Type == "omitted" || ref.Type != "openapi" {
-			continue
+		if ref.Source.Type != "omitted" && ref.Type == "openapi" {
+			identities[schemaKey(ref)] = cache.load(ref)
 		}
-		revision, precise, err := contractRevision(ref)
-		identities[key] = identityResult{revision, precise, err}
 	}
 	seen := map[string]bool{}
 	for _, ref := range refs {
-		if ref.Role != "sut" && ref.Role != "provided" && ref.Role != "dependency" {
+		id, origin, kind, ok := contractBoundary(run, ref)
+		if !ok {
 			continue
-		}
-		id, origin, kind := run.APIID, "provided", run.SUTTargetKind
-		if ref.Role == "provided" || id == "" {
-			id = ref.AssetID
-		}
-		if ref.Role == "dependency" {
-			id, origin, kind = ref.AssetID, "dependency", run.DependencyKinds[ref.AssetID]
-		}
-		if kind == "" {
-			kind = "unknown"
 		}
 		revision := schemaRevision(ref)
 		canonical := identities[schemaKey(ref)]
-		if canonical.err == nil && canonical.revision != "" {
+		if canonical.identityErr == nil && canonical.revision != "" {
 			revision = canonical.revision
 		}
 		identity := contractDigest([]string{id, origin, ref.ID, revision, ref.Type})
@@ -201,13 +184,13 @@ func buildContractCoverage(run *bundle.Run, captures []*artifact.Artifact) *Cont
 			}
 			continue
 		}
-		loaded, err := loadOpenAPISpec(ref)
+		loaded, err := canonical.spec, canonical.loadErr
 		if err != nil {
 			spec.Notes = append(spec.Notes, "Contract could not be evaluated: "+err.Error())
 			continue
 		}
-		if canonical.err != nil {
-			spec.Notes = append(spec.Notes, "Contract identity unavailable: "+canonical.err.Error())
+		if canonical.identityErr != nil {
+			spec.Notes = append(spec.Notes, "Contract identity unavailable: "+canonical.identityErr.Error())
 			continue
 		}
 		spec.Dialect = loaded.Doc.OpenAPI

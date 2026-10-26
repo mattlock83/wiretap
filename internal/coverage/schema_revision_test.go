@@ -30,10 +30,10 @@ paths:
 			Version:  1,
 			TestCase: artifact.TestCase{ID: id, Name: id, StartedAt: time.Now().UTC(), Status: "pass"},
 			Schemas:  []artifact.SchemaRef{ref},
-			Traffic:  []artifact.Flow{{ID: "flow", Protocol: "http", Channel: "test_to_sut", Request: artifact.Message{HTTP: &artifact.HttpMessage{Method: "GET", URL: "http://sut" + path}}, Response: artifact.Message{HTTP: &artifact.HttpMessage{Status: 200}}}},
+			Traffic:  []artifact.Flow{{ID: "flow", Protocol: "http", Channel: "test_to_sut", Request: &artifact.HttpMessage{Method: "GET", URL: "http://sut" + path}, Response: &artifact.HttpMessage{Status: 200}}},
 		}}
 	}
-	provided, _, cases, notes := buildCoverageWithSchemas([]artifactEntry{entry("first", "/a", first), entry("second", "/b", second)}, nil)
+	provided, _, cases, notes := buildCoverageWithSchemas([]artifactEntry{entry("first", "/a", first), entry("second", "/b", second)}, nil, contractCache{})
 	if len(notes) > 0 {
 		t.Fatalf("schema did not load: %v", notes)
 	}

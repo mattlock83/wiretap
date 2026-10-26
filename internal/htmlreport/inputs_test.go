@@ -173,8 +173,8 @@ func htmlArchive(t *testing.T, incomplete, jsonResponse bool, refs []artifact.Sc
 	}
 	capture := &artifact.Artifact{Version: 2, TestCase: testcase, Schemas: frozen, CaptureIncomplete: incomplete,
 		Traffic: []artifact.Flow{{ID: "read", Protocol: "http", Channel: "test_to_sut", StartedAt: testcase.StartedAt,
-			Request:  artifact.Message{HTTP: &artifact.HttpMessage{Method: "GET", URL: "http://sut/items"}},
-			Response: artifact.Message{HTTP: &artifact.HttpMessage{Status: 200, Headers: artifact.Headers{"Content-Type": {media}}, Body: &artifact.Body{Text: body}}},
+			Request:  &artifact.HttpMessage{Method: "GET", URL: "http://sut/items"},
+			Response: &artifact.HttpMessage{Status: 200, Headers: artifact.Headers{"Content-Type": {media}}, Body: &artifact.Body{Text: body}},
 		}},
 	}
 	if _, err := writer.Commit(capture); err != nil {
