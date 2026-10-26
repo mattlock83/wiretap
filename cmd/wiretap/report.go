@@ -121,7 +121,7 @@ func reportCommand(args []string) error {
 		_, err = os.Stdout.Write(data)
 		return err
 	}
-	guard, err := archiveoutput.New(bundlePath)
+	guard, err := archiveoutput.New(snapshot.Archive)
 	if err != nil {
 		return err
 	}

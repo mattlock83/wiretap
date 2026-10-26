@@ -231,7 +231,11 @@ func TestArchiveOutputGuardProtectsSourcesBackedByExports(t *testing.T) {
 			if alias == "directory" {
 				output = filepath.Join(backing, "new", "report.json")
 			}
-			guard, err := archiveoutput.New(root)
+			snapshot, err := bundle.LoadSnapshot(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			guard, err := archiveoutput.New(snapshot)
 			if err != nil {
 				t.Fatal(err)
 			}

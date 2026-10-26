@@ -1,23 +1,51 @@
 package bundle
 
-import "sort"
+import (
+	"errors"
+	"fmt"
 
-// EvidencePaths verifies an archive using the same limits as Load and returns
-// every file it read, including attachments outside the usual payloads directory.
-// Paths are absolute, resolve symlinks, and exclude disposable unreferenced exports.
-func EvidencePaths(root string) ([]string, error) {
-	limits, err := loadLimitsFromEnv()
+	"github.com/mattlock83/wiretap/internal/artifact"
+)
+
+// Snapshot holds one verified archive and the files read to restore it. Consumers
+// treat its data as immutable and reuse it when calculating and writing exports.
+type Snapshot struct {
+	Root           string
+	Run            *Run
+	Captures       []*artifact.Artifact
+	EvidencePaths  []string
+	manifestSHA256 string
+}
+
+func LoadSnapshot(root string) (*Snapshot, error) {
+	reader, err := NewFileReader()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %w", ErrInput, err)
 	}
-	reader := &archiveReader{limits: limits, paths: map[string]struct{}{}}
-	if _, _, err := loadWithReader(root, reader); err != nil {
-		return nil, err
+	snapshot, err := loadWithReader(root, reader)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrInput, err)
 	}
-	paths := make([]string, 0, len(reader.paths))
-	for path := range reader.paths {
-		paths = append(paths, path)
+	return snapshot, nil
+}
+
+// CheckUnchanged prevents output protection from using an obsolete evidence
+// inventory after another process changes the run's declarations.
+func (s *Snapshot) CheckUnchanged() error {
+	reader, err := NewFileReader()
+	if err != nil {
+		return err
 	}
-	sort.Strings(paths)
-	return paths, nil
+	path, err := containedPath(s.Root, "bundle.json")
+	if err != nil {
+		return err
+	}
+	data, err := reader.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	if digest(data) != s.manifestSHA256 {
+		return errors.New("archive changed after loading")
+	}
+	return nil
 }

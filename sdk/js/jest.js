@@ -4,6 +4,7 @@ const { withWiretap, validateCaptureOptions } = require('./src/jest-config');
 // callbacks; the environment owns each attempt and its final framework outcome.
 function captureJest(config = {}, api = globalThis) {
   validateCaptureOptions(config);
+  if (Object.hasOwn(config, 'instrumentation')) throw new Error('Set instrumentation in withWiretap capture options or testEnvironmentOptions.wiretap before Jest starts; captureJest runs after tracing initializes');
   const { app } = config;
   if (app !== undefined && typeof app !== 'function') throw new TypeError('captureJest app must be a Node HTTP request handler, such as an Express app');
   require('./src/jest-app').registerCapture(config, api, app ? () => app : undefined);

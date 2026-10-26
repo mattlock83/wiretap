@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -136,7 +137,8 @@ func TestLoadRejectsMalformedSpecsAndArazzo(t *testing.T) {
 }
 
 func TestLoadBoundsLocalFileReads(t *testing.T) {
-	path := inputFile(t, "coverage.json", inputCoverage(t))
+	data := inputCoverage(t)
+	path := inputFile(t, "coverage.json", data)
 	t.Run("bytes", func(t *testing.T) {
 		t.Setenv("WIRETAP_MAX_ARCHIVE_FILE_BYTES", "16")
 		if _, err := Load(Files{Coverage: path}); !errors.Is(err, bundle.ErrLoadLimit) {
@@ -147,6 +149,18 @@ func TestLoadBoundsLocalFileReads(t *testing.T) {
 		t.Setenv("WIRETAP_MAX_ARCHIVE_FILES", "1")
 		if _, err := Load(Files{Coverage: path, Arazzo: inputFile(t, "arazzo.json", inputArazzo)}); !errors.Is(err, bundle.ErrLoadLimit) {
 			t.Fatalf("expected file read limit, got %v", err)
+		}
+	})
+	t.Run("cumulative bytes", func(t *testing.T) {
+		files := Files{Coverage: path, Arazzo: inputFile(t, "arazzo.json", inputArazzo)}
+		total := len(data) + len(inputArazzo)
+		t.Setenv("WIRETAP_MAX_ARCHIVE_TOTAL_BYTES", strconv.Itoa(total))
+		if _, err := Load(files); err != nil {
+			t.Fatalf("exact cumulative budget rejected: %v", err)
+		}
+		t.Setenv("WIRETAP_MAX_ARCHIVE_TOTAL_BYTES", strconv.Itoa(total-1))
+		if _, err := Load(files); !errors.Is(err, bundle.ErrLoadLimit) {
+			t.Fatalf("expected cumulative byte limit, got %v", err)
 		}
 	})
 	t.Run("directory", func(t *testing.T) {

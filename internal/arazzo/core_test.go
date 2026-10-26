@@ -167,6 +167,7 @@ paths:
       parameters:
         - {name: id, in: path, required: true, schema: {type: string}}
         - {name: limit, in: query, schema: {type: integer}}
+        - {name: search, in: query, schema: {type: string}}
         - {name: X-Mode, in: header, schema: {type: string}}
         - {name: session, in: cookie, schema: {type: string}}
       responses:
@@ -179,7 +180,7 @@ paths:
 `
 
 func TestFrozenOpenAPIMapsLocalHostAndOperationServer(t *testing.T) {
-	flow := jsonFlow("read", "GET", "http://local.test/v2/items/42?limit=2")
+	flow := jsonFlow("read", "GET", "http://local.test/v2/items/42?limit=2&search=%24inputs.literal%2Bvalue")
 	flow.Request.Headers = artifact.Headers{"X-Mode": {"fast"}, "cookie": {"session=synthetic"}}
 	flow.Response = &artifact.HttpMessage{Status: 204}
 	root := captureArchive(t, []artifact.SchemaRef{{ID: "items", Role: "sut", Type: "openapi", Source: artifact.SchemaSource{Type: "inline", Content: frozenSchema}}}, &artifact.Artifact{TestCase: artifact.TestCase{ID: "test"}, Traffic: []artifact.Flow{flow}})
@@ -194,22 +195,95 @@ func TestFrozenOpenAPIMapsLocalHostAndOperationServer(t *testing.T) {
 	if !strings.Contains(step.OperationPath, "~1items~1%7Bid%7D/get") {
 		t.Fatalf("incorrect path pointer: %s", step.OperationPath)
 	}
-	if len(step.Parameters) != 4 {
+	if len(step.Parameters) != 5 {
 		t.Fatalf("missing path/query/header/cookie inputs: %+v", step.Parameters)
+	}
+	properties := export.Document.Workflows[0].Inputs["properties"].(map[string]any)
+	for _, parameter := range step.Parameters {
+		if parameter.Name == "search" {
+			name := strings.TrimPrefix(parameter.Value.(string), "$inputs.")
+			if properties[name].(map[string]any)["default"] != "$inputs.literal+value" {
+				t.Fatalf("query value changed: %+v", properties[name])
+			}
+		}
 	}
 	assertPortableSources(t, export)
 }
 
+func TestPreparedSourcesKeepFirstUseNumberingAndOneVerifiedSnapshot(t *testing.T) {
+	schema := func(id string) artifact.SchemaRef {
+		return artifact.SchemaRef{ID: id, Role: "sut", Type: "openapi", Source: artifact.SchemaSource{Type: "inline", Content: `openapi: 3.0.3
+info: {title: API, version: "1"}
+paths:
+  /` + id + `:
+    get:
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {type: object}
+`}}
+	}
+	flows := []artifact.Flow{jsonFlow("first", "GET", "http://sut/two"), jsonFlow("second", "GET", "http://sut/one")}
+	root := captureArchive(t, []artifact.SchemaRef{schema("one"), schema("two"), schema("unused")}, &artifact.Artifact{TestCase: artifact.TestCase{ID: "test"}, Traffic: flows})
+	run, captures, err := bundle.Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected, err := GenerateSnapshot(run, captures, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(expected.Document.Sources) != 2 || len(expected.Files) != 3 {
+		t.Fatalf("source or companion inventory changed: %+v", expected)
+	}
+	for i, ref := range []artifact.SchemaRef{captures[0].Schemas[1], captures[0].Schemas[0]} {
+		if filepath.Base(expected.Document.Sources[i].URL) != filepath.Base(ref.Source.Path) {
+			t.Fatalf("sources are not ordered by first use: %+v", expected.Document.Sources)
+		}
+	}
+	prepared := map[[2]string]*sourceSpec{}
+	sources := map[string]*sourceSpec{}
+	files := map[string][]byte{}
+	for i, flow := range flows {
+		step, eligible, err := makeStep(captures[0], flow, prepared, sources, files, nil)
+		if err != nil || !eligible || step.OperationPath != expected.Document.Workflows[0].Steps[i].OperationPath {
+			t.Fatalf("step %d lost its verified source or numbering: %+v, %v", i, step, err)
+		}
+		if i == 0 {
+			// The first request prepares but does not select schema one. Later
+			// flows must use those verified bytes, just as selected sources do.
+			if err := os.WriteFile(captures[0].Schemas[0].Source.Path, []byte("changed after preparation"), 0600); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if len(prepared) != 3 || len(sources) != 2 {
+		t.Fatalf("unused source was emitted or preparation was not shared: prepared=%d sources=%d", len(prepared), len(sources))
+	}
+	for _, file := range expected.Files {
+		if !bytes.Equal(files[file.Path], file.Data) {
+			t.Fatalf("verified companion changed during generation: %s", file.Path)
+		}
+	}
+	if _, err := GenerateSnapshot(run, captures, ""); err == nil {
+		t.Fatal("new generation reused a stale cache instead of detecting corruption")
+	}
+}
+
 func TestExportRejectsUnrepresentableJSONCaptures(t *testing.T) {
 	for name, change := range map[string]func(*artifact.Artifact){
-		"incomplete":         func(a *artifact.Artifact) { a.CaptureIncomplete = true },
-		"transport":          func(a *artifact.Artifact) { a.Traffic[0].TransportError = "connection failed" },
-		"missing response":   func(a *artifact.Artifact) { a.Traffic[0].Response = nil },
-		"truncated":          func(a *artifact.Artifact) { a.Traffic[0].Response.Body.Truncated = true },
-		"omitted":            func(a *artifact.Artifact) { a.Traffic[0].Response.Body.Omitted = true },
-		"invalid JSON":       func(a *artifact.Artifact) { a.Traffic[0].Response.Body.Text = `{"invalid"` },
-		"duplicate JSON key": func(a *artifact.Artifact) { a.Traffic[0].Response.Body.Text = `{"x":1,"x":2}` },
-		"two JSON values":    func(a *artifact.Artifact) { a.Traffic[0].Response.Body.Text = `{} {}` },
+		"incomplete":                 func(a *artifact.Artifact) { a.CaptureIncomplete = true },
+		"transport":                  func(a *artifact.Artifact) { a.Traffic[0].TransportError = "connection failed" },
+		"missing response":           func(a *artifact.Artifact) { a.Traffic[0].Response = nil },
+		"truncated":                  func(a *artifact.Artifact) { a.Traffic[0].Response.Body.Truncated = true },
+		"omitted":                    func(a *artifact.Artifact) { a.Traffic[0].Response.Body.Omitted = true },
+		"invalid JSON":               func(a *artifact.Artifact) { a.Traffic[0].Response.Body.Text = `{"invalid"` },
+		"duplicate JSON key":         func(a *artifact.Artifact) { a.Traffic[0].Response.Body.Text = `{"x":1,"x":2}` },
+		"invalid request JSON":       func(a *artifact.Artifact) { a.Traffic[0].Request.Body.Text = `{"invalid"` },
+		"duplicate request JSON key": func(a *artifact.Artifact) { a.Traffic[0].Request.Body.Text = `{"x":1,"x":2}` },
+		"two JSON values":            func(a *artifact.Artifact) { a.Traffic[0].Response.Body.Text = `{} {}` },
 		"invalid UTF8": func(a *artifact.Artifact) {
 			a.Traffic[0].Response.Body.Bytes = "Iv8i"
 			a.Traffic[0].Response.Body.Text = ""

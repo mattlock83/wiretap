@@ -123,3 +123,43 @@ func TestEmptyBundleAndConsumerOnlyInventory(t *testing.T) {
 		t.Fatalf("consumer-only configured boundary lost: %+v", run)
 	}
 }
+
+func TestInventoryPreservesUniqueObservationsAcrossCommits(t *testing.T) {
+	w, err := New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Configure(Identity{APIID: "orders", DependencyKinds: map[string]string{"stock": "mock"}}); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"third", "first", "second"} {
+		tc := artifact.TestCase{ID: id, Name: id, Status: "pass", StartedAt: time.Now().UTC()}
+		refs, err := w.RegisterPrepared(tc, []artifact.SchemaRef{{ID: "stock-api", Role: "dependency", Type: "openapi", AssetID: "stock", Source: artifact.SchemaSource{Type: "omitted"}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		capture := &artifact.Artifact{Version: 1, TestCase: tc, Schemas: []artifact.SchemaRef{refs[0].Ref}, Traffic: []artifact.Flow{
+			{ID: "inbound", Channel: "test_to_sut", Protocol: "http", Request: &artifact.HttpMessage{Method: "GET", URL: "http://sut/orders"}},
+			{ID: "stock-first", Channel: "sut_to_dependency", AssetID: "stock", Protocol: "http", Request: &artifact.HttpMessage{Method: "GET", URL: "http://stock/items"}},
+			{ID: "stock-second", Channel: "sut_to_dependency", AssetID: "stock", Protocol: "http", Request: &artifact.HttpMessage{Method: "GET", URL: "http://stock/items"}},
+		}}
+		if _, err := w.Commit(capture); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := w.Finalize("complete"); err != nil {
+		t.Fatal(err)
+	}
+	run, captures, err := Load(w.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(captures) != 3 || len(run.Schemas) != 1 || len(run.Dependencies) != 1 || len(run.Dependencies[0].Contracts) != 1 || len(run.ProvidedAPIs) != 1 {
+		t.Fatalf("commits lost or duplicated declarations: %+v", run)
+	}
+	for _, api := range []API{run.ProvidedAPIs[0], run.Dependencies[0]} {
+		if !reflect.DeepEqual(api.ObservedIn, []string{"first", "second", "third"}) || !reflect.DeepEqual(api.Protocols, []string{"http"}) {
+			t.Fatalf("observations are not unique and sorted: %+v", api)
+		}
+	}
+}

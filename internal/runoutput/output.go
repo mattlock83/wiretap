@@ -30,15 +30,19 @@ type Result struct {
 // Generate keeps successful outputs available when another exporter fails. It
 // never changes the recording or silently turns missing exports into success.
 func Generate(ctx context.Context, archive string) (*Result, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
 	snapshot, err := Load(ctx, archive, "", false)
 	if err != nil {
 		return nil, err
 	}
-	root := snapshot.root
-	guard, err := archiveoutput.New(root)
+	return snapshot.Generate(ctx)
+}
+
+func (snapshot *Snapshot) Generate(ctx context.Context) (*Result, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	root := snapshot.Archive.Root
+	guard, err := archiveoutput.New(snapshot.Archive)
 	if err != nil {
 		return nil, err
 	}

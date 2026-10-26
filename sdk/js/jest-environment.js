@@ -68,7 +68,7 @@ class WiretapEnvironment extends TestEnvironment {
 
   async setup() {
     await super.setup();
-    sdk.initializeTracing({ instrumentation: this.global.process.env.WIRETAP_EXISTING_OTEL !== '1' });
+    sdk.initializeTracing({ instrumentation: this.captureOptions.instrumentation !== false && this.global.process.env.WIRETAP_EXISTING_OTEL !== '1' });
     this.global.__wiretapSDK = sdk;
     this.global.__wiretapJestApp = { module: this.captureOptions.app, rootDir: this.projectRoot };
   }

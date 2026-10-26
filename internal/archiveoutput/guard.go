@@ -32,13 +32,16 @@ type directory struct {
 	info os.FileInfo
 }
 
-// New verifies the archive and inventories source identities. The inventory is
+// New inventories source identities from a verified snapshot. The inventory is
 // reused for all generated files, including sources stored in exports. Its raw
 // directory scan has a separate entry budget equal to WIRETAP_MAX_ARCHIVE_FILES;
 // files, directories and symlinks each consume one entry, whether referenced or
 // not. The four fixed raw roots do not consume that budget.
-func New(archive string) (*Guard, error) {
-	root, err := filepath.Abs(archive)
+func New(snapshot *bundle.Snapshot) (*Guard, error) {
+	if err := snapshot.CheckUnchanged(); err != nil {
+		return nil, err
+	}
+	root, err := filepath.Abs(snapshot.Root)
 	if err != nil {
 		return nil, err
 	}
@@ -47,10 +50,6 @@ func New(archive string) (*Guard, error) {
 		return nil, err
 	}
 	limits, err := bundle.ConfiguredLoadLimits()
-	if err != nil {
-		return nil, err
-	}
-	sources, err := bundle.EvidencePaths(root)
 	if err != nil {
 		return nil, err
 	}
@@ -74,7 +73,7 @@ func New(archive string) (*Guard, error) {
 			guard.files = append(guard.files, info)
 		}
 	}
-	for _, source := range sources {
+	for _, source := range snapshot.EvidencePaths {
 		info, err := os.Stat(source)
 		if err != nil {
 			return nil, err

@@ -12,7 +12,6 @@ import (
 	"github.com/mattlock83/wiretap/internal/artifact"
 	"github.com/mattlock83/wiretap/internal/bundle"
 	"github.com/mattlock83/wiretap/internal/proxy"
-	"github.com/mattlock83/wiretap/internal/runoutput"
 	"github.com/mattlock83/wiretap/internal/tracecontext"
 	"github.com/mattlock83/wiretap/internal/version"
 
@@ -372,7 +371,7 @@ func (a *App) handleFinishRun(w http.ResponseWriter, r *http.Request) {
 	if current := a.currentBundle(); current != nil {
 		runID = current.Snapshot().RunID
 	}
-	archivePath, err := a.finishRun(r.Context())
+	archivePath, snapshot, err := a.finishRun(r.Context())
 	if err != nil {
 		response := map[string]string{"error": err.Error()}
 		if archivePath != "" {
@@ -385,7 +384,7 @@ func (a *App) handleFinishRun(w http.ResponseWriter, r *http.Request) {
 	if archivePath != "" {
 		response["bundle_path"] = archivePath
 		response["run_id"] = runID
-		outputs, err := runoutput.Generate(r.Context(), archivePath)
+		outputs, err := snapshot.Generate(r.Context())
 		response["outputs"] = outputs
 		if err != nil {
 			response["error"] = err.Error()

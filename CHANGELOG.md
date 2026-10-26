@@ -20,8 +20,8 @@
 
 - Validate Jest receipt conformance, ownership and completion, preserve primary
   errors and retain per-run receipts/logs.
-- Add minimal local setup initialization/diagnostics and explicit same-build
-  run sets for package/CI shards without rewriting source evidence.
+- Add explicit same-build run sets for package/CI shards without rewriting
+  source evidence.
 - Keep explicit pair and run-set checks with text/JSON results; remove artifact
   discovery, coverage policy gates, baseline diffs and Markdown/JUnit output.
 - Document supported integrations, SDK ownership and format compatibility; add
@@ -31,8 +31,7 @@
 - Keep a runnable external Jest example and clean installation checks.
 - Simplify CLI help, print flag errors once, and use exit 2 consistently for
   invalid or missing inputs while preserving failed checks and output errors.
-- Bound terminal report details with omission counts and print exact coverage
-  and Arazzo paths after Jest cleanup and run finalization.
+- Print exact coverage and Arazzo paths after Jest cleanup and run finalization.
 
 - Restore self-contained HTML reporting from Wiretap JSON, OpenAPI specs and
   Arazzo, with test-linked coverage and captured HTTP exchanges.
@@ -40,7 +39,8 @@
   coverage, live report requests, unused event records and opaque contract packages.
 - Keep the Jest SDK focused on `withWiretap` and `captureJest`, with one options
   path and automatic attempt ownership.
-- Reuse one verified archive snapshot for coverage, HTML and Arazzo generation.
+- Reuse one verified archive snapshot from finalization through coverage, HTML,
+  Arazzo generation and output protection.
 - Share frozen OpenAPI parsing across reports and compatibility checks, use one
   operation index for spec and per-test coverage, and consolidate staged output
   writing. Reuse verified snapshots across shard comparisons.
@@ -66,9 +66,16 @@
 - Share frozen-contract verification and protected report writing, collect
   mismatch paths and value excerpts together, and remove unused test-only runtime
   helpers and private SDK declarations.
+- Share bounded file reads between archives and standalone HTML inputs. Build
+  testcase indexes once, compact API inventories once per update, cache prepared
+  schemas during Arazzo generation, and avoid repeated JSON parsing and link scans.
 
 ### Fixes
 
+- Honor Jest's early `capture.instrumentation: false` setting; reject late
+  instrumentation options in `captureJest` with configuration guidance.
+- Keep unnamed captures in a single coverage testcase, including attempts with
+  no traffic and retries grouped under a shared name.
 - Classify strict JSON ambiguity and resource-limit errors by type, so oversized
   or deeply nested bodies cannot bypass numeric-precision checks.
 - Preserve escaped URL paths and raw query strings during concurrent capture.

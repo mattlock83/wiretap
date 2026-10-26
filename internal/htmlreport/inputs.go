@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -33,12 +32,11 @@ func Load(files Files) (Inputs, error) {
 	if strings.TrimSpace(files.Coverage) == "" {
 		return Inputs{}, errors.New("HTML report requires Wiretap coverage JSON")
 	}
-	limits, err := bundle.ConfiguredLoadLimits()
+	reader, err := bundle.NewFileReader()
 	if err != nil {
 		return Inputs{}, err
 	}
-	reader := inputReader{limits: limits}
-	data, err := reader.read(files.Coverage)
+	data, err := reader.ReadFile(files.Coverage)
 	if err != nil {
 		return Inputs{}, fmt.Errorf("read Wiretap JSON: %w", err)
 	}
@@ -74,7 +72,7 @@ func Load(files Files) (Inputs, error) {
 			continue
 		}
 		seen[absolute] = true
-		data, err := reader.read(path)
+		data, err := reader.ReadFile(path)
 		if err != nil {
 			return Inputs{}, fmt.Errorf("read spec %q: %w", path, err)
 		}
@@ -89,7 +87,7 @@ func Load(files Files) (Inputs, error) {
 		result.Specs = append(result.Specs, Document{Name: name, Content: string(data)})
 	}
 	if files.Arazzo != "" {
-		data, err := reader.read(files.Arazzo)
+		data, err := reader.ReadFile(files.Arazzo)
 		if err != nil {
 			return Inputs{}, fmt.Errorf("read Arazzo: %w", err)
 		}
@@ -177,57 +175,6 @@ func FromSnapshot(ctx context.Context, run *bundle.Run, report *coverage.Report,
 		result.Specs = append(result.Specs, Document{Name: name, Content: specs[name]})
 	}
 	return result, nil
-}
-
-type inputReader struct {
-	limits bundle.LoadLimits
-	reads  int
-	bytes  int64
-}
-
-func (reader *inputReader) read(path string) ([]byte, error) {
-	if reader.reads >= reader.limits.MaxFileReads {
-		return nil, fmt.Errorf("%w: too many HTML input files", bundle.ErrLoadLimit)
-	}
-	info, err := os.Stat(path)
-	if err != nil {
-		return nil, err
-	}
-	check := func(info os.FileInfo) error {
-		if !info.Mode().IsRegular() {
-			return errors.New("HTML input must be a regular local file")
-		}
-		if info.Size() > reader.limits.MaxFileBytes || info.Size() > reader.limits.MaxTotalBytes-reader.bytes {
-			return fmt.Errorf("%w: HTML input exceeds its byte budget", bundle.ErrLoadLimit)
-		}
-		return nil
-	}
-	if err := check(info); err != nil {
-		return nil, err
-	}
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-	info, err = file.Stat()
-	if err != nil {
-		return nil, err
-	}
-	if err := check(info); err != nil {
-		return nil, err
-	}
-	limit := min(reader.limits.MaxFileBytes, reader.limits.MaxTotalBytes-reader.bytes)
-	data, err := io.ReadAll(io.LimitReader(file, limit+1))
-	if err != nil {
-		return nil, err
-	}
-	if int64(len(data)) > limit {
-		return nil, fmt.Errorf("%w: HTML input grew beyond its byte budget", bundle.ErrLoadLimit)
-	}
-	reader.reads++
-	reader.bytes += int64(len(data))
-	return data, nil
 }
 
 const maxInputDepth = 128

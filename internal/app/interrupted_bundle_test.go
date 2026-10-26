@@ -127,7 +127,7 @@ func TestRunFinalizationVerifiesRawArchive(t *testing.T) {
 				}
 				if shutdown == "finish" {
 					var path string
-					path, err = instance.finishRun(t.Context())
+					path, _, err = instance.finishRun(t.Context())
 					if path != writer.Path() {
 						t.Fatalf("finalization lost archive path: %q", path)
 					}

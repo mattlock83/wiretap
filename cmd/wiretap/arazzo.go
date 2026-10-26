@@ -44,7 +44,7 @@ func exportArazzo(bundlePath, sutName, outputPath, outputDir string) error {
 	if err != nil {
 		return err
 	}
-	guard, err := archiveoutput.New(bundlePath)
+	guard, err := archiveoutput.New(snapshot.Archive)
 	if err != nil {
 		return err
 	}

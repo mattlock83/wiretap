@@ -301,10 +301,7 @@ func buildCoverageWithSchemas(entries []artifactEntry, extraSchemas []artifact.S
 		if entry.Doc == nil {
 			continue
 		}
-		tcName := strings.TrimSpace(entry.Doc.TestCase.Name)
-		if tcName == "" {
-			tcName = entry.Doc.TestCase.ID
-		}
+		tcName := testCaseName(entry.Doc.TestCase)
 		keys := make(map[string]bool, len(entry.Doc.Schemas))
 		for _, schema := range entry.Doc.Schemas {
 			keys[schemaKey(schema)] = true
@@ -320,45 +317,17 @@ func buildCoverageWithSchemas(entries []artifactEntry, extraSchemas []artifact.S
 	dependentSchemas, dependentNotes := loadSchemas(filterSchemas(schemas, "dependency"), cache)
 	notes = append(notes, dependentNotes...)
 
-	testcases := indexCoverage(flowEntries, providedSchemas, dependentSchemas)
+	testcases := indexCoverage(flowEntries, entries, providedSchemas, dependentSchemas)
 	providedGroup := SpecCoverageGroup{Specs: exportSpecs(providedSchemas)}
 	dependentGroup := SpecCoverageGroup{Specs: exportSpecs(dependentSchemas)}
-	// Retain attempts with no traffic (e.g. early failure or drain timeout).
 	for _, entry := range entries {
 		if entry.Doc == nil {
 			continue
-		}
-		name := strings.TrimSpace(entry.Doc.TestCase.Name)
-		if name == "" {
-			name = "unknown"
-		}
-		index := -1
-		for i := range testcases {
-			if testcases[i].Name == name {
-				index = i
-				break
-			}
-		}
-		if index == -1 {
-			testcases = append(testcases, TestCaseCoverage{Name: name})
-			index = len(testcases) - 1
-		}
-		tc := &testcases[index]
-		found := false
-		for _, attempt := range tc.Attempts {
-			if attempt.ID == entry.Doc.TestCase.ID {
-				found = true
-				break
-			}
-		}
-		if !found {
-			tc.Attempts = append(tc.Attempts, entry.Doc.TestCase)
 		}
 		for _, diagnostic := range entry.Doc.CaptureDiagnostics {
 			notes = append(notes, entry.Doc.TestCase.ID+": "+diagnostic)
 		}
 	}
-	sort.Slice(testcases, func(i, j int) bool { return testcases[i].Name < testcases[j].Name })
 
 	return providedGroup, dependentGroup, testcases, notes
 }
@@ -485,32 +454,39 @@ func sortSamples(samples []FlowSample) {
 	})
 }
 
+func testCaseName(test artifact.TestCase) string {
+	if name := strings.TrimSpace(test.Name); name != "" {
+		return name
+	}
+	if id := strings.TrimSpace(test.ID); id != "" {
+		return id
+	}
+	return "unknown"
+}
+
 // indexCoverage matches each flow against each applicable schema once. The same
 // sample feeds the per-operation inventory and per-test view, so the two views
 // cannot disagree about a route, schema revision, or boundary.
-func indexCoverage(entries []flowEntry, providedSchemas, dependentSchemas []*loadedSchema) []TestCaseCoverage {
+func indexCoverage(entries []flowEntry, captures []artifactEntry, providedSchemas, dependentSchemas []*loadedSchema) []TestCaseCoverage {
 	buckets := map[string]*TestCaseCoverage{}
+	attempts := map[[2]string]bool{}
+	addAttempt := func(test artifact.TestCase) *TestCaseCoverage {
+		name := testCaseName(test)
+		tc := buckets[name]
+		if tc == nil {
+			tc = &TestCaseCoverage{Name: name}
+			buckets[name] = tc
+		}
+		key := [2]string{name, test.ID}
+		if !attempts[key] {
+			tc.Attempts = append(tc.Attempts, test)
+			attempts[key] = true
+		}
+		return tc
+	}
 	for _, entry := range entries {
 		flow := entry.Flow
-		tcName := strings.TrimSpace(entry.TestCase)
-		if tcName == "" {
-			tcName = "unknown"
-		}
-		tc := buckets[tcName]
-		if tc == nil {
-			tc = &TestCaseCoverage{Name: tcName}
-			buckets[tcName] = tc
-		}
-		foundAttempt := false
-		for _, attempt := range tc.Attempts {
-			if attempt.ID == entry.Case.ID {
-				foundAttempt = true
-				break
-			}
-		}
-		if !foundAttempt && entry.Case.ID != "" {
-			tc.Attempts = append(tc.Attempts, entry.Case)
-		}
+		tc := addAttempt(entry.Case)
 		sample := flowSampleFromFlow(entry)
 		tc.Traffic = append(tc.Traffic, sample)
 
@@ -548,6 +524,13 @@ func indexCoverage(entries []flowEntry, providedSchemas, dependentSchemas []*loa
 			schema.Samples[op] = append(schema.Samples[op], sample)
 			spec := findOrCreateSpec(target, schema)
 			spec.Operations = appendOperationSample(spec.Operations, op, sample)
+		}
+	}
+	// Keep traffic-bearing attempts first, then retain empty, failed or skipped
+	// attempts in capture order, using the same names and identity index.
+	for _, entry := range captures {
+		if entry.Doc != nil {
+			addAttempt(entry.Doc.TestCase)
 		}
 	}
 

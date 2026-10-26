@@ -78,7 +78,7 @@ func TestObservedSourceRetainsRequestMediaTypes(t *testing.T) {
 
 func TestStepRejectsAmbiguousContentType(t *testing.T) {
 	flow := artifact.Flow{Request: &artifact.HttpMessage{URL: "https://example.test/orders", Headers: artifact.Headers{"Content-Type": {"application/json"}, "content-type": {"text/plain"}}}}
-	_, _, err := makeStep(nil, nil, flow, nil, nil, nil)
+	_, _, err := makeStep(nil, flow, nil, nil, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "Content-Type") {
 		t.Fatalf("wanted ambiguous Content-Type failure, got %v", err)
 	}

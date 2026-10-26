@@ -3,6 +3,7 @@
 package htmlreport
 
 import (
+	"bytes"
 	"crypto/sha256"
 	_ "embed"
 	"encoding/json"
@@ -225,10 +226,9 @@ func message(m coverage.InteractionMessage) messageView {
 	} else if m.Body == "" {
 		out.BodyNote = "No body recorded"
 	}
-	var compact any
-	if json.Unmarshal([]byte(m.Body), &compact) == nil {
-		var raw json.RawMessage = []byte(m.Body)
-		out.Body = prettyJSON(raw)
+	var body bytes.Buffer
+	if json.Indent(&body, []byte(m.Body), "", "  ") == nil {
+		out.Body = body.String()
 	}
 	return out
 }
@@ -345,6 +345,7 @@ func makePage(in Inputs) (*pageModel, error) {
 	}
 	buildSpecs := func(g coverage.SpecCoverageGroup, role string) []specView {
 		var specs []specView
+		seenLinks := map[[2]string]bool{}
 		for _, s := range g.Specs {
 			v := specView{ID: s.SchemaID, Name: s.AssetName, Source: s.Source, Asset: s.AssetID, Protocol: s.Protocol, Known: s.DenominatorKnown, Anchor: anchor("spec", role, s.SchemaID, s.SchemaSet, s.AssetID, s.Source, s.Type)}
 			if v.Name == "" {
@@ -360,11 +361,9 @@ func makePage(in Inputs) (*pageModel, error) {
 						o.Samples = append(o.Samples, evidence(sample.TestCaseID, sample.FlowID, sample.TestCase, sample.TestStatus))
 						t := ensure(sample.TestCaseID, sample.TestCase)
 						link := coverageLink{Name: v.Name + " · " + op.Operation, Href: "#" + o.Anchor}
-						found := false
-						for _, existing := range t.Coverage {
-							found = found || existing.Href == link.Href
-						}
-						if !found {
+						key := [2]string{t.Anchor, link.Href}
+						if !seenLinks[key] {
+							seenLinks[key] = true
 							t.Coverage = append(t.Coverage, link)
 						}
 					}
@@ -425,6 +424,7 @@ func makePage(in Inputs) (*pageModel, error) {
 		return a.ID < b.ID
 	})
 	if r.Contracts != nil {
+		seenLinks := map[[2]string]bool{}
 		m.HasContracts = true
 		m.ContractScope = r.Contracts.Scope
 		m.ContractComplete = r.Contracts.Complete
@@ -446,11 +446,9 @@ func makePage(in Inputs) (*pageModel, error) {
 					tv.Evidence = append(tv.Evidence, evidenceView{Href: evidence(e.AttemptID, e.FlowID, e.TestName, e.Outcome).Href, ContractEvidence: e})
 					key := flowKey(e.AttemptID, e.FlowID)
 					link := conditionLink{Name: t.Phase + " · " + t.Family + " · " + t.Condition, Href: "#" + tv.Anchor, State: t.State}
-					found := false
-					for _, existing := range conditionLinks[key] {
-						found = found || existing.Href == link.Href
-					}
-					if !found {
+					identity := [2]string{key, link.Href}
+					if !seenLinks[identity] {
+						seenLinks[identity] = true
 						conditionLinks[key] = append(conditionLinks[key], link)
 					}
 				}

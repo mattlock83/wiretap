@@ -2,8 +2,10 @@ package runoutput
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -82,6 +84,52 @@ func TestFailedAttemptsProduceFixedOutputs(t *testing.T) {
 	// Regeneration replaces generated files without disturbing raw capture.
 	if _, err := Generate(t.Context(), root); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestSnapshotOutputsReuseVerifiedCaptures(t *testing.T) {
+	root := failedRun(t, func(capture *artifact.Artifact) {
+		capture.TestCase.Meta = map[string]any{"description": strings.Repeat("retained test metadata ", 1000)}
+	})
+	snapshot, err := Load(t.Context(), root, "", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := os.ReadFile(filepath.Join(root, "bundle.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The verified capture is larger than this new limit. Output protection may
+	// check the pinned manifest, but must not decode the capture a second time.
+	t.Setenv("WIRETAP_MAX_ARCHIVE_FILE_BYTES", strconv.Itoa(len(manifest)))
+	if _, _, err := bundle.Load(root); !errors.Is(err, bundle.ErrLoadLimit) {
+		t.Fatalf("fixture does not distinguish a repeated archive load: %v", err)
+	}
+	result, err := snapshot.Generate(t.Context())
+	if err != nil || result == nil || len(result.Coverage) != 2 || result.Arazzo == "" {
+		t.Fatalf("verified snapshot did not produce fixed outputs: %+v, %v", result, err)
+	}
+}
+
+func TestSnapshotOutputsRejectChangedManifest(t *testing.T) {
+	root := failedRun(t)
+	snapshot, err := Load(t.Context(), root, "", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, "bundle.json")
+	manifest, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, append(manifest, '\n'), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if result, err := snapshot.Generate(t.Context()); err == nil || result != nil || !strings.Contains(err.Error(), "changed after loading") {
+		t.Fatalf("used obsolete evidence inventory: %+v, %v", result, err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "exports")); !os.IsNotExist(err) {
+		t.Fatalf("changed manifest received exports: %v", err)
 	}
 }
 

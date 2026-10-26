@@ -68,12 +68,21 @@ func content(node *html.Node) string {
 
 func TestRendererLinksCoverageAttemptsAndWorkflows(t *testing.T) {
 	in := rendererFixture()
+	operation := &in.Report.Provided.Specs[0].Exercised[0]
+	operation.Samples = append(operation.Samples, operation.Samples[0])
+	target := in.Report.Contracts.Specs[0].Targets[0]
+	target.Evidence = append(target.Evidence, target.Evidence[0])
 	model, err := makePage(in)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if model.Attempts != 2 || model.Passed != 1 || model.Other != 1 {
 		t.Fatalf("real pass/fail statuses produced wrong metrics: attempts=%d passed=%d other=%d", model.Attempts, model.Passed, model.Other)
+	}
+	for _, attempt := range model.Tests {
+		if len(attempt.Coverage) != 1 || len(attempt.Flows) != 1 || len(attempt.Flows[0].Conditions) > 1 {
+			t.Fatalf("repeated evidence duplicated links or flows: %+v", attempt)
+		}
 	}
 	output := renderFixture(t, in)
 	for _, want := range []string{`data-wiretap-report="coverage"`, "Provided APIs", "Contract coverage", "Test runs", "Arazzo workflows", "Sources", "retry ordinal 0", "retry ordinal 1", "Stable test identity:", "Measured contract conditions (1)", "order.test:4", "variant guest", "X-Diagnostic: unavailable", "HTTP 503", "HTTP 201", "$statusCode == 201", "not covered", "unknown", "wiretap.json", "orders.yaml", "arazzo.json"} {
@@ -121,6 +130,22 @@ func TestRendererLinksCoverageAttemptsAndWorkflows(t *testing.T) {
 	}
 	if strings.Count(output, `class="attempt filter-item"`) != 2 {
 		t.Error("retry attempts merged")
+	}
+}
+
+func TestBodyFormattingPreservesCapturedJSONValues(t *testing.T) {
+	for _, body := range []string{`{"big":9007199254740993,"exponent":1e1000}`, `{"duplicate":1,"duplicate":2}`, `{"markup":"<>&","escaped":"\u003c"}`, `null`, `[true,1.00]`, `broken {`, ""} {
+		got := message(coverage.InteractionMessage{Body: body}).Body
+		if !json.Valid([]byte(body)) {
+			if got != body {
+				t.Fatalf("non-JSON body changed: %q", got)
+			}
+			continue
+		}
+		var compact bytes.Buffer
+		if err := json.Compact(&compact, []byte(got)); err != nil || compact.String() != body {
+			t.Fatalf("JSON values changed: %q -> %q (%v)", body, got, err)
+		}
 	}
 }
 

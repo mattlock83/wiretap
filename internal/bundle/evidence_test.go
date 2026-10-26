@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestEvidencePathsUsesArchiveVerificationAndReadLimits(t *testing.T) {
+func TestSnapshotUsesArchiveVerificationAndReadLimits(t *testing.T) {
 	writer, err := New(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -18,12 +18,15 @@ func TestEvidencePathsUsesArchiveVerificationAndReadLimits(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	paths, err := EvidencePaths(writer.Path())
-	if err != nil || len(paths) != 1 || paths[0] != want {
-		t.Fatalf("verified evidence paths = %v, %v; want %q", paths, err, want)
+	snapshot, err := LoadSnapshot(writer.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.Root != writer.Path() || snapshot.Run.RunID != writer.Snapshot().RunID || len(snapshot.Captures) != 0 || len(snapshot.EvidencePaths) != 1 || snapshot.EvidencePaths[0] != want {
+		t.Fatalf("unexpected verified snapshot: %+v; want evidence %q", snapshot, want)
 	}
 	t.Setenv("WIRETAP_MAX_ARCHIVE_FILE_BYTES", "1")
-	if paths, err := EvidencePaths(writer.Path()); !errors.Is(err, ErrLoadLimit) || paths != nil {
-		t.Fatalf("expected budgeted verification failure, got %v, %v", paths, err)
+	if snapshot, err := LoadSnapshot(writer.Path()); !errors.Is(err, ErrLoadLimit) || snapshot != nil {
+		t.Fatalf("expected budgeted verification failure, got %v, %v", snapshot, err)
 	}
 }

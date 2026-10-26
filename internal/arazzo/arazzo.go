@@ -81,7 +81,6 @@ type Export struct {
 
 type sourceSpec struct {
 	name, root, key string
-	doc             *openapi3.T
 	router          routers.Router
 	observed        map[string]any
 }
@@ -136,6 +135,7 @@ func GenerateSnapshot(run *bundle.Run, captures []*artifact.Artifact, sutName st
 	}
 	doc := &Document{Arazzo: "1.0.1", Info: Info{Title: sutName + " captured workflows", Version: "1.0.0", Description: "Run: " + run.RunID + ". One workflow per test attempt and API boundary, in request start order. Captured values are workflow input defaults; no response-to-request dependencies are inferred. Mock dependency workflows are separate from SUT workflows. Sources without a frozen contract describe observed requests only."}}
 	result := &Export{}
+	prepared := map[[2]string]*sourceSpec{}
 	sources := map[string]*sourceSpec{}
 	files := map[string][]byte{}
 	allStarted := true
@@ -184,7 +184,7 @@ func GenerateSnapshot(run *bundle.Run, captures []*artifact.Artifact, sutName st
 				return "$inputs." + name
 			}
 			for _, flow := range flows {
-				step, eligible, err := makeStep(run, capture, flow, sources, files, input)
+				step, eligible, err := makeStep(capture, flow, prepared, sources, files, input)
 				if err != nil {
 					return nil, fmt.Errorf("export Arazzo test %q flow %q: %w", capture.TestCase.ID, flow.ID, err)
 				}
@@ -227,7 +227,7 @@ func GenerateSnapshot(run *bundle.Run, captures []*artifact.Artifact, sutName st
 	return result, nil
 }
 
-func makeStep(run *bundle.Run, capture *artifact.Artifact, flow artifact.Flow, sources map[string]*sourceSpec, files map[string][]byte, input func(any) string) (Step, bool, error) {
+func makeStep(capture *artifact.Artifact, flow artifact.Flow, prepared map[[2]string]*sourceSpec, sources map[string]*sourceSpec, files map[string][]byte, input func(any) string) (Step, bool, error) {
 	step := Step{FlowID: flow.ID, URL: flow.Request.URL, Headers: flow.Request.Headers}
 	req, res := flow.Request, flow.Response
 	// A non-JSON representation is outside the requested JSON/REST export.
@@ -264,13 +264,15 @@ func makeStep(run *bundle.Run, capture *artifact.Artifact, flow artifact.Flow, s
 		if !schemaMatches(ref, flow) || ref.Type != "openapi" || ref.Source.Type == "omitted" {
 			continue
 		}
-		key := "frozen:" + ref.Source.Path
-		spec := sources[key]
+		key := [2]string{ref.Source.Path, ref.Source.SHA256}
+		// Preparation is reusable even when this flow does not select the source.
+		spec := prepared[key]
 		if spec == nil {
-			spec, err = loadSource(ref, fmt.Sprintf("api_%d", len(sources)+1), files)
+			spec, err = loadSource(ref, files)
 			if err != nil {
 				return step, false, err
 			}
+			prepared[key] = spec
 		}
 		requestURL := *u
 		requestURL.Scheme = "http"
@@ -290,7 +292,6 @@ func makeStep(run *bundle.Run, capture *artifact.Artifact, flow artifact.Flow, s
 			return step, false, errors.New("multiple frozen OpenAPI operations match the request")
 		}
 		source, route, pathParams = spec, matched, params
-		// Cache only sources actually used by a matching JSON operation below.
 	}
 	if source != nil {
 		jsonEvidence = jsonEvidence || operationJSON(route.Operation) || (!bodyPresent(req.Body) && res != nil && !bodyPresent(res.Body))
@@ -301,7 +302,8 @@ func makeStep(run *bundle.Run, capture *artifact.Artifact, flow artifact.Flow, s
 	if flow.TransportError != "" || res == nil || res.Status < 100 || res.Status > 599 {
 		return step, false, errors.New("a complete HTTP response is required")
 	}
-	for _, message := range []*artifact.HttpMessage{req, res} {
+	var requestBody any
+	for i, message := range []*artifact.HttpMessage{req, res} {
 		if len(message.Trailers) > 0 {
 			return step, false, errors.New("HTTP trailers cannot be represented")
 		}
@@ -309,8 +311,12 @@ func makeStep(run *bundle.Run, capture *artifact.Artifact, flow artifact.Flow, s
 			return step, false, errors.New("truncated, omitted or redacted body cannot be represented")
 		}
 		if bodyPresent(message.Body) {
-			if _, err := jsonBody(message.Body); err != nil {
+			value, err := jsonBody(message.Body)
+			if err != nil {
 				return step, false, err
+			}
+			if i == 0 {
+				requestBody = value
 			}
 		}
 	}
@@ -332,6 +338,10 @@ func makeStep(run *bundle.Run, capture *artifact.Artifact, flow artifact.Flow, s
 			return step, false, err
 		}
 	} else {
+		if source.name == "" {
+			// Number only emitted sources, in their first eligible flow order.
+			source.name = fmt.Sprintf("api_%d", len(sources)+1)
+		}
 		sources[source.key] = source
 		step.OperationPath = operationPath(source.name, route.Path, req.Method)
 		parameters := map[string]*openapi3.Parameter{}
@@ -360,7 +370,7 @@ func makeStep(run *bundle.Run, capture *artifact.Artifact, flow artifact.Flow, s
 					values = []string{value}
 				}
 			case "query":
-				values = u.Query()[p.Name]
+				values = query[p.Name]
 			case "header":
 				values = headerValues(req.Headers, p.Name)
 			case "cookie":
@@ -389,11 +399,7 @@ func makeStep(run *bundle.Run, capture *artifact.Artifact, flow artifact.Flow, s
 		}
 	}
 	if bodyPresent(req.Body) {
-		value, err := jsonBody(req.Body)
-		if err != nil {
-			return step, false, err
-		}
-		step.RequestBody = &RequestBody{ContentType: contentType(req.Headers), Payload: input(value)}
+		step.RequestBody = &RequestBody{ContentType: contentType(req.Headers), Payload: input(requestBody)}
 	}
 	step.SuccessCriteria = []Criterion{{Condition: "$statusCode == " + strconv.Itoa(res.Status)}}
 	return step, true, nil
@@ -409,7 +415,7 @@ func schemaMatches(ref artifact.SchemaRef, flow artifact.Flow) bool {
 	return ref.Role == "sut" && (ref.AssetID == "" || flow.AssetID == "" || ref.AssetID == flow.AssetID)
 }
 
-func loadSource(ref artifact.SchemaRef, name string, files map[string][]byte) (*sourceSpec, error) {
+func loadSource(ref artifact.SchemaRef, files map[string][]byte) (*sourceSpec, error) {
 	root, members, err := bundle.OpenAPIFiles(ref)
 	if err != nil {
 		return nil, err
@@ -469,7 +475,7 @@ func loadSource(ref artifact.SchemaRef, name string, files map[string][]byte) (*
 	for path, data := range members {
 		files[path] = data
 	}
-	return &sourceSpec{name: name, root: root, key: "frozen:" + ref.Source.Path, doc: doc, router: router}, nil
+	return &sourceSpec{root: root, key: "frozen:" + ref.Source.Path, router: router}, nil
 }
 
 func localServers(servers openapi3.Servers) (openapi3.Servers, error) {

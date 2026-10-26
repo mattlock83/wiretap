@@ -52,7 +52,7 @@ func OpenAPIFilesWithLimits(ctx context.Context, ref artifact.SchemaRef, limits 
 	if err != nil {
 		return "", nil, err
 	}
-	reader := &archiveReader{limits: limits}
+	reader := &FileReader{limits: limits}
 	setDir := filepath.Dir(ref.Source.Path)
 	manifestPath, err := containedPath(setDir, "manifest.json")
 	if err != nil {
@@ -60,7 +60,7 @@ func OpenAPIFilesWithLimits(ctx context.Context, ref artifact.SchemaRef, limits 
 	}
 	manifestLimit := reader.limits.MaxFileBytes
 	reader.limits.MaxFileBytes = min(manifestLimit, 1<<20)
-	data, err := reader.readFile(manifestPath)
+	data, err := reader.ReadFile(manifestPath)
 	reader.limits.MaxFileBytes = manifestLimit
 	if err != nil {
 		return "", nil, err
@@ -77,7 +77,7 @@ func OpenAPIFilesWithLimits(ctx context.Context, ref artifact.SchemaRef, limits 
 // loading and standalone exports. Reuse the caller's reader so every member
 // contributes to its existing byte/read budgets. A nil files map validates
 // members without retaining another copy of their contents in memory.
-func verifyFrozenOpenAPI(ctx context.Context, ref artifact.SchemaRef, setDir string, manifestData []byte, reader *archiveReader, files map[string][]byte) (string, error) {
+func verifyFrozenOpenAPI(ctx context.Context, ref artifact.SchemaRef, setDir string, manifestData []byte, reader *FileReader, files map[string][]byte) (string, error) {
 	if err := rejectDuplicateKeys(manifestData); err != nil {
 		return "", err
 	}
@@ -134,7 +134,7 @@ func verifyFrozenOpenAPI(ctx context.Context, ref artifact.SchemaRef, setDir str
 		if err != nil {
 			return "", err
 		}
-		data, err := reader.readFile(path)
+		data, err := reader.ReadFile(path)
 		if err != nil {
 			return "", err
 		}

@@ -43,6 +43,9 @@ export interface CaptureOptions extends TestOptions {
    * override every control request, including cleanup. */
   timeoutMs?: number;
   proxy?: true | { listenAddr?: string; targetUrl?: string };
+  /** Configure before Jest starts through withWiretap's capture options or the
+   * test environment. False disables Wiretap's HTTP/fetch instrumentation;
+   * session trace contexts remain available for application instrumentation. */
   instrumentation?: boolean;
   tracerProvider?: TracerProvider;
 }

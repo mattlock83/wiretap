@@ -7,6 +7,7 @@ import (
 
 	"github.com/mattlock83/wiretap/internal/bundle"
 	"github.com/mattlock83/wiretap/internal/proxy"
+	"github.com/mattlock83/wiretap/internal/runoutput"
 )
 
 func (a *App) startRun(ctx context.Context) error {
@@ -22,29 +23,29 @@ func (a *App) startRun(ctx context.Context) error {
 	return nil
 }
 
-func (a *App) finishRun(ctx context.Context) (string, error) {
+func (a *App) finishRun(ctx context.Context) (string, *runoutput.Snapshot, error) {
 	a.sessionsMu.Lock()
 	activeSessions := len(a.sessions) != 0
 	a.sessionsMu.Unlock()
 	if activeSessions {
-		return "", errors.New("capture sessions are still active; teardown tests before finishing the run")
+		return "", nil, errors.New("capture sessions are still active; teardown tests before finishing the run")
 	}
 	if a.hasActiveSessions() {
-		return "", errors.New("capture exchanges are still active")
+		return "", nil, errors.New("capture exchanges are still active")
 	}
 	if err := a.proxyServer.Stop(ctx); err != nil {
-		return "", err
+		return "", nil, err
 	}
 	current := a.currentBundle()
 	if err := a.closeBundle("complete"); err != nil {
-		return "", err
+		return "", nil, err
 	}
 	a.resetCaptureRouting()
 	if current == nil {
-		return "", nil
+		return "", nil, nil
 	}
-	_, _, err := bundle.Load(current.Path())
-	return current.Path(), err
+	snapshot, err := runoutput.Load(ctx, current.Path(), "", false)
+	return current.Path(), snapshot, err
 }
 func (a *App) interruptRun() error {
 	a.controlMu.Lock()

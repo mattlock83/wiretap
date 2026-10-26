@@ -130,6 +130,16 @@ for example `{ capture: { tags: ['integration'] } }`. Dynamic callbacks and a
 custom tracer provider belong in `captureJest`, because Jest serializes its
 configuration when starting workers.
 
+Wiretap instruments Node HTTP clients and `fetch` by default. If your application
+already owns that instrumentation, set
+`withWiretap(existingConfig, { capture: { instrumentation: false } })` before
+Jest starts. For a standalone Wiretap environment, use
+`testEnvironmentOptions.wiretap.instrumentation: false`. The environment override
+`WIRETAP_EXISTING_OTEL=1` also prevents Wiretap from installing client
+instrumentation. Session spans and trace contexts remain available; your existing
+instrumentation must propagate them. `captureJest` rejects `instrumentation`
+because its registration runs after the environment initializes tracing.
+
 Go applies project defaults. Omit a capture option to inherit it; `schemas: []`
 or `dependencies: {}` explicitly clears that list for the test, and
 `schemaRequired: false` explicitly permits a missing SUT spec. Overrides do not

@@ -309,7 +309,7 @@ func (w *Writer) RegisterPrepared(tc artifact.TestCase, schemas []artifact.Schem
 		}
 		exists := false
 		for _, existing := range w.run.Schemas {
-			if sameJSON(existing, stored) {
+			if existing == stored {
 				exists = true
 				break
 			}
@@ -349,7 +349,7 @@ func (w *Writer) RegisterSchemas(schemas []artifact.SchemaRef) error {
 		}
 		exists := false
 		for _, existing := range w.run.Schemas {
-			if sameJSON(existing, ref) {
+			if existing == ref {
 				exists = true
 				break
 			}
@@ -483,9 +483,8 @@ func (w *Writer) Commit(art *artifact.Artifact) (string, error) {
 	previous := w.run
 	w.run.Pending = removePending(w.run.Pending, id)
 	w.run.Attempts = append(w.run.Attempts, AttemptRef{AttemptID: id, FileRef: FileRef{Path: rel, SHA256: digest(data)}})
-	w.run.ProvidedAPIs, w.run.Dependencies = apiInventory(w.run, []*artifact.Artifact{art})
 	w.bump()
-	if err := w.writeRun(); err != nil {
+	if err := w.writeRun(art); err != nil {
 		w.run = previous
 		return "", err
 	}
@@ -515,10 +514,10 @@ func (w *Writer) Finalize(state string) error {
 
 func (w *Writer) bump() { w.run.Revision++; w.run.UpdatedAt = time.Now().UTC() }
 
-func (w *Writer) writeRun() error {
+func (w *Writer) writeRun(captures ...*artifact.Artifact) error {
 	w.run.RequiredCapabilities = []string{}
 	w.run.InventoryScope = "configured_and_observed"
-	w.run.ProvidedAPIs, w.run.Dependencies = apiInventory(w.run, nil)
+	w.run.ProvidedAPIs, w.run.Dependencies = apiInventory(w.run, captures)
 	if w.run.Attempts == nil {
 		w.run.Attempts = []AttemptRef{}
 	}
@@ -603,11 +602,11 @@ func writeAtomic(path string, data []byte) error {
 // Load verifies canonical evidence, then restores body and schema paths for
 // existing coverage and export calculations. It never reads generated Markdown.
 func Load(root string) (*Run, []*artifact.Artifact, error) {
-	limits, err := loadLimitsFromEnv()
+	snapshot, err := LoadSnapshot(root)
 	if err != nil {
-		return nil, nil, fmt.Errorf("%w: %w", ErrInput, err)
+		return nil, nil, err
 	}
-	return LoadWithLimits(root, limits)
+	return snapshot.Run, snapshot.Captures, nil
 }
 
 // LoadWithLimits verifies and restores an archive within explicit read budgets.
@@ -619,83 +618,85 @@ func LoadWithLimits(root string, limits LoadLimits) (*Run, []*artifact.Artifact,
 	if err != nil {
 		return nil, nil, fmt.Errorf("%w: %w", ErrInput, err)
 	}
-	reader := &archiveReader{limits: limits}
-	run, captures, err := loadWithReader(root, reader)
+	reader := &FileReader{limits: limits}
+	snapshot, err := loadWithReader(root, reader)
 	if err != nil {
 		return nil, nil, fmt.Errorf("%w: %w", ErrInput, err)
 	}
-	return run, captures, nil
+	return snapshot.Run, snapshot.Captures, nil
 }
 
-func loadWithReader(root string, reader *archiveReader) (*Run, []*artifact.Artifact, error) {
+func loadWithReader(root string, reader *FileReader) (*Snapshot, error) {
 	root, err := filepath.Abs(root)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	runPath, err := containedPath(root, "bundle.json")
 	if err != nil {
-		return nil, nil, fmt.Errorf("read run evidence: %w", err)
+		return nil, fmt.Errorf("read run evidence: %w", err)
 	}
-	data, err := reader.readFile(runPath)
+	data, err := reader.ReadFile(runPath)
 	if err != nil {
-		return nil, nil, fmt.Errorf("read run evidence: %w", err)
+		return nil, fmt.Errorf("read run evidence: %w", err)
 	}
 	decoded, err := DecodeManifest(data)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
+	manifestSHA256 := digest(data)
+	reader.paths = map[string]struct{}{runPath: {}}
 	run := *decoded
 	// Each inventory entry requires at least one read. Reject an impossible
 	// inventory before allocating per-attempt bookkeeping or resolving contracts.
 	if err := reader.requireReads(len(run.Attempts)); err != nil {
-		return nil, nil, fmt.Errorf("run test inventory: %w", err)
+		return nil, fmt.Errorf("run test inventory: %w", err)
 	}
 	// Preserve portable paths for inventory validation after captures are loaded.
 	storedInventory := run
 	storedInventory.Schemas = append([]artifact.SchemaRef(nil), run.Schemas...)
 	if err := resolveSchemas(root, run.Schemas, reader); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	seen := map[string]bool{}
 	var captures []*artifact.Artifact
 	for _, ref := range run.Attempts {
 		if !safeID(ref.AttemptID) || seen[ref.AttemptID] || ref.Path != "tests/"+ref.AttemptID+".json" {
-			return nil, nil, fmt.Errorf("duplicate or invalid attempt ID %q", ref.AttemptID)
+			return nil, fmt.Errorf("duplicate or invalid attempt ID %q", ref.AttemptID)
 		}
 		seen[ref.AttemptID] = true
-		data, err := readRef(root, ref.FileRef, reader.readFile)
+		data, err := readRef(root, ref.FileRef, reader.ReadFile)
 		if err != nil {
-			return nil, nil, fmt.Errorf("attempt %q: %w", ref.AttemptID, err)
+			return nil, fmt.Errorf("attempt %q: %w", ref.AttemptID, err)
 		}
 		if err := rejectDuplicateKeys(data); err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		var attempt Attempt
 		attemptDecoder := json.NewDecoder(bytes.NewReader(data))
 		attemptDecoder.UseNumber()
 		if err := attemptDecoder.Decode(&attempt); err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		if !supportedEvidenceVersion(attempt.EvidenceVersion) || attempt.RunID != run.RunID || attempt.AttemptID != ref.AttemptID || attempt.Capture.TestCase.ID != ref.AttemptID || attempt.Capture.Version < 1 {
-			return nil, nil, fmt.Errorf("attempt %q identity/version mismatch", ref.AttemptID)
+			return nil, fmt.Errorf("attempt %q identity/version mismatch", ref.AttemptID)
 		}
 		if err := attempt.Capture.TestCase.Identity.Validate(); err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		if err := checkCapabilities(attempt.RequiredCapabilities); err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		if err := resolveSchemas(root, attempt.Capture.Schemas, reader); err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		if err := reader.requireReads(len(attempt.Bodies)); err != nil {
-			return nil, nil, fmt.Errorf("attempt %q attachment inventory: %w", ref.AttemptID, err)
+			return nil, fmt.Errorf("attempt %q attachment inventory: %w", ref.AttemptID, err)
 		}
 		flowMap := map[string]*artifact.Flow{}
 		for i := range attempt.Capture.Traffic {
 			flow := &attempt.Capture.Traffic[i]
 			if flow.ID == "" || flowMap[flow.ID] != nil {
-				return nil, nil, fmt.Errorf("duplicate or empty flow ID %q", flow.ID)
+				return nil, fmt.Errorf("duplicate or empty flow ID %q", flow.ID)
 			}
 			flowMap[flow.ID] = flow
 		}
@@ -703,12 +704,12 @@ func loadWithReader(root string, reader *archiveReader) (*Run, []*artifact.Artif
 		for _, bodyRef := range attempt.Bodies {
 			key := bodyRef.FlowID + "/" + bodyRef.Phase
 			if seenBodies[key] {
-				return nil, nil, fmt.Errorf("duplicate body reference %q", key)
+				return nil, fmt.Errorf("duplicate body reference %q", key)
 			}
 			seenBodies[key] = true
 			flow := flowMap[bodyRef.FlowID]
 			if flow == nil {
-				return nil, nil, fmt.Errorf("body references missing flow %q", bodyRef.FlowID)
+				return nil, fmt.Errorf("body references missing flow %q", bodyRef.FlowID)
 			}
 			var msg *artifact.HttpMessage
 			switch bodyRef.Phase {
@@ -717,24 +718,24 @@ func loadWithReader(root string, reader *archiveReader) (*Run, []*artifact.Artif
 			case "response":
 				msg = flow.Response
 			default:
-				return nil, nil, fmt.Errorf("invalid body phase %q", bodyRef.Phase)
+				return nil, fmt.Errorf("invalid body phase %q", bodyRef.Phase)
 			}
 			var body *artifact.Body
 			if msg != nil {
 				body = msg.Body
 			}
 			if body == nil {
-				return nil, nil, fmt.Errorf("body %q missing in interaction", key)
+				return nil, fmt.Errorf("body %q missing in interaction", key)
 			}
 			if body.Text != "" || body.Bytes != "" {
-				return nil, nil, fmt.Errorf("body %q has both inline and attachment data", key)
+				return nil, fmt.Errorf("body %q has both inline and attachment data", key)
 			}
-			raw, err := readRef(root, bodyRef.FileRef, reader.readFile)
+			raw, err := readRef(root, bodyRef.FileRef, reader.ReadFile)
 			if err != nil {
-				return nil, nil, err
+				return nil, err
 			}
 			if len(raw) != bodyRef.RetainedBytes {
-				return nil, nil, fmt.Errorf("body %q size mismatch", key)
+				return nil, fmt.Errorf("body %q size mismatch", key)
 			}
 			switch bodyRef.Representation {
 			case "text":
@@ -742,7 +743,7 @@ func loadWithReader(root string, reader *archiveReader) (*Run, []*artifact.Artif
 			case "bytes":
 				body.Bytes = base64.StdEncoding.EncodeToString(raw)
 			default:
-				return nil, nil, fmt.Errorf("invalid body representation %q", bodyRef.Representation)
+				return nil, fmt.Errorf("invalid body representation %q", bodyRef.Representation)
 			}
 		}
 		for _, flow := range attempt.Capture.Traffic {
@@ -751,25 +752,30 @@ func loadWithReader(root string, reader *archiveReader) (*Run, []*artifact.Artif
 				msg  *artifact.HttpMessage
 			}{{"request", flow.Request}, {"response", flow.Response}} {
 				if part.msg != nil && part.msg.Body != nil && (part.msg.Body.Text != "" || part.msg.Body.Bytes != "") && !seenBodies[flow.ID+"/"+part.name] {
-					return nil, nil, fmt.Errorf("inline body data without attachment for flow %q", flow.ID)
+					return nil, fmt.Errorf("inline body data without attachment for flow %q", flow.ID)
 				}
 			}
 		}
 		if err := artifact.ValidateCapture(&attempt.Capture); err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		captures = append(captures, &attempt.Capture)
 	}
 	for _, item := range run.Pending {
 		if !safeID(item.AttemptID) || seen[item.AttemptID] {
-			return nil, nil, fmt.Errorf("invalid pending attempt %q", item.AttemptID)
+			return nil, fmt.Errorf("invalid pending attempt %q", item.AttemptID)
 		}
 		seen[item.AttemptID] = true
 	}
 	if err := validateInventory(storedInventory, captures); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	return &run, captures, nil
+	paths := make([]string, 0, len(reader.paths))
+	for path := range reader.paths {
+		paths = append(paths, path)
+	}
+	sort.Strings(paths)
+	return &Snapshot{Root: root, Run: &run, Captures: captures, EvidencePaths: paths, manifestSHA256: manifestSHA256}, nil
 }
 
 func supportedEvidenceVersion(value string) bool {
@@ -781,7 +787,7 @@ func supportedEvidenceVersion(value string) bool {
 	return err == nil && minor >= 0
 }
 
-func resolveSchemas(root string, schemas []artifact.SchemaRef, reader *archiveReader) error {
+func resolveSchemas(root string, schemas []artifact.SchemaRef, reader *FileReader) error {
 	frozenCount := 0
 	for _, ref := range schemas {
 		if ref.Source.Type != "omitted" {
@@ -822,7 +828,7 @@ func resolveSchemas(root string, schemas []artifact.SchemaRef, reader *archiveRe
 		if err != nil {
 			return err
 		}
-		manifestData, err := reader.readFile(manifestPath)
+		manifestData, err := reader.ReadFile(manifestPath)
 		if err != nil {
 			return err
 		}

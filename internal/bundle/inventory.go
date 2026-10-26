@@ -2,6 +2,7 @@ package bundle
 
 import (
 	"errors"
+	"slices"
 	"sort"
 
 	"github.com/mattlock83/wiretap/internal/artifact"
@@ -74,12 +75,12 @@ func apiInventory(run Run, captures []*artifact.Artifact) ([]API, []API) {
 			}
 		}
 		if protocol != "" {
-			a.Protocols = uniqueString(a.Protocols, protocol)
+			a.Protocols = append(a.Protocols, protocol)
 		}
 		ref := APIContract{ID: s.ID, Type: s.Type, Source: s.Source}
 		found := false
 		for _, old := range a.Contracts {
-			if sameJSON(old, ref) {
+			if old == ref {
 				found = true
 				break
 			}
@@ -94,12 +95,8 @@ func apiInventory(run Run, captures []*artifact.Artifact) ([]API, []API) {
 				continue
 			}
 			a := get(role, old.ID)
-			for _, id := range old.ObservedIn {
-				a.ObservedIn = uniqueString(a.ObservedIn, id)
-			}
-			for _, protocol := range old.Protocols {
-				a.Protocols = uniqueString(a.Protocols, protocol)
-			}
+			a.ObservedIn = append(a.ObservedIn, old.ObservedIn...)
+			a.Protocols = append(a.Protocols, old.Protocols...)
 		}
 	}
 	for _, capture := range captures {
@@ -119,7 +116,7 @@ func apiInventory(run Run, captures []*artifact.Artifact) ([]API, []API) {
 				}
 			}
 			a := get(role, id)
-			a.ObservedIn = uniqueString(a.ObservedIn, capture.TestCase.ID)
+			a.ObservedIn = append(a.ObservedIn, capture.TestCase.ID)
 			protocol := flow.Protocol
 			if protocol == "" {
 				if flow.Request != nil {
@@ -127,7 +124,7 @@ func apiInventory(run Run, captures []*artifact.Artifact) ([]API, []API) {
 				}
 			}
 			if protocol != "" {
-				a.Protocols = uniqueString(a.Protocols, protocol)
+				a.Protocols = append(a.Protocols, protocol)
 			}
 		}
 	}
@@ -135,7 +132,9 @@ func apiInventory(run Run, captures []*artifact.Artifact) ([]API, []API) {
 	for role, group := range groups {
 		for _, a := range group {
 			sort.Strings(a.Protocols)
+			a.Protocols = slices.Compact(a.Protocols)
 			sort.Strings(a.ObservedIn)
+			a.ObservedIn = slices.Compact(a.ObservedIn)
 			sort.Slice(a.Contracts, func(i, j int) bool {
 				left, right := a.Contracts[i], a.Contracts[j]
 				return left.ID+"|"+left.Source.Path < right.ID+"|"+right.Source.Path
@@ -145,15 +144,6 @@ func apiInventory(run Run, captures []*artifact.Artifact) ([]API, []API) {
 		sort.Slice(out[role], func(i, j int) bool { return out[role][i].ID < out[role][j].ID })
 	}
 	return out[0], out[1]
-}
-
-func uniqueString(values []string, value string) []string {
-	for _, old := range values {
-		if old == value {
-			return values
-		}
-	}
-	return append(values, value)
 }
 
 func validateInventory(run Run, captures []*artifact.Artifact) error {

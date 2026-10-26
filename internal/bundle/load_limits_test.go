@@ -263,8 +263,8 @@ func TestLoadDefaultsAcceptMultiAttemptSuite(t *testing.T) {
 }
 
 func TestArchiveReaderRejectsNonRegularFiles(t *testing.T) {
-	reader := &archiveReader{limits: DefaultLoadLimits()}
-	if _, err := reader.readFile(t.TempDir()); err == nil || !strings.Contains(err.Error(), "not a regular file") {
+	reader := &FileReader{limits: DefaultLoadLimits()}
+	if _, err := reader.ReadFile(t.TempDir()); err == nil || !strings.Contains(err.Error(), "not a regular file") {
 		t.Fatalf("non-regular archive reference accepted: %v", err)
 	}
 }

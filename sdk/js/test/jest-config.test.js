@@ -30,9 +30,12 @@ test('Jest app option preserves setup ordering without passing the handler to th
     assert.throws(() => withWiretap({}, { capture }), error);
     assert.throws(() => captureJest(capture), error);
   }
+  for (const instrumentation of [false, true, undefined]) {
+    assert.throws(() => captureJest({ instrumentation }), /before Jest starts.*after tracing initializes/);
+  }
 });
 
-for (const [format, override] of [['commonjs'], ['esm'], ['commonjs', 'baseUrl'], ['commonjs', 'proxy']]) test(`Jest app option loads ${format} mocked handlers with ${override || 'managed attachment'} before user suite hooks`, async t => {
+for (const [format, override] of [['commonjs'], ['esm'], ['commonjs', 'baseUrl'], ['commonjs', 'proxy'], ['commonjs', 'instrumentation'], ['commonjs', 'existing-otel'], ['commonjs', 'standalone-instrumentation']]) test(`Jest app option loads ${format} mocked handlers with ${override || 'managed attachment'} before user suite hooks`, async t => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'wiretap-jest-app-'));
   t.after(() => fs.rm(directory, { recursive: true, force: true }));
   let target, activeSession;
@@ -95,10 +98,19 @@ for (const [format, override] of [['commonjs'], ['esm'], ['commonjs', 'baseUrl']
         expect(setupOrder).toEqual(['first', 'second']);
         const response = await fetch(process.env.WIRETAP_SUT_URL + '/resource');
         expect(await response.json()).toEqual({ value: 'user setup mock', count: 2 });
+        const body = await new Promise((resolve, reject) => {
+          require('node:http').get(process.env.WIRETAP_SUT_URL + '/node-http', response => {
+            let data = '';
+            response.on('data', chunk => { data += chunk; });
+            response.on('end', () => resolve(JSON.parse(data)));
+            response.on('error', reject);
+          }).on('error', reject);
+        });
+        expect(body).toEqual({ value: 'user setup mock', count: 3 });
       });
       afterAll(async () => {
         const response = await fetch(globalThis.__wiretapCaptureConfig.sutBaseUrl + '/after-all');
-        expect(await response.json()).toEqual({ value: 'user setup mock', count: 3 });
+        expect(await response.json()).toEqual({ value: 'user setup mock', count: 4 });
       });
     `)),
     write('jest.config.cjs', `
@@ -108,17 +120,18 @@ for (const [format, override] of [['commonjs'], ['esm'], ['commonjs', 'baseUrl']
         setupFilesAfterEnv: ['<rootDir>/first.cjs', '<rootDir>/second.cjs'],
         testEnvironmentOptions: { wiretap: { schemaRequired: false } }
       }, { app: '<rootDir>/app.${format === 'esm' ? 'mjs' : 'cjs'}',
-        capture: ${JSON.stringify(override === 'baseUrl' ? { baseUrl } : override === 'proxy' ? { proxy: { targetUrl: 'http://explicit-proxy.test' } } : {})}
+        capture: ${JSON.stringify(override === 'baseUrl' ? { baseUrl } : override === 'proxy' ? { proxy: { targetUrl: 'http://explicit-proxy.test' } } : override?.includes('instrumentation') ? { instrumentation: false } : override === 'existing-otel' ? { instrumentation: true } : {})}
       });
       // This regression supplies a control server; managed process ownership is
       // independently exercised by managed-runtime.test.js and the real demo.
       delete config.globalSetup;
       delete config.globalTeardown;
+      ${override === 'standalone-instrumentation' ? 'delete config.testEnvironmentOptions.wiretap.managed;' : ''}
       module.exports = config;
     `)
   ]);
   const child = spawn(process.execPath, [...(format === 'esm' ? ['--experimental-vm-modules'] : []), require.resolve('jest/bin/jest'), '--config', path.join(directory, 'jest.config.cjs'), '--runInBand'], {
-    env: { ...process.env, WIRETAP_BASE_URL: baseUrl, WIRETAP_SUT_URL: `${baseUrl}/api` },
+    env: { ...process.env, WIRETAP_BASE_URL: baseUrl, WIRETAP_SUT_URL: `${baseUrl}/api`, WIRETAP_EXISTING_OTEL: override === 'existing-otel' ? '1' : '0' },
     stdio: ['ignore', 'pipe', 'pipe']
   });
   let output = '';
@@ -131,12 +144,17 @@ for (const [format, override] of [['commonjs'], ['esm'], ['commonjs', 'baseUrl']
   }).finally(() => clearTimeout(timeout));
   assert.equal(code, 0, output);
   const starts = calls.filter(call => call.path === '/v1/startRun');
-  assert.equal(starts.length, override ? 2 : 0);
+  assert.equal(starts.length, ['baseUrl', 'proxy', 'standalone-instrumentation'].includes(override) ? 2 : 0);
   if (override === 'proxy') assert.ok(starts.every(call => call.body.proxy.target_url === 'http://explicit-proxy.test'));
   const setups = calls.filter(call => call.path === '/v1/setupTest');
   assert.equal(setups.length, 2);
   assert.equal(new Set(setups.map(call => call.body.test_identity.id)).size, 2);
+  assert.ok(setups.every(call => /^00-[a-f0-9]{32}-[a-f0-9]{16}-01$/.test(call.body.trace_context.traceparent)), 'attempt trace contexts must remain available without automatic client instrumentation');
   assert.deepEqual(calls.filter(call => call.path === '/v1/teardownTest').map(call => call.body.status), ['pass', 'pass']);
-  assert.equal(traffic.length, 2);
-  assert.ok(traffic.every(request => /^00-[a-f0-9]{32}-[a-f0-9]{16}-01$/.test(request.parent)));
+  assert.equal(traffic.length, 4);
+  if (override?.includes('instrumentation') || override === 'existing-otel') {
+    assert.ok(traffic.every(request => request.parent === undefined), 'HTTP and fetch instrumentation must remain disabled');
+  } else {
+    assert.ok(traffic.every(request => /^00-[a-f0-9]{32}-[a-f0-9]{16}-01$/.test(request.parent)));
+  }
 });

@@ -84,21 +84,33 @@ func (limits LoadLimits) normalized() (LoadLimits, error) {
 	return limits, nil
 }
 
-type archiveReader struct {
+// FileReader bounds regular-file reads across one archive or standalone report.
+// Callers enforce which paths may be read; this reader enforces resource limits.
+type FileReader struct {
 	limits LoadLimits
 	reads  int
 	bytes  int64
 	paths  map[string]struct{}
 }
 
-func (reader *archiveReader) requireReads(count int) error {
+// NewFileReader uses the same configured budgets as archive loading.
+func NewFileReader() (*FileReader, error) {
+	limits, err := ConfiguredLoadLimits()
+	if err != nil {
+		return nil, err
+	}
+	return &FileReader{limits: limits}, nil
+}
+
+func (reader *FileReader) requireReads(count int) error {
 	if count > reader.limits.MaxFileReads-reader.reads {
 		return fmt.Errorf("%w: file reads would exceed MaxFileReads (%d)", ErrLoadLimit, reader.limits.MaxFileReads)
 	}
 	return nil
 }
 
-func (reader *archiveReader) readFile(path string) ([]byte, error) {
+// ReadFile charges each successful read against the cumulative budget.
+func (reader *FileReader) ReadFile(path string) ([]byte, error) {
 	if err := reader.requireReads(1); err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
@@ -140,9 +152,9 @@ func (reader *archiveReader) readFile(path string) ([]byte, error) {
 	return raw, nil
 }
 
-func (reader *archiveReader) checkSize(path string, info os.FileInfo) error {
+func (reader *FileReader) checkSize(path string, info os.FileInfo) error {
 	if !info.Mode().IsRegular() {
-		return fmt.Errorf("archive reference %s is not a regular file", path)
+		return fmt.Errorf("input %s is not a regular file", path)
 	}
 	if info.Size() > reader.limits.MaxFileBytes {
 		return fmt.Errorf("%w: %s has %d bytes, exceeding MaxFileBytes (%d)", ErrLoadLimit, path, info.Size(), reader.limits.MaxFileBytes)

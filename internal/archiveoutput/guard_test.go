@@ -23,6 +23,14 @@ func emptyArchive(t testing.TB) string {
 	return writer.Path()
 }
 
+func loadGuard(root string) (*Guard, error) {
+	snapshot, err := bundle.LoadSnapshot(root)
+	if err != nil {
+		return nil, err
+	}
+	return New(snapshot)
+}
+
 func TestRawInventoryBudgetCountsUnreferencedEntries(t *testing.T) {
 	root := emptyArchive(t)
 	for _, name := range []string{"first", "second", "third"} {
@@ -37,12 +45,12 @@ func TestRawInventoryBudgetCountsUnreferencedEntries(t *testing.T) {
 	if _, _, err := bundle.Load(root); err != nil {
 		t.Fatalf("unreferenced entries changed evidence loading: %v", err)
 	}
-	if guard, err := New(root); !errors.Is(err, bundle.ErrLoadLimit) || guard != nil ||
+	if guard, err := loadGuard(root); !errors.Is(err, bundle.ErrLoadLimit) || guard != nil ||
 		!strings.Contains(err.Error(), "WIRETAP_MAX_ARCHIVE_FILES (3)") || !strings.Contains(err.Error(), "trusted archive") {
 		t.Fatalf("expected actionable raw inventory limit, got %v, %v", guard, err)
 	}
 	t.Setenv("WIRETAP_MAX_ARCHIVE_FILES", "4")
-	guard, err := New(root)
+	guard, err := loadGuard(root)
 	if err != nil {
 		t.Fatalf("exact raw inventory budget: %v", err)
 	}
@@ -54,7 +62,7 @@ func TestRawInventoryBudgetCountsUnreferencedEntries(t *testing.T) {
 func TestRawInventoryAllowsEmptyArchiveWithOneRead(t *testing.T) {
 	root := emptyArchive(t)
 	t.Setenv("WIRETAP_MAX_ARCHIVE_FILES", "1")
-	if _, err := New(root); err != nil {
+	if _, err := loadGuard(root); err != nil {
 		t.Fatalf("fixed raw roots must not consume the entry budget: %v", err)
 	}
 }
@@ -66,7 +74,7 @@ func TestGuardChecksManyOutputsWithUnreferencedDirectories(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	guard, err := New(root)
+	guard, err := loadGuard(root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,7 +103,7 @@ func TestGuardProtectsRawDirectoryAliasesBackedByExports(t *testing.T) {
 	if err := os.Symlink(backing, filepath.Join(root, "tests", "alias")); err != nil {
 		t.Skip(err)
 	}
-	guard, err := New(root)
+	guard, err := loadGuard(root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,7 +132,7 @@ func TestRawInventoryDoesNotTraverseExternalDirectoryAliases(t *testing.T) {
 		t.Skip(err)
 	}
 	t.Setenv("WIRETAP_MAX_ARCHIVE_FILES", "1")
-	guard, err := New(root)
+	guard, err := loadGuard(root)
 	if err != nil {
 		t.Fatalf("followed unrelated external directory: %v", err)
 	}
@@ -142,7 +150,7 @@ func TestGuardRejectsExternalExportsThroughAnArchiveAlias(t *testing.T) {
 	if err := os.Symlink(root, alias); err != nil {
 		t.Skip(err)
 	}
-	guard, err := New(root)
+	guard, err := loadGuard(root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -172,7 +180,7 @@ func TestGuardProtectsCaseAliasesAndPermitsExports(t *testing.T) {
 	if err := os.Mkdir(filepath.Join(root, "exports"), 0700); err != nil {
 		t.Fatal(err)
 	}
-	guard, err := New(root)
+	guard, err := loadGuard(root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -198,7 +206,7 @@ func TestGuardProtectsHardlinkedRawAndVerifiedFiles(t *testing.T) {
 			if err := os.Link(input, output); err != nil {
 				t.Skip(err)
 			}
-			guard, err := New(root)
+			guard, err := loadGuard(root)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -223,7 +231,7 @@ func BenchmarkGuardDestinations(b *testing.B) {
 					b.Fatal(err)
 				}
 			}
-			guard, err := New(root)
+			guard, err := loadGuard(root)
 			if err != nil {
 				b.Fatal(err)
 			}
