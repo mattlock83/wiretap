@@ -2,8 +2,9 @@
 
 Use `wiretap check` to compare a consumer's captured mock interactions with the
 provider's own captured tests. The check works offline from complete Wiretap
-archives and their Postman collections. It does not start servers, replay
-requests, execute collection scripts or generate tests.
+archives and their Postman collections, or their Arazzo workflows for JSON/REST
+APIs. It does not start servers, replay requests, execute scripts or workflow
+expressions, or generate tests.
 
 **A pass means every selected captured mock exchange has at least one complete,
 passing provider test exchange that supports that concrete request and response,
@@ -26,14 +27,20 @@ checks the exercised method's declared message graphs and observed wire compatib
 
 ## Check against shared application artifacts
 
-Each team uploads its complete Wiretap runs and Postman exports under its
-application ID in your shared artifact store. Restore the intended snapshots
-into a local `api-evidence/` directory, then use one command from either side:
+Each team uploads its complete Wiretap runs and the selected Postman or Arazzo
+exports under its application ID in your shared artifact store. Restore the
+intended snapshots into a local `api-evidence/` directory, then use one command from either side:
 
 ```sh
 wiretap check consumer --consumer ./orders-run --artifacts ./api-evidence
 wiretap check provider --provider ./inventory-run --artifacts ./api-evidence
 ```
+
+For JSON/REST APIs, add `--input-format arazzo` to either command to use each
+run's `exports/arazzo/arazzo.json` and its OpenAPI source companions instead.
+The selected format applies to both sides; mixed Postman/Arazzo checks are not
+supported. The complete archives supply response bodies, response headers,
+passing-test provenance, provider mappings and frozen contracts in both modes.
 
 The consumer command asks: **Do all my captured mocks agree with their
 providers' tests?** It uses each mock dependency's declared provider mapping to
@@ -89,7 +96,8 @@ For each captured call to the selected mock, Wiretap:
 5. For native gRPC, checks that the observed request and response bytes
    can be understood using the opposite side's frozen protobuf descriptors,
    then compares the exercised method's input/output message declarations.
-6. Checks that the supplied Postman examples agree with their own archives.
+6. Checks that the supplied Postman examples, or the Arazzo workflows and their
+   source companions, agree with projections regenerated from their own archives.
 
 All selected consumer exchanges must succeed. An empty selection cannot pass.
 Provider tests need not share the consumer's test names, files or attempt IDs.
@@ -263,11 +271,15 @@ needed for the check are unverified rather than omitted from assurance.
 | Provider target is declared as a mock or has unknown kind | Unverified; provider evidence must declare a service target. |
 | Declared provider application, API or version does not agree | Unverified; an unknown required version is not treated as a match. |
 | Archive hashes, references or format are invalid | Input error, with no passing verdict. |
-| Selected Postman examples are missing, edited, stale or incomplete | Input error when no full matching projection is supplied. |
+| Selected Postman or Arazzo inputs are missing, edited, stale or incomplete | Input error when no full matching projection is supplied. Arazzo source companions must also match. |
+| Arazzo selection contains gRPC, non-JSON HTTP or other unsupported traffic | Cannot certify that boundary by exporting only its eligible JSON/REST subset. |
 
-Failed provider attempts do not automatically fail the assumption check if
-complete passing evidence supports every selected consumer example. Keep the
-provider suite's own exit status as a separate CI gate.
+These evidence-selection rules require usable projection inputs. Failed provider
+attempts do not automatically fail the check when the exports can be verified
+and complete passing evidence supports every selected consumer example.
+Incomplete captures may prevent strict Arazzo regeneration even when another
+provider attempt could support a match; see [Arazzo input limits](#use-arazzo-instead-of-postman-for-jsonrest).
+Keep the provider suite's own exit status as a separate CI gate.
 
 ### Worked example: an unrealistic inventory response
 
@@ -465,8 +477,8 @@ The inputs contain calls that actually crossed Wiretap. The command does not
 discover source-code stub definitions, unexercised consumer code paths, or
 traffic that bypassed capture. A mock configured with ten responses but
 exercised once contributes the one observed exchange. Adding uncaptured
-examples to a selected Postman collection does not extend the comparison;
-the edited collection will no longer match its recorded export.
+examples to a selected Postman collection or Arazzo workflow does not extend
+the comparison; the edited projection will no longer match its recorded export.
 
 Zero calls to the selected mock fail. However, one captured call can pass
 without detecting that an expected second call never happened; assert those
@@ -519,6 +531,17 @@ beside a stale or malformed copy can therefore still satisfy the selection.
 Use explicit file flags to require validation of particular files; this
 command is not a directory-wide export cleanup check.
 
+### That Arazzo workflows execute successfully
+
+Arazzo verification checks the exported document and its local OpenAPI source
+companions against the archive-derived projection. It does not evaluate runtime
+expressions, execute success criteria or workflows, resolve live servers, or
+prove that a particular Arazzo runner can replay them. Response comparison uses
+the complete captured response from the archive, rather than treating an
+exported status criterion as proof of response-body agreement. Keep the document
+and companions together and use an Arazzo runner separately when execution is
+the question.
+
 ### That other protocols receive native semantic checking
 
 Native protocol comparison currently covers HTTP exchanges and gRPC. Selected
@@ -567,21 +590,64 @@ wiretap export --bundle ./provider-run --format postman --output-dir ./provider-
 Both runs must be complete with no pending attempts. Each selected consumer
 example must come from a complete passing attempt and contain supported,
 complete evidence. A failed or incomplete provider attempt cannot establish a
-match, but another complete passing provider attempt can. Excluded provider
-exchanges remain visible in the result. Omitting an incomplete interaction from
-a collection does not turn it into supporting evidence.
+match. Another complete passing provider attempt can support it when the chosen
+projection inputs can be generated and verified. Excluded provider exchanges
+remain visible in the result. Omitting an incomplete interaction from
+a projection does not turn it into supporting evidence.
 
 An interrupted run, an unverifiable provider identity, an empty consumer
-selection or entirely unusable consumer evidence fails before collections are
-required. For an otherwise eligible comparison, missing, invalid or stale
-collections are invalid inputs.
+selection or entirely unusable consumer evidence fails before projection inputs
+are required. For an otherwise eligible comparison, missing, invalid or stale
+projection inputs are invalid inputs.
+
+### Use Arazzo instead of Postman for JSON/REST
+
+Select Arazzo on both sides with `--input-format arazzo`. Each archive defaults
+to `exports/arazzo/arazzo.json`; no Postman export is required. Generate missing
+inputs from the exact archives:
+
+```sh
+wiretap export --bundle ./consumer-run --format arazzo --output-dir ./consumer-run/exports/arazzo
+wiretap export --bundle ./provider-run --format arazzo --output-dir ./provider-run/exports/arazzo
+wiretap check consumer --consumer ./consumer-run --provider ./provider-run \
+  --dependency inventory --input-format arazzo
+```
+
+Explicit pairs can select a different document or directory on either side:
+
+```sh
+wiretap check provider --consumer ./consumer-run --provider ./provider-run \
+  --dependency inventory --input-format arazzo \
+  --consumer-arazzo ./consumer-arazzo/arazzo.json \
+  --provider-arazzo ./provider-arazzo
+```
+
+Keep each document's source companions at their exported relative paths.
+Missing, stale or tampered documents and companions are input errors. Complete
+archives remain required: an Arazzo document alone does not contain all the
+response evidence and test provenance needed for comparison. A selected boundary
+with unsupported traffic cannot pass by omitting that traffic from its Arazzo
+export. Only eligible JSON/REST boundaries can use this format.
+
+Arazzo export and regeneration are strict across the entire run. An incomplete
+or unrepresentable eligible JSON capture anywhere can prevent export or cause
+check input verification to fail, including traffic on an unselected boundary
+or an excluded provider attempt beside a usable passing attempt. Arazzo has no
+omit-incomplete mode. A passing provider witness cannot bypass that export
+failure.
+
+Set `outputs: {coverage: [json, text], arazzo: true}` in both projects to produce
+these inputs automatically without Postman. Shared-store and run-set checks also
+accept `--input-format arazzo` and use each member's default export location;
+explicit Arazzo path overrides apply only to an explicit pair.
 
 ## Share provider snapshots
 
 Each team's test suite records its own provided API and freezes that API's
 spec. Consumer teams can capture HTTP mocks without keeping another copy of
 the provider's OpenAPI file. Both sides still keep complete run archives and
-Postman exports.
+Postman exports, or Arazzo exports when checking JSON/REST with
+`--input-format arazzo`.
 
 For example, the inventory provider's `.wiretap.yaml` owns its contract:
 
@@ -722,10 +788,11 @@ wiretap check provider \
   --artifacts ./api-evidence
 ```
 
-Shared-store checks always use each run's `exports/postman/` and reject
-`--consumer-collection` or `--provider-collection` overrides. Use explicit pair
-mode when collections live elsewhere. Supply only the local viewpoint's run
-with `--artifacts`: `--consumer` in consumer mode or `--provider` in provider
+Shared-store checks use each run's `exports/postman/` by default. With
+`--input-format arazzo`, they use `exports/arazzo/arazzo.json` and its source
+companions. Shared-store mode rejects collection and Arazzo path overrides; use
+explicit pair mode when projections live elsewhere. Supply only the local
+viewpoint's run with `--artifacts`: `--consumer` in consumer mode or `--provider` in provider
 mode. Supplying both run flags together with `--artifacts` is an input error.
 
 Save reports outside the entire artifact root and the local input archive.
@@ -1015,8 +1082,11 @@ wiretap check provider --provider ./inventory-run --artifacts ./api-evidence \
 
 The output's parent directory must already exist. Choose a location outside
 the entire `--artifacts` root and local input archive. In explicit pair mode,
-keep it outside both archives and any supplied Postman input directory; an
-output cannot replace a collection input.
+keep it outside both archives and any supplied Postman or Arazzo input
+directory; an output cannot replace a projection input or source companion.
+For an explicit Arazzo file, keep output outside its containing export tree;
+companions remain protected even when an early unverified verdict skips input
+verification.
 
 Pair, discovered-artifact and run-set results use `report_version: "1.0"` and
 `rules_version: "wiretap-assumptions-4"`. `compatible` is the verdict, and

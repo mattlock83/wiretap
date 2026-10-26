@@ -1,8 +1,8 @@
 # Getting started with Wiretap
 
 Wiretap turns your existing HTTP and native gRPC tests into **recorded API
-evidence, Postman collections and API coverage**. It also compares the assumptions
-in your mocks with the provider's own test evidence. Keep your test framework,
+evidence, Postman collections, JSON/REST Arazzo workflows and API coverage**. It
+also compares the assumptions in your mocks with the provider's own test evidence. Keep your test framework,
 clients, assertions and mock server; add capture around the API calls they
 already make.
 
@@ -15,7 +15,7 @@ Inventory tests actually demonstrate.
 Orders tests → Wiretap → Orders service → Wiretap → Inventory mock
 Inventory tests → Wiretap → Inventory service
 
-Each suite produces a complete run archive and Postman exports.
+Each suite produces a complete run archive and selected projection exports.
 wiretap check compares those saved artifacts offline.
 ```
 
@@ -272,6 +272,7 @@ directories present when needed:
 | `exports/coverage.txt` | Compact coverage summary. | Read first for outcomes, exercised operations, gaps and unknowns. |
 | `exports/coverage.json` | Operation and contract-condition coverage. | Feed reporting or coverage gates; this measures API coverage, not source-code coverage. |
 | `exports/postman/` | HTTP/gRPC collections with captured examples for the provided API and mocked dependencies. | Inspect in Postman; retain originals for assumption checks. |
+| `exports/arazzo/` | JSON/REST Arazzo workflows and OpenAPI source companions when enabled. | Keep together; use with `check --input-format arazzo`. |
 | `exports/result.json` | Exact export paths and any export errors. | Confirm exports completed and preserve errors. |
 
 API coverage can show whether `GET /orders/{id}` was exercised and which declared
@@ -286,7 +287,7 @@ stands for the actual recorded directory):
 wiretap report --bundle ./artifacts/wiretap/run-123 --format text
 ```
 
-To regenerate standard coverage and Postman exports from an intact archive:
+To regenerate standard coverage, Postman and eligible Arazzo exports from an intact archive:
 
 ```sh
 wiretap export --bundle ./artifacts/wiretap/run-123 --format all
@@ -294,8 +295,8 @@ wiretap export --bundle ./artifacts/wiretap/run-123 --format all
 
 Keep complete runs on success **and failure**. Failed attempts remain useful
 diagnostics, although they cannot establish compatible provider evidence.
-Collections alone or coverage reports alone are insufficient for comparison.
-Edit copies when exploring requests in Postman and preserve the original exports
+Postman collections, Arazzo workflows or coverage reports alone are insufficient
+for comparison. Edit copies when exploring requests and preserve the original exports
 with the archive. See [artifacts and exports](artifacts.md) for formats, gRPC
 import setup and limits.
 
@@ -322,8 +323,8 @@ passing exchanges. Coordinate synthetic fixtures: if Orders mocks
 covering that concrete request and response. A schema that permits the response
 is not sufficient by itself.
 
-Upload each **complete run directory**, including `exports/postman/`, to your
-existing artifact store, such as Artifactory. A useful remote layout is
+Upload each **complete run directory**, including `exports/postman/` or the
+selected `exports/arazzo/` tree, to your existing artifact store, such as Artifactory. A useful remote layout is
 `<application-id>/<api-id>/<tested-revision>/<run-id>/`. Record the tested build
 in `sut_source`; see [shared provider snapshots](assumption-checks.md#share-provider-snapshots)
 for version pins and CI provenance.
@@ -352,7 +353,8 @@ api-evidence/
 
 Copy whole archives, preserving their internal files and paths. The descriptive
 `orders-run` and `inventory-run` folders above hold your selected runs; their
-recorded run identities stay in `bundle.json`.
+recorded run identities stay in `bundle.json`. For Arazzo inputs, retain
+`exports/arazzo/` instead of `exports/postman/` in each run.
 
 Your remote store can keep history. Prepare an unambiguous local set for each
 check: start with one intended run per application/API. Wiretap rejects multiple
@@ -365,8 +367,10 @@ artifacts; your existing tooling handles remote upload and download.
 
 **The comparison commands are `wiretap check consumer` and
 `wiretap check provider`.** They read the saved archives, frozen contracts and
-matching Postman exports offline. No application server or Postman desktop
-session is needed, and the check does not replay requests or execute scripts.
+matching projection exports offline. Postman is the default; JSON/REST projects
+can select Arazzo on both sides. No application server or desktop runner session
+is needed, and the check does not replay requests, execute scripts or evaluate
+Arazzo expressions.
 
 From Orders, check all mock dependencies against their mapped providers:
 
@@ -392,7 +396,23 @@ mode requires a mapping and provider for every selected mock; provider mode
 requires at least one mapped consumer. Ambiguous snapshots and empty comparisons
 fail. Consumers absent from your artifact set cannot be discovered.
 
-The check verifies each run's own Postman exports against raw evidence and
+For a JSON/REST workflow using Arazzo instead of Postman, select
+`outputs: {coverage: [json, text], arazzo: true}` in both projects, retain each
+run's `exports/arazzo/` directory, and add `--input-format arazzo`:
+
+```sh
+wiretap check consumer \
+  --consumer ./api-evidence/orders-service/orders-run \
+  --artifacts ./api-evidence --input-format arazzo
+```
+
+No Postman export is required for that mode. Complete archives and all Arazzo
+source companions remain required. Explicit pairs and same-build run sets also
+accept `--input-format arazzo`; see [Arazzo inputs](assumption-checks.md#use-arazzo-instead-of-postman-for-jsonrest)
+for path overrides. Mixed formats are not supported, and a selected boundary
+with unsupported traffic cannot pass by exporting only its JSON/REST subset.
+
+The check verifies each run's own projection exports against raw evidence and
 compares examples and supported contract rules. Without a consumer HTTP
 dependency spec, it validates both exchanges against the provider's frozen
 OpenAPI 3.0 contract. Supplying both specs also checks exercised declarations
@@ -405,7 +425,7 @@ compatibility.
 | Uncovered | Orders calls `/stock/widget-2`, but provider tests only captured `/stock/widget-1`. Align fixtures or add provider coverage. |
 | Mismatch | The mock returns a string quantity while the provider returns a number, or a checked value violates an enum or length constraint. |
 | Unverified | Evidence is incomplete, a required contract cannot be checked, or a provider version cannot be established. Resolve the blocker. |
-| Input error | Selected archives or Postman exports are missing, invalid, stale or ambiguous. Restore the correct inputs. |
+| Input error | Selected archives or projection exports are missing, invalid, stale or ambiguous. Restore the correct documents and source companions. |
 
 Agreement uses concrete requests and responses after documented normalization.
 Coordinate fixture IDs, payloads and significant headers. The check cannot infer

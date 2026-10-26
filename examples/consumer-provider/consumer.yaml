@@ -1,6 +1,6 @@
 version: 1
 application: {id: orders-example}
-outputs: {coverage: [json, text], postman: true}
+outputs: {coverage: [json, text], postman: true, arazzo: true}
 sut:
   id: orders-http
   kind: service

@@ -125,16 +125,24 @@ or retained evidence can make a result `unverified`.
 consumer/provider pair, a local run against discovered peers under
 `--artifacts <root>`, or explicit same-build run sets. Discovery uses declared provider mappings and top-level
 application folders; it requires an unambiguous snapshot selection. Each pair
-reads complete archives and their Postman collections. A passing result requires
-collections verified against
-archive-derived projections and selected mock scenarios supported by complete
+reads complete archives and the selected projection inputs. `--input-format`
+selects `postman` (default) or `arazzo` for both sides. Arazzo supports JSON/REST
+boundaries and uses each archive's `exports/arazzo/arazzo.json` with its source
+companions by default; explicit pairs can override those paths with
+`--consumer-arazzo` and `--provider-arazzo`. Mixed-format comparisons are not
+supported. A passing result requires inputs verified against archive-derived
+projections and selected mock scenarios supported by complete
 passing provider service tests. With only the provider's frozen OpenAPI 3.0
 contract it validates both concrete exchanges under that schema. With both
 contracts it also requires conservative equality of exercised validation rules
 and checks each exchange under its own schema. Coverage reports and
 condition fingerprints do not replace concrete request/response evidence.
 gRPC matches require selected-method declaration equality and observed wire
-cross-decoding.
+cross-decoding in Postman mode. Arazzo selections cannot silently omit unsupported
+traffic from a boundary. The checker verifies the Arazzo document and source
+companions, then uses the archives for actual response bodies and headers,
+passing-test provenance, mappings and frozen schemas. It does not execute Arazzo
+workflow expressions or success criteria.
 
 Use `--format json` for the versioned result, and `--output <file>` to save it.
 Pair, discovered-artifact and run-set results have `report_version: "1.0"` and
@@ -182,13 +190,20 @@ the same report shape in each `comparisons` entry. A pair report has
 | --- | --- |
 | `mode` | `consumer` or `provider`, the selected local viewpoint. |
 | `compatible` | Whether every selected mock example has supporting provider evidence. |
-| `consumer`, `provider` | Archive path, run ID, snapshot revision, run state, SHA-256 of `bundle.json` in `manifest_sha256`, optional application/API identity and collection input paths. |
+| `consumer`, `provider` | Archive path, run ID, snapshot revision, run state, SHA-256 of `bundle.json` in `manifest_sha256`, optional application/API identity and selected projection input paths. |
 | `dependency`, `binding` | Selected consumer mock ID and `declared_mapping` or `explicit_inputs` relationship. |
 | `ignored_headers` | Effective header exclusion policy, including explicit additions. |
 | `counts` | Selected exchange count in `assumptions`, matched exchange count in `verified`, and finding counts in `uncovered`, `mismatched` and `unverified`. |
 | `matches` | Consumer/provider evidence reference pairs supporting agreement, with a `contract_check` assurance marker. |
 | `findings` | `uncovered`, `mismatch` or `unverified` findings with diagnostic code, message and applicable operation, evidence references and differences. |
 | `excluded_provider_evidence` | Provider evidence that could not qualify, with a reason for each exclusion. |
+
+Arazzo sources have `input_format: "arazzo"`; an omitted `input_format` means
+Postman. `collections` retains its array shape and is empty for Arazzo sources.
+An Arazzo source adds `arazzo` with the selected document path and, after source
+verification, `arazzo_files` with its companion paths. Those fields are omitted
+for Postman sources. Run-set member sources use the same fields; an empty shard
+with no eligible workflows may omit its default Arazzo document and path.
 
 Each evidence reference includes `run_id`, `attempt_id`, `test_name`, optional
 `test_identity`, `flow_id`, `evidence_path` and `test_outcome`. Preserve the
@@ -306,10 +321,13 @@ options can therefore fail conservatively without proving a runtime break.
 ### Input errors and report files
 
 Incomplete runs, unverifiable provider identities and empty selections return
-an unverified result before collection verification. In an otherwise eligible
-comparison, missing, invalid or stale collections are input errors. Failed or
-incomplete provider attempts are listed as excluded evidence and cannot support
-a match; other complete passing attempts can still establish agreement.
+an unverified result before projection verification. In an otherwise eligible
+comparison, missing, invalid or stale collections, Arazzo documents or Arazzo
+source companions are input errors. Failed or incomplete provider attempts cannot
+support a match; other complete passing attempts can establish agreement when
+projection verification succeeds. Arazzo regenerates strictly across the entire
+run: incomplete or unrepresentable eligible JSON traffic can cause an input
+error even on an unselected boundary or an excluded provider attempt.
 Input errors are diagnostics on stderr rather than `findings`; they may occur
 before any JSON report is written. A report write failure can also leave no new
 output. Consumers should preserve the exit status and stderr, and use a fresh
@@ -318,8 +336,11 @@ report path rather than trusting an existing file after a failed invocation.
 `--output` requires an existing parent directory. Shared-artifact mode requires
 a destination outside the entire artifact root and the local input archive.
 Explicit pair mode requires a destination outside both archives and supplied
-Postman input directories. Run-set output must be outside every member archive
-and cannot replace either manifest. Output cannot replace a collection input. The checker
+Postman input directories. For Arazzo, keep output outside the containing export
+tree even when selecting a document file explicitly; the tree's source companions
+are also protected, including when an early unverified result skips projection
+verification. Run-set output must be outside every member archive and cannot
+replace either manifest. Output cannot replace a projection input. The checker
 writes a separate report and leaves the inputs unchanged.
 
 ## Check reports, run sets and completion receipts

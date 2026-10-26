@@ -102,6 +102,18 @@
             "type": "string"
           }
         },
+        "input_format": {
+          "enum": ["postman", "arazzo"]
+        },
+        "arazzo": {
+          "type": "string"
+        },
+        "arazzo_files": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "application_id": {
           "type": "string"
         },

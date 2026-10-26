@@ -128,10 +128,10 @@ For tools consuming the results, use the versioned
 The runnable [consumer/provider example](examples/consumer-provider/README.md)
 captures both applications, verifies agreement, introduces a provider change
 that fails the check, and restores compatibility. It uses the same SDK, CLI and
-Postman exports as an ordinary project.
+projection exports as an ordinary project.
 
-Upload complete runs and Postman exports to a shared artifact store, grouped
-by application ID. Restore the selected snapshots locally, then check your run
+Upload complete runs and Postman or JSON/REST Arazzo exports to a shared artifact
+store, grouped by application ID. Restore the selected snapshots locally, then check your run
 against the other teams' evidence:
 
 ```sh
@@ -146,7 +146,11 @@ response needs supporting evidence from a complete passing provider test;
 missing provider coverage fails the check. Wiretap requires an unambiguous
 snapshot for each selected application/API and never guesses the latest build.
 Collections stay in each run's `exports/postman/` directory and are verified
-against the raw archive.
+against the raw archive. For JSON/REST APIs, use `--input-format arazzo` on either
+command to verify each run's `exports/arazzo/arazzo.json` and source companions
+instead. Both sides use the same format and still need complete archives.
+`outputs: {coverage: [json, text], arazzo: true}` generates those inputs without
+Postman.
 
 For a single pair, supply `--consumer ./orders-run --provider ./inventory-run`
 in either mode, with `--dependency inventory` if needed. See

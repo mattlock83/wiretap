@@ -37,13 +37,16 @@ func checkCommand(ctx context.Context, args []string) (int, error) {
 	flags.StringVar(&options.Provider, "provider", "", "provider run directory or bundle.json")
 	flags.StringVar(&artifacts, "artifacts", "", "local shared artifact root, grouped by application ID; discovers peers for the supplied run")
 	flags.StringVar(&options.Dependency, "dependency", "", "consumer's local mock ID (all mocks in consumer discovery; inferred for explicit pairs)")
+	flags.StringVar(&options.InputFormat, "input-format", "postman", "input export format for both runs: postman or arazzo")
 	flags.Var(&consumerCollections, "consumer-collection", "consumer Postman file or directory for explicit pairs; repeatable (default: <consumer>/exports/postman)")
 	flags.Var(&providerCollections, "provider-collection", "provider Postman file or directory for explicit pairs; repeatable (default: <provider>/exports/postman)")
+	flags.StringVar(&options.ConsumerArazzo, "consumer-arazzo", "", "consumer Arazzo file or directory for explicit pairs (default: <consumer>/exports/arazzo/arazzo.json)")
+	flags.StringVar(&options.ProviderArazzo, "provider-arazzo", "", "provider Arazzo file or directory for explicit pairs (default: <provider>/exports/arazzo/arazzo.json)")
 	flags.Var(&ignored, "ignore-header", "ignore another captured HTTP header or gRPC metadata field; declared HTTP header rules still apply; repeatable")
 	flags.StringVar(&format, "format", "text", "report format: text, json, markdown or junit")
-	flags.StringVar(&output, "output", "", "write report outside input archives and artifact root (default: stdout)")
+	flags.StringVar(&output, "output", "", "write report outside input archives, export directories and artifact root (default: stdout)")
 	flags.Usage = func() {
-		fmt.Fprintln(flags.Output(), "Usage: wiretap check consumer --consumer <capture> --artifacts <directory> [options]\n       wiretap check provider --provider <capture> --artifacts <directory> [options]\n       wiretap check <consumer|provider> --consumer <capture> --provider <capture> [options]\n\nConsumer checks discover mapped providers; provider checks discover mapped consumers.\nThe artifact root contains application folders with complete runs and exports/postman.\nSelections must be unambiguous; historical snapshots are never merged.\nExplicit pairs check one mock boundary. No traffic is replayed.")
+		fmt.Fprintln(flags.Output(), "Usage: wiretap check consumer --consumer <capture> --artifacts <directory> [options]\n       wiretap check provider --provider <capture> --artifacts <directory> [options]\n       wiretap check <consumer|provider> --consumer <capture> --provider <capture> [options]\n       wiretap check <consumer|provider> --consumer-set <manifest> --provider-set <manifest> [options]\n\nConsumer checks discover mapped providers; provider checks discover mapped consumers.\nBoth runs use the same --input-format: Postman collections or JSON/REST Arazzo workflows.\nThe artifact root contains application folders with complete runs and exports/<input-format>.\nSelections must be unambiguous; historical snapshots are never merged.\nExplicit pairs check one mock boundary. No traffic is replayed.")
 		flags.PrintDefaults()
 	}
 	if len(args) == 1 && (args[0] == "--help" || args[0] == "-h") {
@@ -63,15 +66,33 @@ func checkCommand(ctx context.Context, args []string) (int, error) {
 	if len(flags.Args()) != 0 {
 		return 2, fmt.Errorf("%w: unexpected arguments: %v", errUsage, flags.Args())
 	}
+	if options.InputFormat != "postman" && options.InputFormat != "arazzo" {
+		return 2, fmt.Errorf("%w: --input-format must be postman or arazzo", errUsage)
+	}
+	var collectionOverrides, arazzoOverrides bool
+	flags.Visit(func(value *flag.Flag) {
+		switch value.Name {
+		case "consumer-collection", "provider-collection":
+			collectionOverrides = true
+		case "consumer-arazzo", "provider-arazzo":
+			arazzoOverrides = true
+		}
+	})
+	if options.InputFormat == "arazzo" && collectionOverrides {
+		return 2, fmt.Errorf("%w: Postman collection overrides cannot be used with --input-format arazzo", errUsage)
+	}
+	if options.InputFormat == "postman" && arazzoOverrides {
+		return 2, fmt.Errorf("%w: Arazzo overrides require --input-format arazzo", errUsage)
+	}
 	sets := consumerSet != "" || providerSet != ""
-	if sets && (consumerSet == "" || providerSet == "" || options.Consumer != "" || options.Provider != "" || artifacts != "" || len(consumerCollections)+len(providerCollections) > 0) {
-		return 2, fmt.Errorf("%w: use both --consumer-set and --provider-set without individual archives, artifact discovery or collection overrides", errUsage)
+	if sets && (consumerSet == "" || providerSet == "" || options.Consumer != "" || options.Provider != "" || artifacts != "" || collectionOverrides || arazzoOverrides) {
+		return 2, fmt.Errorf("%w: use both --consumer-set and --provider-set without individual archives, artifact discovery or input overrides", errUsage)
 	}
 	if !sets && artifacts == "" && (options.Consumer == "" || options.Provider == "") {
 		return 2, fmt.Errorf("%w: supply --consumer and --provider, or the local --%s capture with --artifacts", errUsage, options.Mode)
 	}
-	if artifacts != "" && (len(consumerCollections) > 0 || len(providerCollections) > 0) {
-		return 2, fmt.Errorf("%w: --artifacts uses each run's exports/postman; collection overrides require an explicit consumer/provider pair", errUsage)
+	if artifacts != "" && (collectionOverrides || arazzoOverrides) {
+		return 2, fmt.Errorf("%w: --artifacts uses each run's exports/%s; input overrides require an explicit consumer/provider pair", errUsage, options.InputFormat)
 	}
 	if format != "text" && format != "json" && format != "markdown" && format != "junit" {
 		return 2, fmt.Errorf("%w: --format must be text, json, markdown or junit", errUsage)
@@ -87,7 +108,7 @@ func checkCommand(ctx context.Context, args []string) (int, error) {
 	var err error
 	if sets {
 		var report *assumptions.SetReport
-		report, err = assumptions.CheckRunSets(ctx, consumerSet, providerSet, options.Mode, options.Dependency, ignored)
+		report, err = assumptions.CheckRunSetsWithFormat(ctx, consumerSet, providerSet, options.Mode, options.Dependency, ignored, options.InputFormat)
 		if err == nil {
 			result, compatible = report, report.Compatible
 			sources = append(append(sources, report.Consumers...), report.Providers...)
@@ -100,7 +121,7 @@ func checkCommand(ctx context.Context, args []string) (int, error) {
 		var report *assumptions.StoreReport
 		report, err = assumptions.CheckStore(ctx, assumptions.StoreOptions{
 			Mode: options.Mode, Consumer: options.Consumer, Provider: options.Provider,
-			Dependency: options.Dependency, Artifacts: artifacts,
+			Dependency: options.Dependency, Artifacts: artifacts, InputFormat: options.InputFormat,
 		}, options.IgnoreHeaders)
 		if err == nil {
 			result, compatible = report, report.Compatible
@@ -265,26 +286,32 @@ func writeCheckOutput(path string, sources []assumptions.Source, roots []string,
 			return fmt.Errorf("%w: --output must be outside input capture archives", errUsage)
 		}
 		for _, input := range source.Collections {
-			inputAbs, err := filepath.Abs(input)
-			if err != nil {
+			if err := protectCheckInput(absolute, input, "Postman"); err != nil {
 				return err
 			}
-			if absolute == inputAbs || sameCheckFile(absolute, inputAbs) {
-				return fmt.Errorf("%w: --output must not replace Postman inputs", errUsage)
+		}
+		arazzoInputs := append([]string{}, source.ArazzoFiles...)
+		if source.Arazzo != "" {
+			arazzoInputs = append(arazzoInputs, source.Arazzo)
+			info, statErr := os.Stat(source.Arazzo)
+			if statErr != nil && !errors.Is(statErr, os.ErrNotExist) {
+				return statErr
 			}
-			resolved, err := filepath.EvalSymlinks(input)
-			if err != nil {
-				if errors.Is(err, os.ErrNotExist) {
-					continue
+			if info == nil || !info.IsDir() {
+				// Early run-level failures can precede companion verification.
+				// Keep the export tree protected even when no file inventory was
+				// produced; companions share the workflow's containing directory.
+				arazzoInputs = append(arazzoInputs, filepath.Dir(source.Arazzo))
+				if resolved, resolveErr := filepath.EvalSymlinks(source.Arazzo); resolveErr == nil {
+					arazzoInputs = append(arazzoInputs, filepath.Dir(resolved))
+				} else if !errors.Is(resolveErr, os.ErrNotExist) {
+					return resolveErr
 				}
-				return err
 			}
-			info, err := os.Stat(resolved)
-			if err != nil {
+		}
+		for _, input := range arazzoInputs {
+			if err := protectCheckInput(absolute, input, "Arazzo"); err != nil {
 				return err
-			}
-			if absolute == resolved || info.IsDir() && withinCheckPath(resolved, absolute) {
-				return fmt.Errorf("%w: --output must not replace Postman inputs", errUsage)
 			}
 		}
 	}
@@ -296,6 +323,31 @@ func writeCheckOutput(path string, sources []assumptions.Source, roots []string,
 		return err
 	}
 	return writeArchiveReport(absolute, data)
+}
+
+func protectCheckInput(output, input, kind string) error {
+	inputAbs, err := filepath.Abs(input)
+	if err != nil {
+		return err
+	}
+	if output == inputAbs || sameCheckFile(output, inputAbs) {
+		return fmt.Errorf("%w: --output must not replace %s inputs", errUsage, kind)
+	}
+	resolved, err := filepath.EvalSymlinks(input)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return err
+	}
+	info, err := os.Stat(resolved)
+	if err != nil {
+		return err
+	}
+	if output == resolved || info.IsDir() && withinCheckPath(resolved, output) {
+		return fmt.Errorf("%w: --output must not replace %s inputs", errUsage, kind)
+	}
+	return nil
 }
 
 func withinCheckPath(root, path string) bool {

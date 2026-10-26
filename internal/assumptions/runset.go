@@ -29,6 +29,16 @@ type SetReport struct {
 // exchange. Only already-verified members from the same build can supply
 // alternative witnesses for a consumer assumption.
 func CheckRunSets(ctx context.Context, consumerPath, providerPath, mode, dependency string, ignored []string) (*SetReport, error) {
+	return CheckRunSetsWithFormat(ctx, consumerPath, providerPath, mode, dependency, ignored, "postman")
+}
+
+// CheckRunSetsWithFormat verifies the same export format on both sides while
+// retaining each archive's complete response evidence and build identity.
+func CheckRunSetsWithFormat(ctx context.Context, consumerPath, providerPath, mode, dependency string, ignored []string, inputFormat string) (*SetReport, error) {
+	inputFormat, err := checkInputFormat(inputFormat)
+	if err != nil {
+		return nil, err
+	}
 	consumers, err := runset.Load(ctx, consumerPath)
 	if err != nil {
 		return nil, fmt.Errorf("%w: consumer run set: %v", ErrInput, err)
@@ -49,7 +59,7 @@ func CheckRunSets(ctx context.Context, consumerPath, providerPath, mode, depende
 	}
 	result := &SetReport{ReportVersion: "1.0", RulesVersion: RulesVersion, Producer: version.Current(), Scope: "same_build_run_sets", Mode: mode, Dependency: selected, IgnoredHeaders: []string{}, Consumers: []Source{}, Providers: []Source{}, Matches: []Match{}, Findings: []Finding{}}
 	// Verify projections even for an empty shard; it cannot hide a corrupted
-	// collection merely because another shard supplied all usable evidence.
+	// export merely because another shard supplied all usable evidence.
 	for index, set := range []*runset.Set{consumers, providers} {
 		for _, archive := range set.Archives {
 			snapshot, err := loadSnapshot(archive.Path)
@@ -60,13 +70,14 @@ func CheckRunSets(ctx context.Context, consumerPath, providerPath, mode, depende
 			if index == 0 {
 				boundary = selected
 			}
-			if err := snapshot.verifyCollections(nil, boundary); err != nil {
-				return nil, fmt.Errorf("%w: run set Postman collection: %v", ErrInput, err)
+			source := snapshot.sourceForFormat(nil, inputFormat, "")
+			if err := snapshot.verifyProjection(inputFormat, nil, "", boundary, &source); err != nil {
+				return nil, fmt.Errorf("%w: run set %s inputs: %v", ErrInput, inputFormat, err)
 			}
 			if index == 0 {
-				result.Consumers = append(result.Consumers, snapshot.source(nil))
+				result.Consumers = append(result.Consumers, source)
 			} else {
-				result.Providers = append(result.Providers, snapshot.source(nil))
+				result.Providers = append(result.Providers, source)
 			}
 		}
 	}
@@ -74,7 +85,7 @@ func CheckRunSets(ctx context.Context, consumerPath, providerPath, mode, depende
 		matches := map[string]Match{}
 		findings := map[string]Finding{}
 		for _, provider := range providers.Archives {
-			report, err := Check(ctx, Options{Mode: mode, Consumer: consumer.Path, Provider: provider.Path, Dependency: selected, IgnoreHeaders: ignored})
+			report, err := Check(ctx, Options{Mode: mode, Consumer: consumer.Path, Provider: provider.Path, Dependency: selected, IgnoreHeaders: ignored, InputFormat: inputFormat})
 			if err != nil {
 				return nil, err
 			}

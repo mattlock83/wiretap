@@ -29,11 +29,12 @@ const (
 // Consumer checks resolve providers; provider checks resolve mapped consumers.
 type StoreOptions struct {
 	Mode, Consumer, Provider, Dependency, Artifacts string
+	InputFormat                                     string
 }
 
 // StorePlan records a deterministic set of independent comparisons. It never
 // merges examples from different runs, selects the newest run, or fetches files.
-// Check still validates every selected archive and its own Postman exports.
+// Check still validates every selected archive and its selected exports.
 type StorePlan struct {
 	Root    string
 	Checks  []Options
@@ -59,6 +60,10 @@ func PlanStore(ctx context.Context, options StoreOptions) (*StorePlan, error) {
 
 func planStore(ctx context.Context, options StoreOptions) (*StorePlan, error) {
 	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	inputFormat, err := checkInputFormat(options.InputFormat)
+	if err != nil {
 		return nil, err
 	}
 	var localPath string
@@ -110,6 +115,11 @@ func planStore(ctx context.Context, options StoreOptions) (*StorePlan, error) {
 	}
 	if err != nil {
 		return nil, err
+	}
+	if inputFormat == "arazzo" {
+		for i := range plan.Checks {
+			plan.Checks[i].InputFormat = inputFormat
+		}
 	}
 	return plan, nil
 }

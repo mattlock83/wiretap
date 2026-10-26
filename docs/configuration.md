@@ -232,6 +232,7 @@ through the [HTTP API](runtime-api.md), usually via an SDK.
 | `wiretap check consumer --consumer <run> --artifacts <root>` | Find mapped providers beneath shared application folders and check all local mock dependencies. |
 | `wiretap check provider --provider <run> --artifacts <root>` | Find mapped consumers beneath shared application folders and check that local provider tests support their mocks. |
 | `wiretap check <consumer\|provider> --consumer <run> --provider <run>` | Compare one explicitly selected consumer/provider pair. |
+| `wiretap check <consumer\|provider> --consumer <run> --provider <run> --input-format arazzo` | Check JSON/REST assumptions using verified Arazzo workflows and companions from both archives. |
 | `wiretap check <consumer\|provider> --consumer-set <file> --provider-set <file>` | Check consumer/provider evidence across explicit same-build run sets. |
 | `wiretap ca [--config path]` | Print the public proxy CA certificate, creating the local CA if needed. |
 
@@ -252,9 +253,24 @@ build. The CLI does not upload or download artifacts. See
 `--dependency <id>` scopes consumer discovery to a consumer-local mock ID. In
 explicit pair mode it is required only when the dependency cannot be inferred
 unambiguously. Provider discovery checks all mapped consumers and rejects
-`--dependency`; use an explicit pair to scope that viewpoint. Collections default to `exports/postman/` in each run. Only
-explicit pair mode permits repeatable `--consumer-collection <file-or-dir>` and
-`--provider-collection <file-or-dir>` overrides.
+`--dependency`; use an explicit pair to scope that viewpoint. `--input-format`
+selects the projection format for both sides: `postman` (default) or `arazzo`.
+Collections default to `exports/postman/`; Arazzo defaults to
+`exports/arazzo/arazzo.json` and its source companions. Only explicit pair mode
+permits repeatable `--consumer-collection <file-or-dir>` and
+`--provider-collection <file-or-dir>` overrides, or
+`--consumer-arazzo <file-or-dir>` and `--provider-arazzo <file-or-dir>` with
+`--input-format arazzo`. Mixing the two formats is rejected. Shared-store and
+run-set checks use each run's default location for the selected format.
+
+Arazzo checking supports eligible JSON/REST boundaries and still requires the
+complete archives for response evidence, test provenance and contracts. The
+workflow and source companions must match their regenerated archive projection.
+Selected unsupported traffic cannot be omitted to obtain a passing check.
+Verification does not execute Arazzo expressions or workflows. Arazzo generation
+is strict across the whole run; incomplete or unrepresentable eligible JSON
+traffic on any boundary can block export and verification. See
+[Arazzo input limits](assumption-checks.md#use-arazzo-instead-of-postman-for-jsonrest).
 
 `--ignore-header <name>` is repeatable and applies to every selected comparison.
 `--format text|json|markdown|junit` and `--output <file>` control the result. JSON
@@ -262,8 +278,10 @@ retains complete diagnostics; Markdown and JUnit XML are bounded presentations
 for reviews and CI. Exit statuses are
 `0` for agreement, `1` for incompatible/uncovered/unverified assumptions, and
 `2` for invalid inputs. The output's parent must exist. Keep output outside the
-artifact root, all input archives and Postman input directories, and do not
-replace a collection file.
+artifact root, all input archives and Postman or Arazzo input directories, and
+do not replace a projection or source companion file. When selecting an Arazzo
+file explicitly, keep output outside its containing export tree so its companions
+remain protected even if an early unverified verdict skips input verification.
 See [assumption checks](assumption-checks.md) for comparison rules and limits.
 That guide separates [issues the check finds](assumption-checks.md#issues-the-check-will-find)
 from [claims it cannot establish](assumption-checks.md#what-the-check-will-not-establish)
@@ -285,6 +303,8 @@ compared as opaque declarations and are not executed.
 Select `outputs: {coverage: [json, text], postman: true, arazzo: true}` to generate exports when
 suite ownership calls `/v1/finishRun`. This is opt-in; without it capture continues
 to write only the raw archive. SDK options can select outputs for that finalization.
+For JSON/REST projects, `outputs: {coverage: [json, text], arazzo: true}`
+generates Arazzo without Postman and supports `check --input-format arazzo`.
 The result returns `bundle_path`, `run_id`, and `outputs` containing exact coverage
 file paths, Postman file paths, an eligible Arazzo document and its source files,
 and export errors. Files live under the archive's

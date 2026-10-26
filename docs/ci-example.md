@@ -120,8 +120,8 @@ is needed to run it.
 
 ## Gate consumer/provider assumptions offline
 
-Upload each complete run, including `exports/postman/`, under its stable
-application ID in your shared artifact store. For the check job, restore the
+Upload each complete run, including the selected projection exports, under its
+stable application ID in your shared artifact store. For the check job, restore the
 selected peer snapshots into a local application-folder root. Keep the local
 suite's exact completed run as the anchor. Artifact upload/download remains
 part of your existing CI or Artifactory tooling.
@@ -131,7 +131,14 @@ provider mappings can pin `sut_source.version`, but two runs matching that pin
 are still ambiguous. Restore one intended peer snapshot per selected
 application/API; Wiretap does not choose a newest folder or merge evidence
 from historical runs. The check needs no running server and executes no
-Postman scripts.
+Postman scripts or Arazzo expressions.
+
+For JSON/REST boundaries, `outputs: {coverage: [json, text], arazzo: true}`
+generates Arazzo without Postman. Preserve each run's `exports/arazzo/` tree,
+including its OpenAPI source companions, and add `--input-format arazzo` to
+both consumer and provider gate commands below. The selected format applies to
+both sides. Complete archives remain required for response evidence, passing
+test provenance and frozen contracts. See [Arazzo check inputs](assumption-checks.md#use-arazzo-instead-of-postman-for-jsonrest).
 
 The example assumes the local consumer is in `evidence/orders-run/`, mapped
 providers have been restored beneath `api-evidence/<application-id>/`, and

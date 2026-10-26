@@ -33,6 +33,7 @@ var ErrInput = errors.New("invalid assumption-check input")
 type Options struct {
 	Mode, Consumer, Provider, Dependency                    string
 	ConsumerCollections, ProviderCollections, IgnoreHeaders []string
+	InputFormat, ConsumerArazzo, ProviderArazzo             string
 }
 
 type Source struct {
@@ -44,6 +45,9 @@ type Source struct {
 	APIID            string   `json:"api_id,omitempty"`
 	ManifestSHA256   string   `json:"manifest_sha256"`
 	Collections      []string `json:"collections"`
+	InputFormat      string   `json:"input_format,omitempty"`
+	Arazzo           string   `json:"arazzo,omitempty"`
+	ArazzoFiles      []string `json:"arazzo_files,omitempty"`
 }
 
 type Evidence struct {
@@ -136,6 +140,17 @@ func Check(ctx context.Context, options Options) (*Report, error) {
 	if options.Mode != "consumer" && options.Mode != "provider" {
 		return nil, fmt.Errorf("%w: check requires consumer or provider", ErrInput)
 	}
+	inputFormat, err := checkInputFormat(options.InputFormat)
+	if err != nil {
+		return nil, err
+	}
+	options.InputFormat = inputFormat
+	if inputFormat == "arazzo" && (len(options.ConsumerCollections) > 0 || len(options.ProviderCollections) > 0) {
+		return nil, fmt.Errorf("%w: Arazzo checks require Arazzo inputs on both sides; Postman collection overrides are unsupported", ErrInput)
+	}
+	if inputFormat == "postman" && (options.ConsumerArazzo != "" || options.ProviderArazzo != "") {
+		return nil, fmt.Errorf("%w: Arazzo overrides require input format arazzo for both sides", ErrInput)
+	}
 	consumer, err := loadSnapshot(options.Consumer)
 	if err != nil {
 		return nil, fmt.Errorf("%w: consumer: %v", ErrInput, err)
@@ -163,7 +178,7 @@ func Check(ctx context.Context, options Options) (*Report, error) {
 	ignored = unique(ignored)
 	report := &Report{Producer: version.Current(), ReportVersion: "1.0", RulesVersion: RulesVersion, Mode: options.Mode,
 		Scope: "observed_mock_examples_and_exercised_contracts", Dependency: dependency, Binding: "explicit_inputs",
-		Consumer: consumer.source(options.ConsumerCollections), Provider: provider.source(options.ProviderCollections),
+		Consumer: consumer.sourceForFormat(options.ConsumerCollections, inputFormat, options.ConsumerArazzo), Provider: provider.sourceForFormat(options.ProviderCollections, inputFormat, options.ProviderArazzo),
 		IgnoredHeaders: ignored, Matches: []Match{}, Findings: []Finding{}, ExcludedProviderEvidence: []ExcludedEvidence{}}
 	for _, entry := range []struct {
 		role     string
@@ -286,25 +301,51 @@ func Check(ctx context.Context, options Options) (*Report, error) {
 	if unavailableConsumers == len(consumers) && len(consumers) > 0 {
 		return report, nil
 	}
-	// Verify the complete selected Postman projections, including examples in
+	// Verify the selected projections, including examples in
 	// failed attempts. They are inputs to inspect, never substitute proof.
 	for _, entry := range []struct {
 		role     string
 		snapshot *snapshot
 		inputs   []string
+		arazzo   string
 		boundary string
+		source   *Source
 	}{
-		{"consumer", consumer, options.ConsumerCollections, dependency}, {"provider", provider, options.ProviderCollections, ""},
+		{"consumer", consumer, options.ConsumerCollections, options.ConsumerArazzo, dependency, &report.Consumer}, {"provider", provider, options.ProviderCollections, options.ProviderArazzo, "", &report.Provider},
 	} {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		if err := entry.snapshot.verifyCollections(entry.inputs, entry.boundary); err != nil {
-			return nil, fmt.Errorf("%w: %s collections: %v", ErrInput, entry.role, err)
+		if err := entry.snapshot.verifyProjection(inputFormat, entry.inputs, entry.arazzo, entry.boundary, entry.source); err != nil {
+			return nil, fmt.Errorf("%w: %s %s inputs: %v", ErrInput, entry.role, inputFormat, err)
 		}
 	}
 	report.Compatible = len(report.Findings) == 0 && report.Counts.Verified > 0
 	return report, nil
+}
+
+func checkInputFormat(value string) (string, error) {
+	if value == "" {
+		return "postman", nil
+	}
+	if value != "postman" && value != "arazzo" {
+		return "", fmt.Errorf("%w: input format must be postman or arazzo", ErrInput)
+	}
+	return value, nil
+}
+
+func (s *snapshot) verifyProjection(format string, collections []string, arazzoInput, boundary string, source *Source) error {
+	if format == "postman" {
+		return s.verifyCollections(collections, boundary)
+	}
+	path, companions, err := s.verifyArazzo(arazzoInput, boundary)
+	if err != nil {
+		return err
+	}
+	if source != nil {
+		source.Arazzo, source.ArazzoFiles = path, companions
+	}
+	return nil
 }
 
 func (r *Report) add(f Finding) {
@@ -397,6 +438,25 @@ func (s *snapshot) source(inputs []string) Source {
 		appID = s.run.Application.ID
 	}
 	return Source{BundlePath: s.root, RunID: s.run.RunID, SnapshotRevision: s.run.Revision, RunState: s.run.RunState, ApplicationID: appID, APIID: providerAPI(s.run), ManifestSHA256: s.digest, Collections: paths}
+}
+
+func (s *snapshot) sourceForFormat(inputs []string, format, arazzoInput string) Source {
+	source := s.source(inputs)
+	if format != "arazzo" {
+		return source
+	}
+	source.InputFormat, source.Collections = "arazzo", []string{}
+	if arazzoInput == "" {
+		arazzoInput = filepath.Join(s.root, "exports", "arazzo", "arazzo.json")
+	}
+	if absolute, err := filepath.Abs(arazzoInput); err == nil {
+		arazzoInput = absolute
+	}
+	if info, err := os.Stat(arazzoInput); err == nil && info.IsDir() {
+		arazzoInput = filepath.Join(arazzoInput, "arazzo.json")
+	}
+	source.Arazzo = arazzoInput
+	return source
 }
 
 func providerAPI(run *bundle.Run) string {

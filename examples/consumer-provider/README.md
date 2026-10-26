@@ -2,12 +2,14 @@
 
 This example captures a consumer tested against an inventory mock and a provider
 tested independently. Both suites pass their own assertions. Wiretap compares
-their captured traffic, frozen contracts and generated Postman collections to
-check whether the mock still agrees with the provider.
+their captured traffic, frozen contracts and verified projection exports to
+check whether the mock still agrees with the provider. Both suites generate
+Postman collections and JSON/REST Arazzo workflows.
 
 The complete workflow uses Go's standard HTTP client, server and test runner.
 It starts services on available local ports, captures four separate archives,
-and checks the same consumer evidence against three provider captures:
+and checks the same consumer evidence against three provider captures. Each
+phase runs both viewpoints with Postman-to-Postman and Arazzo-to-Arazzo inputs:
 
 | Provider capture | Response and provider spec | Consumer check | Provider check |
 | --- | --- | --- | --- |
@@ -24,7 +26,8 @@ Wiretap detects the disagreement without running the applications together.
 The correction restores the provider's original field and contract; the
 consumer archive is unchanged. Each check verifies the actual exit code and
 JSON result, including the response mismatch in the breaking phase. The outer
-workflow passes only when this entire pass/fail/pass sequence behaves as shown.
+workflow passes only when all twelve checks follow the pass/fail/pass sequence
+shown above, across both viewpoints and both input formats.
 
 ## Run it
 
@@ -87,13 +90,22 @@ workflow-<unique-id>/
   breaking-provider-check.json
   fixed-consumer-check.json
   fixed-provider-check.json
+  original-consumer-arazzo-check.json
+  original-provider-arazzo-check.json
+  breaking-consumer-arazzo-check.json
+  breaking-provider-arazzo-check.json
+  fixed-consumer-arazzo-check.json
+  fixed-provider-arazzo-check.json
 ```
 
 Each `<run-id>/` contains `bundle.json`, captured tests and contracts,
 `last-run.json`, `wiretap.log`, `exports/coverage.json`, `exports/coverage.txt`
-and `exports/postman/`. The test log prints each archive's canonical receipt
-path and exact coverage and Postman output paths. Preserve the complete archive
-so checks can validate its Postman evidence against the captured traffic.
+and `exports/postman/` plus `exports/arazzo/`. The test log prints each archive's
+canonical receipt path and exact coverage and export paths. The workflow
+requires successful coverage, Postman and Arazzo outputs in every receipt.
+Postman reports keep the `<phase>-<viewpoint>-check.json` filenames; Arazzo
+reports add `-arazzo` before `-check.json`. Preserve the complete archive so
+checks can validate the selected projections against the captured traffic, including response bodies and passing-test provenance.
 
 To inspect a result yourself, replace the two paths with the exact archive
 paths printed by the workflow:
@@ -103,6 +115,19 @@ dist/wiretap check consumer \
   --consumer <consumer-archive> --provider <breaking-provider-archive> \
   --dependency inventory
 ```
+
+To use Arazzo in place of Postman for the same pair, add `--input-format arazzo`:
+
+```sh
+dist/wiretap check consumer \
+  --consumer <consumer-archive> --provider <breaking-provider-archive> \
+  --dependency inventory --input-format arazzo
+```
+
+The checker verifies `exports/arazzo/arazzo.json` and its OpenAPI companions
+against each archive, then compares the captured exchanges. It does not execute
+Arazzo workflow expressions. For an Arazzo-only project, use
+`outputs: {coverage: [json, text], arazzo: true}` in both configurations.
 
 The text result identifies the differing response fields. Replace `consumer`
 with `provider` to ask the same compatibility question from the provider's

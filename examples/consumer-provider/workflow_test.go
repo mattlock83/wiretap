@@ -132,7 +132,9 @@ func TestConsumerProvider(t *testing.T) {
 		t.Run(phase, func(t *testing.T) {
 			provider := capture(t, output, phase, "TestInventoryQuantity")
 			for _, viewpoint := range []string{"consumer", "provider"} {
-				check(t, binary, output, phase, viewpoint, consumer, provider, phase != "breaking")
+				for _, inputFormat := range []string{"postman", "arazzo"} {
+					check(t, binary, output, phase, viewpoint, consumer, provider, phase != "breaking", inputFormat)
+				}
 			}
 		})
 	}
@@ -167,22 +169,26 @@ func capture(t *testing.T, output, phase, testName string) string {
 	receiptPath := filepath.Join(bundlePath, "last-run.json")
 	var receipt wiretap.FinishResult
 	readJSON(t, receiptPath, &receipt)
-	if receipt.Status != "complete" || receipt.BundlePath != bundlePath || receipt.Outputs == nil || receipt.Outputs.Coverage["json"] == "" || len(receipt.Outputs.Postman) == 0 {
+	if receipt.Status != "complete" || receipt.BundlePath != bundlePath || receipt.Outputs == nil || receipt.Outputs.Coverage["json"] == "" || len(receipt.Outputs.Postman) == 0 || receipt.Outputs.Arazzo == "" {
 		t.Fatalf("%s did not produce a complete receipt: %+v\n%s", phase, receipt, log)
 	}
 	t.Logf("%s tests passed; receipt: %s", phase, receiptPath)
-	t.Logf("coverage: %s; Postman: %v", receipt.Outputs.Coverage["json"], receipt.Outputs.Postman)
+	t.Logf("coverage: %s; Postman: %v; Arazzo: %s", receipt.Outputs.Coverage["json"], receipt.Outputs.Postman, receipt.Outputs.Arazzo)
 	return receipt.BundlePath
 }
 
-func check(t *testing.T, binary, output, phase, viewpoint, consumer, provider string, compatible bool) {
+func check(t *testing.T, binary, output, phase, viewpoint, consumer, provider string, compatible bool, inputFormat string) {
 	t.Helper()
-	reportPath := filepath.Join(output, phase+"-"+viewpoint+"-check.json")
+	stem := phase + "-" + viewpoint
+	if inputFormat == "arazzo" {
+		stem += "-arazzo"
+	}
+	reportPath := filepath.Join(output, stem+"-check.json")
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 	command := exec.CommandContext(ctx, binary, "check", viewpoint,
 		"--consumer", consumer, "--provider", provider, "--dependency", "inventory",
-		"--format", "json", "--output", reportPath)
+		"--input-format", inputFormat, "--format", "json", "--output", reportPath)
 	log, err := command.CombinedOutput()
 	exit := 0
 	var exitError *exec.ExitError
@@ -217,7 +223,7 @@ func check(t *testing.T, binary, output, phase, viewpoint, consumer, provider st
 	} else if report.Counts.Mismatched != 1 || len(report.Findings) != 1 || report.Findings[0].Code != "provider_response_mismatch" {
 		t.Fatalf("expected the renamed response field to mismatch: %+v", report)
 	}
-	t.Logf("%s %s check: compatible=%t, exit=%d; %s", phase, viewpoint, report.Compatible, exit, reportPath)
+	t.Logf("%s %s %s check: compatible=%t, exit=%d; %s", phase, viewpoint, inputFormat, report.Compatible, exit, reportPath)
 }
 
 func readJSON(t *testing.T, path string, target any) {

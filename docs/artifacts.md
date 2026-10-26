@@ -48,8 +48,10 @@ Use `wiretap check consumer` or `wiretap check provider` with a local run and
 `--artifacts <root>` to discover mapped peers beneath application folders. You
 can also select an explicit pair with `--consumer` and `--provider`, or explicit
 [same-build run sets](run-sets.md) with `--consumer-set` and `--provider-set`. Every run
-needs its complete archive and Postman exports. The checker verifies the collections
-against their raw evidence, then requires each selected mock request and paired
+needs its complete archive and the selected projection exports. Postman is the
+default; `--input-format arazzo` selects JSON/REST Arazzo workflows and their source
+companions on both sides. The checker verifies those projections against their
+raw evidence, then requires each selected mock request and paired
 response to have compatible evidence from a passing provider service test.
 The provider's frozen OpenAPI 3.0 contract can validate both concrete exchanges
 without a consumer dependency spec; that match is marked
@@ -187,6 +189,10 @@ parameters. Configure authentication, content negotiation and server addresses
 in the consuming runner; frozen sources retain their declared server settings.
 Repeated or structured parameters, undeclared query parameters in frozen
 operations, and incomplete or altered JSON captures fail export with a diagnostic.
+Arazzo generation is strict across the whole run and has no omit-incomplete
+mode. An incomplete or unrepresentable eligible JSON capture on any boundary
+can prevent export and the regeneration used by assumption checks, even when
+that boundary is unselected or another passing provider attempt is usable.
 
 Frozen OpenAPI contracts supply operation references when available. For a
 schema-free JSON API, the exporter creates an OpenAPI source describing observed
@@ -202,6 +208,25 @@ finalization. `exports/result.json` returns its exact path in `arazzo` and sourc
 paths in `arazzo_files`. `--format all` includes Arazzo when eligible JSON/REST
 traffic is present. Export errors are reported independently from coverage and
 Postman errors.
+
+Arazzo can replace Postman as the projection input to JSON/REST assumption checks:
+
+```sh
+wiretap check consumer --consumer ./consumer-run --provider ./provider-run \
+  --dependency inventory --input-format arazzo
+```
+
+Both archives default to `exports/arazzo/arazzo.json` with companions beside it.
+Keep complete archives: the checker uses their actual responses, passing-test
+provenance and frozen contracts, and verifies the Arazzo document and companions
+against a regenerated projection. It does not execute workflow expressions.
+Missing, stale or altered inputs fail verification. Unsupported traffic in a
+selected boundary cannot be silently excluded from a passing check. See
+[Arazzo check inputs](assumption-checks.md#use-arazzo-instead-of-postman-for-jsonrest)
+for explicit paths, shared-store and run-set usage.
+
+`outputs: {coverage: [json, text], arazzo: true}` is a valid suite configuration
+without Postman exports.
 
 ## Postman collections
 

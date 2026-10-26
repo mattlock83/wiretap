@@ -1,6 +1,6 @@
 version: 1
 application: {id: inventory-example}
-outputs: {coverage: [json, text], postman: true}
+outputs: {coverage: [json, text], postman: true, arazzo: true}
 sut:
   id: inventory-http
   kind: service
