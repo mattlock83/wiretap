@@ -1,7 +1,7 @@
 # Wiretap
 
 Turn existing HTTP and native gRPC API tests into **portable evidence, Postman
-collections and API coverage**. Keep your test framework, clients, assertions and
+collections, Arazzo workflows and API coverage**. Keep your test framework, clients, assertions and
 mocks. Wiretap captures traffic at the application boundary, measures it against
 your OpenAPI or Protobuf contracts, and checks mock assumptions against provider
 test evidence.
@@ -14,7 +14,7 @@ payloads, unchanged.
 Existing tests → Wiretap → Your application → Wiretap → Existing mocks or services
                    └──────────────┬──────────────┘
                         One portable run archive
-                   Raw evidence · Postman · API coverage
+                 Raw evidence · Postman · Arazzo · API coverage
 ```
 
 ## Try it
@@ -95,6 +95,7 @@ See [tracing and concurrency](docs/otel-adoption.md).
 | `exports/coverage.txt` | A compact first view of outcomes, exercised operations, condition gaps and unknowns. |
 | `exports/coverage.json` | Which declared operations and supported contract conditions were exercised, with gaps and unknowns. |
 | `exports/postman/` | Captured HTTP and gRPC interactions grouped by test, for the application and mocked dependencies. |
+| `exports/arazzo/` | JSON/REST workflows for the application and mocked dependencies, with portable OpenAPI source files. |
 | `exports/result.json` | Exact export paths and any export errors. |
 
 Start with the summary, then follow the JSON report's test references when you
@@ -111,7 +112,14 @@ binary and the exact run directory returned by the SDK:
 ```
 
 Exports work offline from the complete run archive. HTTP collections use Postman
-v2.1; native gRPC uses v3. See [exports and compatibility](docs/artifacts.md).
+v2.1; native gRPC uses v3. JSON/REST captures can also export Arazzo workflows:
+
+```bash
+./dist/wiretap export --bundle ./examples/go-suite/artifacts/<run-id> \
+  --format arazzo --output-dir ./arazzo
+```
+
+See [exports and compatibility](docs/artifacts.md).
 For tools consuming the results, use the versioned
 [machine interface](docs/machine-interface.md).
 

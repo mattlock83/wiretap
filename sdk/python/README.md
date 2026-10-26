@@ -2,7 +2,7 @@
 
 Use your existing Python HTTP/gRPC clients, fixtures and assertions. The core
 SDK uses only the Python 3.9+ standard library. The optional pytest plugin starts
-Wiretap, records setup/test/teardown outcomes, exports coverage and Postman
+Wiretap, records setup/test/teardown outcomes, exports coverage, JSON/REST Arazzo workflows and Postman
 collections, and stops the owned runtime. It downloads no executable.
 
 From the Wiretap checkout, install locally into your project's virtual environment:
@@ -24,7 +24,7 @@ Put `.wiretap.yaml` at the pytest project root:
 version: 1
 application: {id: orders}
 output_dir: artifacts
-outputs: {coverage: [json, text], postman: true}
+outputs: {coverage: [json, text], postman: true, arazzo: true}
 sut:
   id: orders-http
   url: http://127.0.0.1:8080
@@ -159,7 +159,7 @@ export errors retain available paths on `WiretapError.body` and still fail
 cleanup. An original test exception is preserved if cleanup also fails, with
 the secondary error on its `wiretap_cleanup_error` attribute.
 After successful finalization, pytest prints the archive and exact coverage and
-Postman export paths, including each worker's outputs when using xdist.
+Postman/Arazzo export paths, including each worker's outputs when using xdist.
 
 Managed runtimes hold a stdin lifeline. If the Python owner dies, EOF asks
 Wiretap to stop and retain an interrupted raw archive. Hard interruption cannot

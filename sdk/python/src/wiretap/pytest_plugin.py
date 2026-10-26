@@ -116,6 +116,8 @@ def pytest_sessionfinish(session, exitstatus):
                     lines.append("Wiretap coverage (%s): %s" % (kind, path))
                 for path in outputs.get("postman") or []:
                     lines.append("Wiretap Postman: %s" % path)
+                if outputs.get("arazzo"):
+                    lines.append("Wiretap Arazzo: %s" % outputs["arazzo"])
                 if hasattr(session.config, "workeroutput"):
                     session.config.workeroutput.setdefault("wiretap_summary", []).extend(lines)
                 else:

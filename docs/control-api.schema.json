@@ -143,6 +143,15 @@
             "type": "string"
           }
         },
+        "arazzo": {
+          "type": "string"
+        },
+        "arazzo_files": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "postman_omissions": {
           "type": "array",
           "items": {

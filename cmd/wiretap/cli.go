@@ -99,7 +99,7 @@ Commands:
   init       Create a project configuration
   doctor     Check local capture setup
   report     Measure coverage from a capture or run set
-  export     Export coverage or executable Postman collections
+  export     Export coverage, Postman collections or Arazzo workflows
   check      Check consumer/provider compatibility
   run-set    Group captures from one application build
   compare    Compare coverage against a baseline

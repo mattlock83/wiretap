@@ -3,7 +3,7 @@
 Add API capture to standard Go tests with two hooks: `wiretap.Run(m)` in
 `TestMain`, and `wiretap.StartTest(t)` in each test or shared setup helper. Keep
 your existing requests, assertions and mocks. Wiretap starts on available ports,
-records each test's final outcome, generates coverage and Postman exports, and
+records each test's final outcome, generates coverage, Postman and JSON/REST Arazzo exports, and
 stops when the package finishes.
 
 ## Configure once
@@ -27,7 +27,7 @@ Put `.wiretap.yaml` at the project root:
 version: 1
 application: {id: my-api}
 output_dir: artifacts/wiretap
-outputs: {coverage: [json, text], postman: true}
+outputs: {coverage: [json, text], postman: true, arazzo: true}
 sut:
   id: my-api
   kind: service
@@ -134,7 +134,7 @@ output directory in CI on success and failure. Normal suite completion writes
 `last-run.json` with exact artifact/export paths and a `wiretap.log` inside the
 run directory, alongside captured traffic, contracts, test outcomes and exports.
 After successful finalization, `Run` prints the archive and exact coverage and
-Postman export paths to stderr. Use `go test -v` to see them for passing packages.
+Postman/Arazzo export paths to stderr. Use `go test -v` to see them for passing packages.
 
 Normal test failures still finalize exports. A hard panic, `go test -timeout`,
 or process termination can leave an interrupted archive without completed

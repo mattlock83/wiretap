@@ -245,7 +245,7 @@ A copied artifact directory can be selected with `bundle_path`:
 
 Only run artifact directories are accepted. Unknown request fields are rejected.
 The response includes detailed condition results under `report.contract_coverage`. The CLI
-can also export YAML and Postman collections; see [capture artifacts and exports](artifacts.md).
+can also export YAML, Postman collections and JSON/REST Arazzo workflows; see [capture artifacts and exports](artifacts.md).
 
 ## Proxy certificate
 
@@ -265,7 +265,7 @@ lists the omitted schema IDs. Contract violations produce validation status
 
 `GET /v1/capabilities` returns `api_version: "1.0"`, `producer` and a
 `capabilities` array containing `capture.http`, `capture.grpc`, `outputs.coverage`,
-`outputs.postman`, `test.identity` and `run.finalize`. This read starts no run and
+`outputs.postman`, `outputs.arazzo`, `test.identity` and `run.finalize`. This read starts no run and
 does not wait for capture control operations. Other methods return 405. Existing
 clients can continue without probing; adapters supporting older binaries may
 treat 404 as unavailable discovery.

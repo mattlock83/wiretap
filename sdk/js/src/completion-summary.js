@@ -5,6 +5,7 @@ function printCompletionSummary(receipt) {
     lines.push(`Wiretap coverage (${format}): ${filename}`);
   }
   for (const filename of receipt.outputs?.postman || []) lines.push(`Wiretap Postman: ${filename}`);
+  if (receipt.outputs?.arazzo) lines.push(`Wiretap Arazzo: ${receipt.outputs.arazzo}`);
   // Runner reporters may emit JSON on stdout. Keep capture paths separate.
   process.stderr.write(`${lines.join('\n')}\n`);
 }

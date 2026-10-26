@@ -1,7 +1,7 @@
 # JavaScript SDK
 
 Add API capture to your existing tests. Wiretap produces a portable run archive,
-Postman collections and API coverage from the requests your tests already make.
+Postman collections, JSON/REST Arazzo workflows and API coverage from the requests your tests already make.
 Keep your assertions, mocks and HTTP clients.
 
 | Your test runner | Integration |
@@ -16,7 +16,7 @@ test attempts, finalize exports after test cleanup, and stop the process. Your r
 execution and outcomes. Failed assertions, timeouts and cleanup failures remain
 visible; API contract violations are separate evidence.
 After successful finalization, the adapters print the exact archive, coverage
-and Postman paths to stderr. Low-level SDK calls return receipts without printing.
+and Postman/Arazzo paths to stderr. Low-level SDK calls return receipts without printing.
 
 ## Install and configure once
 
@@ -41,7 +41,7 @@ discovers this configuration in parent directories:
 version: 1
 application: {id: my-api}
 output_dir: artifacts/wiretap
-outputs: {coverage: [json, text], postman: true}
+outputs: {coverage: [json, text], postman: true, arazzo: true}
 sut:
   id: my-api
   kind: service

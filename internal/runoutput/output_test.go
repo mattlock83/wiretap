@@ -198,6 +198,83 @@ func TestAutomaticPostmanOmissionPolicyRetainsExactDiagnostics(t *testing.T) {
 	}
 }
 
+func jsonRESTRun(t *testing.T) string {
+	t.Helper()
+	return failedRun(t, func(c *artifact.Artifact) {
+		c.Traffic[0].Response.HTTP.Headers = map[string][]string{"Content-Type": {"application/json"}}
+		c.Traffic[0].Response.HTTP.Body = &artifact.Body{Text: `{"error":"unavailable"}`}
+	})
+}
+
+func TestAutomaticArazzoIncludesDocumentAndSchemaCompanions(t *testing.T) {
+	root := jsonRESTRun(t)
+	result, err := Generate(t.Context(), root, Defaults())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Arazzo != filepath.Join(root, "exports", "arazzo", "arazzo.json") || len(result.ArazzoFiles) == 0 {
+		t.Fatalf("missing Arazzo paths: %+v", result)
+	}
+	data, err := os.ReadFile(result.Arazzo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var document struct {
+		Arazzo    string            `json:"arazzo"`
+		Workflows []json.RawMessage `json:"workflows"`
+	}
+	if err := json.Unmarshal(data, &document); err != nil || document.Arazzo == "" || len(document.Workflows) != 1 {
+		t.Fatalf("invalid Arazzo document: %s, %v", data, err)
+	}
+	for _, path := range result.ArazzoFiles {
+		if !strings.HasPrefix(path, filepath.Join(root, "exports", "arazzo")+string(filepath.Separator)) {
+			t.Fatalf("companion outside Arazzo directory: %s", path)
+		}
+		if _, err := os.Stat(path); err != nil {
+			t.Fatal(err)
+		}
+	}
+	data, err = os.ReadFile(filepath.Join(root, "exports", "result.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var saved Result
+	if err := json.Unmarshal(data, &saved); err != nil || saved.Arazzo != result.Arazzo || len(saved.ArazzoFiles) != len(result.ArazzoFiles) {
+		t.Fatalf("missing Arazzo receipt: %s, %v", data, err)
+	}
+	if _, _, err := bundle.Load(root); err != nil {
+		t.Fatalf("export changed capture evidence: %v", err)
+	}
+}
+
+func TestAutomaticArazzoSkipsNonJSONTraffic(t *testing.T) {
+	root := failedRun(t)
+	result, err := Generate(t.Context(), root, Defaults())
+	if err != nil || result.Arazzo != "" || len(result.ArazzoFiles) != 0 || len(result.Errors) != 0 {
+		t.Fatalf("non-JSON traffic should not export Arazzo: %+v, %v", result, err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "exports", "arazzo")); !os.IsNotExist(err) {
+		t.Fatalf("non-JSON traffic created an Arazzo directory: %v", err)
+	}
+}
+
+func TestAutomaticArazzoFailureRetainsOtherOutputs(t *testing.T) {
+	root := jsonRESTRun(t)
+	if err := os.MkdirAll(filepath.Join(root, "exports"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "exports", "arazzo"), []byte("keep"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	result, err := Generate(t.Context(), root, Defaults())
+	if err == nil || result.Arazzo != "" || len(result.ArazzoFiles) != 0 || len(result.Errors) != 1 || result.Errors[0].Format != "arazzo" || result.Coverage["json"] == "" || len(result.Postman) != 1 {
+		t.Fatalf("Arazzo failure lost other exports: %+v, %v", result, err)
+	}
+	if _, _, err := bundle.Load(root); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestNestedCompanionWritesRejectEverySymlinkAncestor(t *testing.T) {
 	root := t.TempDir()
 	parent := filepath.Join(root, "exports", "postman")

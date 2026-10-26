@@ -17,6 +17,7 @@ output_dir: artifacts
 outputs:
   coverage: [json, text]
   postman: true
+  arazzo: true
 sut:
   id: orders
   url: ${SUT_BASE_URL}
@@ -227,6 +228,7 @@ through the [HTTP API](runtime-api.md), usually via an SDK.
 | `wiretap compare --baseline <report> --current <report>` | Compare two single-archive JSON coverage reports; see [coverage policies and comparison](report-policies.md). |
 | `wiretap export --bundle <path> --format json` | Export a diagnostic coverage report to stdout; `--format yaml` and `--output <file>` are also supported. |
 | `wiretap export --bundle <path> --format postman --output-dir <directory>` | Export HTTP v2.1 and gRPC v3 JSON collections for the SUT and mocked dependencies, with test folders and saved interactions. |
+| `wiretap export --bundle <path> --format arazzo --output-dir <directory>` | Export JSON/REST workflows for the SUT and mocked dependencies, with OpenAPI source companions. |
 | `wiretap check consumer --consumer <run> --artifacts <root>` | Find mapped providers beneath shared application folders and check all local mock dependencies. |
 | `wiretap check provider --provider <run> --artifacts <root>` | Find mapped consumers beneath shared application folders and check that local provider tests support their mocks. |
 | `wiretap check <consumer\|provider> --consumer <run> --provider <run>` | Compare one explicitly selected consumer/provider pair. |
@@ -234,7 +236,7 @@ through the [HTTP API](runtime-api.md), usually via an SDK.
 | `wiretap ca [--config path]` | Print the public proxy CA certificate, creating the local CA if needed. |
 
 For a single archive without a policy, `report` and `export` support `json`,
-`yaml`, `text`, `postman` and `all`; JSON is the default. `--format text` prints
+`yaml`, `text`, `postman`, `arazzo` and `all`; JSON is the default. `--format text` prints
 the compact coverage summary.
 They work offline from complete capture directories and do not execute tests.
 See [capture artifacts and exports](artifacts.md) for examples.
@@ -280,17 +282,18 @@ compared as opaque declarations and are not executed.
 
 ## Suite outputs
 
-Select `outputs: {coverage: [json, text], postman: true}` to generate exports when
+Select `outputs: {coverage: [json, text], postman: true, arazzo: true}` to generate exports when
 suite ownership calls `/v1/finishRun`. This is opt-in; without it capture continues
 to write only the raw archive. SDK options can select outputs for that finalization.
 The result returns `bundle_path`, `run_id`, and `outputs` containing exact coverage
-file paths, Postman file paths and export errors. Files live under the archive's
+file paths, Postman file paths, an eligible Arazzo document and its source files,
+and export errors. Files live under the archive's
 `exports/` directory, with `exports/result.json` recording available outputs.
 
-Coverage and Postman exports are independent: a Postman failure leaves valid
+Coverage, Postman and Arazzo exports are independent: an exporter failure leaves valid
 coverage and the raw failed/passing attempts available, while finalization reports
 an error. Preserve that cleanup error and any original test failure. Finalize
 only once in the outer harness after all workers have torn down their attempts.
 `wiretap export --bundle <exact-path> --format all` generates the standard JSON
-coverage, text summary and Postman outputs offline, for example to retry exports after fixing
+coverage, text summary, Postman and eligible Arazzo outputs offline, for example to retry exports after fixing
 configuration. Avoid selecting a run by timestamp or scanning for the newest file.

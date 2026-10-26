@@ -4,7 +4,7 @@
     "method": "GET",
     "path": "/v1/capabilities",
     "api_version": "1.0",
-    "capabilities": ["capture.http", "capture.grpc", "outputs.coverage", "outputs.postman", "test.identity", "run.finalize"],
+    "capabilities": ["capture.http", "capture.grpc", "outputs.coverage", "outputs.postman", "outputs.arazzo", "test.identity", "run.finalize"],
     "required_for_existing_clients": false
   },
   "invalid_receipts": {

@@ -2,14 +2,16 @@
 
 The raw capture is the authoritative input for assumption checks and external
 analysis.
-Postman collections are executable/example projections. Coverage reports are
+Postman collections and Arazzo workflows are executable/example projections. Coverage reports are
 versioned measurements of that evidence, not replacement recordings.
 
 ## CLI output and exit status
 
 Use `wiretap --help` for the command list and `wiretap <command> --help` for
 options. Reports and exports write their selected format to stdout unless an
-output path is supplied. Flag and input errors are printed once on stderr.
+output path is supplied. Exports with companion files require `--output` or
+`--output-dir` so their relative references remain portable. Flag and input errors
+are printed once on stderr.
 
 | Exit | Meaning |
 | --- | --- |

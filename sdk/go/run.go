@@ -121,6 +121,9 @@ func runPackage(run func() int, options RunOptions, pkg string, start func(conte
 			for _, path := range receipt.Outputs.Postman {
 				fmt.Fprintf(os.Stderr, "Wiretap Postman: %s\n", path)
 			}
+			if receipt.Outputs.Arazzo != "" {
+				fmt.Fprintf(os.Stderr, "Wiretap Arazzo: %s\n", receipt.Outputs.Arazzo)
+			}
 		}
 	}()
 	return run()

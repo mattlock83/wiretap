@@ -37,15 +37,15 @@ func reportCommand(command string, args []string) error {
 	var postmanConfig string
 	var omitIncomplete bool
 	flags.StringVar(&bundlePath, "bundle", "", "capture bundle directory")
-	flags.StringVar(&sutName, "sut-name", "", "SUT name in the report or SUT Postman collection name")
-	flags.StringVar(&outputPath, "output", "", "output file path; additional Postman collections are written alongside the primary collection (default: stdout)")
-	flags.StringVar(&outputDir, "output-dir", "", "Postman collection output directory")
-	flags.StringVar(&format, "format", "json", "output format: json, yaml, text, postman, all")
+	flags.StringVar(&sutName, "sut-name", "", "SUT name in the report, Postman collection or Arazzo workflow document")
+	flags.StringVar(&outputPath, "output", "", "output file path; additional export files are written alongside the primary file (default: stdout)")
+	flags.StringVar(&outputDir, "output-dir", "", "Postman or Arazzo export output directory")
+	flags.StringVar(&format, "format", "json", "output format: json, yaml, text, postman, arazzo, all")
 	flags.StringVar(&postmanConfig, "postman-config", "", "Postman export options JSON (gRPC endpoints and source proto packages)")
 	flags.BoolVar(&omitIncomplete, "postman-omit-incomplete", false, "omit unrepresentable interactions and report each omission (Postman only)")
 	flags.BoolVar(&includeArtifacts, "include-artifacts", false, "include artifact file paths in the report")
 	flags.Usage = func() {
-		fmt.Fprintf(flags.Output(), "Usage: wiretap %s --bundle <archive> [options]\n       wiretap %s --run-set <manifest.json> [--output coverage.json]\n\nRead a verified capture without replaying traffic. JSON is the default.\n\nExamples:\n  wiretap report --bundle <archive> --format text\n  wiretap export --bundle <archive> --format postman --output-dir postman\n  wiretap report --bundle <archive> --policy coverage-policy.json\n\nOptions:\n", command, command)
+		fmt.Fprintf(flags.Output(), "Usage: wiretap %s --bundle <archive> [options]\n       wiretap %s --run-set <manifest.json> [--output coverage.json]\n\nRead a verified capture without replaying traffic. JSON is the default.\n\nExamples:\n  wiretap report --bundle <archive> --format text\n  wiretap export --bundle <archive> --format postman --output-dir postman\n  wiretap export --bundle <archive> --format arazzo --output-dir arazzo\n  wiretap report --bundle <archive> --policy coverage-policy.json\n\nOptions:\n", command, command)
 		flags.PrintDefaults()
 	}
 	if err := parseCommandFlags(flags, args); err != nil {
@@ -55,14 +55,14 @@ func reportCommand(command string, args []string) error {
 		return fmt.Errorf("%w: unexpected arguments: %v", errUsage, flags.Args())
 	}
 	format = strings.ToLower(strings.TrimSpace(format))
-	if policyPath != "" && (runSetPath != "" || format == "all" || format == "postman") {
+	if policyPath != "" && (runSetPath != "" || format == "all" || format == "postman" || format == "arazzo") {
 		return fmt.Errorf("%w: --policy requires one --bundle and json, yaml or text coverage", errUsage)
 	}
 	if policyPath != "" && outputPath != "" && sameCheckFile(policyPath, outputPath) {
 		return fmt.Errorf("%w: output must not replace the coverage policy", errUsage)
 	}
 	switch format {
-	case "json", "yaml", "text", "postman", "all":
+	case "json", "yaml", "text", "postman", "arazzo", "all":
 	default:
 		return fmt.Errorf("%w: unsupported format: %s", errUsage, format)
 	}
@@ -92,8 +92,8 @@ func reportCommand(command string, args []string) error {
 	if bundlePath == "" {
 		return fmt.Errorf("%w: --bundle is required", errUsage)
 	}
-	if outputDir != "" && format != "postman" {
-		return fmt.Errorf("%w: --output-dir is only for Postman exports", errUsage)
+	if outputDir != "" && format != "postman" && format != "arazzo" {
+		return fmt.Errorf("%w: --output-dir is only for Postman or Arazzo exports", errUsage)
 	}
 	if outputDir != "" && outputPath != "" {
 		return fmt.Errorf("%w: use either --output-dir or --output", errUsage)
@@ -114,6 +114,9 @@ func reportCommand(command string, args []string) error {
 	}
 	if format == "postman" {
 		return exportPostmanWithOptions(bundlePath, sutName, outputPath, outputDir, options)
+	}
+	if format == "arazzo" {
+		return exportArazzo(bundlePath, sutName, outputPath, outputDir)
 	}
 	if format == "all" {
 		if outputPath != "" || outputDir != "" || sutName != "" || includeArtifacts {

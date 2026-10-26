@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/mattlock83/wiretap/internal/arazzo"
 	"github.com/mattlock83/wiretap/internal/archiveoutput"
 	"github.com/mattlock83/wiretap/internal/bundle"
 	"github.com/mattlock83/wiretap/internal/coverage"
@@ -21,10 +22,13 @@ import (
 type Config struct {
 	Coverage       []string         `json:"coverage,omitempty" yaml:"coverage,omitempty"`
 	Postman        bool             `json:"postman,omitempty" yaml:"postman,omitempty"`
+	Arazzo         bool             `json:"arazzo,omitempty" yaml:"arazzo,omitempty"`
 	PostmanOptions *postman.Options `json:"postman_options,omitempty" yaml:"postman_options,omitempty"`
 }
 
-func Defaults() Config { return Config{Coverage: []string{"json", "text"}, Postman: true} }
+func Defaults() Config {
+	return Config{Coverage: []string{"json", "text"}, Postman: true, Arazzo: true}
+}
 func (c Config) Validate() error {
 	seen := map[string]bool{}
 	for _, format := range c.Coverage {
@@ -52,6 +56,8 @@ type Result struct {
 	Errors           []Diagnostic         `json:"errors"`
 	PostmanFiles     []string             `json:"postman_files,omitempty"`
 	PostmanOmissions []postman.Diagnostic `json:"postman_omissions,omitempty"`
+	Arazzo           string               `json:"arazzo,omitempty"`
+	ArazzoFiles      []string             `json:"arazzo_files,omitempty"`
 }
 
 // Generate keeps successful outputs available when another exporter fails. It
@@ -157,6 +163,38 @@ func Generate(ctx context.Context, archive string, cfg Config) (*Result, error) 
 						result.PostmanFiles = append(result.PostmanFiles, companions...)
 					}
 				}
+			}
+		}
+	}
+	if cfg.Arazzo {
+		if err := ctx.Err(); err != nil {
+			fail("arazzo", err)
+		} else {
+			generated, err := arazzo.Generate(root, "")
+			if err == nil && generated != nil && generated.Document != nil {
+				var data bytes.Buffer
+				err = arazzo.Write(&data, generated.Document)
+				companions := []string{}
+				if err == nil {
+					for _, companion := range generated.Files {
+						path := filepath.Join(root, "exports", "arazzo", filepath.FromSlash(companion.Path))
+						if err = writeOutput(path, companion.Data); err != nil {
+							break
+						}
+						companions = append(companions, path)
+					}
+				}
+				path := filepath.Join(root, "exports", "arazzo", "arazzo.json")
+				if err == nil {
+					err = writeOutput(path, data.Bytes())
+				}
+				if err == nil {
+					result.Arazzo = path
+					result.ArazzoFiles = companions
+				}
+			}
+			if err != nil {
+				fail("arazzo", err)
 			}
 		}
 	}

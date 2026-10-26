@@ -16,7 +16,7 @@ advisory latest receipt in the output parent; use the archive-local receipt
 when selecting a particular run. Preserve the complete run directory.
 
 After successful finalization, the Go, Jest, Mocha, Playwright and pytest runner
-adapters print the archive and exact configured coverage/Postman paths from the
+adapters print the archive and exact configured coverage, Postman and Arazzo paths from the
 completion receipt. JavaScript and Go use stderr; pytest uses its terminal
 reporter, including summaries from parallel workers. Low-level SDK calls return
 their receipts without printing these summaries. Failed tests keep their original
@@ -85,7 +85,7 @@ Text limits contract, operation and condition detail lists and names the omitted
 counts. JSON/YAML retain the complete report; truncation never changes totals.
 
 Save output files outside the capture archive or under its `exports/` directory.
-Reports and Postman exports reject destinations that replace raw recordings,
+Reports, Postman and Arazzo exports reject destinations that replace raw recordings,
 contracts, retained payloads or the manifest, including symlink and hardlink
 aliases. The archive's `exports/` directory must be a real directory; a source
 file stored there through an archive alias remains protected. These checks also
@@ -156,6 +156,52 @@ be truncated; older archives may also contain redaction metadata. Current
 capture retains synthetic data and dummy secrets unchanged.
 Exporting a report cannot restore omitted bytes. See
 [troubleshooting](troubleshooting.md) for capture limits and integrity errors.
+
+## Arazzo workflows
+
+Export captured JSON/REST requests as an Arazzo document and portable OpenAPI
+source files:
+
+```bash
+wiretap export --bundle ./artifacts/<run-id> --format arazzo \
+  --output-dir ./arazzo
+```
+
+The directory contains `arazzo.json` and its source companions. Keep them
+together so relative source URLs resolve. `--output ./arazzo/orders.json` chooses
+the document's filename and writes companions beside it. Use either `--output`
+or `--output-dir`. Stdout is available only when no source companions are needed.
+`wiretap report --format arazzo` accepts the same options.
+
+Each recorded attempt becomes a workflow for each eligible boundary: the SUT
+and dependencies marked `kind: mock`. Steps retain captured request order,
+request values and response status expectations. Retries remain separate
+workflows. These are observed test sequences; exporting them does not run them
+or infer data dependencies between steps.
+
+Workflow input defaults retain captured literals, including strings that resemble
+Arazzo expressions. Steps also retain the complete request headers in
+`x-wiretap-request-headers` and the captured URL in `x-wiretap-url`. Standard step
+parameters cover query values and supported declared path, header and cookie
+parameters. Configure authentication, content negotiation and server addresses
+in the consuming runner; frozen sources retain their declared server settings.
+Repeated or structured parameters, undeclared query parameters in frozen
+operations, and incomplete or altered JSON captures fail export with a diagnostic.
+
+Frozen OpenAPI contracts supply operation references when available. For a
+schema-free JSON API, the exporter creates an OpenAPI source describing observed
+operations and labels it as observed evidence. It does not infer contract
+constraints from examples. Nonempty request and response bodies require a JSON
+content type and valid JSON. Empty-body HTTP operations require a JSON content
+type or a matching frozen OpenAPI operation.
+Native gRPC and non-JSON traffic are excluded. A run with no eligible workflows
+does not produce an automatic Arazzo output.
+
+Select `outputs.arazzo: true` to generate `exports/arazzo/arazzo.json` at suite
+finalization. `exports/result.json` returns its exact path in `arazzo` and source
+paths in `arazzo_files`. `--format all` includes Arazzo when eligible JSON/REST
+traffic is present. Export errors are reported independently from coverage and
+Postman errors.
 
 ## Postman collections
 
@@ -303,6 +349,7 @@ The same options work in `.wiretap.yaml` for suite-finalization exports:
 outputs:
   coverage: [json, text]
   postman: true
+  arazzo: true
   postman_options:
     omit_incomplete: true
     grpc:
@@ -317,7 +364,8 @@ Here `proto_root` is relative to `.wiretap.yaml`. The automatic output receipt
 source paths, and `postman_omissions` with exact attempt/flow identities. Export
 errors remain under `errors`; coverage can succeed when Postman export fails.
 `coverage: [json, text]` writes both `coverage.json` and the compact `coverage.txt`.
-`--format all` defaults to those two formats plus Postman collections.
+`--format all` defaults to those two formats, Postman collections and eligible
+Arazzo workflows.
 `--format all` also accepts `--postman-config` and `--postman-omit-incomplete` for
 explicit regeneration with these settings.
 

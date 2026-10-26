@@ -55,7 +55,7 @@ and the [shared snapshot workflow](assumption-checks.md#share-provider-snapshots
 
 | Guide | Use it to |
 | --- | --- |
-| [Capture artifacts and exports](artifacts.md) | Read raw artifacts, a text summary, JSON/YAML coverage and Postman collections. |
+| [Capture artifacts and exports](artifacts.md) | Read raw artifacts, a text summary, JSON/YAML coverage, Postman collections and Arazzo workflows. |
 | [Assumption checks](assumption-checks.md) | Verify consumer examples and exercised HTTP/Protobuf declarations against provider tests, or check whether provider tests still support consumers. |
 | [Share provider snapshots](assumption-checks.md#share-provider-snapshots) | Organize complete runs by application, declare provider mappings and discover comparisons with `--artifacts`. |
 | [Contract coverage rules](contract-coverage-rules.md) | Understand condition keys, counts, evidence quality and measurement limits. |

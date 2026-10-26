@@ -41,6 +41,7 @@ func (r *Runtime) FinishRun(ctx context.Context) error {
 type OutputOptions struct {
 	Coverage       []string        `json:"coverage,omitempty"`
 	Postman        bool            `json:"postman,omitempty"`
+	Arazzo         bool            `json:"arazzo,omitempty"`
 	PostmanOptions *PostmanOptions `json:"postman_options,omitempty"`
 }
 type PostmanOptions struct {
@@ -53,6 +54,8 @@ type PostmanGRPCTarget struct {
 	ProtoFile string `json:"proto_file,omitempty"`
 }
 type OutputResult struct {
+	Arazzo           string   `json:"arazzo,omitempty"`
+	ArazzoFiles      []string `json:"arazzo_files,omitempty"`
 	PostmanFiles     []string `json:"postman_files,omitempty"`
 	PostmanOmissions []struct {
 		AttemptID string `json:"attempt_id"`

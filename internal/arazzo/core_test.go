@@ -1,0 +1,242 @@
+package arazzo
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/getkin/kin-openapi/openapi3"
+	"github.com/mattlock83/wiretap/internal/artifact"
+	"github.com/mattlock83/wiretap/internal/bundle"
+)
+
+func jsonFlow(id, method, address string) artifact.Flow {
+	return artifact.Flow{ID: id, Protocol: "http", Channel: "test_to_sut", StartedAt: time.Date(2026, 10, 26, 1, 0, 0, 0, time.UTC), Request: artifact.Message{HTTP: &artifact.HttpMessage{Method: method, URL: address}}, Response: artifact.Message{HTTP: &artifact.HttpMessage{Status: 200, Headers: artifact.Headers{"Content-Type": {"application/json"}}, Body: &artifact.Body{Text: `{"ok":true}`}}}}
+}
+
+func captureArchive(t *testing.T, schemas []artifact.SchemaRef, captures ...*artifact.Artifact) string {
+	t.Helper()
+	writer, err := bundle.NewAt(filepath.Join(t.TempDir(), "capture"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Configure(bundle.Identity{DependencyKinds: map[string]string{"inventory": "mock", "remote": "service"}}); err != nil {
+		t.Fatal(err)
+	}
+	for _, capture := range captures {
+		capture.Version = 2
+		frozen, err := writer.Register(capture.TestCase, schemas)
+		if err != nil {
+			t.Fatal(err)
+		}
+		capture.Schemas = frozen
+		if _, err := writer.Commit(capture); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := writer.Finalize("complete"); err != nil {
+		t.Fatal(err)
+	}
+	return writer.Path()
+}
+
+func TestObservedWorkflowsKeepAttemptsBoundariesAndLiterals(t *testing.T) {
+	one := jsonFlow("z-first", "POST", "http://sut/items?name=%24inputs.literal")
+	one.Request.HTTP.Headers = artifact.Headers{"Content-Type": {"application/json"}, "X-Test": {"{$steps.literal}"}, "Authorization": {"Bearer synthetic"}}
+	one.Request.HTTP.Body = &artifact.Body{Text: `{"id":18446744073709551615,"literal":"{$inputs.literal}"}`}
+	two := jsonFlow("a-second", "GET", "http://sut/items/%2F")
+	two.StartedAt = one.StartedAt.Add(time.Second)
+	two.Response.HTTP.Status = 404
+	mock := jsonFlow("mock", "GET", "http://inventory/items")
+	mock.Channel = "sut_to_dependency"
+	mock.AssetID = "inventory"
+	remote := mock
+	remote.ID = "external"
+	remote.AssetID = "remote"
+	first := &artifact.Artifact{TestCase: artifact.TestCase{ID: "retry-1", Name: "buys item", Status: "fail", StartedAt: one.StartedAt}, Traffic: []artifact.Flow{two, remote, one, mock}}
+	secondFlow := jsonFlow("retry", "GET", "http://sut/items")
+	second := &artifact.Artifact{TestCase: artifact.TestCase{ID: "retry-2", Name: "buys item", Status: "pass", StartedAt: one.StartedAt.Add(time.Minute)}, Traffic: []artifact.Flow{secondFlow}}
+	root := captureArchive(t, nil, second, first)
+	export, err := Generate(root, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(export.Document.Workflows) != 3 {
+		t.Fatalf("workflows: %+v", export.Document.Workflows)
+	}
+	var sut Workflow
+	for _, workflow := range export.Document.Workflows {
+		if workflow.AttemptID == "retry-1" && workflow.Boundary == "sut" {
+			sut = workflow
+		}
+	}
+	if len(sut.Steps) != 2 || sut.Steps[0].FlowID != "z-first" || sut.Steps[1].FlowID != "a-second" {
+		t.Fatalf("lost request start order: %+v", sut)
+	}
+	if sut.Steps[1].SuccessCriteria[0].Condition != "$statusCode == 404" {
+		t.Fatal("lost negative status expectation")
+	}
+	properties := sut.Inputs["properties"].(map[string]any)
+	var raw bytes.Buffer
+	if err := Write(&raw, export.Document); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(raw.String(), "18446744073709551615") || !strings.Contains(raw.String(), "{$inputs.literal}") {
+		t.Fatalf("lost literals: %s", raw.String())
+	}
+	if len(properties) != 3 {
+		t.Fatalf("expected query, header and body inputs: %+v", properties)
+	}
+	if sut.Steps[0].Headers["Authorization"][0] != "Bearer synthetic" {
+		t.Fatal("lost captured auth header extension")
+	}
+	assertPortableSources(t, export)
+	again, err := Generate(root, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var repeated bytes.Buffer
+	_ = Write(&repeated, again.Document)
+	if !bytes.Equal(raw.Bytes(), repeated.Bytes()) {
+		t.Fatal("export is not deterministic")
+	}
+}
+
+func assertPortableSources(t *testing.T, export *Export) {
+	t.Helper()
+	dir := t.TempDir()
+	for _, file := range export.Files {
+		path := filepath.Join(dir, filepath.FromSlash(file.Path))
+		if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, file.Data, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, source := range export.Document.Sources {
+		loader := openapi3.NewLoader()
+		loader.IsExternalRefsAllowed = true
+		doc, err := loader.LoadFromFile(filepath.Join(dir, filepath.FromSlash(source.URL)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := doc.Validate(context.Background()); err != nil {
+			t.Fatalf("invalid portable source: %v", err)
+		}
+	}
+}
+
+const frozenSchema = `openapi: 3.0.3
+info: {title: Items, version: "1"}
+servers: [{url: "https://production.invalid/api"}]
+paths:
+  /items/{id}:
+    get:
+      servers: [{url: "https://override.invalid/v2"}]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+        - {name: limit, in: query, schema: {type: integer}}
+        - {name: X-Mode, in: header, schema: {type: string}}
+        - {name: session, in: cookie, schema: {type: string}}
+      responses:
+        '204': {description: No content}
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {type: object}
+`
+
+func TestFrozenOpenAPIMapsLocalHostAndOperationServer(t *testing.T) {
+	flow := jsonFlow("read", "GET", "http://local.test/v2/items/42?limit=2")
+	flow.Request.HTTP.Headers = artifact.Headers{"X-Mode": {"fast"}, "cookie": {"session=synthetic"}}
+	flow.Response.HTTP = &artifact.HttpMessage{Status: 204}
+	root := captureArchive(t, []artifact.SchemaRef{{ID: "items", Role: "sut", Type: "openapi", Source: artifact.SchemaSource{Type: "inline", Content: frozenSchema}}}, &artifact.Artifact{TestCase: artifact.TestCase{ID: "test"}, Traffic: []artifact.Flow{flow}})
+	export, err := Generate(root, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if export.Document == nil {
+		t.Fatal("bodyless JSON REST operation skipped")
+	}
+	step := export.Document.Workflows[0].Steps[0]
+	if !strings.Contains(step.OperationPath, "~1items~1%7Bid%7D/get") {
+		t.Fatalf("incorrect path pointer: %s", step.OperationPath)
+	}
+	if len(step.Parameters) != 4 {
+		t.Fatalf("missing path/query/header/cookie inputs: %+v", step.Parameters)
+	}
+	assertPortableSources(t, export)
+}
+
+func TestExportRejectsUnrepresentableJSONCaptures(t *testing.T) {
+	for name, change := range map[string]func(*artifact.Artifact){
+		"incomplete":         func(a *artifact.Artifact) { a.CaptureIncomplete = true },
+		"transport":          func(a *artifact.Artifact) { a.Traffic[0].TransportError = "connection failed" },
+		"missing response":   func(a *artifact.Artifact) { a.Traffic[0].Response.HTTP = nil },
+		"truncated":          func(a *artifact.Artifact) { a.Traffic[0].Response.HTTP.Body.Truncated = true },
+		"omitted":            func(a *artifact.Artifact) { a.Traffic[0].Response.HTTP.Body.Omitted = true },
+		"invalid JSON":       func(a *artifact.Artifact) { a.Traffic[0].Response.HTTP.Body.Text = `{"invalid"` },
+		"duplicate JSON key": func(a *artifact.Artifact) { a.Traffic[0].Response.HTTP.Body.Text = `{"x":1,"x":2}` },
+		"two JSON values":    func(a *artifact.Artifact) { a.Traffic[0].Response.HTTP.Body.Text = `{} {}` },
+		"invalid UTF8": func(a *artifact.Artifact) {
+			a.Traffic[0].Response.HTTP.Body.Bytes = "Iv8i"
+			a.Traffic[0].Response.HTTP.Body.Text = ""
+		},
+		"repeated query": func(a *artifact.Artifact) { a.Traffic[0].Request.HTTP.URL += "?id=1&id=2" },
+		"ambiguous content type": func(a *artifact.Artifact) {
+			a.Traffic[0].Response.HTTP.Headers["content-type"] = []string{"application/xml"}
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			flow := jsonFlow("flow", "POST", "http://sut/items")
+			flow.Request.HTTP.Headers = artifact.Headers{"Content-Type": {"application/json"}}
+			flow.Request.HTTP.Body = &artifact.Body{Text: `{}`}
+			capture := &artifact.Artifact{TestCase: artifact.TestCase{ID: "test"}, Traffic: []artifact.Flow{flow}}
+			change(capture)
+			root := captureArchive(t, nil, capture)
+			if _, err := Generate(root, ""); err == nil {
+				t.Fatal("unrepresentable evidence was exported")
+			}
+		})
+	}
+}
+
+func TestExportSkipsNonJSONAndMergesObservedMediaTypes(t *testing.T) {
+	xml := jsonFlow("xml", "GET", "http://sut/xml")
+	xml.Response.HTTP.Headers["Content-Type"] = []string{"application/xml"}
+	xml.Response.HTTP.Body.Text = "<ok/>"
+	flow := jsonFlow("one", "POST", "http://sut/items")
+	flow.Request.HTTP.Headers = artifact.Headers{"Content-Type": {"application/json"}}
+	flow.Request.HTTP.Body = &artifact.Body{Text: `null`}
+	two := jsonFlow("two", "POST", "http://sut/items")
+	two.Request.HTTP.Headers = artifact.Headers{"Content-Type": {"application/problem+json"}}
+	two.Request.HTTP.Body = &artifact.Body{Text: `{}`}
+	root := captureArchive(t, nil, &artifact.Artifact{TestCase: artifact.TestCase{ID: "test"}, Traffic: []artifact.Flow{xml, flow, two}})
+	export, err := Generate(root, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(export.Document.Workflows[0].Steps) != 2 {
+		t.Fatal("non-JSON included")
+	}
+	var source map[string]any
+	if err := json.Unmarshal(export.Files[0].Data, &source); err != nil {
+		t.Fatal(err)
+	}
+	content := source["paths"].(map[string]any)["/items"].(map[string]any)["post"].(map[string]any)["requestBody"].(map[string]any)["content"].(map[string]any)
+	if len(content) != 2 {
+		t.Fatalf("request media overwritten: %+v", content)
+	}
+	assertPortableSources(t, export)
+	root = captureArchive(t, nil, &artifact.Artifact{TestCase: artifact.TestCase{ID: "xml"}, Traffic: []artifact.Flow{xml}})
+	if export, err := Generate(root, ""); err != nil || export.Document != nil || len(export.Files) != 0 {
+		t.Fatalf("non-JSON output: %+v, %v", export, err)
+	}
+}

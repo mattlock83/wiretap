@@ -34,6 +34,7 @@ overrides the configuration's export selection:
 Outputs: &wiretap.OutputOptions{
     Coverage: []string{"json", "text"},
     Postman:  true,
+    Arazzo:   true,
 },
 ```
 

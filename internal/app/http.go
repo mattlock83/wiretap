@@ -48,7 +48,7 @@ func (a *App) handleCapabilities(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"api_version": "1.0", "producer": version.Current(),
-		"capabilities": []string{"capture.http", "capture.grpc", "outputs.coverage", "outputs.postman", "test.identity", "run.finalize"},
+		"capabilities": []string{"capture.http", "capture.grpc", "outputs.coverage", "outputs.postman", "outputs.arazzo", "test.identity", "run.finalize"},
 	})
 }
 

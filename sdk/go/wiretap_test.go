@@ -171,17 +171,17 @@ func TestFinishRunWithOutputsPreservesAvailablePathsOnExportFailure(t *testing.T
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 			t.Error(err)
 		}
-		if payload.Outputs == nil || !payload.Outputs.Postman {
+		if payload.Outputs == nil || !payload.Outputs.Postman || !payload.Outputs.Arazzo {
 			t.Error("missing output selection")
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusConflict)
-		fmt.Fprint(w, `{"bundle_path":"/capture/run","outputs":{"coverage":{"json":"/capture/run/exports/coverage.json"},"postman":[],"errors":[{"format":"postman","message":"incomplete capture"}]}}`)
+		fmt.Fprint(w, `{"bundle_path":"/capture/run","outputs":{"coverage":{"json":"/capture/run/exports/coverage.json"},"postman":[],"arazzo":"/capture/run/exports/arazzo/arazzo.json","arazzo_files":["/capture/run/exports/arazzo/schemas/orders.json"],"errors":[{"format":"postman","message":"incomplete capture"}]}}`)
 	}))
 	defer server.Close()
 	runtime := Runtime{BaseURL: server.URL}
-	result, err := runtime.FinishRunWithOutputs(t.Context(), &OutputOptions{Coverage: []string{"json"}, Postman: true})
-	if err == nil || result.BundlePath != "/capture/run" || result.Outputs == nil || result.Outputs.Coverage["json"] == "" || len(result.Outputs.Errors) != 1 {
+	result, err := runtime.FinishRunWithOutputs(t.Context(), &OutputOptions{Coverage: []string{"json"}, Postman: true, Arazzo: true})
+	if err == nil || result.BundlePath != "/capture/run" || result.Outputs == nil || result.Outputs.Coverage["json"] == "" || result.Outputs.Arazzo != "/capture/run/exports/arazzo/arazzo.json" || len(result.Outputs.ArazzoFiles) != 1 || len(result.Outputs.Errors) != 1 {
 		t.Fatalf("lost export error or available outputs: %+v %v", result, err)
 	}
 }
