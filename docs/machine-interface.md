@@ -29,6 +29,13 @@ Text reports show bounded samples with omitted counts. Use JSON for complete
 check and baseline diagnostics, or JSON/YAML for complete coverage data. Display
 limits do not change measured totals or check verdicts.
 
+HTML is a derived offline dashboard.
+`wiretap report --coverage-json <json> --format html --output report.html`
+renders the complete coverage JSON envelope;
+optional repeated `--spec` files and `--arazzo` add supplementary embedded
+sources. This mode does not remeasure coverage or verify compatibility, fetch
+references or execute workflows. See [dashboard inputs](artifacts.md#offline-html-dashboard).
+
 ## Versions and producer
 
 `bundle.json` retains raw format `3.1` and required-capability declarations.

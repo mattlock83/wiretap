@@ -515,7 +515,7 @@ or an excluded provider attempt beside a usable passing attempt. Arazzo has no
 omit-incomplete mode. A passing provider witness cannot bypass that export
 failure.
 
-Set `outputs: {coverage: [json, text], arazzo: true}` in both projects to produce
+Set `outputs: {coverage: [json, text, html], arazzo: true}` in both projects to produce
 these inputs automatically. Shared-store and run-set checks use each member's
 default export location;
 explicit Arazzo path overrides apply only to an explicit pair.
@@ -535,7 +535,7 @@ application: {id: inventory-service, name: Inventory}
 sut_source:
   version: '${INVENTORY_VERSION}'
   revision: '${INVENTORY_REVISION}'
-outputs: {coverage: [json, text], arazzo: true}
+outputs: {coverage: [json, text, html], arazzo: true}
 sut:
   id: inventory-http
   url: ${INVENTORY_SERVICE_URL}
@@ -549,7 +549,7 @@ HTTP mock to that provider:
 ```yaml
 version: 1
 application: {id: orders-service, name: Orders}
-outputs: {coverage: [json, text], arazzo: true}
+outputs: {coverage: [json, text, html], arazzo: true}
 sut:
   id: orders-http
   url: ${ORDERS_SERVICE_URL}

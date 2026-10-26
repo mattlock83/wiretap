@@ -83,7 +83,7 @@ export interface Runtime {
   report(options?: { bundlePath?: string }): Promise<CaptureResponse>;
   finishRun(options?: { outputs?: OutputOptions }): Promise<CaptureResponse>;
 }
-export interface OutputOptions { coverage?: ('json' | 'yaml' | 'text')[]; arazzo?: boolean; }
+export interface OutputOptions { coverage?: ('json' | 'yaml' | 'text' | 'html')[]; arazzo?: boolean; }
 export interface OutputResult {
   bundle_path: string;
   coverage: Record<string, string>;

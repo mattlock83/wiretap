@@ -16,12 +16,15 @@ import (
 )
 
 func TestCLIOutputsProtectDirectlyReferencedExportPayloads(t *testing.T) {
-	for _, target := range []string{"report", "report hardlink", "arazzo", "all coverage", "all arazzo", "all receipt"} {
+	for _, target := range []string{"report", "report hardlink", "arazzo", "all coverage", "all html", "all arazzo", "all receipt"} {
 		t.Run(target, func(t *testing.T) {
 			root := httpBundleFixture(t)
 			relative := filepath.Join("exports", "coverage.json")
 			if target == "all receipt" {
 				relative = filepath.Join("exports", "result.json")
+			}
+			if target == "all html" {
+				relative = filepath.Join("exports", "coverage.html")
 			}
 			if target == "all arazzo" {
 				relative = filepath.Join("exports", "arazzo", "arazzo.json")
@@ -39,7 +42,7 @@ func TestCLIOutputsProtectDirectlyReferencedExportPayloads(t *testing.T) {
 			if target == "arazzo" {
 				args = []string{"export", "--bundle", root, "--format", "arazzo", "--output", output}
 			}
-			if target == "all coverage" || target == "all arazzo" || target == "all receipt" {
+			if target == "all coverage" || target == "all html" || target == "all arazzo" || target == "all receipt" {
 				args = []string{"report", "--bundle", root, "--format", "all"}
 			}
 			if code := execute(context.Background(), args); code == 0 {
@@ -115,7 +118,7 @@ func relocateHTTPBodyReference(t *testing.T, root, relative string) []byte {
 
 func TestCLICoverageOutputProtectsEvidence(t *testing.T) {
 	for _, command := range []string{"report", "export"} {
-		for _, format := range []string{"json", "yaml", "text"} {
+		for _, format := range []string{"json", "yaml", "text", "html"} {
 			for _, target := range []string{"manifest", "attempt", "directory alias", "leaf symlink", "hardlink"} {
 				t.Run(command+"/"+format+"/"+target, func(t *testing.T) {
 					root := httpBundleFixture(t)

@@ -122,7 +122,7 @@ const existing: JestConfig = { testEnvironment: 'node', reporters: ['default'] }
 const configured: JestConfig = withWiretap(existing, {
   binary: 'wiretap', config: '.wiretap.yaml', outputDir: 'artifacts',
   app: '<rootDir>/app.cjs',
-  capture: { schemaRequired: false, outputs: { coverage: ['json', 'text'], arazzo: true } },
+  capture: { schemaRequired: false, outputs: { coverage: ['json', 'text', 'html'], arazzo: true } },
 });
 void configured;
 
@@ -188,7 +188,7 @@ try {
   await Promise.all([
     write('jest.config.cjs', `module.exports = require('@wiretap/sdk/jest').withWiretap({
       testMatch: ['**/outcomes.spec.cjs'], transform: {}, globalSetup: './setup.cjs', globalTeardown: './teardown.cjs'
-    }, { app: '<rootDir>/app.cjs', capture: { outputs: { coverage: ['json', 'text'], arazzo: true } } });\n`),
+    }, { app: '<rootDir>/app.cjs', capture: { outputs: { coverage: ['json', 'text', 'html'], arazzo: true } } });\n`),
     write('setup.cjs', marker + `module.exports = async () => { mark('setup'); process.env.USER_SETUP = 'ready'; };\n`),
     write('teardown.cjs', marker + `module.exports = async () => { mark('teardown'); };\n`),
     write('outcomes.spec.cjs', `
@@ -241,11 +241,16 @@ try {
   assert.ok(named('cleanup failure').every(testcase => testcase.status === 'fail'), `${runner} lost the cleanup outcome`);
   assert.match(await fs.readFile(receipt.outputs.coverage.text, 'utf8'), /smoke-api: 1\/1 operations exercised/);
   assert.ok(await readJSON(receipt.outputs.coverage.json));
+  assert.equal(path.basename(receipt.outputs.coverage.html), 'coverage.html');
+  const dashboard = await fs.readFile(receipt.outputs.coverage.html, 'utf8');
+  assert.match(dashboard, /<title>[^<]*Wiretap/);
+  assert.match(dashboard, /data-wiretap-report="coverage"/);
+  assert.ok(dashboard.includes('Contract coverage') && dashboard.includes('Test runs'), 'HTML omitted coverage or per-test navigation');
   const document = validateArazzo(await readJSON(receipt.outputs.arazzo));
   const requests = assertCapturedArazzo(document, attempts, receipt.bundle_path, receipt.outputs.arazzo);
   assert.ok(receipt.outputs.arazzo_files.length > 0);
   assert.ok(requests >= cases.length * 3, `${runner}: missing setup, body or cleanup traffic (${requests} requests)`);
-  console.log(`${runner}: clean package, existing hooks, retry, cleanup failure, ${cases.length} attempts, coverage and ${requests} Arazzo requests verified`);
+  console.log(`${runner}: clean package, existing hooks, retry, cleanup failure, ${cases.length} attempts, HTML/JSON coverage and ${requests} Arazzo requests verified`);
   console.log('Jest packed SDK smoke passed; no packages published.');
 } catch (error) {
   if (lastRunnerResult) console.error(`${lastRunnerResult.runner} output:\n${lastRunnerResult.stderr}\n${lastRunnerResult.stdout}`);

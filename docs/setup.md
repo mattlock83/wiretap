@@ -9,7 +9,7 @@ wiretap doctor
 ```
 
 `init` creates `.wiretap.yaml` with application identity, a provided API named
-`sut`, and automatic JSON/text coverage and Arazzo exports. The schema path is
+`sut`, and automatic JSON/text/HTML coverage and Arazzo exports. The schema path is
 relative to that configuration file. It creates no test runners, mocks, schemas
 or application processes. Add dependencies and adjust API identity in the
 ordinary [project configuration](configuration.md).

@@ -63,11 +63,12 @@ unknown contract coverage. A matching passing provider test is still required.
 
 `report` and `export` read and verify captured evidence, frozen contracts and
 retained payloads. They work offline without the original workspace or servers.
-Both default to JSON coverage. Start with the compact text summary, and use
-JSON/YAML for machine processing:
+Both default to JSON coverage. Start with the compact text summary or HTML
+dashboard, and use JSON/YAML for machine processing:
 
 ```bash
 wiretap report --bundle ./artifacts/<run-id> --format text
+wiretap report --bundle ./artifacts/<run-id> --format html --output coverage.html
 wiretap report --bundle ./artifacts/<run-id> --output coverage.json
 wiretap export --bundle ./artifacts/<run-id> --format yaml --output coverage.yaml
 ```
@@ -153,6 +154,49 @@ capture retains synthetic data and dummy secrets unchanged.
 Exporting a report cannot restore omitted bytes. See
 [troubleshooting](troubleshooting.md) for capture limits and integrity errors.
 
+## Offline HTML dashboard
+
+Automatic coverage outputs include `exports/coverage.html`. Open it directly in
+a browser. The self-contained dashboard needs no report server, external scripts
+or network requests. It shows operation and contract-condition coverage,
+measurement gaps, test outcomes, captured HTTP traffic and Arazzo workflows.
+Coverage evidence links conditions back to the test attempts and flows that
+exercised them. Tests and API contract validation retain their separate results.
+
+Rebuild it from a complete archive:
+
+```sh
+wiretap report --bundle ./artifacts/<run-id> --format html --output coverage.html
+```
+
+Or render the exported Wiretap coverage JSON, optionally supplying OpenAPI specs
+and an Arazzo document:
+
+```sh
+wiretap report --coverage-json ./coverage.json \
+  --spec ./orders.openapi.yaml --spec ./inventory.openapi.yaml \
+  --arazzo ./arazzo/arazzo.json --format html --output report.html
+```
+
+`--spec` is repeatable. Specs and Arazzo are optional supplementary sources;
+coverage JSON supplies the measured counts, conditions and test evidence.
+Standalone rendering does not recalculate coverage or certify consumer/provider
+compatibility. Supplied files are embedded safely without fetching remote
+references or executing workflows. Keep the complete JSON report when sharing
+these inputs; the text summary deliberately omits detail.
+
+Archive rendering derives workflows from the verified Wiretap JSON and frozen
+specs, so it does not require a pre-existing Arazzo export. If eligible traffic
+cannot be represented as Arazzo, the dashboard retains HTTP coverage and test
+evidence and reports the workflow limitation. Non-JSON traffic remains visible
+even when it has no Arazzo workflow. Body availability, truncation and other
+measurement limits remain explicit; rendering cannot recover omitted bytes.
+
+The earlier dashboard was removed in commit
+[`b793fa5`](https://github.com/mattlock83/wiretap/commit/b793fa525c31275bd4e05c0bea20383e9664e021),
+“Remove OKF generation and publication.” This implementation restores reporting
+directly over Wiretap JSON, specs and Arazzo.
+
 ## Arazzo workflows
 
 Export captured JSON/REST requests as an Arazzo document and portable OpenAPI
@@ -218,12 +262,12 @@ selected boundary cannot be silently excluded from a passing check. See
 [Arazzo check inputs](assumption-checks.md#arazzo-check-inputs)
 for explicit paths, shared-store and run-set usage.
 
-Automatic exports default to JSON/text coverage and eligible Arazzo workflows.
+Automatic exports default to JSON/text/HTML coverage and eligible Arazzo workflows.
 Configure them explicitly with:
 
 ```yaml
 outputs:
-  coverage: [json, text]
+  coverage: [json, text, html]
   arazzo: true
 ```
 

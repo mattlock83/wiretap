@@ -48,7 +48,7 @@ Use an explicit outputs configuration:
 
 ```yaml
 outputs:
-  coverage: [json, text]
+  coverage: [json, text, html]
   arazzo: true
 ```
 

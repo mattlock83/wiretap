@@ -98,7 +98,7 @@ Start the capture API; run tests with your existing test framework.
 Commands:
   init       Create a project configuration
   doctor     Check local capture setup
-  report     Measure coverage from a capture or run set
+  report     Report coverage from captures or exported JSON
   export     Export coverage or Arazzo workflows
   check      Check consumer/provider compatibility
   run-set    Group captures from one application build

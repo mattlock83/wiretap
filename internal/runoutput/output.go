@@ -15,6 +15,7 @@ import (
 	"github.com/mattlock83/wiretap/internal/archiveoutput"
 	"github.com/mattlock83/wiretap/internal/bundle"
 	"github.com/mattlock83/wiretap/internal/coverage"
+	"github.com/mattlock83/wiretap/internal/htmlreport"
 	"github.com/mattlock83/wiretap/internal/version"
 )
 
@@ -24,12 +25,12 @@ type Config struct {
 }
 
 func Defaults() Config {
-	return Config{Coverage: []string{"json", "text"}, Arazzo: true}
+	return Config{Coverage: []string{"json", "text", "html"}, Arazzo: true}
 }
 func (c Config) Validate() error {
 	seen := map[string]bool{}
 	for _, format := range c.Coverage {
-		if format != "json" && format != "yaml" && format != "text" {
+		if format != "json" && format != "yaml" && format != "text" && format != "html" {
 			return fmt.Errorf("outputs.coverage: unsupported format %q", format)
 		}
 		if seen[format] {
@@ -90,7 +91,16 @@ func Generate(ctx context.Context, archive string, cfg Config) (*Result, error) 
 		} else {
 			for _, format := range cfg.Coverage {
 				var data bytes.Buffer
-				err := coverage.WriteReport(&data, report, format)
+				var err error
+				if format == "html" {
+					var inputs htmlreport.Inputs
+					inputs, err = htmlreport.Archive(ctx, root, "", false)
+					if err == nil {
+						err = htmlreport.Write(&data, inputs)
+					}
+				} else {
+					err = coverage.WriteReport(&data, report, format)
+				}
 				extension := format
 				if format == "text" {
 					extension = "txt"

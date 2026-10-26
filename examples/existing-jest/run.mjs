@@ -81,6 +81,11 @@ assert.equal(attempts.filter(test => test.capture.testcase.status === 'fail').le
 assert.equal(new Set(attempts.map(test => test.capture.testcase.identity.id)).size, 120, 'distinct tests need distinct identities');
 const summary = await fs.readFile(receipt.outputs.coverage.text, 'utf8');
 assert.match(summary, /property-api: 10\/10 operations exercised/);
+assert.equal(path.basename(receipt.outputs.coverage.html), 'coverage.html');
+const dashboard = await fs.readFile(receipt.outputs.coverage.html, 'utf8');
+assert.match(dashboard, /<title>[^<]*Wiretap/);
+assert.match(dashboard, /data-wiretap-report="coverage"/);
+assert.ok(dashboard.includes('Contract coverage') && dashboard.includes('Test runs'), 'HTML omitted coverage or per-test navigation');
 const require = createRequire(path.join(project, 'package.json'));
 const validateArazzo = createArazzoValidator(require('ajv/dist/2020'));
 const document = validateArazzo(await readJSON(receipt.outputs.arazzo));
@@ -88,5 +93,6 @@ const requestCount = assertCapturedArazzo(document, attempts, receipt.bundle_pat
 assert.ok(requestCount >= 120);
 console.log(`Unchanged: 120 tests, 63 passed, 57 upstream failures. All 10 API operations captured.`);
 console.log(`Official Arazzo schema validated ${requestCount} requests; requests and success criteria match captured evidence.`);
+console.log(`HTML report: ${receipt.outputs.coverage.html}`);
 console.log(`Receipt: ${path.join(project, 'artifacts/wiretap/last-run.json')}`);
 console.log(summary);

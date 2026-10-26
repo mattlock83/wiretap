@@ -14,6 +14,7 @@ import (
 	"github.com/mattlock83/wiretap/internal/archiveoutput"
 	"github.com/mattlock83/wiretap/internal/assumptions"
 	"github.com/mattlock83/wiretap/internal/coverage"
+	"github.com/mattlock83/wiretap/internal/htmlreport"
 	"github.com/mattlock83/wiretap/internal/runoutput"
 	"github.com/mattlock83/wiretap/internal/runset"
 	"github.com/mattlock83/wiretap/internal/schemajson"
@@ -33,14 +34,19 @@ func reportCommand(command string, args []string) error {
 	var outputDir string
 	var format string
 	var includeArtifacts bool
+	var coverageJSON, arazzoPath string
+	var specPaths checkValues
 	flags.StringVar(&bundlePath, "bundle", "", "capture bundle directory")
+	flags.StringVar(&coverageJSON, "coverage-json", "", "existing Wiretap coverage JSON input for an offline HTML report")
+	flags.Var(&specPaths, "spec", "local OpenAPI source file to embed in an HTML report (repeatable; requires --coverage-json)")
+	flags.StringVar(&arazzoPath, "arazzo", "", "local Arazzo JSON file to embed in an HTML report (requires --coverage-json)")
 	flags.StringVar(&sutName, "sut-name", "", "SUT name in the report or Arazzo workflow document")
 	flags.StringVar(&outputPath, "output", "", "output file path; additional export files are written alongside the primary file (default: stdout)")
 	flags.StringVar(&outputDir, "output-dir", "", "Arazzo export output directory")
-	flags.StringVar(&format, "format", "json", "output format: json, yaml, text, arazzo, all")
+	flags.StringVar(&format, "format", "json", "output format: json, yaml, text, html, arazzo, all")
 	flags.BoolVar(&includeArtifacts, "include-artifacts", false, "include artifact file paths in the report")
 	flags.Usage = func() {
-		fmt.Fprintf(flags.Output(), "Usage: wiretap %s --bundle <archive> [options]\n       wiretap %s --run-set <manifest.json> [--output coverage.json]\n\nRead a verified capture without replaying traffic. JSON is the default.\n\nExamples:\n  wiretap report --bundle <archive> --format text\n  wiretap export --bundle <archive> --format arazzo --output-dir arazzo\n  wiretap report --bundle <archive> --policy coverage-policy.json\n\nOptions:\n", command, command)
+		fmt.Fprintf(flags.Output(), "Usage: wiretap %s --bundle <archive> [options]\n       wiretap %s --coverage-json <coverage.json> --format html [--spec <openapi.yaml>] [--arazzo <arazzo.json>]\n       wiretap %s --run-set <manifest.json> [--output coverage.json]\n\nRead captured evidence without replaying traffic. JSON is the default.\n\nExamples:\n  wiretap report --bundle <archive> --format html --output coverage.html\n  wiretap export --bundle <archive> --format arazzo --output-dir arazzo\n  wiretap report --bundle <archive> --policy coverage-policy.json\n\nOptions:\n", command, command, command)
 		flags.PrintDefaults()
 	}
 	if err := parseCommandFlags(flags, args); err != nil {
@@ -50,16 +56,22 @@ func reportCommand(command string, args []string) error {
 		return fmt.Errorf("%w: unexpected arguments: %v", errUsage, flags.Args())
 	}
 	format = strings.ToLower(strings.TrimSpace(format))
-	if policyPath != "" && (runSetPath != "" || format == "all" || format == "arazzo") {
-		return fmt.Errorf("%w: --policy requires one --bundle and json, yaml or text coverage", errUsage)
+	if policyPath != "" && (runSetPath != "" || format == "all" || format == "arazzo" || coverageJSON != "") {
+		return fmt.Errorf("%w: --policy requires one --bundle and json, yaml, text or html coverage", errUsage)
 	}
 	if policyPath != "" && outputPath != "" && sameCheckFile(policyPath, outputPath) {
 		return fmt.Errorf("%w: output must not replace the coverage policy", errUsage)
 	}
 	switch format {
-	case "json", "yaml", "text", "arazzo", "all":
+	case "json", "yaml", "text", "html", "arazzo", "all":
 	default:
 		return fmt.Errorf("%w: unsupported format: %s", errUsage, format)
+	}
+	if coverageJSON != "" || len(specPaths) > 0 || arazzoPath != "" {
+		if coverageJSON == "" || format != "html" || bundlePath != "" || runSetPath != "" || outputDir != "" || sutName != "" || includeArtifacts {
+			return fmt.Errorf("%w: --coverage-json, --spec and --arazzo require standalone --format html; do not combine them with --bundle, --run-set or archive options", errUsage)
+		}
+		return exportHTMLFiles(htmlreport.Files{Coverage: coverageJSON, Specs: specPaths, Arazzo: arazzoPath}, outputPath)
 	}
 	if runSetPath != "" {
 		if bundlePath != "" || format != "json" || outputDir != "" || sutName != "" || includeArtifacts {
@@ -109,7 +121,15 @@ func reportCommand(command string, args []string) error {
 		}
 		return exportErr
 	}
-	report, err := coverage.Generate(context.Background(), bundlePath, sutName, includeArtifacts)
+	var report *coverage.Report
+	var htmlInputs htmlreport.Inputs
+	var err error
+	if format == "html" {
+		htmlInputs, err = htmlreport.Archive(context.Background(), bundlePath, sutName, includeArtifacts)
+		report = htmlInputs.Report
+	} else {
+		report, err = coverage.Generate(context.Background(), bundlePath, sutName, includeArtifacts)
+	}
 	if err != nil {
 		return err
 	}
@@ -131,6 +151,9 @@ func reportCommand(command string, args []string) error {
 		}
 	}
 	if outputPath == "" {
+		if format == "html" {
+			return errors.Join(htmlreport.Write(os.Stdout, htmlInputs), verdict)
+		}
 		return errors.Join(coverage.WriteReport(os.Stdout, report, format), verdict)
 	}
 	guard, err := archiveoutput.New(bundlePath)
@@ -142,7 +165,12 @@ func reportCommand(command string, args []string) error {
 		return err
 	}
 	var data bytes.Buffer
-	if err := coverage.WriteReport(&data, report, format); err != nil {
+	if format == "html" {
+		err = htmlreport.Write(&data, htmlInputs)
+	} else {
+		err = coverage.WriteReport(&data, report, format)
+	}
+	if err != nil {
 		return err
 	}
 	return errors.Join(writeArchiveReport(outputPath, data.Bytes()), verdict)

@@ -36,7 +36,7 @@ the API contract and exports in `.wiretap.yaml`:
 version: 1
 application: {id: my-api}
 output_dir: artifacts/wiretap
-outputs: {coverage: [json, text], arazzo: true}
+outputs: {coverage: [json, text, html], arazzo: true}
 sut:
   id: my-api
   kind: service
@@ -82,6 +82,10 @@ bounded `wiretap.log`. The receipt gives the exact archive, coverage report and
 Arazzo workflow paths. Keep the complete output directory in CI, including
 failed runs. The output-root `last-run.json` remains an advisory latest snapshot;
 concurrent owners retain independent records inside their archives.
+Coverage defaults to JSON, text and HTML. Open the receipt's
+`outputs.coverage.html` directly in a browser to inspect API coverage and the
+test runs behind each condition. The dashboard works offline. The coverage JSON
+can also [rebuild it with specs and Arazzo](https://github.com/mattlock83/wiretap/blob/main/docs/artifacts.md#offline-html-dashboard).
 Framework results and API contract violations are reported separately.
 If capture cleanup also fails after a test failure, Jest reports both errors
 while retaining the original framework failure first.
@@ -129,7 +133,7 @@ yourself. The selective `createJestSuite` wrapper supports async test callbacks;
 the automatic adapter above supports Jest's existing callback forms.
 
 The [pinned external Express/Jest demo](https://github.com/mattlock83/wiretap/tree/main/examples/existing-jest)
-verifies all 120 existing outcomes before and after capture, API coverage and
+verifies all 120 existing outcomes before and after capture, HTML/JSON API coverage and
 Arazzo conformance to its pinned official schema, with exported
 eligible JSON/REST workflow requests and success criteria compared against raw
 archive records and payload files. Non-JSON calls remain in the archive.

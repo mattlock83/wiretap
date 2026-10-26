@@ -14,7 +14,8 @@ still apply. Register specs even for APIs whose operations were not exercised;
 Wiretap cannot discover APIs you never register.
 
 `wiretap report --bundle <path>` calculates a JSON report from verified evidence.
-Use `--format yaml` for YAML and `--output <file>` to save it. The report
+Use `--format yaml` for YAML, or `--format html --output report.html` for an
+offline dashboard with coverage evidence linked to test runs. The report
 contains a per-spec catalogue under `contract_coverage`: keys, counts, violations,
 request/response combinations and exact attempt/flow evidence references.
 `wiretap export` supports the same coverage formats. These reports are derived

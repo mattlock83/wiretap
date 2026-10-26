@@ -18,7 +18,7 @@ From this checkout, with Go 1.26+ and Node 22+:
 node examples/existing-jest/run.mjs
 ```
 
-The [Express/Jest demo](examples/existing-jest/README.md) builds Wiretap, installs the local SDK and captures 120 existing tests. It verifies that their original outcomes remain intact and checks coverage and Arazzo outputs. It publishes nothing.
+The [Express/Jest demo](examples/existing-jest/README.md) builds Wiretap, installs the local SDK and captures 120 existing tests. It verifies that their original outcomes remain intact and checks HTML/JSON coverage and Arazzo outputs. It publishes nothing.
 
 ## Add it to your Jest suite
 
@@ -44,7 +44,7 @@ Point the shared client at capture, for example `supertest(process.env.WIRETAP_S
 version: 1
 application: {id: orders-app, name: Orders}
 output_dir: artifacts/wiretap
-outputs: {coverage: [json, text], arazzo: true}
+outputs: {coverage: [json, text, html], arazzo: true}
 sut:
   id: orders
   kind: service
@@ -62,6 +62,7 @@ For parallel tests sharing an application, propagate W3C trace context through i
 | `bundle.json`, `tests/`, `contracts/`, `payloads/` | Captured requests/responses, final outcomes, validation diagnostics and frozen contracts. |
 | `exports/coverage.txt` | Compact outcomes, exercised operations, gaps and unknowns. |
 | `exports/coverage.json` | Detailed operation and contract-condition evidence. |
+| `exports/coverage.html` | Offline dashboard with API coverage, gaps and linked test runs. |
 | `exports/arazzo/arazzo.json` and companions | JSON/REST workflows with portable OpenAPI sources. |
 | `exports/result.json` | Exact export paths and errors. |
 | `last-run.json`, `wiretap.log` inside the run | Managed completion receipt and bounded runtime log. |
@@ -70,9 +71,12 @@ Retain the complete run directory. Use the archive path returned by the adapter;
 
 ```sh
 wiretap report --bundle ./artifacts/wiretap/run-... --format text
+wiretap report --bundle ./artifacts/wiretap/run-... --format html --output report.html
 wiretap export --bundle ./artifacts/wiretap/run-... --format all
 wiretap export --bundle ./artifacts/wiretap/run-... --format arazzo --output-dir ./arazzo
 ```
+
+Open `exports/coverage.html` directly in a browser. You can also [rebuild the dashboard from coverage JSON, specs and Arazzo](docs/artifacts.md#offline-html-dashboard) without the runtime or original workspace.
 
 Arazzo exports supported JSON/REST workflows. Incomplete or unrepresentable eligible traffic can make export fail; retained raw evidence remains available. See [artifacts and exports](docs/artifacts.md) and the [machine interface](docs/machine-interface.md).
 

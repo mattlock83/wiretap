@@ -27,6 +27,7 @@ The main HTTP API requires OpenAPI by default. Dependency contracts are optional
 | Guide | Purpose |
 | --- | --- |
 | [Artifacts and exports](artifacts.md) | Read raw archives, coverage and Arazzo workflows. |
+| [Offline HTML dashboard](artifacts.md#offline-html-dashboard) | Browse coverage by API and test, or rebuild from JSON, specs and Arazzo. |
 | [Assumption checks](assumption-checks.md) | Compare consumer/provider examples and exercised rules. |
 | [Shared snapshots](assumption-checks.md#share-provider-snapshots) | Map providers and select unambiguous snapshots. |
 | [Contract coverage rules](contract-coverage-rules.md) | Understand condition keys, counts and limits. |

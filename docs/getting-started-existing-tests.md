@@ -49,7 +49,7 @@ Add `.wiretap.yaml` to your test project:
 version: 1
 application: {id: orders-service, name: Orders}
 output_dir: artifacts/wiretap
-outputs: {coverage: [json, text], arazzo: true}
+outputs: {coverage: [json, text, html], arazzo: true}
 sut:
   id: orders-http
   kind: service
@@ -115,6 +115,7 @@ complete run directory, including failed test attempts:
 | `contracts/` | Frozen OpenAPI contracts and their imports. |
 | `payloads/` | Retained request and response bytes. |
 | `exports/coverage.json` and `coverage.txt` | API and contract-condition coverage. |
+| `exports/coverage.html` | Offline API coverage and test-run dashboard. |
 | `exports/arazzo/` | Eligible JSON/REST workflows and OpenAPI source companions. |
 | `last-run.json` and `wiretap.log` | This run's receipt and bounded runtime log. |
 
@@ -122,8 +123,12 @@ Read a compact report or regenerate the standard exports offline:
 
 ```sh
 wiretap report --bundle ./artifacts/wiretap/<run-id> --format text
+wiretap report --bundle ./artifacts/wiretap/<run-id> --format html --output report.html
 wiretap export --bundle ./artifacts/wiretap/<run-id> --format all
 ```
+
+Open `exports/coverage.html` directly in a browser. To rebuild it from coverage
+JSON with optional specs and workflows, see the [offline HTML dashboard](artifacts.md#offline-html-dashboard).
 
 Arazzo excludes non-JSON HTTP traffic, and incomplete eligible captures can fail
 export. Raw HTTP evidence and coverage remain available. Keep the Arazzo document

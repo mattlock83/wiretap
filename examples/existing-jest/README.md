@@ -65,12 +65,13 @@ pass; the raw Jest command still exits with failure. The API is intentionally
 left unchanged so capture cannot hide these existing issues.
 
 The checks also require a finalized archive containing 120 distinct test
-identities, all **10 API operations exercised**, coverage JSON/text and Arazzo
+identities, all **10 API operations exercised**, coverage JSON/text/HTML and Arazzo
 workflows with no export errors. Ajv validates the exported workflows against
 Arazzo's pinned official schema. The harness compares attempt identities,
 eligible JSON/REST methods, URLs, headers, request bodies and success criteria
 with raw archive records and retained payload files. Non-JSON calls remain in
-the archive and contribute to API coverage.
+the archive and contribute to API coverage. Open the printed HTML report path
+directly in a browser to inspect coverage conditions and their linked test runs.
 
 The advisory latest receipt at `demo/artifacts/wiretap/last-run.json` names the
 archive created by the harness. That archive contains its own canonical

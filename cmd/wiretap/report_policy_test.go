@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -31,6 +32,12 @@ func TestReportPolicyEmitsCoverageOnFailureAndIsOptIn(t *testing.T) {
 	}
 	if _, err := os.Stat(output); err != nil {
 		t.Fatal(err)
+	}
+	htmlOutput := filepath.Join(t.TempDir(), "coverage.html")
+	code, _ = executeCapturingStdout(t, []string{"report", "--bundle", archive, "--policy", policy, "--format", "html", "--output", htmlOutput})
+	html, err := os.ReadFile(htmlOutput)
+	if code != 1 || err != nil || !bytes.Contains(html, []byte(`data-wiretap-report="coverage"`)) {
+		t.Fatalf("HTML policy failure lost report or verdict: code=%d err=%v", code, err)
 	}
 	for _, args := range [][]string{
 		{"report", "--bundle", archive, "--policy", policy, "--output", policy},

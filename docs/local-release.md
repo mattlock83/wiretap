@@ -78,7 +78,7 @@ Use the filename printed by `npm pack` if the SDK version changes. A subsequent
 binary build rewrites `SHA256SUMS`, so repeat this step after rebuilding. Retain
 the versioned directory, release notes and matching source checkout together.
 
-The Jest runner smoke script builds the binary, packs the SDK and installs it in a clean external project. It verifies captured outcomes, final receipts, cleanup, JSON/text coverage and Arazzo conformance to the pinned schema. The checks compare exported workflows with raw archive evidence and retained payloads, and preserve deliberately failing Jest outcomes. npm may access its registry/cache; nothing is published.
+The Jest runner smoke script builds the binary, packs the SDK and installs it in a clean external project. It verifies captured outcomes, final receipts, cleanup, JSON/text/HTML coverage and Arazzo conformance to the pinned schema. The checks compare exported workflows with raw archive evidence and retained payloads, and preserve deliberately failing Jest outcomes. npm may access its registry/cache; nothing is published.
 
 The [Express/Jest demo](../examples/existing-jest/README.md) checks a larger unchanged external suite. Regenerate lockfiles from package manifests and verify a clean install when dependencies change.
 

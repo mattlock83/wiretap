@@ -14,6 +14,7 @@ Wiretap captures HTTP exchanges during existing Jest tests. Jest owns execution,
 | `internal/artifact` | Capture model and opaque event evidence. |
 | `internal/bundle` | Inventories, immutable attempts, contracts, payloads and integrity. |
 | `internal/coverage` | Operation/condition measurement, policies and baseline differences. |
+| `internal/htmlreport` | Offline dashboard derived from coverage JSON, specs and Arazzo. |
 | `internal/arazzo` | JSON/REST workflow export with portable OpenAPI sources. |
 | `internal/assumptions` | Verify Arazzo projections and compare consumer/provider evidence. |
 | `internal/runset` | Pin and verify same-build archive groups. |

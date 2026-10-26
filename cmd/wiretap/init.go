@@ -34,8 +34,8 @@ func initCommand(args []string) error {
 	if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Fragment != "" {
 		return fmt.Errorf("%w: --sut-url must be an absolute http or https URL without a fragment", errUsage)
 	}
-	// Keep the generated file deliberately small. Other protocols, dependencies
-	// and source metadata use the ordinary project format after initialization.
+	// Keep the generated file deliberately small. Dependencies and source
+	// metadata use the ordinary project format after initialization.
 	configuration := struct {
 		Version     int `yaml:"version"`
 		Application struct {

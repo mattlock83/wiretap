@@ -6,10 +6,11 @@ test('completion summaries use exact successful receipt paths on stderr', t => {
   const output = [];
   t.mock.method(process.stderr, 'write', chunk => { output.push(chunk); return true; });
   printCompletionSummary({ status: 'complete', bundle_path: '/run with spaces/archive', outputs: {
-    coverage: { text: '/custom/report.txt', json: '/custom/report.json' },
+    coverage: { text: '/custom/report.txt', html: '/custom/report.html', json: '/custom/report.json' },
     arazzo: '/workflows/arazzo.json', errors: []
   } });
   assert.deepEqual(output, ['Wiretap archive: /run with spaces/archive\n' +
+    'Wiretap coverage (html): /custom/report.html\n' +
     'Wiretap coverage (json): /custom/report.json\n' +
     'Wiretap coverage (text): /custom/report.txt\n' +
     'Wiretap Arazzo: /workflows/arazzo.json\n']);

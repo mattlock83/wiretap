@@ -44,11 +44,11 @@ func TestFailedAttemptsProduceEverySelectedOutput(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := Generate(t.Context(), root, Config{Coverage: []string{"json", "yaml", "text"}, Arazzo: true})
+	result, err := Generate(t.Context(), root, Config{Coverage: []string{"json", "yaml", "text", "html"}, Arazzo: true})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(result.Coverage) != 3 || result.Arazzo == "" || len(result.Errors) != 0 {
+	if len(result.Coverage) != 4 || result.Arazzo == "" || len(result.Errors) != 0 {
 		t.Fatalf("wrong outputs: %+v", result)
 	}
 	var report coverage.Report
@@ -62,6 +62,10 @@ func TestFailedAttemptsProduceEverySelectedOutput(t *testing.T) {
 	textReport, err := os.ReadFile(result.Coverage["text"])
 	if err != nil || filepath.Ext(result.Coverage["text"]) != ".txt" || !strings.Contains(string(textReport), "1 failed") {
 		t.Fatalf("missing readable failed-run summary: %s, %v", textReport, err)
+	}
+	html, err := os.ReadFile(result.Coverage["html"])
+	if err != nil || !strings.Contains(string(html), `data-wiretap-report="coverage"`) || !strings.Contains(string(html), "a failed test") {
+		t.Fatalf("missing HTML report: %v", err)
 	}
 	var document arazzo.Document
 	data, _ = os.ReadFile(result.Arazzo)
@@ -109,6 +113,20 @@ func TestOutputFailureRetainsCoverageAndArchive(t *testing.T) {
 	}
 }
 
+func TestHTMLFailureRetainsJSONTextAndArazzo(t *testing.T) {
+	root := failedRun(t)
+	if err := os.MkdirAll(filepath.Join(root, "exports", "coverage.html"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	result, err := Generate(t.Context(), root, Defaults())
+	if err == nil || result.Coverage["html"] != "" || result.Coverage["json"] == "" || result.Coverage["text"] == "" || result.Arazzo == "" || len(result.Errors) != 1 || result.Errors[0].Format != "coverage.html" {
+		t.Fatalf("HTML failure hid other outputs: %+v, %v", result, err)
+	}
+	if _, _, err := bundle.Load(root); err != nil {
+		t.Fatalf("HTML output error changed source evidence: %v", err)
+	}
+}
+
 func TestOutputDirectorySymlinkCannotWriteOutsideArchive(t *testing.T) {
 	root := failedRun(t)
 	outside := t.TempDir()
@@ -125,7 +143,7 @@ func TestOutputDirectorySymlinkCannotWriteOutsideArchive(t *testing.T) {
 }
 
 func TestAutomaticOutputsProtectSourceBackedByExports(t *testing.T) {
-	for _, target := range []string{"coverage", "arazzo", "receipt"} {
+	for _, target := range []string{"coverage", "html", "arazzo", "receipt"} {
 		for _, alias := range []string{"source symlink", "output hardlink"} {
 			t.Run(target+"/"+alias, func(t *testing.T) {
 				root := failedRun(t)
@@ -135,6 +153,8 @@ func TestAutomaticOutputsProtectSourceBackedByExports(t *testing.T) {
 				}
 				output := outputs.Coverage["json"]
 				switch target {
+				case "html":
+					output = outputs.Coverage["html"]
 				case "arazzo":
 					output = outputs.Arazzo
 				case "receipt":

@@ -220,8 +220,10 @@ A copied artifact directory can be selected with `bundle_path`:
 ```
 
 Only run artifact directories are accepted. Unknown request fields are rejected.
-The response includes detailed condition results under `report.contract_coverage`. The CLI
-can also export YAML and JSON/REST Arazzo workflows; see [capture artifacts and exports](artifacts.md).
+The response includes detailed condition results under `report.contract_coverage`. Automatic
+exports also produce `coverage.html` by default; its path is returned in
+`outputs.coverage.html`. The CLI can also export YAML and JSON/REST Arazzo
+workflows; see [capture artifacts and exports](artifacts.md).
 
 ## Proxy certificate
 
