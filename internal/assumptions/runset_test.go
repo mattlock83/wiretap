@@ -164,3 +164,42 @@ func TestRunSetRejectsChangedFrozenContractsWithinOneBuild(t *testing.T) {
 		t.Fatalf("matching examples hid a changed frozen contract: %v", err)
 	}
 }
+
+func TestRunSetKeepsConsumerObligationsIndependentWithSharedProvider(t *testing.T) {
+	matching, mismatch := checkFixtureFlow(), checkFixtureFlow()
+	mismatch.Response.HTTP.Body.Text = `{"different":true}`
+	first := writeCheckArchive(t, buildIdentity(consumerCheckIdentity(), "one"), "complete", checkCapture(false, matching))
+	second := writeCheckArchive(t, buildIdentity(consumerCheckIdentity(), "one"), "complete", checkCapture(false, mismatch))
+	provider := writeCheckArchive(t, providerCheckIdentity(), "complete", checkCapture(true, checkFixtureFlow()))
+	report, err := CheckRunSets(t.Context(), writeRunSet(t, first, second), writeRunSet(t, provider), "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Compatible || report.Counts.Assumptions != 2 || report.Counts.Verified != 1 || report.Counts.Mismatched != 1 || len(report.Matches) != 1 || len(report.Findings) != 1 {
+		t.Fatalf("provider reuse mixed consumer obligations: %+v", report)
+	}
+	if report.Findings[0].Consumer == nil || report.Matches[0].Consumer.RunID == report.Findings[0].Consumer.RunID {
+		t.Fatalf("consumer witness attribution was lost: %+v", report)
+	}
+}
+
+func TestRunSetChecksProjectionOfEmptyShard(t *testing.T) {
+	consumer := writeCheckArchive(t, consumerCheckIdentity(), "complete", checkCapture(false, checkFixtureFlow()))
+	provider := writeCheckArchive(t, buildIdentity(providerCheckIdentity(), "one"), "complete", checkCapture(true, checkFixtureFlow()))
+	empty := writeCheckArchive(t, buildIdentity(providerCheckIdentity(), "one"), "complete", checkCapture(true))
+	providers := writeRunSet(t, provider, empty)
+	consumers := writeRunSet(t, consumer)
+	if report, err := CheckRunSets(t.Context(), consumers, providers, "", nil); err != nil || !report.Compatible {
+		t.Fatalf("valid empty shard: %+v, %v", report, err)
+	}
+	path := filepath.Join(empty, "exports", "arazzo", "arazzo.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(`{}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := CheckRunSets(t.Context(), consumers, providers, "", nil); err == nil {
+		t.Fatal("stale projection in an empty shard was hidden by matching evidence")
+	}
+}

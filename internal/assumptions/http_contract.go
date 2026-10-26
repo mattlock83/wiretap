@@ -3,17 +3,13 @@ package assumptions
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"math"
 	"net/http"
 	"net/url"
-	"os"
-	"path/filepath"
+	"path"
 	"strconv"
 	"strings"
 
@@ -22,8 +18,8 @@ import (
 	"github.com/getkin/kin-openapi/routers"
 	"github.com/getkin/kin-openapi/routers/legacy"
 	"github.com/mattlock83/wiretap/internal/artifact"
+	"github.com/mattlock83/wiretap/internal/bundle"
 	"github.com/mattlock83/wiretap/internal/coverage"
-	"github.com/mattlock83/wiretap/internal/fileuri"
 	"github.com/mattlock83/wiretap/internal/openapivalidation"
 )
 
@@ -39,17 +35,6 @@ type httpContractVerifier struct{ cache map[string]*httpContract }
 type httpContract struct {
 	doc    *openapi3.T
 	router routers.Router
-}
-
-type httpContractManifest struct {
-	SetHash string `json:"set_hash"`
-	Root    string `json:"root"`
-	Profile string `json:"profile"`
-	Type    string `json:"type"`
-	Files   []struct {
-		Path   string `json:"path"`
-		SHA256 string `json:"sha256"`
-	} `json:"files"`
 }
 
 func (v *httpContractVerifier) load(ctx context.Context, ref *artifact.SchemaRef) (*httpContract, error) {
@@ -76,31 +61,7 @@ func (v *httpContractVerifier) load(ctx context.Context, ref *artifact.SchemaRef
 		}
 		return nil, fmt.Errorf("%w: %v", errHTTPContractUnavailable, err)
 	}
-	loader := openapi3.NewLoader()
-	loader.Context = ctx
-	loader.IsExternalRefsAllowed = true // The reader below is the complete access policy.
-	loader.ReadFromURIFunc = func(_ *openapi3.Loader, uri *url.URL) ([]byte, error) {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-		if uri.Scheme != "file" || uri.RawQuery != "" {
-			return nil, errors.New("OpenAPI references must stay in the frozen local contract manifest")
-		}
-		name, err := fileuri.Path(uri)
-		if err != nil {
-			return nil, err
-		}
-		data, found := files[filepath.Clean(name)]
-		if !found {
-			return nil, fmt.Errorf("OpenAPI reference %q is not in the frozen contract manifest", uri.String())
-		}
-		return data, nil
-	}
-	uri, err := fileuri.FromPath(root)
-	if err != nil {
-		return nil, err
-	}
-	doc, err := loader.LoadFromURI(uri)
+	doc, err := bundle.ParseOpenAPI(ctx, root, files)
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
@@ -165,104 +126,24 @@ func openAPI30(version string) bool {
 }
 
 func loadHTTPContractFiles(ctx context.Context, ref *artifact.SchemaRef) (map[string][]byte, map[string]any, string, error) {
-	root, err := filepath.Abs(ref.Source.Path)
+	root, files, err := bundle.OpenAPIFilesWithLimits(ctx, *ref, bundle.LoadLimits{
+		MaxFileBytes: maxHTTPContractFileBytes, MaxTotalBytes: maxHTTPContractBytes, MaxFileReads: maxHTTPContractFiles + 1,
+	})
 	if err != nil {
 		return nil, nil, "", err
 	}
-	setDir := filepath.Dir(root)
-	manifestData, err := readHTTPContractFile(filepath.Join(setDir, "manifest.json"), 1<<20)
-	if err != nil {
-		return nil, nil, "", err
-	}
-	if _, err := decodeProjectionJSON(manifestData); err != nil {
-		return nil, nil, "", fmt.Errorf("invalid contract manifest: %w", err)
-	}
-	var manifest httpContractManifest
-	if err := json.Unmarshal(manifestData, &manifest); err != nil {
-		return nil, nil, "", err
-	}
-	if manifest.SetHash != filepath.Base(setDir) || manifest.Profile != "" || manifest.Type != "" || len(manifest.Files) == 0 || len(manifest.Files) > maxHTTPContractFiles {
-		return nil, nil, "", errors.New("invalid or oversized frozen OpenAPI manifest")
-	}
-	bundleRoot := filepath.Dir(filepath.Dir(setDir))
-	relRoot, err := filepath.Rel(bundleRoot, root)
-	if err != nil || filepath.ToSlash(relRoot) != manifest.Root {
-		return nil, nil, "", errors.New("OpenAPI manifest root does not match selected frozen schema")
-	}
-	files := map[string][]byte{}
-	values := map[string]any{}
-	var total int
-	prefix := "contracts/" + manifest.SetHash + "/"
-	for _, entry := range manifest.Files {
+	values := make(map[string]any, len(files))
+	for path, data := range files {
 		if err := ctx.Err(); err != nil {
 			return nil, nil, "", err
 		}
-		if !strings.HasPrefix(entry.Path, prefix) || filepath.ToSlash(filepath.Clean(entry.Path)) != entry.Path || strings.Contains(entry.Path, "\\") || len(entry.SHA256) != 64 {
-			return nil, nil, "", errors.New("invalid frozen OpenAPI manifest file path or hash")
-		}
-		name := filepath.Join(bundleRoot, filepath.FromSlash(entry.Path))
-		if _, duplicate := files[name]; duplicate {
-			return nil, nil, "", errors.New("duplicate frozen OpenAPI manifest file")
-		}
-		physical, err := filepath.EvalSymlinks(name)
-		if err != nil {
-			return nil, nil, "", err
-		}
-		physicalSet, err := filepath.EvalSymlinks(setDir)
-		if err != nil {
-			return nil, nil, "", err
-		}
-		rel, err := filepath.Rel(physicalSet, physical)
-		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-			return nil, nil, "", errors.New("OpenAPI manifest file escapes its frozen contract directory")
-		}
-		data, err := readHTTPContractFile(name, maxHTTPContractFileBytes)
-		if err != nil {
-			return nil, nil, "", err
-		}
-		total += len(data)
-		if total > maxHTTPContractBytes {
-			return nil, nil, "", errors.New("frozen OpenAPI contract exceeds 64 MiB")
-		}
-		digest := sha256.Sum256(data)
-		if hex.EncodeToString(digest[:]) != entry.SHA256 {
-			return nil, nil, "", fmt.Errorf("frozen OpenAPI file %q hash mismatch", entry.Path)
-		}
 		value, err := decodeProjectionJSON(data)
 		if err != nil {
-			return nil, nil, "", fmt.Errorf("invalid frozen OpenAPI JSON %q: %w", entry.Path, err)
+			return nil, nil, "", fmt.Errorf("invalid frozen OpenAPI JSON %q: %w", path, err)
 		}
-		files[name], values[name] = data, value
-	}
-	data, found := files[root]
-	if !found {
-		return nil, nil, "", errors.New("selected OpenAPI root is absent from frozen manifest")
-	}
-	digest := sha256.Sum256(data)
-	if hex.EncodeToString(digest[:]) != ref.Source.SHA256 {
-		return nil, nil, "", errors.New("selected frozen OpenAPI root hash mismatch")
+		values[path] = value
 	}
 	return files, values, root, nil
-}
-
-func readHTTPContractFile(path string, maxBytes int64) ([]byte, error) {
-	info, err := os.Lstat(path)
-	if err != nil {
-		return nil, err
-	}
-	if !info.Mode().IsRegular() || info.Size() > maxBytes {
-		return nil, fmt.Errorf("frozen OpenAPI file %q is not a bounded regular file", path)
-	}
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-	data, err := io.ReadAll(io.LimitReader(f, maxBytes+1))
-	if err == nil && int64(len(data)) > maxBytes {
-		err = errors.New("frozen OpenAPI file exceeds read limit")
-	}
-	return data, err
 }
 
 func (c *httpContract) input(flow artifact.Flow) (*openapi3filter.RequestValidationInput, error) {
@@ -346,7 +227,7 @@ func (c *httpContract) validate(ctx context.Context, flow artifact.Flow) error {
 			return fmt.Errorf("%w: response body: %v", errHTTPContractUnavailable, err)
 		}
 	}
-	if err := coverage.ValidateReplayResponse(input, response); err != nil {
+	if err := coverage.ValidateResponse(input, response); err != nil {
 		return fmt.Errorf("response violates OpenAPI: %w", err)
 	}
 	return ctx.Err()
@@ -447,23 +328,17 @@ func preciseHTTPRules(ctx context.Context, documents map[string]any, root string
 			return nil
 		}
 		if reference, ok := object["$ref"].(string); ok && reference != "" {
-			base, err := fileuri.FromPath(file)
-			if err != nil {
-				return err
-			}
+			base := &url.URL{Scheme: "file", Path: "/" + file}
 			ref, err := url.Parse(reference)
 			if err != nil {
 				return err
 			}
 			resolved := base.ResolveReference(ref)
-			if resolved.Scheme != "file" || resolved.RawQuery != "" {
+			if resolved.Scheme != "file" || resolved.RawQuery != "" || resolved.Opaque != "" || resolved.User != nil || resolved.Host != "" && resolved.Host != "localhost" || !strings.HasPrefix(resolved.Path, "/") {
 				return errors.New("OpenAPI reference is outside the frozen local contract")
 			}
-			name, err := fileuri.Path(resolved)
-			if err != nil {
-				return err
-			}
-			document, found := documents[filepath.Clean(name)]
+			name := strings.TrimPrefix(path.Clean(resolved.Path), "/")
+			document, found := documents[name]
 			if !found {
 				return errors.New("OpenAPI reference is absent from the frozen manifest")
 			}

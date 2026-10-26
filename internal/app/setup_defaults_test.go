@@ -22,13 +22,21 @@ func TestEmptyListsClearProjectDefaultsForOneTest(t *testing.T) {
 		t.Fatal(err)
 	}
 	control, instance := dependencyCaptureRuntime(t)
+	required := true
 	instance.project = &project.Config{
-		SUT: project.API{ID: "orders", URL: upstream.URL, Schema: schemaPath, Kind: "service"},
+		SUT:        project.API{ID: "orders", URL: upstream.URL, Schema: schemaPath, Kind: "service", SchemaRequired: &required},
+		TestSource: map[string]any{"commit": "configured", "repo": "tests"},
 		Dependencies: map[string]project.API{
 			"inventory": {URL: upstream.URL, Schema: schemaPath, Kind: "mock"},
 		},
 	}
 	postDependencyJSON(t, control.URL, "/v1/startRun", map[string]any{})
+	apiStatus(t, control.URL, "/v1/setupTest", map[string]any{
+		"name": "conflicting source", "test_source": map[string]any{"commit": "override"}, "schema_required": false,
+	}, http.StatusBadRequest)
+	if !required || instance.project.TestSource["commit"] != "configured" {
+		t.Fatalf("rejected override mutated project defaults: required=%v source=%v", required, instance.project.TestSource)
+	}
 	tests := []struct {
 		name         string
 		options      map[string]any
@@ -62,6 +70,9 @@ func TestEmptyListsClearProjectDefaultsForOneTest(t *testing.T) {
 				t.Fatalf("configured dependency was not inherited: %#v", dependencies)
 			}
 		})
+	}
+	if !required || instance.project.TestSource["commit"] != "configured" {
+		t.Fatalf("test overrides mutated project defaults: required=%v source=%v", required, instance.project.TestSource)
 	}
 	root := instance.currentBundle().Path()
 	postDependencyJSON(t, control.URL, "/v1/finishRun", map[string]any{})

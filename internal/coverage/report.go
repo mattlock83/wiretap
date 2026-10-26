@@ -10,7 +10,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -52,9 +51,6 @@ type Report struct {
 	Dependent     SpecCoverageGroup  `json:"dependent"`
 	TestCases     []TestCaseCoverage `json:"testcases,omitempty"`
 	Notes         []string           `json:"notes,omitempty"`
-
-	artifactEntries []artifactEntry
-	explicitSUTName bool
 }
 
 type SpecCoverageGroup struct {
@@ -149,7 +145,7 @@ type loadedSchema struct {
 	Source     string
 	Operations []string
 	OpenAPI    *openapiSpec
-	Exercised  map[string]struct{}
+	Samples    map[string][]FlowSample
 }
 
 type openapiSpec struct {
@@ -239,7 +235,6 @@ func GenerateBundleSnapshot(bundlePath string, run *bundle.Run, captures []*arti
 }
 
 func generateFromEntries(entries []artifactEntry, extraSchemas []artifact.SchemaRef, sutName string, includeArtifacts bool, generatedAt time.Time) (*Report, error) {
-	explicitSUTName := strings.TrimSpace(sutName) != ""
 	if sutName == "" {
 		sutName = inferSUTName(entries)
 	}
@@ -247,15 +242,13 @@ func generateFromEntries(entries []artifactEntry, extraSchemas []artifact.Schema
 	provided, dependent, testcases, notes := buildCoverageWithSchemas(entries, extraSchemas)
 
 	report := &Report{ReportVersion: ReportVersion, Producer: version.Current(),
-		GeneratedAt:     generatedAt,
-		SUTName:         sutName,
-		ArtifactCount:   len(entries),
-		Provided:        provided,
-		Dependent:       dependent,
-		TestCases:       testcases,
-		Notes:           notes,
-		artifactEntries: entries,
-		explicitSUTName: explicitSUTName,
+		GeneratedAt:   generatedAt,
+		SUTName:       sutName,
+		ArtifactCount: len(entries),
+		Provided:      provided,
+		Dependent:     dependent,
+		TestCases:     testcases,
+		Notes:         notes,
 	}
 	if includeArtifacts {
 		for _, entry := range entries {
@@ -298,10 +291,6 @@ func inferSUTName(entries []artifactEntry) string {
 	return "SUT"
 }
 
-func buildCoverage(entries []artifactEntry) (SpecCoverageGroup, SpecCoverageGroup, []TestCaseCoverage, []string) {
-	return buildCoverageWithSchemas(entries, nil)
-}
-
 func buildCoverageWithSchemas(entries []artifactEntry, extraSchemas []artifact.SchemaRef) (SpecCoverageGroup, SpecCoverageGroup, []TestCaseCoverage, []string) {
 	var notes []string
 	flowEntries := []flowEntry{}
@@ -315,11 +304,11 @@ func buildCoverageWithSchemas(entries []artifactEntry, extraSchemas []artifact.S
 		if tcName == "" {
 			tcName = entry.Doc.TestCase.ID
 		}
+		keys := make(map[string]bool, len(entry.Doc.Schemas))
+		for _, schema := range entry.Doc.Schemas {
+			keys[schemaKey(schema)] = true
+		}
 		for _, flow := range entry.Doc.Traffic {
-			keys := make(map[string]bool, len(entry.Doc.Schemas))
-			for _, schema := range entry.Doc.Schemas {
-				keys[schemaKey(schema)] = true
-			}
 			flowEntries = append(flowEntries, flowEntry{RedactionRules: entry.Doc.Redactions, Case: entry.Doc.TestCase, Flow: flow, SchemaKeys: keys, TestCase: tcName, Status: entry.Doc.TestCase.Status, CaptureIncomplete: entry.Doc.CaptureIncomplete})
 		}
 		schemas = append(schemas, entry.Doc.Schemas...)
@@ -330,17 +319,14 @@ func buildCoverageWithSchemas(entries []artifactEntry, extraSchemas []artifact.S
 	dependentSchemas, dependentNotes := loadSchemas(filterSchemas(schemas, "dependency"))
 	notes = append(notes, dependentNotes...)
 
-	markCoverage(flowEntries, providedSchemas, "test_to_sut")
-	markCoverage(flowEntries, dependentSchemas, "sut_to_dependency")
-
-	providedSamples := buildOperationSamples(flowEntries, providedSchemas, "test_to_sut")
-	dependentSamples := buildOperationSamples(flowEntries, dependentSchemas, "sut_to_dependency")
-
-	providedGroup := SpecCoverageGroup{Specs: exportSpecs(providedSchemas, true, providedSamples)}
-	dependentGroup := SpecCoverageGroup{Specs: exportSpecs(dependentSchemas, true, dependentSamples)}
-	testcases := buildTestCaseCoverage(flowEntries, providedSchemas, dependentSchemas)
+	testcases := indexCoverage(flowEntries, providedSchemas, dependentSchemas)
+	providedGroup := SpecCoverageGroup{Specs: exportSpecs(providedSchemas)}
+	dependentGroup := SpecCoverageGroup{Specs: exportSpecs(dependentSchemas)}
 	// Retain attempts with no traffic (e.g. early failure or drain timeout).
 	for _, entry := range entries {
+		if entry.Doc == nil {
+			continue
+		}
 		name := strings.TrimSpace(entry.Doc.TestCase.Name)
 		if name == "" {
 			name = "unknown"
@@ -411,9 +397,9 @@ func loadSchemas(schemas []artifact.SchemaRef) ([]*loadedSchema, []string) {
 			continue
 		}
 		entry := &loadedSchema{
-			Ref:       schema,
-			Source:    schemaSourceLabel(schema),
-			Exercised: map[string]struct{}{},
+			Ref:     schema,
+			Source:  schemaSourceLabel(schema),
+			Samples: map[string][]FlowSample{},
 		}
 		if schema.Source.Type == "omitted" {
 			notes = append(notes, fmt.Sprintf("API %q explicitly omits its OpenAPI schema; validation is skipped and coverage is unknown.", schema.ID))
@@ -436,44 +422,11 @@ func loadSchemas(schemas []artifact.SchemaRef) ([]*loadedSchema, []string) {
 	return out, notes
 }
 
-func markCoverage(entries []flowEntry, schemas []*loadedSchema, channel string) {
-	if len(schemas) == 0 {
-		return
-	}
-	for _, entry := range entries {
-		flow := entry.Flow
-		if flow.Channel != channel {
-			continue
-		}
-		for _, schema := range schemas {
-			if !entry.SchemaKeys[schemaKey(schema.Ref)] {
-				continue
-			}
-			if !flowMatchesSchemaBoundary(flow, schema.Ref) {
-				continue
-			}
-			if schema.Ref.Source.Type == "omitted" {
-				if op := observedOperation(flow); op != "" {
-					schema.Exercised[op] = struct{}{}
-				}
-			} else if schema.OpenAPI != nil && flow.Protocol == "http" {
-				if op, ok := openapiOperationFromFlow(flow, schema.OpenAPI); ok {
-					schema.Exercised[op] = struct{}{}
-				}
-			}
-		}
-	}
-}
-
-func exportSpecs(schemas []*loadedSchema, includeNotCovered bool, samples map[string]map[string][]FlowSample) []SpecCoverage {
+func exportSpecs(schemas []*loadedSchema) []SpecCoverage {
 	var specs []SpecCoverage
 	for _, schema := range schemas {
-		sampleMap := samples[schemaKey(schema.Ref)]
-		exercisedOps := uniqueSorted(setToList(schema.Exercised))
-		notCoveredOps := []string{}
-		if includeNotCovered {
-			notCoveredOps = uniqueSorted(diffOps(schema.Operations, schema.Exercised))
-		}
+		exercisedOps := sortedMapKeys(schema.Samples)
+		notCoveredOps := diffOps(schema.Operations, schema.Samples)
 		coverage := SpecCoverage{
 			Protocol:         schema.Ref.Protocol,
 			DenominatorKnown: schema.OpenAPI != nil,
@@ -487,10 +440,10 @@ func exportSpecs(schemas []*loadedSchema, includeNotCovered bool, samples map[st
 			Source:           schema.Source,
 		}
 		if len(exercisedOps) > 0 {
-			coverage.Exercised = operationSamplesList(exercisedOps, sampleMap)
+			coverage.Exercised = operationSamplesList(exercisedOps, schema.Samples)
 		}
 		if len(notCoveredOps) > 0 {
-			coverage.NotCovered = operationSamplesList(notCoveredOps, sampleMap)
+			coverage.NotCovered = operationSamplesList(notCoveredOps, schema.Samples)
 		}
 		specs = append(specs, coverage)
 	}
@@ -530,49 +483,10 @@ func sortSamples(samples []FlowSample) {
 	})
 }
 
-func buildOperationSamples(entries []flowEntry, schemas []*loadedSchema, channel string) map[string]map[string][]FlowSample {
-	raw := map[string]map[string][]FlowSample{}
-	for _, entry := range entries {
-		flow := entry.Flow
-		if flow.Channel != channel {
-			continue
-		}
-		for _, schema := range schemas {
-			if !entry.SchemaKeys[schemaKey(schema.Ref)] {
-				continue
-			}
-			if !flowMatchesSchemaBoundary(flow, schema.Ref) {
-				continue
-			}
-			switch {
-			case schema.Ref.Source.Type == "omitted":
-				if op := observedOperation(flow); op != "" {
-					raw = addSample(raw, schemaKey(schema.Ref), op, flowSampleFromFlow(entry))
-				}
-			case schema.OpenAPI != nil && flow.Protocol == "http":
-				op, ok := openapiOperationFromFlow(flow, schema.OpenAPI)
-				if !ok {
-					continue
-				}
-				if !containsOp(schema.Operations, op) {
-					continue
-				}
-				raw = addSample(raw, schemaKey(schema.Ref), op, flowSampleFromFlow(entry))
-			}
-		}
-	}
-	return raw
-}
-
-func addSample(target map[string]map[string][]FlowSample, schemaID, operation string, sample FlowSample) map[string]map[string][]FlowSample {
-	if _, ok := target[schemaID]; !ok {
-		target[schemaID] = map[string][]FlowSample{}
-	}
-	target[schemaID][operation] = append(target[schemaID][operation], sample)
-	return target
-}
-
-func buildTestCaseCoverage(entries []flowEntry, providedSchemas, dependentSchemas []*loadedSchema) []TestCaseCoverage {
+// indexCoverage matches each flow against each applicable schema once. The same
+// sample feeds the per-operation inventory and per-test view, so the two views
+// cannot disagree about a route, schema revision, or boundary.
+func indexCoverage(entries []flowEntry, providedSchemas, dependentSchemas []*loadedSchema) []TestCaseCoverage {
 	buckets := map[string]*TestCaseCoverage{}
 	for _, entry := range entries {
 		flow := entry.Flow
@@ -595,7 +509,8 @@ func buildTestCaseCoverage(entries []flowEntry, providedSchemas, dependentSchema
 		if !foundAttempt && entry.Case.ID != "" {
 			tc.Attempts = append(tc.Attempts, entry.Case)
 		}
-		tc.Traffic = append(tc.Traffic, flowSampleFromFlow(entry))
+		sample := flowSampleFromFlow(entry)
+		tc.Traffic = append(tc.Traffic, sample)
 
 		var schemas []*loadedSchema
 		var target *[]SpecOperationSamples
@@ -628,8 +543,9 @@ func buildTestCaseCoverage(entries []flowEntry, providedSchemas, dependentSchema
 				continue
 			}
 
+			schema.Samples[op] = append(schema.Samples[op], sample)
 			spec := findOrCreateSpec(target, schema)
-			spec.Operations = appendOperationSample(spec.Operations, op, flowSampleFromFlow(entry))
+			spec.Operations = appendOperationSample(spec.Operations, op, sample)
 		}
 	}
 
@@ -859,46 +775,17 @@ func openapiOperations(spec *openapiSpec) []string {
 }
 
 func loadOpenAPISpec(ref artifact.SchemaRef) (*openapiSpec, error) {
-	loader := openapi3.NewLoader()
-	loader.IsExternalRefsAllowed = true
-
-	var doc *openapi3.T
-	var err error
-	path := strings.TrimSpace(ref.Source.Path)
-	urlStr := strings.TrimSpace(ref.Source.URL)
-	content := strings.TrimSpace(ref.Source.Content)
-
-	switch strings.ToLower(ref.Source.Type) {
-	case "file":
-		if path == "" {
-			return nil, errors.New("openapi schema path required")
-		}
-		path = resolvePath(path)
-		doc, err = loader.LoadFromFile(path)
-	case "url":
-		if urlStr == "" {
-			return nil, errors.New("openapi schema url required")
-		}
-		uri, parseErr := url.Parse(urlStr)
-		if parseErr != nil {
-			return nil, parseErr
-		}
-		doc, err = loader.LoadFromURI(uri)
-	case "inline":
-		if content == "" {
-			return nil, errors.New("openapi schema content required")
-		}
-		doc, err = loader.LoadFromData([]byte(content))
-	default:
-		return nil, errors.New("unsupported openapi source type")
+	root, files, err := bundle.OpenAPIFiles(ref)
+	if err != nil {
+		return nil, err
 	}
+	doc, err := bundle.ParseOpenAPI(context.Background(), root, files)
 	if err != nil {
 		return nil, err
 	}
 	if err := doc.Validate(context.Background()); err != nil {
 		return nil, err
 	}
-
 	router, err := legacy.NewRouter(doc)
 	if err != nil {
 		return nil, err
@@ -906,42 +793,7 @@ func loadOpenAPISpec(ref artifact.SchemaRef) (*openapiSpec, error) {
 	return &openapiSpec{Doc: doc, Router: router}, nil
 }
 
-func resolvePath(path string) string {
-	if filepath.IsAbs(path) {
-		return path
-	}
-	cwd, err := os.Getwd()
-	if err != nil {
-		return path
-	}
-	return filepath.Join(cwd, path)
-}
-
-func uniqueSorted(values []string) []string {
-	set := make(map[string]struct{})
-	for _, value := range values {
-		if value == "" {
-			continue
-		}
-		set[value] = struct{}{}
-	}
-	out := make([]string, 0, len(set))
-	for value := range set {
-		out = append(out, value)
-	}
-	sort.Strings(out)
-	return out
-}
-
-func setToList(set map[string]struct{}) []string {
-	var out []string
-	for value := range set {
-		out = append(out, value)
-	}
-	return out
-}
-
-func diffOps(allOps []string, covered map[string]struct{}) []string {
+func diffOps(allOps []string, covered map[string][]FlowSample) []string {
 	var out []string
 	for _, op := range allOps {
 		if _, ok := covered[op]; !ok {
@@ -949,15 +801,6 @@ func diffOps(allOps []string, covered map[string]struct{}) []string {
 		}
 	}
 	return out
-}
-
-func containsOp(ops []string, target string) bool {
-	for _, op := range ops {
-		if op == target {
-			return true
-		}
-	}
-	return false
 }
 
 // Without a schema these are observed concrete paths, never inferred contract operations.

@@ -9,7 +9,7 @@ import (
 
 func TestContractUnboundedMultipleOfStaysExplicit(t *testing.T) {
 	run, a := contractFixture(simpleResponseSpec(`{type: integer, multipleOf: 2}`), `2`)
-	s := buildContractCoverage(run, []*artifact.Artifact{a}).Specs[0]
+	s := measureContractFixture(t, run, []*artifact.Artifact{a}).Specs[0]
 	if s.DenominatorKnown || s.Counts["family:unsupported"].Unsupported != 1 {
 		t.Fatalf("unmeasured multipleOf omitted from denominator: %+v", s.Counts)
 	}
@@ -26,7 +26,7 @@ func TestContractNullableIntersectionsCannotEarnCoverage(t *testing.T) {
 	} {
 		t.Run(schema, func(t *testing.T) {
 			run, a := contractFixture(simpleResponseSpec(schema), `null`)
-			s := buildContractCoverage(run, []*artifact.Artifact{a}).Specs[0]
+			s := measureContractFixture(t, run, []*artifact.Artifact{a}).Specs[0]
 			if s.DenominatorKnown {
 				t.Fatal("nullable validator limitation was hidden")
 			}
@@ -56,7 +56,7 @@ func TestContractRequiredNamesWithoutPropertySchemas(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			run, a := contractFixture(simpleResponseSpec(`{type: object, required: [id]}`), tc.body)
-			s := buildContractCoverage(run, []*artifact.Artifact{a}).Specs[0]
+			s := measureContractFixture(t, run, []*artifact.Artifact{a}).Specs[0]
 			requireTargetState(t, s, "response", "/schema/properties/id", "presence", "present", tc.state)
 			if tc.name == "absent" && len(s.Violations) == 0 {
 				t.Fatal("missing required presence violation")
@@ -73,7 +73,7 @@ func TestContractNestedFeasibilityRemainsUnknown(t *testing.T) {
 	} {
 		t.Run(schema, func(t *testing.T) {
 			run, _ := contractFixture(simpleResponseSpec(schema), `{}`)
-			s := buildContractCoverage(run, nil).Specs[0]
+			s := measureContractFixture(t, run, nil).Specs[0]
 			if s.DenominatorKnown {
 				t.Fatal("nested schema feasibility was incorrectly treated as known")
 			}
@@ -96,7 +96,7 @@ func TestContractImpossibleScalarDomainsAreExcluded(t *testing.T) {
 	} {
 		t.Run(schema, func(t *testing.T) {
 			run, _ := contractFixture(simpleResponseSpec(schema), `{}`)
-			s := buildContractCoverage(run, nil).Specs[0]
+			s := measureContractFixture(t, run, nil).Specs[0]
 			for _, target := range s.Targets {
 				if strings.HasSuffix(target.Location, "/schema") && target.State != "excluded" {
 					t.Fatalf("impossible scalar target stayed in denominator: %+v", target)
@@ -108,7 +108,7 @@ func TestContractImpossibleScalarDomainsAreExcluded(t *testing.T) {
 
 func TestContractNullSurvivesImpossibleNonNullBounds(t *testing.T) {
 	run, a := contractFixture(simpleResponseSpec(`{type: string, nullable: true, minLength: 2, maxLength: 1}`), `null`)
-	s := buildContractCoverage(run, []*artifact.Artifact{a}).Specs[0]
+	s := measureContractFixture(t, run, []*artifact.Artifact{a}).Specs[0]
 	requireTargetState(t, s, "response", "/schema", "nullable", "null", "covered")
 	requireTargetState(t, s, "response", "/schema", "nullable", "non_null", "excluded")
 	requireTargetState(t, s, "response", "/schema", "type", "string", "excluded")
@@ -122,7 +122,7 @@ func TestContractUnmeasuredSchemasCannotHideValidationGaps(t *testing.T) {
 	} {
 		t.Run(schema, func(t *testing.T) {
 			run, a := contractFixture(simpleResponseSpec(schema), `{"x":null}`)
-			s := buildContractCoverage(run, []*artifact.Artifact{a}).Specs[0]
+			s := measureContractFixture(t, run, []*artifact.Artifact{a}).Specs[0]
 			for _, target := range s.Targets {
 				if target.Phase == "response" && target.State == "covered" {
 					t.Fatalf("hidden validation gap earned coverage: %+v", target)
@@ -140,7 +140,7 @@ func TestContractSafeUnmeasuredSchemasRetainSupportedCoverage(t *testing.T) {
 	} {
 		t.Run(schema, func(t *testing.T) {
 			run, a := contractFixture(simpleResponseSpec(schema), `{"x":1}`)
-			s := buildContractCoverage(run, []*artifact.Artifact{a}).Specs[0]
+			s := measureContractFixture(t, run, []*artifact.Artifact{a}).Specs[0]
 			requireTargetState(t, s, "response", "/schema", "type", "object", "covered")
 			if s.Counts["family:unsupported"].Unsupported != 1 {
 				t.Fatal("safe unmeasured schema received extra unsupported rules")
@@ -157,7 +157,7 @@ func TestContractUnmeasuredRecursiveSchemaSafetyIsBounded(t *testing.T) {
       additionalProperties: {$ref: '#/components/schemas/Node'}
 `
 	run, a := contractFixture(schema, `{"child":{}}`)
-	s := buildContractCoverage(run, []*artifact.Artifact{a}).Specs[0]
+	s := measureContractFixture(t, run, []*artifact.Artifact{a}).Specs[0]
 	requireTargetState(t, s, "response", "/schema", "type", "object", "unknown")
 	if len(s.Targets) > 12 {
 		t.Fatal("safety inspection expanded dynamic coverage targets")

@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/mattlock83/wiretap/internal/artifact"
-	"github.com/mattlock83/wiretap/internal/project"
 )
 
 func TestSchemaSetupRequiresSpecsUnlessExplicitlyOmitted(t *testing.T) {
@@ -58,12 +57,14 @@ paths: {}
 	}
 }
 
-func TestRemovedGRPCControlOptionsAreRejectedBeforeRunStarts(t *testing.T) {
+func TestRemovedControlOptionsAreRejectedBeforeRunStarts(t *testing.T) {
 	control, instance := dependencyCaptureRuntime(t)
 	for _, tc := range []struct {
 		name, path string
 		payload    map[string]any
 	}{
+		{"boundary registration", "/v1/startRun", map[string]any{"boundaries": map[string]any{"sut": map[string]any{"schema_required": false}}}},
+		{"singular dependency schema", "/v1/setupTest", map[string]any{"schema_required": false, "dependencies": []map[string]any{{"asset_id": "inventory", "upstream_url": "http://inventory.test", "schema": map[string]any{}}}}},
 		{"SUT protocol", "/v1/setupTest", map[string]any{"schema_required": false, "sut_protocol": "grpc"}},
 		{"dependency protocol", "/v1/setupTest", map[string]any{"schema_required": false, "dependencies": []map[string]any{{"asset_id": "inventory", "upstream_url": "http://inventory.test", "protocol": "grpc"}}}},
 		{"protobuf SUT schema", "/v1/setupTest", map[string]any{"schemas": []map[string]any{{"id": "rpc", "type": "protobuf", "source": map[string]any{"type": "inline", "content": "not a JSON/REST schema"}}}}},
@@ -87,16 +88,5 @@ func TestRemovedGRPCControlOptionsAreRejectedBeforeRunStarts(t *testing.T) {
 				t.Fatal("unsupported RPC started capture")
 			}
 		})
-	}
-}
-
-func TestAppRejectsUnsupportedConfiguredProtocols(t *testing.T) {
-	for _, config := range []*project.Config{
-		{SUT: project.API{Protocol: "grpc"}},
-		{Dependencies: map[string]project.API{"inventory": {Protocol: "grpc"}}},
-	} {
-		if _, err := New(Deps{Project: config}); err == nil || !strings.Contains(err.Error(), "only HTTP JSON/REST") {
-			t.Fatalf("unsupported protocol accepted: %v", err)
-		}
 	}
 }

@@ -134,6 +134,27 @@ withWiretap(existingConfig, {
 });
 ```
 
+Go applies project defaults. Omit a capture option to inherit it; `schemas: []`
+or `dependencies: {}` explicitly clears that list for the test, and
+`schemaRequired: false` explicitly permits a missing SUT spec. Overrides do not
+change later tests' defaults. SDK dependencies use an object keyed by asset ID,
+and supplied contracts use a `schemas` array:
+
+```js
+captureJest({
+  dependencies: {
+    inventory: {
+      upstreamUrl: 'http://127.0.0.1:8081',
+      upstreamKind: 'mock',
+      schemas: [{ type: 'openapi', source: { type: 'file', path: 'inventory.yaml' } }],
+    },
+  },
+});
+```
+
+Schema roles follow their SUT or dependency location. HTTP and HTTPS targets are
+selected by their URL.
+
 The [pinned external Express/Jest demo](https://github.com/mattlock83/wiretap/tree/main/examples/existing-jest)
 verifies all 120 existing outcomes before and after capture, HTML/JSON API coverage and
 Arazzo conformance to its pinned official schema, with exported

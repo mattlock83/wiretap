@@ -45,7 +45,6 @@ func (a *App) handleProxyCA(w http.ResponseWriter, r *http.Request) {
 
 type startRunRequest struct {
 	Proxy       proxyOptions        `json:"proxy,omitempty"`
-	Boundaries  json.RawMessage     `json:"boundaries,omitempty"`
 	Application *bundle.Application `json:"application,omitempty"`
 }
 
@@ -68,10 +67,6 @@ func (a *App) handleStartRun(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	if err := a.configureRunBoundaries(payload.Boundaries); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
-		return
-	}
 	if err := a.configureProxy(payload.Proxy); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
@@ -88,13 +83,10 @@ func (a *App) handleStartRun(w http.ResponseWriter, r *http.Request) {
 	}
 	info := a.proxySnapshot()
 	sutURL := normalizeURL(info.ListenAddr)
-	defaults := a.testDefaults()
-	defaults.Application = a.currentBundle().Snapshot().Application
 	response := map[string]any{
 		"proxy":               info,
 		"sut_url":             sutURL,
 		"dependency_base_url": sutURL + "/__wiretap/dep",
-		"defaults":            defaults,
 	}
 	a.addBundleLocations(response)
 	writeJSON(w, http.StatusOK, response)
@@ -127,14 +119,12 @@ func (a *App) handleSetupTest(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "capture proxy not configured"})
 		return
 	}
-	payload := a.testDefaults()
-	// Decode an explicitly supplied application as a whole object. In particular,
-	// a failed partial override must never mutate project or run defaults.
-	payload.Application = nil
+	var payload setupTestRequest
 	if err := decodeStrictJSON(r, &payload); err != nil && !errors.Is(err, io.EOF) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
 		return
 	}
+	payload = a.applyTestDefaults(payload)
 	application, err := a.resolveApplication(payload.Application)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})

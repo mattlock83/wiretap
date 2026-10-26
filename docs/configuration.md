@@ -1,6 +1,6 @@
 # Configuration and commands
 
-Check in one `.wiretap.yaml` at the test project root. Wiretap discovers it in the working directory or nearest ancestor; `--config path` selects another file. The Jest adapter inherits runtime defaults through the control API.
+Check in one `.wiretap.yaml` at the test project root. Wiretap discovers it in the working directory or nearest ancestor; `--config path` selects another file. The Go runtime resolves project defaults; the Jest adapter sends explicit overrides.
 
 ```yaml
 version: 1
@@ -63,7 +63,7 @@ Supplied schemas always load and validate, even with `schema_required: false`. A
 
 Validation is independent of the framework outcome: a deliberate invalid request can fail schema validation while its Jest rejection test passes. Missing capture, setup failures and incomplete capture still surface as integration errors.
 
-The HTTP request spelling is `schema_required`. Project `protocol` is optional and only accepts `http`. APIs use HTTP or HTTPS URLs. Schema source objects and native RPC configuration are unsupported.
+Use `schema_required` in project YAML and HTTP requests, or `schemaRequired` in Jest options. HTTP and HTTPS targets are selected by their URL; project `protocol` is no longer accepted. Project YAML takes a single `schema` path per API. Jest overrides and HTTP setup requests use `schemas` arrays of source objects; see the [Jest guide](../sdk/js/docs/jest.md#dynamic-fixtures-and-session-settings) and [runtime API](runtime-api.md#test-lifecycle).
 
 ## Capture and proxy settings
 

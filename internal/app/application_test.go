@@ -9,50 +9,29 @@ import (
 )
 
 func TestApplicationIdentityFromStartRunPersistsWithoutTests(t *testing.T) {
-	for _, withBoundaries := range []bool{false, true} {
-		name := "proxy"
-		if withBoundaries {
-			name = "registered boundaries"
-		}
-		t.Run(name, func(t *testing.T) {
-			control, _ := dependencyCaptureRuntime(t)
-			application := bundle.Application{Name: "Orders", ID: "orders-app", Description: "Order processing"}
-			payload := map[string]any{"application": application}
-			if withBoundaries {
-				payload["boundaries"] = map[string]any{"sut": map[string]any{"id": "orders-api", "schema_required": false}}
-			}
-			start := postDependencyJSON(t, control.URL, "/v1/startRun", payload)
-			defaults := start["defaults"].(map[string]any)
-			if identity, ok := defaults["application"].(map[string]any); !ok || identity["name"] != application.Name || identity["id"] != application.ID {
-				t.Fatalf("application missing from run defaults: %+v", defaults)
-			}
-			root := start["bundle_path"].(string)
-			// Metadata is persisted at run creation, before teardown or any test.
-			run, captures, err := bundle.Load(root)
-			if err != nil || run.Application == nil || *run.Application != application || len(captures) != 0 {
-				t.Fatalf("run application = %+v, captures = %d, error = %v", run, len(captures), err)
-			}
-			// An omitted application on repeated startRun reuses this run's identity.
-			next := postDependencyJSON(t, control.URL, "/v1/startRun", map[string]any{})
-			if next["bundle_path"] != root {
-				t.Fatal("repeated startRun created another run")
-			}
-			postDependencyJSON(t, control.URL, "/v1/finishRun", map[string]any{})
-			run, _, err = bundle.Load(root)
-			if err != nil || run.RunState != "complete" || run.Application == nil || *run.Application != application {
-				t.Fatalf("finished run application lost: %+v, %v", run, err)
-			}
-			if withBoundaries && run.APIID != "orders-api" {
-				t.Fatalf("API identity replaced with application identity: %q", run.APIID)
-			}
-			fresh := postDependencyJSON(t, control.URL, "/v1/startRun", map[string]any{})
-			freshRun, _, err := bundle.Load(fresh["bundle_path"].(string))
-			if err != nil || fresh["bundle_path"] == root || freshRun.Application != nil {
-				t.Fatalf("API application leaked into the next run: %+v, %v", freshRun, err)
-			}
-			postDependencyJSON(t, control.URL, "/v1/finishRun", map[string]any{})
-		})
+	control, _ := dependencyCaptureRuntime(t)
+	application := bundle.Application{Name: "Orders", ID: "orders-app", Description: "Order processing"}
+	start := postDependencyJSON(t, control.URL, "/v1/startRun", map[string]any{"application": application})
+	root := start["bundle_path"].(string)
+	run, captures, err := bundle.Load(root)
+	if err != nil || run.Application == nil || *run.Application != application || len(captures) != 0 {
+		t.Fatalf("run application = %+v, captures = %d, error = %v", run, len(captures), err)
 	}
+	next := postDependencyJSON(t, control.URL, "/v1/startRun", map[string]any{})
+	if next["bundle_path"] != root {
+		t.Fatal("repeated startRun created another run")
+	}
+	postDependencyJSON(t, control.URL, "/v1/finishRun", map[string]any{})
+	run, _, err = bundle.Load(root)
+	if err != nil || run.RunState != "complete" || run.Application == nil || *run.Application != application {
+		t.Fatalf("finished run application lost: %+v, %v", run, err)
+	}
+	fresh := postDependencyJSON(t, control.URL, "/v1/startRun", map[string]any{})
+	freshRun, _, err := bundle.Load(fresh["bundle_path"].(string))
+	if err != nil || fresh["bundle_path"] == root || freshRun.Application != nil {
+		t.Fatalf("API application leaked into the next run: %+v, %v", freshRun, err)
+	}
+	postDependencyJSON(t, control.URL, "/v1/finishRun", map[string]any{})
 }
 
 func TestApplicationIdentityFromSetupTestAndLaterOmission(t *testing.T) {

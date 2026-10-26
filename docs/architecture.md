@@ -43,3 +43,30 @@ The main HTTP API requires OpenAPI unless explicitly omitted. Dependencies can c
 The [assumption checker](assumption-checks.md) verifies Arazzo documents against archives, then compares each selected mock request and paired response with complete passing provider service tests. It uses explicit pairs or same-build run sets. The provider's frozen OpenAPI 3.0 contract can validate schema-free consumer examples. Both contracts additionally permit exercised-rule comparison. Both omitted contracts yield example-only assurance.
 
 Coverage measures declared cases exercised by eligible observations. Checks establish agreement for selected examples and supported rules. Neither establishes arbitrary business behavior or which mock response fields the application consumed. See [coverage rules](contract-coverage-rules.md), [check limits](assumption-checks.md#what-the-check-will-not-establish) and [support](support.md).
+
+## Jest lifecycle ownership
+
+`withWiretap` manages one runtime per Jest project. The owner waits for every
+worker and cleanup hook before finalizing. The [conformance scenarios](../sdk/conformance/scenarios.json)
+and [SDK tests](../sdk/js/test/) cover receipt validation and lifecycle errors.
+
+| Phase | Suite owner | Jest environment |
+| --- | --- | --- |
+| Startup | Start the local executable; validate private readiness from that child, its loopback address and run identity. | Connect to the owner's runtime. |
+| Attempt | Keep the runtime alive through worker and fixture cleanup. | Start before test hooks; preserve stable identity across retries and use a fresh trace. |
+| Outcome | Preserve Jest's unsuccessful exit. | Record the final Jest outcome after test cleanup, including hook failures, retries and timeouts. |
+| Completion | Finalize once; validate matching run ID, archive and complete status; retain partial export paths on error. | Await teardown and report capture errors alongside any existing test failure. |
+| Shutdown | Close the parent lifeline, wait for exit, fail on unsuccessful shutdown or forced kill, and retain bounded logs. | Await spawned work before ending the attempt. |
+
+Go resolves project defaults; Jest sends explicit overrides. Omitted settings
+inherit, Jest `dependencies: {}` and `schemas: []` clear their defaults, and
+`schemaRequired: false` permits an omitted SUT contract. Invalid supplied
+contracts fail setup. Contract violations remain separate from framework outcomes; capture, teardown and
+export failures surface as integration errors. When cleanup also fails, Jest
+keeps the original assertion failure and reports both errors. A skipped test
+that never starts creates no attempt.
+
+Canonical receipts and bounded logs belong inside each archive. The latest
+receipt in the output parent is advisory when runs overlap. Runtime/version
+fields are documented in the [runtime API](runtime-api.md) and
+[compatibility policy](support.md#format-compatibility).

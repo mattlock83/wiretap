@@ -23,7 +23,7 @@ func TestMockCapturePreservesContractValidationAndFrameworkOutcome(t *testing.T)
 			control, _ := dependencyCaptureRuntime(t)
 			dependency := dependencyRegistration{AssetID: "inventory", UpstreamKind: "mock", UpstreamURL: mock.URL}
 			if supplied {
-				dependency.Schema = &artifact.SchemaRef{ID: "inventory", Type: "openapi", Source: artifact.SchemaSource{Type: "inline", Content: `openapi: 3.0.0
+				dependency.Schemas = []artifact.SchemaRef{{ID: "inventory", Type: "openapi", Source: artifact.SchemaSource{Type: "inline", Content: `openapi: 3.0.0
 info: {title: Inventory, version: "1"}
 paths:
   /items:
@@ -38,7 +38,7 @@ paths:
                 required: [value]
                 properties:
                   value: {type: string}
-`}}
+`}}}
 			}
 			session := postDependencyJSON(t, control.URL, "/v1/setupTest", map[string]any{"name": name, "schema_required": false, "dependencies": []dependencyRegistration{dependency}})
 			response, err := http.Get(session["sut_url"].(string) + "/__wiretap/dep/inventory/items")

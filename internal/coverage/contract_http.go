@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -343,45 +342,28 @@ func (b *contractBuilder) measureHTTP(spec *openapiSpec, plans map[string]*contr
 		}
 		results[phase] = e.Result
 		validations[phase] = e.Validation
-		hits := []ConditionHit{}
 		if mp != nil {
 			if mp.alternative != nil {
-				recordHit(mp.alternative, e, &hits)
+				recordHit(mp.alternative, e)
 			}
 			if t := mp.media[media]; t != nil && hasBody {
-				recordHit(t, e, &hits)
+				recordHit(t, e)
 			}
 			for _, t := range mp.bodyPresence {
 				if t.match(nil, hasBody) {
-					recordHit(t, e, &hits)
+					recordHit(t, e)
 				}
 			}
 			for _, field := range mp.fields {
 				raw, present := fieldValue(field, req, params, msg, phase)
 				v := scalarValue(raw, field.node.schema)
-				field.node.measure(v, present, "/"+field.in+"/"+pointerToken(field.name), e, &hits)
+				field.node.measure(v, present, "/"+field.in+"/"+pointerToken(field.name), e)
 			}
 			if bodyApplicable && node != nil && hasBody && value != nil {
-				node.measure(value, true, "/body", e, &hits)
+				node.measure(value, true, "/body", e)
 			} else if bodyApplicable && node != nil && hasBody && string(bytes.TrimSpace(messageBytes(msg))) == "null" {
-				node.measure(nil, true, "/body", e, &hits)
+				node.measure(nil, true, "/body", e)
 			}
-		}
-		if len(hits) > 0 {
-			sort.Slice(hits, func(i, j int) bool {
-				return hits[i].Key+"|"+hits[i].InstanceLocation < hits[j].Key+"|"+hits[j].InstanceLocation
-			})
-			// Only condition keys and exact instance paths enter this fingerprint. It is
-			// not a payload hash and does not assert equality of arbitrary field values.
-			fingerprint := contractDigest(struct {
-				Version, Operation, Phase string
-				Hits                      []ConditionHit
-			}{ContractRulesVersion, p.operation.OperationKey, phase, hits})
-			ce := e
-			if ce.Result == "observed_valid" {
-				ce.Result = "observed"
-			}
-			b.spec.Combinations = append(b.spec.Combinations, ContractCombination{Fingerprint: fingerprint, OperationKey: p.operation.OperationKey, Phase: phase, Hits: hits, Evidence: ce})
 		}
 	}
 	e.Phase = "operation"
@@ -450,9 +432,9 @@ func contractResponseHasNoBody(method string, status int) bool {
 	return method == http.MethodHead || status == http.StatusNoContent || status == http.StatusNotModified
 }
 
-// ValidateReplayResponse uses the same response validation as coverage,
+// ValidateResponse uses the same response validation as coverage,
 // including header/status validation for HEAD and bodyless responses.
-func ValidateReplayResponse(input *openapi3filter.RequestValidationInput, msg *artifact.HttpMessage) error {
+func ValidateResponse(input *openapi3filter.RequestValidationInput, msg *artifact.HttpMessage) error {
 	return validateContractResponse(input, msg)
 }
 

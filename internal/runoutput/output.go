@@ -2,21 +2,14 @@
 package runoutput
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
-	"slices"
-	"strings"
 
 	"github.com/mattlock83/wiretap/internal/arazzo"
 	"github.com/mattlock83/wiretap/internal/archiveoutput"
-	"github.com/mattlock83/wiretap/internal/bundle"
-	"github.com/mattlock83/wiretap/internal/coverage"
-	"github.com/mattlock83/wiretap/internal/htmlreport"
 	"github.com/mattlock83/wiretap/internal/version"
 )
 
@@ -65,23 +58,18 @@ func Generate(ctx context.Context, archive string, cfg Config) (*Result, error) 
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	root, err := filepath.Abs(archive)
+	snapshot, err := Load(ctx, archive, "", false)
 	if err != nil {
 		return nil, err
 	}
-	run, captures, err := bundle.Load(root)
-	if err != nil {
-		return nil, err
-	}
+	root := snapshot.root
 	guard, err := archiveoutput.New(root)
 	if err != nil {
 		return nil, err
 	}
-	writeOutput := func(path string, data []byte) error {
-		if _, err := guard.Destination(path); err != nil {
-			return err
-		}
-		return writeFile(ctx, root, path, data)
+	writer := archiveoutput.Writer{Guard: guard, Directory: filepath.Join(root, "exports"), CreateDir: true, Private: true}
+	writeOutput := func(name string, data []byte) error {
+		return writer.Write(ctx, []archiveoutput.File{{Name: name, Data: data}})
 	}
 	result := &Result{ReportVersion: "1.0", Producer: version.Current(), BundlePath: root, Coverage: map[string]string{}, Errors: []Diagnostic{}}
 	var failures []error
@@ -89,131 +77,60 @@ func Generate(ctx context.Context, archive string, cfg Config) (*Result, error) 
 		result.Errors = append(result.Errors, Diagnostic{format, err.Error()})
 		failures = append(failures, fmt.Errorf("%s export: %w", format, err))
 	}
-	var generated *arazzo.Export
-	var arazzoErr error
-	if cfg.Arazzo || slices.Contains(cfg.Coverage, "html") {
-		generated, arazzoErr = arazzo.GenerateSnapshot(run, captures, "")
-	}
-	if len(cfg.Coverage) > 0 {
-		report, err := coverage.GenerateBundleSnapshot(root, run, captures, "", false)
-		if err != nil {
+	for _, format := range cfg.Coverage {
+		data, err := snapshot.Coverage(ctx, format)
+		if snapshot.reportErr != nil {
 			fail("coverage", err)
+			break
+		}
+		extension := format
+		if format == "text" {
+			extension = "txt"
+		}
+		name := "coverage." + extension
+		if err == nil {
+			err = writeOutput(name, data)
+		}
+		if err != nil {
+			fail("coverage."+format, err)
 		} else {
-			for _, format := range cfg.Coverage {
-				var data bytes.Buffer
-				var err error
-				if format == "html" {
-					var inputs htmlreport.Inputs
-					inputs, err = htmlreport.FromSnapshot(ctx, run, report, generated, arazzoErr)
-					if err == nil {
-						err = htmlreport.Write(&data, inputs)
-					}
-				} else {
-					err = coverage.WriteReport(&data, report, format)
-				}
-				extension := format
-				if format == "text" {
-					extension = "txt"
-				}
-				path := filepath.Join(root, "exports", "coverage."+extension)
-				if err == nil {
-					err = writeOutput(path, data.Bytes())
-				}
-				if err != nil {
-					fail("coverage."+format, err)
-				} else {
-					result.Coverage[format] = path
-				}
-			}
+			result.Coverage[format] = filepath.Join(writer.Directory, name)
 		}
 	}
 	if cfg.Arazzo {
-		if err := ctx.Err(); err != nil {
-			fail("arazzo", err)
-		} else {
-			err := arazzoErr
+		err := ctx.Err()
+		if err == nil {
+			var generated *arazzo.Export
+			generated, err = snapshot.Arazzo()
 			if err == nil && generated != nil && generated.Document != nil {
-				var data bytes.Buffer
-				err = arazzo.Write(&data, generated.Document)
-				companions := []string{}
+				var files []archiveoutput.File
+				files, err = ArazzoFiles(generated, "arazzo.json")
 				if err == nil {
-					for _, companion := range generated.Files {
-						path := filepath.Join(root, "exports", "arazzo", filepath.FromSlash(companion.Path))
-						if err = writeOutput(path, companion.Data); err != nil {
-							break
-						}
-						companions = append(companions, path)
+					for i := range files {
+						files[i].Name = filepath.Join("arazzo", filepath.FromSlash(files[i].Name))
+					}
+					err = writer.Write(ctx, files)
+				}
+				if err == nil {
+					result.Arazzo = filepath.Join(writer.Directory, files[len(files)-1].Name)
+					for _, file := range files[:len(files)-1] {
+						result.ArazzoFiles = append(result.ArazzoFiles, filepath.Join(writer.Directory, file.Name))
 					}
 				}
-				path := filepath.Join(root, "exports", "arazzo", "arazzo.json")
-				if err == nil {
-					err = writeOutput(path, data.Bytes())
-				}
-				if err == nil {
-					result.Arazzo = path
-					result.ArazzoFiles = companions
-				}
 			}
-			if err != nil {
-				fail("arazzo", err)
-			}
+		}
+		if err != nil {
+			fail("arazzo", err)
 		}
 	}
 	// A small receipt names this invocation's outputs and any failures. Consumers
 	// use these exact paths instead of guessing the newest run or scanning a dir.
 	data, err := json.MarshalIndent(result, "", "  ")
 	if err == nil {
-		err = writeOutput(filepath.Join(root, "exports", "result.json"), append(data, '\n'))
+		err = writeOutput("result.json", append(data, '\n'))
 	}
 	if err != nil {
 		fail("receipt", err)
 	}
 	return result, errors.Join(failures...)
-}
-
-func writeFile(ctx context.Context, root, path string, data []byte) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	dir := filepath.Dir(path)
-	base := filepath.Join(root, "exports")
-	relative, err := filepath.Rel(base, path)
-	if err != nil || relative == "." || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) || filepath.IsAbs(relative) {
-		return errors.New("export path must be inside archive exports directory")
-	}
-	// Check every ancestor before creation, including nested OpenAPI companions.
-	for current := base; ; {
-		if info, err := os.Lstat(current); err == nil && (!info.IsDir() || info.Mode()&os.ModeSymlink != 0) {
-			return fmt.Errorf("export destination %q is not a regular directory", current)
-		} else if err != nil && !errors.Is(err, os.ErrNotExist) {
-			return err
-		}
-		if current == dir {
-			break
-		}
-		remainder, err := filepath.Rel(current, dir)
-		if err != nil {
-			return err
-		}
-		part := strings.Split(remainder, string(filepath.Separator))[0]
-		current = filepath.Join(current, part)
-	}
-	if err := os.MkdirAll(dir, 0700); err != nil {
-		return err
-	}
-	if info, err := os.Lstat(path); err == nil && !info.Mode().IsRegular() {
-		return fmt.Errorf("export destination %q is not a regular file", path)
-	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-	file, err := os.CreateTemp(dir, ".wiretap-export-*")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(file.Name())
-	_, writeErr := file.Write(data)
-	if err := errors.Join(writeErr, file.Close()); err != nil {
-		return err
-	}
-	return os.Rename(file.Name(), path)
 }

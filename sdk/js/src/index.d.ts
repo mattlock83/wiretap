@@ -4,16 +4,13 @@ export type Application = { description?: string } &
   ({ name: string; id?: string } | { name?: string; id: string });
 export interface Schema {
   id?: string;
-  role?: 'sut' | 'dependency';
   type: 'openapi';
   source: { type: 'file'; path: string } | { type: 'url'; url: string } | { type: 'inline'; content: string };
 }
 export interface Dependency {
-  assetId?: string;
   assetName?: string;
   upstreamUrl: string;
   upstreamKind?: 'mock' | 'service' | 'unknown';
-  schema?: Schema;
   schemas?: Schema[];
   /** HTTP dependency schemas are optional by default. True requires one;
    * supplied schemas are always validated. */
@@ -30,7 +27,7 @@ export interface TestOptions {
   /** The HTTP SUT schema remains required by default. */
   schemaRequired?: boolean;
   sutBaseUrl?: string;
-  dependencies?: Record<string, Dependency> | Dependency[];
+  dependencies?: Record<string, Dependency>;
   apiId?: string;
   sutTargetKind?: 'mock' | 'service' | 'unknown';
   testSource?: Record<string, unknown>;

@@ -429,14 +429,14 @@ func (n *conditionNode) walkTargets(fn func(*ContractTarget)) {
 		}
 	}
 }
-func (n *conditionNode) measure(v any, p bool, path string, e ContractEvidence, hits *[]ConditionHit) {
+func (n *conditionNode) measure(v any, p bool, path string, e ContractEvidence) {
 	e.InstanceLocation = path
 	for _, t := range n.targets {
 		if t.match == nil || t.State == "excluded" || (!p && t.Family != "presence") {
 			continue
 		}
 		if t.match(v, p) {
-			recordHit(t, e, hits)
+			recordHit(t, e)
 		}
 	}
 	if !p {
@@ -445,12 +445,12 @@ func (n *conditionNode) measure(v any, p bool, path string, e ContractEvidence, 
 	if obj, ok := v.(map[string]any); ok {
 		for _, name := range sortedMapKeys(n.properties) {
 			value, exists := obj[name]
-			n.properties[name].measure(value, exists, path+"/"+pointerToken(name), e, hits)
+			n.properties[name].measure(value, exists, path+"/"+pointerToken(name), e)
 		}
 	}
 	if arr, ok := v.([]any); ok && n.items != nil {
 		for i, value := range arr {
-			n.items.measure(value, true, path+"/"+strconv.Itoa(i), e, hits)
+			n.items.measure(value, true, path+"/"+strconv.Itoa(i), e)
 		}
 	}
 	for _, name := range []string{"oneOf", "anyOf", "allOf"} {
@@ -464,12 +464,12 @@ func (n *conditionNode) measure(v any, p bool, path string, e ContractEvidence, 
 			continue
 		}
 		for _, i := range matches {
-			recordHit(n.branchTargets[name][i], e, hits)
-			n.branches[name][i].measure(v, true, path, e, hits)
+			recordHit(n.branchTargets[name][i], e)
+			n.branches[name][i].measure(v, true, path, e)
 		}
 	}
 }
-func recordHit(t *ContractTarget, e ContractEvidence, hits *[]ConditionHit) {
+func recordHit(t *ContractTarget, e ContractEvidence) {
 	if t.State == "unsupported" || t.State == "excluded" {
 		return
 	}
@@ -483,7 +483,6 @@ func recordHit(t *ContractTarget, e ContractEvidence, hits *[]ConditionHit) {
 		e.Result = "observed"
 	}
 	t.observe(e)
-	*hits = append(*hits, ConditionHit{Key: t.Key, InstanceLocation: e.InstanceLocation})
 }
 func matchesType(v any, typ string) bool {
 	switch typ {

@@ -9,9 +9,9 @@ import (
 	"github.com/mattlock83/wiretap/internal/artifact"
 )
 
-func TestReplayResponseValidatesHTMLStrings(t *testing.T) {
+func TestResponseValidatesHTMLStrings(t *testing.T) {
 	schema := strings.Replace(simpleResponseSpec(`{type: string, enum: [Property deleted]}`), "application/json:", "text/html:", 1)
-	spec, err := loadOpenAPISpec(artifact.SchemaRef{Type: "openapi", Source: artifact.SchemaSource{Type: "inline", Content: schema}})
+	spec, err := loadOpenAPISpec(freezeCoverageSchema(t, artifact.SchemaRef{Type: "openapi", Source: artifact.SchemaSource{Type: "inline", Content: schema}}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -27,7 +27,7 @@ func TestReplayResponseValidatesHTMLStrings(t *testing.T) {
 	for _, body := range []string{"Property deleted", "Tenant deleted"} {
 		t.Run(body, func(t *testing.T) {
 			msg := &artifact.HttpMessage{Status: 200, Headers: artifact.Headers{"Content-Type": {"text/html; charset=utf-8"}}, Body: &artifact.Body{Text: body}}
-			err := ValidateReplayResponse(input, msg)
+			err := ValidateResponse(input, msg)
 			if body == "Property deleted" && err != nil {
 				t.Fatalf("valid HTML string rejected: %v", err)
 			}

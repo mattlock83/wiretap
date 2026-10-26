@@ -9,10 +9,10 @@ import (
 
 func TestSameSchemaIDKeepsRevisionBoundaries(t *testing.T) {
 	schema := func(paths string) artifact.SchemaRef {
-		return artifact.SchemaRef{ID: "api", Role: "sut", Type: "openapi", Source: artifact.SchemaSource{Type: "inline", Content: `openapi: 3.0.0
+		return freezeCoverageSchema(t, artifact.SchemaRef{ID: "api", Role: "sut", Type: "openapi", Source: artifact.SchemaSource{Type: "inline", Content: `openapi: 3.0.0
 info: {title: API, version: "1"}
 paths:
-` + paths}}
+` + paths}})
 	}
 	first := schema(`  /a:
     get:

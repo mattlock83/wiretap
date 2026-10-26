@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"github.com/mattlock83/wiretap/internal/artifact"
 	"github.com/mattlock83/wiretap/internal/bundle"
 	"github.com/mattlock83/wiretap/internal/core"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
@@ -37,7 +38,7 @@ func TestReviewLateUntracedDependencyAfterDrainTimeout(t *testing.T) {
 	}))
 	defer sut.Close()
 	control, _ := dependencyCaptureRuntime(t)
-	payload := map[string]any{"name": "old", "sut_base_url": sut.URL, "schema_required": false, "trace_context": traceRegistration(81), "dependencies": []dependencyRegistration{{AssetID: "inventory", UpstreamURL: mock.URL, Schema: permissiveDependencySchema()}}}
+	payload := map[string]any{"name": "old", "sut_base_url": sut.URL, "schema_required": false, "trace_context": traceRegistration(81), "dependencies": []dependencyRegistration{{AssetID: "inventory", UpstreamURL: mock.URL, Schemas: []artifact.SchemaRef{*permissiveDependencySchema()}}}}
 	old := postDependencyJSON(t, control.URL, "/v1/setupTest", payload)
 	dependencyURL = old["dependencies"].(map[string]any)["inventory"].(string)
 	go func() {
@@ -185,7 +186,7 @@ func TestParallelSessionsCommitTracedAttemptsAndFinalizeRun(t *testing.T) {
 				session := postDependencyJSON(t, control.URL, "/v1/setupTest", map[string]any{
 					"name": t.Name(), "sut_base_url": sut.URL, "schema_required": false, "explicit_session": true,
 					"trace_context": registration,
-					"dependencies":  []dependencyRegistration{{AssetID: "inventory", UpstreamURL: mock.URL, Schema: permissiveDependencySchema()}},
+					"dependencies":  []dependencyRegistration{{AssetID: "inventory", UpstreamURL: mock.URL, Schemas: []artifact.SchemaRef{*permissiveDependencySchema()}}},
 				})
 				t.Cleanup(func() {
 					status := "pass"

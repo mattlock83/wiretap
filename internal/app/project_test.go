@@ -18,10 +18,7 @@ func TestProjectDefaultsAndPerAPISchemaException(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte(`{"value":true}`)) }))
 	defer upstream.Close()
 	instance.project = &project.Config{SUT: project.API{URL: upstream.URL, SchemaRequired: &optional}, Dependencies: map[string]project.API{"inventory": {URL: upstream.URL, Kind: "mock"}}}
-	start := postDependencyJSON(t, control.URL, "/v1/startRun", map[string]any{})
-	if start["defaults"] == nil {
-		t.Fatal("project defaults not returned")
-	}
+	postDependencyJSON(t, control.URL, "/v1/startRun", map[string]any{})
 	session := postDependencyJSON(t, control.URL, "/v1/setupTest", map[string]any{"name": "configured test"})
 	for _, path := range []string{"/items/123", "/__wiretap/dep/inventory/items/123"} {
 		res, err := http.Get(session["sut_url"].(string) + path)
@@ -57,14 +54,14 @@ func TestProjectDefaultsAndPerAPISchemaException(t *testing.T) {
 
 func TestSchemaExceptionDoesNotWeakenOtherAPIsOrIgnoreInvalidSpecs(t *testing.T) {
 	required := true
-	deps, schemas, err := normalizeDependencies([]dependencyRegistration{{AssetID: "optional", UpstreamURL: "http://dep"}, {AssetID: "strict", UpstreamURL: "http://dep", Schema: permissiveDependencySchema()}})
+	deps, schemas, err := normalizeDependencies([]dependencyRegistration{{AssetID: "optional", UpstreamURL: "http://dep"}, {AssetID: "strict", UpstreamURL: "http://dep", Schemas: []artifact.SchemaRef{*permissiveDependencySchema()}}})
 	if err != nil || len(deps) != 2 {
 		t.Fatal(err)
 	}
 	if _, _, err := normalizeDependencies([]dependencyRegistration{{AssetID: "required", UpstreamURL: "http://dep", SchemaRequired: &required}}); err == nil {
 		t.Fatal("schema requirement lost")
 	}
-	if _, _, err := normalizeDependencies([]dependencyRegistration{{AssetID: "invalid", UpstreamURL: "http://dep", Schema: &artifact.SchemaRef{Type: "openapi", Source: artifact.SchemaSource{Type: "inline", Content: "bad schema"}}}}); err == nil {
+	if _, _, err := normalizeDependencies([]dependencyRegistration{{AssetID: "invalid", UpstreamURL: "http://dep", Schemas: []artifact.SchemaRef{{Type: "openapi", Source: artifact.SchemaSource{Type: "inline", Content: "bad schema"}}}}}); err == nil {
 		t.Fatal("invalid supplied schema ignored")
 	}
 	art := &artifact.Artifact{TestCase: artifact.TestCase{Status: "pass"}, Schemas: schemas, Traffic: []artifact.Flow{

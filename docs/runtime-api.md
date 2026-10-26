@@ -38,44 +38,16 @@ Wiretap and does not itself establish that authentication was tested.
 The response contains `sut_url`, the reverse proxy address tests should call,
 and `dependency_base_url`, the reserved dependency gateway on that same proxy.
 It also returns `run_id` and `bundle_path`. A new run gets a
-fresh bundle under `WIRETAP_OUTPUT_DIR` (default `./artifacts`). The response
-also includes `defaults`, the resolved project test settings from `.wiretap.yaml`.
+fresh bundle under `WIRETAP_OUTPUT_DIR` (default `./artifacts`).
 Configured HTTP contracts freeze during startup, even when no attempts run, so
 coverage retains the declared operations as untested. SDK-only schema overrides
 are registered at test setup; declare contracts in `.wiretap.yaml` for empty-run
-coverage. Repeated startup calls without new boundary definitions reuse the active run.
+coverage. Repeated startup calls reuse the active run.
 
 Optional `application: {name, id, description?}` identifies the SUT independently
 of its API boundaries. It inherits `.wiretap.yaml` when omitted, and at least a
 name or ID is required when supplied. It is retained in `bundle.json`. Application identity stays fixed
 for a run; later requests can omit it or repeat the same object.
-
-Without a project file, register the same boundary definitions through HTTP:
-
-```json
-{
-  "boundaries": {
-    "sut": {
-      "id": "orders",
-      "url": "http://127.0.0.1:8080",
-      "schema": "schemas/orders.openapi.yaml"
-    },
-    "dependencies": {
-      "inventory": {
-        "url": "http://127.0.0.1:9090",
-        "kind": "mock"
-      }
-    }
-  }
-}
-```
-
-`boundaries` accepts only `sut` and `dependencies`, using the same API fields and
-OpenAPI path settings as `.wiretap.yaml`. Local paths are relative to
-the Wiretap process's working directory. Environment expansion follows project
-configuration. Project-file boundaries cannot be overridden by HTTP. An active
-run rejects new boundary registrations; finish it before changing targets or
-contracts. Only HTTP/HTTPS boundaries are supported.
 
 `target_url` is only a routing destination; Wiretap never starts, configures,
 waits for, or stops that application.
@@ -91,7 +63,11 @@ target cannot be changed while sessions are active.
 `POST /v1/setupTest` creates a named capture session. It also starts the proxy
 if needed, so lower-level consumers do not have to call `startRun` first.
 
-Omitted fields inherit project defaults. Supplied arrays replace the defaults.
+Go applies project defaults to omitted fields. Supplied `schemas` and
+`dependencies` arrays replace their defaults; empty arrays clear them. The
+Jest SDK accepts dependencies as a keyed object and converts them to this HTTP
+array.
+
 The main HTTP API's OpenAPI spec is required by default; its explicit
 `schema_required: false` opt-out remains available. HTTP dependencies need no
 spec unless `schema_required: true` is set. Supplying one opts into validation
@@ -110,7 +86,6 @@ and dummy secrets; retained traffic is unchanged.
   "explicit_session": false,
   "schemas": [{
     "id": "hello-openapi",
-    "role": "sut",
     "type": "openapi",
     "source": {"type": "file", "path": "schemas/hello.openapi.yaml"}
   }],
@@ -141,8 +116,8 @@ Requests to `/__wiretap/dep/inventory/products/123` are forwarded to
 `http://127.0.0.1:9090/products/123`. Request methods, headers, bodies, query
 parameters, responses, and trailers retain the existing proxy's bounded-capture
 semantics. Wiretap does not start, configure, stub, or verify the upstream.
-HTTP dependencies can capture without a schema or opt-out flag. Add `schema`
-or `schemas` to enable validation and contract coverage, or `schema_required: true`
+HTTP dependencies can capture without a schema or opt-out flag. Add a `schemas`
+array to enable validation and contract coverage, or `schema_required: true`
 to require a spec. An omitted dependency schema produces skipped validation
 and unknown contract coverage. Ordinary instrumented
 clients use W3C trace context; custom clients can select an explicit session
@@ -238,4 +213,4 @@ treat 404 as unavailable discovery.
 Successful finish responses and export receipts include `report_version: "1.0"`
 and `producer`. Fields are additive; existing lifecycle behavior is unchanged.
 See the [control response schemas](control-api.schema.json),
-[SDK lifecycle contract](sdk-authoring.md) and [format compatibility](support.md#format-compatibility).
+[Jest lifecycle ownership](architecture.md#jest-lifecycle-ownership) and [format compatibility](support.md#format-compatibility).

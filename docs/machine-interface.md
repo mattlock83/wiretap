@@ -124,7 +124,7 @@ passing provider service tests. With only the provider's frozen OpenAPI 3.0
 contract it validates both concrete exchanges under that schema. With both
 contracts it also requires conservative equality of exercised validation rules
 and checks each exchange under its own schema. Coverage reports and
-condition fingerprints do not replace concrete request/response evidence.
+condition keys do not replace concrete request/response evidence.
 Arazzo selections cannot silently omit unsupported traffic from a boundary. The checker verifies the Arazzo document and source
 companions, then uses the archives for actual response bodies and headers,
 passing-test provenance, mappings and frozen schemas. It does not execute Arazzo

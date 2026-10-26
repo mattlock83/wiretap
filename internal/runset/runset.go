@@ -17,6 +17,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/mattlock83/wiretap/internal/artifact"
 	"github.com/mattlock83/wiretap/internal/bundle"
 	"github.com/mattlock83/wiretap/internal/coverage"
 	"github.com/mattlock83/wiretap/internal/schemajson"
@@ -39,10 +40,11 @@ type Manifest struct {
 	Members []Member `json:"members"`
 }
 type Archive struct {
-	Path   string
-	Digest string
-	Run    *bundle.Run
-	Report *coverage.Report
+	Path     string
+	Digest   string
+	Run      *bundle.Run
+	Report   *coverage.Report
+	Captures []*artifact.Artifact
 }
 type Set struct {
 	Manifest Manifest
@@ -190,7 +192,7 @@ func load(ctx context.Context, manifest Manifest, directory string) (*Set, error
 		if after, err := Digest(root); err != nil || after != digest {
 			return nil, fmt.Errorf("run set member %q changed during loading", path)
 		}
-		set.Archives = append(set.Archives, Archive{root, digest, run, report})
+		set.Archives = append(set.Archives, Archive{Path: root, Digest: digest, Run: run, Report: report, Captures: captures})
 	}
 	// Member order carries no priority. Stable ordering makes the selected
 	// witness and aggregate evidence independent of --bundle/manifest order.

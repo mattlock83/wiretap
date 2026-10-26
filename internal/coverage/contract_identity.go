@@ -15,19 +15,6 @@ import (
 	"github.com/mattlock83/wiretap/internal/schemajson"
 )
 
-// ReplayContractRevision shares coverage's canonical identity and precision
-// boundary with generated tests, so the two cannot silently disagree.
-func ReplayContractRevision(ref artifact.SchemaRef) (string, error) {
-	revision, precise, err := contractRevision(ref)
-	if err != nil {
-		return "", err
-	}
-	if !precise {
-		return "", fmt.Errorf("contract numbers exceed the validator's reliable precision")
-	}
-	return revision, nil
-}
-
 // Canonicalise the frozen document graph with traversal-assigned document names.
 // Frozen storage hashes include original source URIs, which are provenance, not
 // contract identity. Sorted traversal preserves refs and cycles without copying
@@ -37,39 +24,27 @@ func contractRevision(ref artifact.SchemaRef) (string, bool, error) {
 		uri   *url.URL
 		value any
 	}
-	var root *url.URL
-	var inline []byte
-	if ref.Source.Type == "inline" {
-		root = &url.URL{Scheme: "wiretap-inline", Host: "root"}
-		inline = []byte(ref.Source.Content)
-	} else if ref.Source.Type == "file" {
-		var err error
-		root, err = fileuri.FromPath(ref.Source.Path)
-		if err != nil {
-			return "", false, err
-		}
-	} else {
-		return "", false, fmt.Errorf("Contract identity requires a frozen file or inline schema")
+	if ref.Source.Type != "file" {
+		return "", false, fmt.Errorf("Contract identity requires a frozen file")
+	}
+	root, err := fileuri.FromPath(ref.Source.Path)
+	if err != nil {
+		return "", false, err
 	}
 	ids := map[string]int{root.String(): 0}
 	docs := []document{{uri: root}}
 	imprecise := map[string]bool{}
 	for i := 0; i < len(docs); i++ {
-		var raw []byte
-		if i == 0 && inline != nil {
-			raw = inline
-		} else {
-			if docs[i].uri.Scheme != "file" {
-				return "", false, fmt.Errorf("Unfrozen external schema reference")
-			}
-			name, err := fileuri.Path(docs[i].uri)
-			if err != nil {
-				return "", false, err
-			}
-			raw, err = os.ReadFile(name)
-			if err != nil {
-				return "", false, err
-			}
+		if docs[i].uri.Scheme != "file" {
+			return "", false, fmt.Errorf("Unfrozen external schema reference")
+		}
+		name, err := fileuri.Path(docs[i].uri)
+		if err != nil {
+			return "", false, err
+		}
+		raw, err := os.ReadFile(name)
+		if err != nil {
+			return "", false, err
 		}
 		value, err := schemajson.Decode(raw)
 		if err != nil {

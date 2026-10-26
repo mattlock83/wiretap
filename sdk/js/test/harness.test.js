@@ -67,13 +67,11 @@ test("startCapture and named test session send capture-only payloads", async () 
     assert.deepEqual(setupPayload, {
       name: "hello world happy flow",
       sut_base_url: "http://sut.test",
-      explicit_session: false,
-      schemas: [{ id: "sut-api" }],
-      dependencies: []
+      schemas: [{ id: "sut-api" }]
     });
     assert.equal(calls[2].body.status, "pass");
     assert.equal(JSON.stringify(calls).includes("mock"), false);
-    assert.deepEqual(setupPayload.dependencies, []);
+    assert.equal(Object.hasOwn(setupPayload, "dependencies"), false);
   } finally {
     await server.close();
   }
@@ -102,7 +100,7 @@ test("declared external dependencies retain strict schemas and session-scoped ca
       sutBaseUrl: "http://sut.test",
       schemas: [{ id: "sut-api" }],
       dependencies: {
-        inventory: { assetName: "Inventory API", upstreamUrl: "http://wiremock.test", schema: inventorySchema }
+        inventory: { assetName: "Inventory API", upstreamUrl: "http://wiremock.test", schemas: [inventorySchema] }
       }
     });
     const attempt = runtime.createTestAttempt("orders call inventory", { explicitSession: true });
@@ -110,7 +108,6 @@ test("declared external dependencies retain strict schemas and session-scoped ca
     assert.deepEqual(calls[1].body.dependencies, [{
       asset_id: "inventory",
       asset_name: "Inventory API",
-      upstream_kind: "unknown",
       upstream_url: "http://wiremock.test",
       schemas: [inventorySchema]
     }]);
@@ -122,23 +119,16 @@ test("declared external dependencies retain strict schemas and session-scoped ca
   }
 });
 
-test("external dependency schemas are required only when explicitly requested", async () => {
-  await assert.rejects(
-    () => startCapture({
-      baseUrl: "http://127.0.0.1:1",
-      schemas: [{ id: "sut-api" }],
-      dependencies: [{ assetId: "inventory", upstreamUrl: "http://wiremock.test", schemaRequired: true }]
-    }),
-    /dependency "inventory" requires an OpenAPI schema/
-  );
-  await assert.rejects(
-    startCapture({ schemas: [{ id: "sut-api" }], dependencies: [{ assetId: "bad/name", upstreamUrl: "http://wiremock.test" }] }),
-    /valid assetId/
-  );
-  await assert.rejects(
-    startCapture({ schemas: [{ id: "sut-api" }], dependencies: { inventory: { upstreamUrl: "http://wiremock.test", schemaRequired: "true" } } }),
-    /schemaRequired must be a boolean/
-  );
+test("capture configuration has one dependency and schema shape", async () => {
+  for (const [options, message] of [
+    [{ dependencies: [] }, /object keyed by dependency asset ID/],
+    [{ dependencies: { "bad/name": {} } }, /valid asset ID/],
+    [{ dependencies: { inventory: null } }, /must be an object/],
+    [{ dependencies: { inventory: { assetId: "other" } } }, /asset ID is its object key/],
+    [{ dependencies: { inventory: { schema: {} } } }, /uses schemas, an array/],
+    [{ schemas: {} }, /schemas must be an array/],
+    [{ schemas: [{ role: "dependency" }] }, /role is assigned/]
+  ]) await assert.rejects(startCapture(options), message);
 });
 
 test("HTTP dependencies need no spec by default and preserve explicit schema requirements", async () => {
@@ -163,7 +153,7 @@ test("HTTP dependencies need no spec by default and preserve explicit schema req
 
     const schema = { id: "inventory", type: "openapi", source: { type: "file", path: "inventory.yaml" } };
     await runtime.createTestAttempt("opts in to dependency validation", { dependencies: {
-      strict: { upstreamUrl: "http://strict.test", schemaRequired: true, schema },
+      strict: { upstreamUrl: "http://strict.test", schemaRequired: true, schemas: [schema] },
       optional: { upstreamUrl: "http://optional.test", schemaRequired: false }
     } }).finish();
     const strictSetup = calls.filter(call => call.path === "/v1/setupTest").at(-1).body;
@@ -176,12 +166,15 @@ test("HTTP dependencies need no spec by default and preserve explicit schema req
   } finally { await server.close(); }
 });
 
-test("schemas are required unless explicitly omitted", async () => {
-  const server = await controlServer(() => ({}));
+test("schema defaults are resolved by the runtime", async () => {
+  const calls = [];
+  const server = await controlServer((path, body) => { calls.push({ path, body }); return {}; });
   try {
-    await assert.rejects(() => startCapture({ baseUrl: server.baseUrl }), /OpenAPI schemas are required/);
-    const runtime = await startCapture({ baseUrl: server.baseUrl, schemas: [{ id: "sut-api" }], schemaRequired: false });
-    await runtime.createTestAttempt("explicit schema").finish();
+    const runtime = await startCapture({ baseUrl: server.baseUrl });
+    await runtime.createTestAttempt("uses project schemas").finish();
+    const setup = calls.find(call => call.path === "/v1/setupTest").body;
+    assert.equal(Object.hasOwn(setup, "schemas"), false);
+    assert.equal(Object.hasOwn(setup, "schema_required"), false);
   } finally { await server.close(); }
 });
 
@@ -204,7 +197,7 @@ test("explicit schema omission permits skipped validation", async () => {
 
     const setup = calls.find((call) => call.path === "/v1/setupTest");
     assert.equal(setup.body.schema_required, false);
-    assert.deepEqual(setup.body.schemas, []);
+    assert.equal(Object.hasOwn(setup.body, "schemas"), false);
     const paths = calls.map((call) => call.path);
     assert.deepEqual(paths, ["/v1/startRun", "/v1/setupTest", "/v1/teardownTest"]);
     assert.equal(result.capture.schema_validation.status, "skipped");
@@ -231,7 +224,7 @@ test("schema violations remain evidence without failing teardown", async () => {
   }
 });
 
-test("project defaults are inherited and shared suites leave finalization to their owner", async () => {
+test("project defaults stay in Go and shared suites leave finalization to their owner", async () => {
   const calls = [];
   const application = { name: "Order service", id: "orders", description: "Accepts customer orders" };
   const server = await controlServer((path, body) => {
@@ -251,14 +244,19 @@ test("project defaults are inherited and shared suites leave finalization to the
     const runtime = await startCapture();
     await runtime.createTestAttempt("configured test").finish();
     const setup = calls.find(call => call.path === "/v1/setupTest").body;
-    assert.deepEqual(setup.application, application);
+    assert.deepEqual(Object.keys(setup).sort(), ["name", "trace_context"]);
     assert.equal(Object.hasOwn(calls[0].body, "application"), false);
-    assert.equal(setup.schema_required, false);
-    assert.equal(setup.sut_base_url, "http://sut.test");
-    assert.equal(setup.dependencies[0].schema_required, false);
-    assert.equal(setup.dependencies[0].upstream_kind, "mock");
-    await runtime.createTestAttempt("clears dependencies", { dependencies: [] }).finish();
-    assert.deepEqual(calls.filter(call => call.path === "/v1/setupTest")[1].body.dependencies, []);
+    await runtime.createTestAttempt("clears inherited configuration", {
+      dependencies: {}, schemas: [], schemaRequired: false, explicitSession: false, testSource: {}
+    }).finish();
+    const override = calls.filter(call => call.path === "/v1/setupTest")[1].body;
+    assert.deepEqual(override.dependencies, []);
+    assert.deepEqual(override.schemas, []);
+    assert.equal(override.schema_required, false);
+    assert.equal(override.explicit_session, false);
+    assert.deepEqual(override.test_source, {});
+    await runtime.createTestAttempt("inherits again").finish();
+    assert.deepEqual(Object.keys(calls.filter(call => call.path === "/v1/setupTest")[2].body).sort(), ["name", "trace_context"]);
     assert.equal(calls.some(call => call.path === "/v1/finishRun"), false);
   } finally {
     if (previousBase === undefined) delete process.env.WIRETAP_BASE_URL; else process.env.WIRETAP_BASE_URL = previousBase;

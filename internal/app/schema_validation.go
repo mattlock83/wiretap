@@ -34,10 +34,6 @@ func applySchemaValidation(art *artifact.Artifact) {
 	if len(art.Schemas) == 0 {
 		// Direct store callers without schemas retain a truthful skipped result.
 		art.SchemaValidation = &artifact.SchemaValidation{Status: "skipped"}
-		if art.Meta == nil {
-			art.Meta = map[string]any{}
-		}
-		art.Meta["schema_validation"] = map[string]any{"status": "skipped"}
 		return
 	}
 	issues := validateSchemas(art)
@@ -58,36 +54,8 @@ func applySchemaValidation(art *artifact.Artifact) {
 		result.Status = "fail"
 		result.Errors = issues
 	}
-	if art.Meta == nil {
-		art.Meta = map[string]any{}
-	}
-	art.Meta["schema_validation"] = map[string]any{
-		"status":      result.Status,
-		"errors":      result.Errors,
-		"unavailable": result.Unavailable,
-	}
+	// Validation is evidence; the framework alone owns the test outcome.
 	art.SchemaValidation = result
-
-	if len(issues) > 0 {
-		// Schema validation is evidence about this exchange. The framework owns
-		// the test outcome, including tests that deliberately send invalid input.
-		for i, issue := range issues {
-			assertion := artifact.Assertion{
-				ID:       fmt.Sprintf("schema-%d", i+1),
-				Channel:  issue.Channel,
-				Phase:    issue.Phase,
-				FlowID:   issue.FlowID,
-				PathLang: issue.Protocol,
-				Operator: "schema",
-				Result:   "fail",
-				Message:  issue.Message,
-			}
-			if issue.SchemaID != "" {
-				assertion.Field = issue.SchemaID
-			}
-			art.Assertions = append(art.Assertions, assertion)
-		}
-	}
 }
 
 func validateSchemaSetup(schemas []artifact.SchemaRef, allowMissing bool) error {

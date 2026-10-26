@@ -39,7 +39,6 @@ type ContractSpec struct {
 	Targets          []*ContractTarget         `json:"targets"`
 	Counts           map[string]ContractCounts `json:"counts"`
 	Violations       []ContractViolation       `json:"violations,omitempty"`
-	Combinations     []ContractCombination     `json:"combinations,omitempty"`
 }
 
 type ContractCounts struct {
@@ -89,19 +88,6 @@ type ContractViolation struct {
 	Evidence       ContractEvidence `json:"evidence"`
 	Operation      string           `json:"operation"`
 	Reason         string           `json:"reason"`
-}
-
-type ConditionHit struct {
-	Key              string `json:"key"`
-	InstanceLocation string `json:"instance_location"`
-}
-
-type ContractCombination struct {
-	Fingerprint  string           `json:"fingerprint"`
-	OperationKey string           `json:"operation_key"`
-	Phase        string           `json:"phase"`
-	Hits         []ConditionHit   `json:"hits"`
-	Evidence     ContractEvidence `json:"evidence"`
 }
 
 type contractBuilder struct {
@@ -154,7 +140,7 @@ func (t *ContractTarget) observe(e ContractEvidence) {
 }
 
 func buildContractCoverage(run *bundle.Run, captures []*artifact.Artifact) *ContractCoverage {
-	out := &ContractCoverage{RulesVersion: ContractRulesVersion, RunID: run.RunID, RunState: run.RunState, SnapshotRevision: run.Revision, Complete: run.RunState == "complete" && len(run.Pending) == 0, Scope: "registered supplied contracts only; condition combinations are observations, not compatibility or assertion proof", Specs: []*ContractSpec{}}
+	out := &ContractCoverage{RulesVersion: ContractRulesVersion, RunID: run.RunID, RunState: run.RunState, SnapshotRevision: run.Revision, Complete: run.RunState == "complete" && len(run.Pending) == 0, Scope: "registered supplied contracts only; observed conditions are not compatibility or assertion proof", Specs: []*ContractSpec{}}
 	refs := append([]artifact.SchemaRef{}, run.Schemas...)
 	for _, a := range captures {
 		refs = append(refs, a.Schemas...)

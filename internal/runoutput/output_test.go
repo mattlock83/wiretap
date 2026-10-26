@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/mattlock83/wiretap/internal/arazzo"
+	"github.com/mattlock83/wiretap/internal/archiveoutput"
 	"github.com/mattlock83/wiretap/internal/artifact"
 	"github.com/mattlock83/wiretap/internal/bundle"
 	"github.com/mattlock83/wiretap/internal/coverage"
@@ -241,6 +242,37 @@ func TestAutomaticArazzoIncludesDocumentAndSchemaCompanions(t *testing.T) {
 	}
 }
 
+func TestArazzoCompanionPublicationFailurePreservesWorkflow(t *testing.T) {
+	root := t.TempDir()
+	schemas := filepath.Join(root, "schemas")
+	if err := os.Mkdir(schemas, 0700); err != nil {
+		t.Fatal(err)
+	}
+	workflow := filepath.Join(root, "arazzo.json")
+	if err := os.WriteFile(workflow, []byte("previous workflow"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(schemas, 0500); err != nil {
+		t.Skip(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(schemas, 0700) })
+	if err := os.WriteFile(filepath.Join(schemas, "probe"), nil, 0600); err == nil {
+		t.Skip("filesystem permits writes to a read-only directory")
+	}
+	export := &arazzo.Export{Document: &arazzo.Document{}, Files: []arazzo.File{{Path: "schemas/openapi.json", Data: []byte("new spec")}}}
+	files, err := ArazzoFiles(export, "arazzo.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writer := archiveoutput.Writer{Directory: root, Private: true}
+	if err := writer.Write(t.Context(), files); err == nil {
+		t.Fatal("published companion into read-only directory")
+	}
+	if data, err := os.ReadFile(workflow); err != nil || string(data) != "previous workflow" {
+		t.Fatalf("replaced workflow before publishing its sources: %q, %v", data, err)
+	}
+}
+
 func TestAutomaticArazzoSkipsNonJSONTraffic(t *testing.T) {
 	root := failedRun(t, func(c *artifact.Artifact) {
 		c.Traffic[0].Response.HTTP.Headers = artifact.Headers{"Content-Type": {"text/plain"}}
@@ -282,15 +314,15 @@ func TestNestedCompanionWritesRejectEverySymlinkAncestor(t *testing.T) {
 	if err := os.Symlink(outside, filepath.Join(parent, "schemas")); err != nil {
 		t.Skip(err)
 	}
-	path := filepath.Join(parent, "schemas", "service", "openapi.json")
-	if err := writeFile(t.Context(), root, path, []byte("secret")); err == nil {
+	writer := archiveoutput.Writer{Directory: filepath.Join(root, "exports"), CreateDir: true, Private: true}
+	if err := writer.Write(t.Context(), []archiveoutput.File{{Name: "arazzo/schemas/service/openapi.json", Data: []byte("secret")}}); err == nil {
 		t.Fatal("followed nested symlink")
 	}
 	entries, err := os.ReadDir(outside)
 	if err != nil || len(entries) != 0 {
 		t.Fatalf("wrote outside: %v %v", entries, err)
 	}
-	if err := writeFile(t.Context(), root, filepath.Join(outside, "escape"), nil); err == nil {
+	if err := writer.Write(t.Context(), []archiveoutput.File{{Name: "../escape"}}); err == nil {
 		t.Fatal("allowed path escape")
 	}
 }

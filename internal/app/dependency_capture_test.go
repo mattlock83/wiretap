@@ -129,9 +129,9 @@ func TestExternalDependencyCaptureCorrelatesBothTrafficDirections(t *testing.T) 
 		}}},
 		"dependencies": []dependencyRegistration{{
 			AssetID: "inventory", AssetName: "Inventory Service", UpstreamURL: upstream.URL + "/api?fixed=yes",
-			Schema: &artifact.SchemaRef{ID: "inventory-api", Type: "openapi", Source: artifact.SchemaSource{
+			Schemas: []artifact.SchemaRef{{ID: "inventory-api", Type: "openapi", Source: artifact.SchemaSource{
 				Type: "inline", Content: dependencyCaptureInventorySchema,
-			}},
+			}}},
 		}},
 	})
 	if got := setup["dependencies"].(map[string]any)["inventory"]; got != dependencyURL {
@@ -216,7 +216,7 @@ func TestExplicitDependencyCaptureSessionsStayIsolated(t *testing.T) {
 	createSession := func(name, target string) map[string]any {
 		return postDependencyJSON(t, control.URL, "/v1/setupTest", map[string]any{
 			"name": name, "explicit_session": true, "schema_required": false,
-			"dependencies": []dependencyRegistration{{AssetID: "inventory", UpstreamURL: target, Schema: permissiveDependencySchema()}},
+			"dependencies": []dependencyRegistration{{AssetID: "inventory", UpstreamURL: target, Schemas: []artifact.SchemaRef{*permissiveDependencySchema()}}},
 		})
 	}
 	firstSession := createSession("first parallel test", first.URL)
@@ -262,7 +262,7 @@ func TestDependencyUpstreamFailureRecords502AndTransportError(t *testing.T) {
 	postDependencyJSON(t, control.URL, "/v1/startRun", map[string]any{})
 	session := postDependencyJSON(t, control.URL, "/v1/setupTest", map[string]any{
 		"name": "dependency unavailable", "schema_required": false,
-		"dependencies": []dependencyRegistration{{AssetID: "inventory", UpstreamURL: upstreamURL, Schema: permissiveDependencySchema()}},
+		"dependencies": []dependencyRegistration{{AssetID: "inventory", UpstreamURL: upstreamURL, Schemas: []artifact.SchemaRef{*permissiveDependencySchema()}}},
 	})
 	response, err := http.Get(session["dependencies"].(map[string]any)["inventory"].(string) + "/items")
 	if err != nil {
@@ -289,7 +289,7 @@ func TestDependencySchemaViolationsPreserveTheOwningTestOutcome(t *testing.T) {
 	postDependencyJSON(t, control.URL, "/v1/startRun", map[string]any{})
 	session := postDependencyJSON(t, control.URL, "/v1/setupTest", map[string]any{
 		"name": "dependency contract drift", "schema_required": false,
-		"dependencies": []dependencyRegistration{{AssetID: "inventory", UpstreamURL: upstream.URL, Schema: permissiveDependencySchema()}},
+		"dependencies": []dependencyRegistration{{AssetID: "inventory", UpstreamURL: upstream.URL, Schemas: []artifact.SchemaRef{*permissiveDependencySchema()}}},
 	})
 	response, err := http.Get(session["dependencies"].(map[string]any)["inventory"].(string) + "/items")
 	if err != nil {

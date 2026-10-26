@@ -185,3 +185,31 @@ func TestOpenAPIFilesUsesConfiguredReadBudgets(t *testing.T) {
 		})
 	}
 }
+
+func TestParseOpenAPIUsesOnlyVerifiedInventory(t *testing.T) {
+	ref, _ := openAPIExportFixture(t)
+	root, files, err := OpenAPIFiles(ref)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The parsed references must be independent of the original filesystem,
+	// including cyclic companions. Only the verified byte snapshot is available.
+	if err := os.RemoveAll(filepath.Dir(ref.Source.Path)); err != nil {
+		t.Fatal(err)
+	}
+	doc, err := ParseOpenAPI(t.Context(), root, files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := doc.Validate(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	for name := range files {
+		if name != root {
+			delete(files, name)
+		}
+	}
+	if _, err := ParseOpenAPI(t.Context(), root, files); err == nil {
+		t.Fatal("missing companion was resolved outside the verified inventory")
+	}
+}

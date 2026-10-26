@@ -38,7 +38,7 @@ npm pack ./sdk/js --pack-destination ./dist
 Install the generated SDK tarball in your test project alongside Jest. Put the
 Wiretap executable on `PATH`, or set `WIRETAP_BINARY` to its absolute path.
 The SDK requires Node.js 22+ and supports Jest 29.7 and 30 with Jest Circus and
-the Node test environment. See [local installation](install-local-release.md)
+the Node test environment. See [local installation](local-release.md#install-a-prepared-release)
 for platform-specific binary and package instructions.
 
 ## Configure the API and outputs
@@ -102,6 +102,32 @@ Jest runs serially by default. Parallel capture requires explicit sessions and
 working W3C trace propagation through the application and dependencies. Follow
 the [Jest guide](../sdk/js/docs/jest.md) before enabling parallel workers.
 In-process mock function calls do not cross the HTTP proxy and are not captured.
+
+## Check local setup
+
+For an already running API, generate the configuration with:
+
+```sh
+wiretap init --sut-url http://127.0.0.1:8080 \
+  --schema schemas/orders.openapi.yaml --application orders
+wiretap doctor
+```
+
+`init` writes a new `.wiretap.yaml` with JSON/text/HTML coverage and Arazzo
+outputs. It refuses to overwrite existing files or symlinks; `--output path`
+selects a new path and `--output -` prints YAML. Parent directories must exist.
+Paths in the generated configuration resolve relative to that file.
+
+`doctor --config .wiretap.yaml` checks configuration, environment substitutions,
+local OpenAPI documents/references and the nearest existing output directory.
+It starts no capture, creates no files or certificates, and makes no HTTP calls.
+Remote references and absent optional dependency specs are reported as
+`deferred`. Permission bits are advisory; actual writes are checked at capture.
+Run the suite to verify routing, trust and trace propagation.
+
+Use `--format json` for `report_version`, `ok`, `config_path` and `checks`
+(`name`, `status`, `message`). Exit 0 means local checks passed, including deferred
+checks; 1 means a check failed; 2 means invalid command options.
 
 ## Retain and inspect the evidence
 

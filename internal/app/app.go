@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
@@ -126,16 +125,6 @@ func New(deps Deps) (*App, error) {
 	}
 	if err := cfg.Validate(); err != nil {
 		return nil, err
-	}
-	if deps.Project != nil {
-		if protocol := deps.Project.SUT.Protocol; protocol != "" && protocol != "http" {
-			return nil, fmt.Errorf("sut: unsupported protocol %q; only HTTP JSON/REST APIs are supported", protocol)
-		}
-		for id, dependency := range deps.Project.Dependencies {
-			if protocol := dependency.Protocol; protocol != "" && protocol != "http" {
-				return nil, fmt.Errorf("dependency %q: unsupported protocol %q; only HTTP JSON/REST APIs are supported", id, protocol)
-			}
-		}
 	}
 
 	logger := deps.Logger

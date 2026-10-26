@@ -11,12 +11,10 @@ Start with [Getting started](getting-started-existing-tests.md) or the [Express/
 | [Getting started](getting-started-existing-tests.md) | Install, configure Jest, capture and check evidence. |
 | [Jest SDK](../sdk/js/README.md) | Configure the supported adapter. |
 | [Jest details](../sdk/js/docs/jest.md) | Handler hosting, existing APIs, fixtures, retries and concurrency. |
-| [Setup checks](setup.md) | Initialize a configuration and inspect local contracts. |
 | [Configuration](configuration.md) | Project fields, environment settings and CLI commands. |
 | [Tracing](otel-adoption.md) | Correlate tests through application dependencies. |
 | [HTTPS trust](https-trust.md) | Trust the capture proxy certificate. |
 | [Runtime API](runtime-api.md) | Inspect the underlying lifecycle endpoints. |
-| [Lifecycle contract](sdk-authoring.md) | Understand adapter ownership and cleanup. |
 | [CI example](ci-example.md) | Preserve complete evidence on success and failure. |
 | [Troubleshooting](troubleshooting.md) | Resolve routing, schema, export and check failures. |
 
@@ -37,8 +35,7 @@ The main HTTP API requires OpenAPI by default. Dependency contracts are optional
 | [Archive loading](archive-loading.md) | Configure bounded reads and integrity checks. |
 | [Architecture](architecture.md) | Understand runtime and Jest responsibilities. |
 | [Support](support.md) | Supported integration and format policies. |
-| [Local release preparation](local-release.md) | Build binaries and the Jest package locally. |
-| [Install a prepared release](install-local-release.md) | Verify checksums and install artifacts. |
+| [Local builds and installation](local-release.md) | Prepare, verify and install binaries and the Jest package. |
 | [Dependency maintenance](dependency-security.md) | Audit the runtime and Jest package. |
 | [Roadmap](roadmap.md) | Planned work. |
 

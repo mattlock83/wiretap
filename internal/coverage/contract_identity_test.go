@@ -23,7 +23,7 @@ func TestContractPrecisionIgnoresUnmeasuredNumbers(t *testing.T) {
 				body, typ = "1", "number"
 			}
 			run, a := contractFixture(schema, body)
-			s := buildContractCoverage(run, []*artifact.Artifact{a}).Specs[0]
+			s := measureContractFixture(t, run, []*artifact.Artifact{a}).Specs[0]
 			requireTargetState(t, s, "response", "/schema", "type", typ, "covered")
 			if !s.DenominatorKnown || s.Counts["family:operation"].Covered != 1 {
 				t.Fatalf("unmeasured number changed coverage: %+v", s)
@@ -35,7 +35,7 @@ func TestContractPrecisionIgnoresUnmeasuredNumbers(t *testing.T) {
 func TestContractRevisionsRetainExactNumericIdentity(t *testing.T) {
 	revision := func(bound string) (string, bool) {
 		t.Helper()
-		value, precise, err := contractRevision(artifact.SchemaRef{Source: artifact.SchemaSource{Type: "inline", Content: simpleResponseSpec(`{type: number, minimum: ` + bound + `}`)}})
+		value, precise, err := contractRevision(freezeCoverageSchema(t, artifact.SchemaRef{Source: artifact.SchemaSource{Type: "inline", Content: simpleResponseSpec(`{type: number, minimum: ` + bound + `}`)}}))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -82,7 +82,7 @@ func TestFrozenContractRetainsImpreciseDecimalConstraint(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := buildContractCoverage(run, captures).Specs[0]
+	s := measureContractFixture(t, run, captures).Specs[0]
 	if s.DenominatorKnown || s.Counts["family:unsupported"].Unsupported == 0 {
 		t.Fatalf("freezing hid the supplied constraint's precision: %+v", s)
 	}

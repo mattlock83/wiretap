@@ -102,7 +102,7 @@ func TestOTelParallelSessionsRouteBeforeDependencySelection(t *testing.T) {
 	for i, upstream := range []string{first.URL, second.URL} {
 		sessions[i] = postDependencyJSON(t, control.URL, "/v1/setupTest", map[string]any{
 			"name": fmt.Sprintf("attempt-%d", i), "schema_required": false, "explicit_session": true, "sut_base_url": sut.URL,
-			"trace_context": traceRegistration(i + 1), "dependencies": []dependencyRegistration{{AssetID: "inventory", UpstreamURL: upstream, Schema: permissiveDependencySchema()}},
+			"trace_context": traceRegistration(i + 1), "dependencies": []dependencyRegistration{{AssetID: "inventory", UpstreamURL: upstream, Schemas: []artifact.SchemaRef{*permissiveDependencySchema()}}},
 		})
 		if sessions[i]["dependencies"].(map[string]any)["inventory"] != dependencyURL {
 			t.Fatal("traced dependency URL must stay stable")
@@ -277,7 +277,7 @@ func TestSerialUninstrumentedDependencyRemainsUntraced(t *testing.T) {
 	}))
 	defer sut.Close()
 	control, _ := dependencyCaptureRuntime(t)
-	session := postDependencyJSON(t, control.URL, "/v1/setupTest", map[string]any{"name": "serial", "sut_base_url": sut.URL, "schema_required": false, "trace_context": traceRegistration(8), "dependencies": []dependencyRegistration{{AssetID: "inventory", UpstreamURL: mock.URL, Schema: permissiveDependencySchema()}}})
+	session := postDependencyJSON(t, control.URL, "/v1/setupTest", map[string]any{"name": "serial", "sut_base_url": sut.URL, "schema_required": false, "trace_context": traceRegistration(8), "dependencies": []dependencyRegistration{{AssetID: "inventory", UpstreamURL: mock.URL, Schemas: []artifact.SchemaRef{*permissiveDependencySchema()}}}})
 	dependencyURL = session["dependencies"].(map[string]any)["inventory"].(string)
 	requestStatus(t, session["sut_url"].(string), "invalid", "", 200)
 	art := dependencyArtifact(t, postDependencyJSON(t, control.URL, "/v1/teardownTest", map[string]any{"session_id": session["session_id"]}))

@@ -5,12 +5,9 @@ package assumptions
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -21,6 +18,7 @@ import (
 
 	"github.com/mattlock83/wiretap/internal/artifact"
 	"github.com/mattlock83/wiretap/internal/bundle"
+	"github.com/mattlock83/wiretap/internal/runset"
 	"github.com/mattlock83/wiretap/internal/version"
 )
 
@@ -116,6 +114,7 @@ type snapshot struct {
 	root, digest string
 	run          *bundle.Run
 	captures     []*artifact.Artifact
+	projections  map[[2]string]Source
 }
 
 type sample struct {
@@ -141,15 +140,35 @@ func Check(ctx context.Context, options Options) (*Report, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%w: provider: %v", ErrInput, err)
 	}
-	if consumer.root == provider.root || consumer.run.RunID == provider.run.RunID {
-		return nil, fmt.Errorf("%w: consumer and provider must be different captures", ErrInput)
-	}
-	dependency, err := selectDependency(consumer.run, provider.run, options.Dependency)
+	checker, err := newChecker(options.IgnoreHeaders)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrInput, err)
+		return nil, err
 	}
+	return checker.check(ctx, options, consumer, provider)
+}
+
+// A checker owns caches for one comparison operation. Run sets reuse their
+// verified snapshots, provider indexes and parsed contracts across archive pairs.
+type checker struct {
+	ignored   []string
+	providers map[*snapshot]*providerIndex
+	samples   map[sampleSelection][]sample
+	contracts httpContractVerifier
+}
+type sampleSelection struct {
+	snapshot            *snapshot
+	channel, dependency string
+}
+
+type providerIndex struct {
+	byRequest   map[string][]sample
+	byOperation map[string][]Evidence
+	excluded    []ExcludedEvidence
+}
+
+func newChecker(ignoreHeaders []string) (*checker, error) {
 	ignored := append([]string{}, IgnoredHeaders...)
-	for _, name := range options.IgnoreHeaders {
+	for _, name := range ignoreHeaders {
 		name = strings.ToLower(strings.TrimSpace(name))
 		if !headerName(name) {
 			return nil, fmt.Errorf("%w: invalid ignored header %q", ErrInput, name)
@@ -157,11 +176,24 @@ func Check(ctx context.Context, options Options) (*Report, error) {
 		ignored = append(ignored, name)
 	}
 	sort.Strings(ignored)
-	ignored = unique(ignored)
+	return &checker{ignored: unique(ignored), providers: map[*snapshot]*providerIndex{}, samples: map[sampleSelection][]sample{}}, nil
+}
+
+func (c *checker) check(ctx context.Context, options Options, consumer, provider *snapshot) (*Report, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if consumer.root == provider.root || consumer.run.RunID == provider.run.RunID {
+		return nil, fmt.Errorf("%w: consumer and provider must be different captures", ErrInput)
+	}
+	dependency, err := selectDependency(consumer.run, provider.run, options.Dependency)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrInput, err)
+	}
 	report := &Report{Producer: version.Current(), ReportVersion: "1.0", RulesVersion: RulesVersion,
 		Scope: "observed_mock_examples_and_exercised_contracts", Dependency: dependency, Binding: "explicit_inputs",
 		Consumer: consumer.source(options.ConsumerArazzo), Provider: provider.source(options.ProviderArazzo),
-		IgnoredHeaders: ignored, Matches: []Match{}, Findings: []Finding{}, ExcludedProviderEvidence: []ExcludedEvidence{}}
+		IgnoredHeaders: c.ignored, Matches: []Match{}, Findings: []Finding{}, ExcludedProviderEvidence: []ExcludedEvidence{}}
 	for _, entry := range []struct {
 		role     string
 		snapshot *snapshot
@@ -185,8 +217,10 @@ func Check(ctx context.Context, options Options) (*Report, error) {
 			}
 		}
 	}
-	consumers := consumer.samples("sut_to_dependency", dependency)
-	providers := provider.samples("test_to_sut", "")
+	consumers, err := c.normalizedSamples(ctx, consumer, "sut_to_dependency", dependency)
+	if err != nil {
+		return nil, err
+	}
 	report.Counts.Assumptions = len(consumers)
 	if len(consumers) == 0 {
 		report.add(Finding{Kind: "unverified", Code: "no_consumer_assumptions", Message: "selected mock dependency has no recorded exchanges; an empty comparison cannot establish compatibility"})
@@ -199,47 +233,25 @@ func Check(ctx context.Context, options Options) (*Report, error) {
 		}
 		return report, nil
 	}
-	index := map[string][]sample{}
-	byOperation := map[string][]Evidence{}
-	var contracts contractVerifier
-	for _, candidate := range providers {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-		problem := candidate.problem
-		if problem == "" {
-			candidate.request, candidate.response, err = normalizeFlow(candidate.flow, options.IgnoreHeaders)
-			if err != nil {
-				problem = err.Error()
-			}
-		}
-		if problem != "" {
-			report.ExcludedProviderEvidence = append(report.ExcludedProviderEvidence, ExcludedEvidence{candidate.evidence, problem})
-			continue
-		}
-		index[candidate.request] = append(index[candidate.request], candidate)
-		byOperation[candidate.operation] = append(byOperation[candidate.operation], candidate.evidence)
+	index, err := c.providerIndex(ctx, provider)
+	if err != nil {
+		return nil, err
 	}
+	report.ExcludedProviderEvidence = append(report.ExcludedProviderEvidence, index.excluded...)
 	unavailableConsumers := 0
 	for _, assumption := range consumers {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
 		problem := assumption.problem
-		if problem == "" {
-			assumption.request, assumption.response, err = normalizeFlow(assumption.flow, options.IgnoreHeaders)
-			if err != nil {
-				problem = err.Error()
-			}
-		}
 		if problem != "" {
 			unavailableConsumers++
 			report.add(Finding{Kind: "unverified", Code: "consumer_evidence_unavailable", Operation: assumption.operation, Message: problem, Consumer: &assumption.evidence})
 			continue
 		}
-		candidates := index[assumption.request]
+		candidates := index.byRequest[assumption.request]
 		if len(candidates) == 0 {
-			report.add(Finding{Kind: "uncovered", Code: "provider_request_uncovered", Operation: assumption.operation, Message: "no complete passing provider test covers this concrete request scenario", Consumer: &assumption.evidence, Provider: limitedEvidence(byOperation[assumption.operation])})
+			report.add(Finding{Kind: "uncovered", Code: "provider_request_uncovered", Operation: assumption.operation, Message: "no complete passing provider test covers this concrete request scenario", Consumer: &assumption.evidence, Provider: limitedEvidence(index.byOperation[assumption.operation])})
 			continue
 		}
 		matched := false
@@ -248,7 +260,7 @@ func Check(ctx context.Context, options Options) (*Report, error) {
 			if candidate.response != assumption.response {
 				continue
 			}
-			contractCheck, problem := contracts.verify(ctx, assumption, candidate)
+			contractCheck, problem := verifyHTTPContracts(ctx, &c.contracts, assumption, candidate)
 			if problem != nil {
 				if contractProblem == nil {
 					contractProblem = problem
@@ -303,13 +315,70 @@ func Check(ctx context.Context, options Options) (*Report, error) {
 	return report, nil
 }
 
-func (s *snapshot) verifyProjection(input, boundary string, source *Source) error {
-	path, companions, err := s.verifyArazzo(input, boundary)
+func (c *checker) normalizedSamples(ctx context.Context, snapshot *snapshot, channel, dependency string) ([]sample, error) {
+	key := sampleSelection{snapshot, channel, dependency}
+	if samples, found := c.samples[key]; found {
+		return samples, nil
+	}
+	samples := snapshot.samples(channel, dependency)
+	for i := range samples {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		item := &samples[i]
+		if item.problem == "" {
+			var err error
+			item.request, item.response, err = normalizeFlow(item.flow, c.ignored)
+			if err != nil {
+				item.problem = err.Error()
+			}
+		}
+	}
+	c.samples[key] = samples
+	return samples, nil
+}
+
+func (c *checker) providerIndex(ctx context.Context, provider *snapshot) (*providerIndex, error) {
+	if index := c.providers[provider]; index != nil {
+		return index, nil
+	}
+	index := &providerIndex{byRequest: map[string][]sample{}, byOperation: map[string][]Evidence{}}
+	samples, err := c.normalizedSamples(ctx, provider, "test_to_sut", "")
 	if err != nil {
-		return err
+		return nil, err
+	}
+	for _, candidate := range samples {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		problem := candidate.problem
+		if problem != "" {
+			index.excluded = append(index.excluded, ExcludedEvidence{candidate.evidence, problem})
+			continue
+		}
+		index.byRequest[candidate.request] = append(index.byRequest[candidate.request], candidate)
+		index.byOperation[candidate.operation] = append(index.byOperation[candidate.operation], candidate.evidence)
+	}
+	c.providers[provider] = index
+	return index, nil
+}
+
+func (s *snapshot) verifyProjection(input, boundary string, source *Source) error {
+	key := [2]string{input, boundary}
+	verified, found := s.projections[key]
+	if !found {
+		path, companions, err := s.verifyArazzo(input, boundary)
+		if err != nil {
+			return err
+		}
+		verified = Source{Arazzo: path, ArazzoFiles: companions}
+		if s.projections == nil {
+			s.projections = map[[2]string]Source{}
+		}
+		s.projections[key] = verified
 	}
 	if source != nil {
-		source.Arazzo, source.ArazzoFiles = path, companions
+		source.Arazzo, source.ArazzoFiles = verified.Arazzo, verified.ArazzoFiles
 	}
 	return nil
 }
@@ -344,7 +413,7 @@ func loadSnapshot(input string) (*snapshot, error) {
 		}
 		root = filepath.Dir(root)
 	}
-	digest, err := manifestDigest(root)
+	digest, err := runset.Digest(root)
 	if err != nil {
 		return nil, err
 	}
@@ -359,25 +428,8 @@ func loadSnapshot(input string) (*snapshot, error) {
 	return s, nil
 }
 
-func manifestDigest(root string) (string, error) {
-	f, err := os.Open(filepath.Join(root, "bundle.json"))
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-	h := sha256.New()
-	n, err := io.Copy(h, io.LimitReader(f, (64<<20)+1))
-	if err != nil {
-		return "", err
-	}
-	if n > 64<<20 {
-		return "", errors.New("run manifest exceeds 64 MiB")
-	}
-	return hex.EncodeToString(h.Sum(nil)), nil
-}
-
 func (s *snapshot) unchanged() error {
-	digest, err := manifestDigest(s.root)
+	digest, err := runset.Digest(s.root)
 	if err != nil {
 		return err
 	}

@@ -16,7 +16,6 @@ type Artifact struct {
 	Env                *Environment      `json:"environment,omitempty"`
 	Schemas            []SchemaRef       `json:"schemas,omitempty"`
 	Traffic            []Flow            `json:"traffic"`
-	Assertions         []Assertion       `json:"assertions,omitempty"`
 	SchemaValidation   *SchemaValidation `json:"schema_validation,omitempty"`
 	// Redactions is legacy read metadata. New captures never populate it.
 	Redactions []Redaction    `json:"redactions,omitempty"`
@@ -36,11 +35,6 @@ func (a *Artifact) Normalize() {
 	if len(a.Traffic) > 1 {
 		sort.SliceStable(a.Traffic, func(i, j int) bool {
 			return a.Traffic[i].ID < a.Traffic[j].ID
-		})
-	}
-	if len(a.Assertions) > 1 {
-		sort.SliceStable(a.Assertions, func(i, j int) bool {
-			return a.Assertions[i].ID < a.Assertions[j].ID
 		})
 	}
 	if len(a.Redactions) > 1 {
@@ -191,21 +185,6 @@ type DecodedBody struct {
 	Encoding  string `json:"encoding,omitempty"`
 	Text      string `json:"text,omitempty"`
 	SchemaRef string `json:"schema_ref,omitempty"`
-}
-
-// Assertion captures a field-level assertion.
-type Assertion struct {
-	ID       string `json:"id"`
-	Channel  string `json:"channel"`
-	Phase    string `json:"phase"`
-	FlowID   string `json:"flow_id,omitempty"`
-	Field    string `json:"field,omitempty"`
-	PathLang string `json:"path_lang,omitempty"`
-	Operator string `json:"operator"`
-	Expected any    `json:"expected,omitempty"`
-	Actual   any    `json:"actual,omitempty"`
-	Result   string `json:"result"`
-	Message  string `json:"message,omitempty"`
 }
 
 // SchemaValidation captures schema validation results.

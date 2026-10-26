@@ -23,7 +23,7 @@ func TestContractEvidencePreservesQualityAndValidation(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			run, a := contractFixture(conditionsSpec, `{"status":"pending","items":[],"reference":"ORD-123"}`)
 			test.mutate(a)
-			spec := buildContractCoverage(run, []*artifact.Artifact{a}).Specs[0]
+			spec := measureContractFixture(t, run, []*artifact.Artifact{a}).Specs[0]
 			target := contractTarget(t, spec, "response", "/properties/status", "enum", `"pending"`)
 			if len(target.Evidence) != 1 {
 				t.Fatalf("expected one evidence reference: %+v", target.Evidence)
@@ -46,7 +46,7 @@ paths:
         '200': {description: OK}
 `
 	run, _ := contractFixture(schema, "")
-	spec, err := loadOpenAPISpec(run.Schemas[0])
+	spec, err := loadOpenAPISpec(freezeCoverageSchema(t, run.Schemas[0]))
 	if err != nil {
 		t.Fatal(err)
 	}

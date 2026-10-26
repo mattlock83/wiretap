@@ -24,7 +24,6 @@ type dependencyRegistration struct {
 	AssetName      string               `json:"asset_name,omitempty"`
 	UpstreamKind   string               `json:"upstream_kind,omitempty"`
 	UpstreamURL    string               `json:"upstream_url"`
-	Schema         *artifact.SchemaRef  `json:"schema,omitempty"`
 	Schemas        []artifact.SchemaRef `json:"schemas,omitempty"`
 }
 
@@ -76,12 +75,9 @@ func normalizeDependencies(dependencies []dependencyRegistration) (map[string]de
 			dependency.AssetName = dependency.AssetID
 		}
 		selectedSchemas := append([]artifact.SchemaRef(nil), dependency.Schemas...)
-		if dependency.Schema != nil {
-			selectedSchemas = append(selectedSchemas, *dependency.Schema)
-		}
 		httpSchemaRequired := dependency.SchemaRequired != nil && *dependency.SchemaRequired
 		if len(selectedSchemas) == 0 && httpSchemaRequired {
-			return nil, nil, fmt.Errorf("dependency %q requires an OpenAPI schema; supply schema or schemas", dependency.AssetID)
+			return nil, nil, fmt.Errorf("dependency %q requires an OpenAPI schema; supply schemas", dependency.AssetID)
 		}
 		if err := validateSchemaSetup(selectedSchemas, !httpSchemaRequired); err != nil {
 			return nil, nil, fmt.Errorf("dependency %q: %w", dependency.AssetID, err)
@@ -96,7 +92,6 @@ func normalizeDependencies(dependencies []dependencyRegistration) (map[string]de
 				selectedSchemas[i].AssetName = dependency.AssetName
 			}
 		}
-		dependency.Schema = nil
 		dependency.Schemas = selectedSchemas
 		registered[dependency.AssetID] = dependency
 		schemas = append(schemas, selectedSchemas...)

@@ -140,8 +140,8 @@ dependencies:
 
 func TestRemovedRuntimeAndExportOptionsAreRejected(t *testing.T) {
 	for _, tc := range []struct{ name, body, want string }{
-		{"grpc SUT", "sut: {protocol: grpc, schema_required: false}", "only HTTP JSON/REST"},
-		{"grpc dependency", "sut: {schema_required: false}\ndependencies:\n  inventory: {url: http://inventory.test, protocol: grpc}", "only HTTP JSON/REST"},
+		{"grpc SUT", "sut: {protocol: grpc, schema_required: false}", "field protocol"},
+		{"grpc dependency", "sut: {schema_required: false}\ndependencies:\n  inventory: {url: http://inventory.test, protocol: grpc}", "field protocol"},
 		{"services", "sut: {schema_required: false, services: [inventory.Inventory]}", "field services"},
 		{"capture listener", "sut: {schema_required: false, capture_listen: ':50051'}", "field capture_listen"},
 		{"capture TLS", "sut: {schema_required: false, capture_tls: {cert_file: server.crt, key_file: server.key}}", "field capture_tls"},

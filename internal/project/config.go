@@ -24,12 +24,11 @@ type API struct {
 	Name           string `yaml:"name"`
 	Kind           string `yaml:"kind"`
 	Schema         string `yaml:"schema"`
-	Protocol       string `yaml:"protocol"`
 	SchemaRequired *bool  `yaml:"schema_required"`
 }
 
 func (a *API) UnmarshalYAML(node *yaml.Node) error {
-	allowed := map[string]bool{"url": true, "id": true, "name": true, "kind": true, "schema": true, "protocol": true, "schema_required": true}
+	allowed := map[string]bool{"url": true, "id": true, "name": true, "kind": true, "schema": true, "schema_required": true}
 	for i := 0; i+1 < len(node.Content); i += 2 {
 		key := node.Content[i].Value
 		if !allowed[key] {
@@ -101,8 +100,7 @@ func Load(path string) (*Config, error) {
 	return Decode(raw, path)
 }
 
-// Decode validates a project document. path defines the base directory for local
-// inputs; callers may supply a synthetic path when registering through the API.
+// Decode validates a project document. path defines the base directory for local inputs.
 func Decode(raw []byte, path string) (*Config, error) {
 	var err error
 	var cfg Config
@@ -190,12 +188,6 @@ func Decode(raw []byte, path string) (*Config, error) {
 		a.URL, err = expand(a.URL)
 		if err != nil {
 			return a, err
-		}
-		if a.Protocol == "" {
-			a.Protocol = "http"
-		}
-		if a.Protocol != "http" {
-			return a, fmt.Errorf("%s: unsupported protocol %q; only HTTP JSON/REST APIs are supported", id, a.Protocol)
 		}
 		// The provider owns the HTTP contract. Consumer captures can record
 		// mocks without copying it; the SUT's own specification stays required.

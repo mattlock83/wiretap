@@ -1,14 +1,18 @@
 package bundle
 
 import (
+	"context"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
+	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/mattlock83/wiretap/internal/artifact"
 )
 
@@ -19,10 +23,32 @@ import (
 // itself is not exported. Every read is bounded by ConfiguredLoadLimits and every
 // member is checked again against its recorded hash. No URLs are fetched.
 func OpenAPIFiles(ref artifact.SchemaRef) (root string, files map[string][]byte, err error) {
+	return OpenAPIFilesWithLimits(context.Background(), ref, LoadLimits{})
+}
+
+// OpenAPIFilesWithLimits uses the same integrity and containment checks with
+// optional tighter per-operation budgets. Zero limits use the configured limits.
+func OpenAPIFilesWithLimits(ctx context.Context, ref artifact.SchemaRef, limits LoadLimits) (root string, files map[string][]byte, err error) {
+	if err := ctx.Err(); err != nil {
+		return "", nil, err
+	}
 	if ref.Type != "openapi" || ref.Source.Type != "file" || !filepath.IsAbs(ref.Source.Path) || !openAPIExportHash(ref.Source.SHA256) {
 		return "", nil, errors.New("OpenAPI export requires a hash-pinned frozen OpenAPI file")
 	}
-	limits, err := ConfiguredLoadLimits()
+	configured, err := ConfiguredLoadLimits()
+	if err != nil {
+		return "", nil, err
+	}
+	if limits.MaxFileBytes == 0 || configured.MaxFileBytes < limits.MaxFileBytes {
+		limits.MaxFileBytes = configured.MaxFileBytes
+	}
+	if limits.MaxTotalBytes == 0 || configured.MaxTotalBytes < limits.MaxTotalBytes {
+		limits.MaxTotalBytes = configured.MaxTotalBytes
+	}
+	if limits.MaxFileReads == 0 || configured.MaxFileReads < limits.MaxFileReads {
+		limits.MaxFileReads = configured.MaxFileReads
+	}
+	limits, err = limits.normalized()
 	if err != nil {
 		return "", nil, err
 	}
@@ -32,7 +58,10 @@ func OpenAPIFiles(ref artifact.SchemaRef) (root string, files map[string][]byte,
 	if err != nil {
 		return "", nil, fmt.Errorf("read frozen OpenAPI manifest: %w", err)
 	}
+	manifestLimit := reader.limits.MaxFileBytes
+	reader.limits.MaxFileBytes = min(manifestLimit, 1<<20)
 	data, err := reader.readFile(manifestPath)
+	reader.limits.MaxFileBytes = manifestLimit
 	if err != nil {
 		return "", nil, err
 	}
@@ -43,7 +72,7 @@ func OpenAPIFiles(ref artifact.SchemaRef) (root string, files map[string][]byte,
 	if err := json.Unmarshal(data, &manifest); err != nil {
 		return "", nil, err
 	}
-	if !openAPIExportHash(manifest.SetHash) || manifest.Profile != "" || manifest.Type != "" || len(manifest.Files) == 0 {
+	if !openAPIExportHash(manifest.SetHash) || manifest.SetHash != filepath.Base(setDir) || manifest.Profile != "" || manifest.Type != "" || len(manifest.Files) == 0 {
 		return "", nil, errors.New("invalid frozen OpenAPI manifest")
 	}
 	base := "contracts/" + manifest.SetHash + "/"
@@ -77,6 +106,9 @@ func OpenAPIFiles(ref artifact.SchemaRef) (root string, files map[string][]byte,
 	}
 	files = make(map[string][]byte, len(manifest.Files))
 	for _, file := range manifest.Files {
+		if err := ctx.Err(); err != nil {
+			return "", nil, err
+		}
 		if _, found := files[file.Path]; found {
 			return "", nil, fmt.Errorf("duplicate frozen OpenAPI manifest member %q", file.Path)
 		}
@@ -112,4 +144,29 @@ func openAPIExportHash(value string) bool {
 	}
 	_, err := hex.DecodeString(value)
 	return err == nil
+}
+
+// ParseOpenAPI resolves references exclusively from the verified file inventory.
+// Paths are virtual archive-relative names: parsing never opens files or URLs.
+// Callers retain their own dialect, validation and routing policies.
+func ParseOpenAPI(ctx context.Context, root string, files map[string][]byte) (*openapi3.T, error) {
+	if !validRelative(root) || strings.Contains(root, "\\") {
+		return nil, errors.New("invalid frozen OpenAPI root path")
+	}
+	loader := openapi3.NewLoader()
+	loader.Context, loader.IsExternalRefsAllowed = ctx, true
+	loader.ReadFromURIFunc = func(_ *openapi3.Loader, uri *url.URL) ([]byte, error) {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if uri.Scheme != "file" || uri.RawQuery != "" || uri.Opaque != "" || uri.User != nil || uri.Host != "" && uri.Host != "localhost" || !strings.HasPrefix(uri.Path, "/") {
+			return nil, errors.New("OpenAPI reference leaves frozen contract")
+		}
+		data, found := files[strings.TrimPrefix(path.Clean(uri.Path), "/")]
+		if !found {
+			return nil, errors.New("OpenAPI reference is absent from frozen manifest")
+		}
+		return data, nil
+	}
+	return loader.LoadFromURI(&url.URL{Scheme: "file", Path: "/" + root})
 }

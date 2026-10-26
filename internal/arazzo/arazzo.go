@@ -2,6 +2,7 @@
 package arazzo
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -10,7 +11,6 @@ import (
 	"mime"
 	"net/http"
 	"net/url"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -21,7 +21,6 @@ import (
 	"github.com/getkin/kin-openapi/routers/legacy"
 	"github.com/mattlock83/wiretap/internal/artifact"
 	"github.com/mattlock83/wiretap/internal/bundle"
-	"github.com/mattlock83/wiretap/internal/fileuri"
 )
 
 type Document struct {
@@ -415,32 +414,7 @@ func loadSource(ref artifact.SchemaRef, name string, files map[string][]byte) (*
 	if err != nil {
 		return nil, err
 	}
-	loader := openapi3.NewLoader()
-	loader.IsExternalRefsAllowed = true
-	loader.ReadFromURIFunc = func(_ *openapi3.Loader, uri *url.URL) ([]byte, error) {
-		if uri.Scheme != "file" || uri.RawQuery != "" {
-			return nil, errors.New("OpenAPI reference leaves frozen contract")
-		}
-		path, err := fileuri.Path(uri)
-		if err != nil {
-			return nil, err
-		}
-		base := filepath.Dir(filepath.Dir(filepath.Dir(ref.Source.Path)))
-		relative, err := filepath.Rel(base, path)
-		if err != nil {
-			return nil, err
-		}
-		data, found := members[filepath.ToSlash(relative)]
-		if !found {
-			return nil, errors.New("OpenAPI reference is absent from frozen manifest")
-		}
-		return data, nil
-	}
-	uri, err := fileuri.FromPath(ref.Source.Path)
-	if err != nil {
-		return nil, err
-	}
-	doc, err := loader.LoadFromURI(uri)
+	doc, err := bundle.ParseOpenAPI(context.Background(), root, members)
 	if err != nil {
 		return nil, err
 	}

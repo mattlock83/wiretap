@@ -113,28 +113,12 @@ func Load(files Files) (Inputs, error) {
 	return result, nil
 }
 
-// Archive derives report inputs from verified capture evidence and its frozen
-// contracts. Missing Arazzo eligibility is a visible report note, not lost API
-// coverage. Contract URLs and original source paths are never loaded.
-func Archive(ctx context.Context, path, sutName string, includeArtifacts bool) (Inputs, error) {
-	if err := ctx.Err(); err != nil {
-		return Inputs{}, err
-	}
-	run, captures, err := bundle.Load(path)
-	if err != nil {
-		return Inputs{}, err
-	}
-	report, err := coverage.GenerateBundleSnapshot(path, run, captures, sutName, includeArtifacts)
-	if err != nil {
-		return Inputs{}, err
-	}
-	export, exportErr := arazzo.GenerateSnapshot(run, captures, sutName)
-	return FromSnapshot(ctx, run, report, export, exportErr)
-}
-
 // FromSnapshot assembles the HTML inputs from a verified inventory and its
 // derived outputs. Workflow failures are displayed without changing coverage.
 func FromSnapshot(ctx context.Context, run *bundle.Run, report *coverage.Report, export *arazzo.Export, exportErr error) (Inputs, error) {
+	if err := ctx.Err(); err != nil {
+		return Inputs{}, err
+	}
 	if run == nil || report == nil {
 		return Inputs{}, errors.New("HTML report requires an archive and coverage snapshot")
 	}

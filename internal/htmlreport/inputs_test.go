@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mattlock83/wiretap/internal/arazzo"
 	"github.com/mattlock83/wiretap/internal/artifact"
 	"github.com/mattlock83/wiretap/internal/bundle"
 	"github.com/mattlock83/wiretap/internal/coverage"
@@ -185,14 +186,28 @@ func htmlArchive(t *testing.T, incomplete, jsonResponse bool, refs []artifact.Sc
 	return writer.Path()
 }
 
-func TestArchiveUsesFrozenContractsAndDerivesWorkflows(t *testing.T) {
+func snapshotInputs(t *testing.T, path string, includeArtifacts bool) (Inputs, error) {
+	t.Helper()
+	run, captures, err := bundle.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	report, err := coverage.GenerateBundleSnapshot(path, run, captures, "Items", includeArtifacts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	export, exportErr := arazzo.GenerateSnapshot(run, captures, "Items")
+	return FromSnapshot(t.Context(), run, report, export, exportErr)
+}
+
+func TestSnapshotUsesFrozenContractsAndDerivesWorkflows(t *testing.T) {
 	source := inputFile(t, "openapi.yaml", "openapi: 3.0.3\ninfo: {title: Items, version: '1'}\nservers: [{url: 'http://sut'}]\npaths:\n  /items:\n    get:\n      responses:\n        '200': {description: ok, content: {application/json: {schema: {type: object}}}}\n")
 	refs := []artifact.SchemaRef{{ID: "items", Role: "sut", Type: "openapi", Source: artifact.SchemaSource{Type: "file", Path: source}}}
 	path := htmlArchive(t, false, true, refs)
 	if err := os.Remove(source); err != nil {
 		t.Fatal(err)
 	}
-	inputs, err := Archive(context.Background(), path, "Items", true)
+	inputs, err := snapshotInputs(t, path, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -202,16 +217,16 @@ func TestArchiveUsesFrozenContractsAndDerivesWorkflows(t *testing.T) {
 	if inputs.Arazzo == nil || len(inputs.Arazzo.Workflows) != 1 || inputs.Arazzo.Workflows[0].AttemptID != "read-items" {
 		t.Fatalf("lost derived workflows: %#v", inputs.Arazzo)
 	}
-	withoutArtifacts, err := Archive(context.Background(), path, "Items", false)
+	withoutArtifacts, err := snapshotInputs(t, path, false)
 	if err != nil || len(withoutArtifacts.Report.Artifacts) != 0 {
 		t.Fatalf("includeArtifacts ignored: %#v, %v", withoutArtifacts.Report, err)
 	}
 }
 
-func TestArchivePreservesCoverageWhenArazzoUnavailable(t *testing.T) {
+func TestSnapshotPreservesCoverageWhenArazzoUnavailable(t *testing.T) {
 	for _, incomplete := range []bool{false, true} {
 		t.Run(map[bool]string{false: "non JSON", true: "incomplete"}[incomplete], func(t *testing.T) {
-			inputs, err := Archive(context.Background(), htmlArchive(t, incomplete, incomplete, nil), "Items", false)
+			inputs, err := snapshotInputs(t, htmlArchive(t, incomplete, incomplete, nil), false)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -222,7 +237,7 @@ func TestArchivePreservesCoverageWhenArazzoUnavailable(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, err := Archive(ctx, "missing", "", false); !errors.Is(err, context.Canceled) {
+	if _, err := FromSnapshot(ctx, &bundle.Run{}, &coverage.Report{}, nil, nil); !errors.Is(err, context.Canceled) {
 		t.Fatalf("ignored cancellation: %v", err)
 	}
 }
@@ -254,9 +269,9 @@ func TestFromSnapshotKeepsWorkflowNotesOutOfSharedCoverage(t *testing.T) {
 	}
 }
 
-func TestArchiveKeepsUnknownCoverageAndObservedWorkflowsForOmittedSpec(t *testing.T) {
+func TestSnapshotKeepsUnknownCoverageAndObservedWorkflowsForOmittedSpec(t *testing.T) {
 	refs := []artifact.SchemaRef{{ID: "items", AssetID: "items", Role: "sut", Type: "openapi", Source: artifact.SchemaSource{Type: "omitted"}}}
-	inputs, err := Archive(context.Background(), htmlArchive(t, false, true, refs), "Items", false)
+	inputs, err := snapshotInputs(t, htmlArchive(t, false, true, refs), false)
 	if err != nil {
 		t.Fatal(err)
 	}

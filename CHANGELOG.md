@@ -41,6 +41,15 @@
 - Keep the Jest SDK focused on `withWiretap` and `captureJest`, with one options
   path and automatic attempt ownership.
 - Reuse one verified archive snapshot for coverage, HTML and Arazzo generation.
+- Share frozen OpenAPI parsing across reports and compatibility checks, use one
+  operation index for spec and per-test coverage, and consolidate staged output
+  writing. Reuse verified snapshots across shard comparisons.
+- Keep schema-validation findings only in `schema_validation` and remove
+  condition-combination fingerprints while retaining individual condition evidence.
+- Let Go apply capture defaults once. Use keyed dependency objects and `schemas`
+  arrays in the Jest SDK, with explicit empty overrides preserved.
+- Remove unused boundary registration and consolidate setup, lifecycle and local
+  release documentation.
 
 ### Fixes
 
@@ -60,7 +69,7 @@
 Local release preparation produces binary archives for Linux, macOS and Windows
 on amd64 and arm64, plus checksums. The JavaScript SDK is installed from a packed
 tarball for Jest. See
-[local release installation](docs/install-local-release.md).
+[local release installation](docs/local-release.md#install-a-prepared-release).
 
 The runtime is intended for isolated tests with synthetic data and dummy secrets.
 Recorded traffic is retained unchanged. Contract results are separate from test

@@ -110,6 +110,7 @@ readers. A run left `open` after a hard kill remains unfinalized.
 Each attempt records the original capture as `capture`, with test metadata,
 flows, validation, diagnostics and tracing/correlation evidence. Older captures
 may also contain redaction metadata, which remains a read-only evidence limit.
+Schema-validation findings are recorded in `capture.schema_validation`.
 `bodies` connects a flow and phase to a retained body attachment. Nonempty
 captured text or base64 body bytes are moved to `payloads/<sha256>.bin`; the
 reader verifies the hash and restores the retained representation. Body objects

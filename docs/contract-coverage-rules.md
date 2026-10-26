@@ -16,8 +16,8 @@ Wiretap cannot discover APIs you never register.
 `wiretap report --bundle <path>` calculates a JSON report from verified evidence.
 Use `--format text` for a compact summary or `--format html --output report.html` for an
 offline dashboard with coverage evidence linked to test runs. The report
-contains a per-spec catalogue under `contract_coverage`: keys, counts, violations,
-request/response combinations and exact attempt/flow evidence references.
+contains a per-spec catalogue under `contract_coverage`: keys, counts, violations
+and exact attempt/flow evidence references.
 Reports are derived outputs; the capture archive remains authoritative.
 
 For cross-repository comparison, first resolve a local dependency to its provider
@@ -116,9 +116,6 @@ Explicit limitations:
   incomplete attempts retain observations with explicit `validation`,
   `capture_incomplete`, and `transport_error` evidence fields. Open/interrupted
   runs retain a `complete: false` snapshot and cannot support final run assurance.
-- Combination fingerprints describe condition keys and exact instance locations,
-  not arbitrary payload equality. No value-normalisation or payload hashing is
-  performed. Unsupported combinations are not invented.
 - Only supplied contracts define denominators. Targets from different contract
   revisions are measured separately. Capture does not infer expected-negative
   assertions from test names or error responses.
@@ -314,7 +311,7 @@ assertions. Wiretap does not measure rejection assurance: observing an
 error status is not evidence that a test asserted the intended validation rule.
 Generated tests and their execution are outside the local tool's scope.
 
-## 6. Measure individual conditions and combinations separately
+## 6. Measure individual conditions
 
 Individual condition coverage counts each feasible target once:
 
@@ -336,17 +333,10 @@ apparently coherent passing result without an explicit comparison policy.
 A zero-sized denominator is not 100% coverage. Missing or partial runs cannot
 produce a final assurance claim, even when their observed targets look complete.
 
-Combination coverage records conditions observed together. It is additional to
-individual coverage: independent hits in separate exchanges cannot be assembled
-into an interaction that never occurred.
-
-For example, observing `status=cancelled` in one response and `items=[]` in another
-does not establish coverage of `status=cancelled` with `items=[]`.
-
-Observed combinations are listed with their evidence, without a combination
-coverage percentage or a generated Cartesian-product denominator.
-Within arrays, preserve instance relationships: a field observed in item 0 and
-another field in item 1 do not prove the same-item combination was exercised.
+Independent hits in separate exchanges do not establish that conditions occurred
+together. For example, `status=cancelled` in one response and `items=[]` in
+another do not prove the combined case was tested. Evidence links preserve the
+actual attempt, flow and instance location of each observed condition.
 
 ## 7. Example: one response exercises multiple conditions
 
@@ -377,26 +367,16 @@ Observed response:
 
 If the attempt is passing and complete and the response validates, the supported
 observations also become covered targets. All point to the same test/exchange.
-The combination is recorded as those observations occurring together.
 A later response can cover several remaining targets at once, without adding
 new labels to either the mock or the test.
 
-## 8. Fingerprints support comparison, not compatibility verdicts
+## 8. Stable target identities
 
 Each target records its operation key, contract revision, phase, condition and
-measurement rules. Combination fingerprints hash the measured condition keys
-and exact instance locations observed together. They do not hash arbitrary
-payload values, include test names in cross-repository identity, or infer
-application assertions.
-
-Response status is a condition under an operation, so responses with different
-statuses remain associated with the same operation. Contract revision is part
-of target identity; an operation key remains discoverable across revisions.
-
-Equal combination fingerprints identify equal measured condition combinations.
-They do not establish equal payloads or consumer/provider compatibility. The
-[assumption checker](assumption-checks.md) separately compares retained concrete
-requests, paired responses and supported contract declarations.
+measurement rules. Contract revision is part of target identity; an operation
+key remains discoverable across revisions. These identities support grouping
+and shard aggregation. The [assumption checker](assumption-checks.md) separately
+compares retained concrete requests, paired responses and supported declarations.
 
 ## 9. Preserve evidence quality and protocol boundaries
 
@@ -415,11 +395,11 @@ and media alternatives from the selected OpenAPI dialect.
 
 ## Measurement guarantees
 
-- One response contributes to every applicable condition and preserves the
-  combination without inventing additional scenarios.
+- One response contributes to every applicable condition, with evidence links
+  to that exchange.
 - Untested operations and feasible child targets of absent optional fields
   remain visible.
-- Equivalent evidence produces deterministic descriptors and fingerprints;
+- Equivalent evidence produces deterministic descriptors and target keys;
   meaningful differences remain explainable from source observations.
 - Failed, incomplete, legacy-redacted, unsupported, and ambiguous cases cannot silently
   become successful coverage or shrink the reported scope.

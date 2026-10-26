@@ -67,7 +67,7 @@ func TestNegativeRequestPreservesPassingOutcomeAndResponseCoverage(t *testing.T)
 	if capture.TestCase.Status != "pass" || capture.SchemaValidation == nil || capture.SchemaValidation.Status != "fail" {
 		t.Fatalf("framework outcome and schema evidence were conflated: %#v", capture)
 	}
-	if len(capture.SchemaValidation.Errors) != 1 || capture.SchemaValidation.Errors[0].Phase != "request" || len(capture.Assertions) == 0 {
+	if len(capture.SchemaValidation.Errors) != 1 || capture.SchemaValidation.Errors[0].Phase != "request" {
 		t.Fatalf("request violation evidence was lost: %#v", capture.SchemaValidation)
 	}
 	finished := postDependencyJSON(t, control.URL, "/v1/finishRun", map[string]any{})

@@ -46,6 +46,38 @@ func (a *App) testDefaults() setupTestRequest {
 	return out
 }
 
+// Apply project defaults only after decoding the request into fresh storage.
+// Empty arrays and false are explicit overrides; absent fields inherit. This
+// also prevents rejected overrides from mutating configured maps and pointers.
+func (a *App) applyTestDefaults(input setupTestRequest) setupTestRequest {
+	defaults := a.testDefaults()
+	if input.APIID == "" {
+		input.APIID = defaults.APIID
+	}
+	if input.SUTTargetKind == "" {
+		input.SUTTargetKind = defaults.SUTTargetKind
+	}
+	if input.SUTBaseURL == "" {
+		input.SUTBaseURL = defaults.SUTBaseURL
+	}
+	if input.TestSource == nil {
+		input.TestSource = defaults.TestSource
+	}
+	if input.SUTSource == nil {
+		input.SUTSource = defaults.SUTSource
+	}
+	if input.Schemas == nil {
+		input.Schemas = defaults.Schemas
+	}
+	if input.SchemaRequired == nil {
+		input.SchemaRequired = defaults.SchemaRequired
+	}
+	if input.Dependencies == nil {
+		input.Dependencies = defaults.Dependencies
+	}
+	return input
+}
+
 // Application identity belongs to the run. Omitted values inherit it, while
 // explicit values must agree with both the project and any existing run.
 func (a *App) resolveApplication(input *bundle.Application) (*bundle.Application, error) {

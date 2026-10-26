@@ -19,7 +19,7 @@ import (
 // Only the selected boundary is an obligation, but every selected exchange must
 // be represented, so a partial JSON/REST export cannot silently omit other traffic.
 func (s *snapshot) verifyArazzo(input, boundary string) (documentPath string, companions []string, err error) {
-	expected, err := arazzo.Generate(s.root, "")
+	expected, err := arazzo.GenerateSnapshot(s.run, s.captures, "")
 	if err != nil {
 		return "", nil, err
 	}

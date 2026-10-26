@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"flag"
@@ -11,7 +10,6 @@ import (
 
 	"github.com/mattlock83/wiretap/internal/archiveoutput"
 	"github.com/mattlock83/wiretap/internal/assumptions"
-	"github.com/mattlock83/wiretap/internal/coverage"
 	"github.com/mattlock83/wiretap/internal/htmlreport"
 	"github.com/mattlock83/wiretap/internal/runoutput"
 	"github.com/mattlock83/wiretap/internal/runset"
@@ -108,23 +106,17 @@ func reportCommand(args []string) error {
 		}
 		return exportErr
 	}
-	var report *coverage.Report
-	var htmlInputs htmlreport.Inputs
-	var err error
-	if format == "html" {
-		htmlInputs, err = htmlreport.Archive(context.Background(), bundlePath, sutName, includeArtifacts)
-		report = htmlInputs.Report
-	} else {
-		report, err = coverage.Generate(context.Background(), bundlePath, sutName, includeArtifacts)
+	snapshot, err := runoutput.Load(context.Background(), bundlePath, sutName, includeArtifacts)
+	if err != nil {
+		return err
 	}
+	data, err := snapshot.Coverage(context.Background(), format)
 	if err != nil {
 		return err
 	}
 	if outputPath == "" {
-		if format == "html" {
-			return htmlreport.Write(os.Stdout, htmlInputs)
-		}
-		return coverage.WriteReport(os.Stdout, report, format)
+		_, err = os.Stdout.Write(data)
+		return err
 	}
 	guard, err := archiveoutput.New(bundlePath)
 	if err != nil {
@@ -134,14 +126,5 @@ func reportCommand(args []string) error {
 	if err != nil {
 		return err
 	}
-	var data bytes.Buffer
-	if format == "html" {
-		err = htmlreport.Write(&data, htmlInputs)
-	} else {
-		err = coverage.WriteReport(&data, report, format)
-	}
-	if err != nil {
-		return err
-	}
-	return writeArchiveReport(outputPath, data.Bytes())
+	return writeArchiveReport(outputPath, data)
 }
