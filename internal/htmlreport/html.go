@@ -69,7 +69,6 @@ type pageModel struct {
 	ArazzoSources                                             []arazzo.Source
 	Sources                                                   []sourceView
 	Notes                                                     []string
-	Unmeasured                                                []coverage.UnmeasuredInteraction
 }
 type evidenceLink struct{ Name, AttemptID, FlowID, State, Href string }
 type specView struct {
@@ -235,7 +234,7 @@ func message(m coverage.InteractionMessage) messageView {
 }
 func makePage(in Inputs) (*pageModel, error) {
 	r := in.Report
-	m := &pageModel{Name: r.SUTName, RunState: "unknown", GeneratedAt: stamp(r.GeneratedAt), Producer: r.Producer.Name, Notes: append([]string(nil), r.Notes...), Unmeasured: r.Unmeasured}
+	m := &pageModel{Name: r.SUTName, RunState: "unknown", GeneratedAt: stamp(r.GeneratedAt), Producer: r.Producer.Name, Notes: append([]string(nil), r.Notes...)}
 	if m.Name == "" {
 		m.Name = "Wiretap API report"
 	}
@@ -288,9 +287,6 @@ func makePage(in Inputs) (*pageModel, error) {
 		}
 		seenFlows[key] = true
 		f := flowView{Anchor: anchor("flow", key), ID: s.FlowID, Protocol: s.Protocol, Channel: s.Channel, Asset: s.AssetID, Trace: s.TraceID, Parent: s.ParentFlowID, Correlation: s.TestCorrelation, ParentCorrelation: s.ParentCorrelation, ContextSource: s.TraceContextSource, Error: s.TransportError, Incomplete: s.CaptureIncomplete, Request: message(s.Request), Response: message(s.Response), Redactions: s.RedactionRules}
-		if s.Interaction != nil {
-			f.Error = strings.TrimSpace(f.Error + " Event interaction retained in JSON; contract coverage is unmeasured.")
-		}
 		t.Flows = append(t.Flows, f)
 		links[flowKey(s.TestCaseID, s.FlowID)] = "#" + f.Anchor
 	}

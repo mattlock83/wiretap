@@ -123,7 +123,7 @@ func expectLoadLimit(t *testing.T, root string, limits LoadLimits, field string)
 }
 
 func TestLoadRejectsOversizedFilesBeforeParsingOrHashing(t *testing.T) {
-	for _, resource := range []string{"run manifest", "capture", "contract", "contract manifest", "contract import", "HTTP payload", "event payload"} {
+	for _, resource := range []string{"run manifest", "capture", "contract", "contract manifest", "contract import", "HTTP payload"} {
 		t.Run(resource, func(t *testing.T) {
 			var root, target string
 			switch resource {
@@ -139,23 +139,19 @@ func TestLoadRejectsOversizedFilesBeforeParsingOrHashing(t *testing.T) {
 					target = filepath.Join(root, "payloads", digest([]byte("shared body"))+".bin")
 				}
 			case "contract", "contract manifest", "contract import":
-				w, refs := opaquePackageFixture(t, "asyncapi")
-				root = w.Path()
-				target = refs[0].Source.Path
-				base := filepath.Dir(filepath.Dir(target))
+				ref, manifest := openAPIExportFixture(t)
+				root = filepath.Dir(filepath.Dir(filepath.Dir(ref.Source.Path)))
+				target = ref.Source.Path
 				if resource == "contract manifest" {
-					target = filepath.Join(base, "manifest.json")
+					target = filepath.Join(filepath.Dir(target), "manifest.json")
 				} else if resource == "contract import" {
-					target = filepath.Join(base, "types", "event.schema")
+					for _, file := range manifest.Files {
+						if file.Path != manifest.Root {
+							target = filepath.Join(root, filepath.FromSlash(file.Path))
+							break
+						}
+					}
 				}
-			case "event payload":
-				w, capture := eventFixture(t, Identity{}, nil)
-				capture.Traffic = []artifact.Flow{{ID: "publish", Protocol: "kafka", Interaction: &artifact.Interaction{Kind: "publish", Boundary: artifact.BoundaryRef{Role: "dependency", ID: "events"}, Transport: "tcp", Operation: "events", CaptureState: "complete", Events: observedEvents(artifact.InteractionEvent{Direction: "sent", Kind: "message", Payloads: []artifact.EventPayload{binaryEventPayload("value", "bytes", []byte("event body"))}})}}}
-				if _, err := w.Commit(capture); err != nil {
-					t.Fatal(err)
-				}
-				root = w.Path()
-				target = filepath.Join(root, "payloads", digest([]byte("event body"))+".bin")
 
 			}
 			if target == "" {
@@ -217,14 +213,18 @@ func TestLoadCountsManifestAndInventoriesBeforeFollowingReferences(t *testing.T)
 		expectLoadLimit(t, root, LoadLimits{MaxFileReads: 3}, "run test inventory")
 	})
 	t.Run("contract imports", func(t *testing.T) {
-		w, refs := opaquePackageFixture(t, "asyncapi")
-		child := filepath.Join(filepath.Dir(filepath.Dir(refs[0].Source.Path)), "types", "event.schema")
-		if err := os.Remove(child); err != nil {
-			t.Fatal(err)
+		ref, manifest := openAPIExportFixture(t)
+		root := filepath.Dir(filepath.Dir(filepath.Dir(ref.Source.Path)))
+		for _, file := range manifest.Files {
+			if file.Path != manifest.Root {
+				if err := os.Remove(filepath.Join(root, filepath.FromSlash(file.Path))); err != nil {
+					t.Fatal(err)
+				}
+			}
 		}
 		// Run, root and contract manifest exhaust the available reads. The
 		// manifest's inventory must fail before following its missing import.
-		expectLoadLimit(t, w.Path(), LoadLimits{MaxFileReads: 3}, "file inventory")
+		expectLoadLimit(t, root, LoadLimits{MaxFileReads: 3}, "file inventory")
 	})
 }
 

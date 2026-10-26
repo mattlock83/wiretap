@@ -78,21 +78,21 @@ func TestCLIAssumptionCheckRejectsDeclaredRuleDifferences(t *testing.T) {
 				return cliCheckArchiveWithContracts(t, consumer, "/items", 200, `{"value":`+scenario.value+`}`, []artifact.SchemaRef{{ID: "inventory", Role: role, AssetID: asset, Type: "openapi", Source: artifact.SchemaSource{Type: "inline", Content: spec}}})
 			}
 			consumer, provider := archive(true, scenario.consumer), archive(false, scenario.provider)
-			for _, mode := range []string{"consumer", "provider"} {
-				args := []string{"check", mode, "--consumer", consumer, "--provider", provider}
-				code, output := executeCapturingStdout(t, append(args, "--format", "json"))
-				var report assumptions.Report
-				if err := json.Unmarshal(output, &report); err != nil {
-					t.Fatalf("invalid report: %v\n%s", err, output)
-				}
-				if code != 1 || report.Compatible || len(report.Findings) != 1 || report.Findings[0].Code != "http_contract_mismatch" || !strings.Contains(strings.Join(report.Findings[0].Differences, " "), scenario.keyword) {
-					t.Fatalf("expected %s error in %s mode, exit %d: %s", scenario.keyword, mode, code, output)
-				}
-				code, output = executeCapturingStdout(t, args)
-				if code != 1 || !strings.Contains(string(output), "validation rules differ") || !strings.Contains(string(output), scenario.keyword) {
-					t.Fatalf("missing useful text diagnostic, exit %d: %s", code, output)
-				}
+
+			args := []string{"check", "--consumer", consumer, "--provider", provider}
+			code, output := executeCapturingStdout(t, append(args, "--format", "json"))
+			var report assumptions.Report
+			if err := json.Unmarshal(output, &report); err != nil {
+				t.Fatalf("invalid report: %v\n%s", err, output)
 			}
+			if code != 1 || report.Compatible || len(report.Findings) != 1 || report.Findings[0].Code != "http_contract_mismatch" || !strings.Contains(strings.Join(report.Findings[0].Differences, " "), scenario.keyword) {
+				t.Fatalf("expected %s error, exit %d: %s", scenario.keyword, code, output)
+			}
+			code, output = executeCapturingStdout(t, args)
+			if code != 1 || !strings.Contains(string(output), "validation rules differ") || !strings.Contains(string(output), scenario.keyword) {
+				t.Fatalf("missing useful text diagnostic, exit %d: %s", code, output)
+			}
+
 		})
 	}
 }
@@ -131,44 +131,42 @@ paths:
 		t.Run(scenario.name, func(t *testing.T) {
 			consumer := cliCheckArchive(t, true, "/items", 200, scenario.body)
 			provider := cliCheckArchiveWithContracts(t, false, "/items", 200, scenario.body, []artifact.SchemaRef{{ID: "inventory", Role: "sut", Type: "openapi", Source: artifact.SchemaSource{Type: "inline", Content: spec}}})
-			for _, mode := range []string{"consumer", "provider"} {
-				args := []string{"check", mode, "--consumer", consumer, "--provider", provider}
-				code, output := executeCapturingStdout(t, append(args, "--format", "json"))
-				var report assumptions.Report
-				if err := json.Unmarshal(output, &report); err != nil {
-					t.Fatalf("invalid report: %v\n%s", err, output)
-				}
-				if scenario.valid {
-					if code != 0 || !report.Compatible || len(report.Matches) != 1 || report.Matches[0].ContractCheck != "openapi_3_0_provider_contract" || report.RulesVersion != assumptions.RulesVersion {
-						t.Fatalf("provider-owned spec was not used, exit %d: %s", code, output)
-					}
-					code, output = executeCapturingStdout(t, args)
-					if code != 0 || !strings.Contains(string(output), "1 HTTP provider-spec checks") {
-						t.Fatalf("text report hides provider-spec assurance, exit %d: %s", code, output)
-					}
-				} else if code != 1 || report.Compatible || len(report.Findings) != 1 || report.Findings[0].Code != "http_contract_violation" {
-					t.Fatalf("provider contract violation passed in %s mode, exit %d: %s", mode, code, output)
-				}
+
+			args := []string{"check", "--consumer", consumer, "--provider", provider}
+			code, output := executeCapturingStdout(t, append(args, "--format", "json"))
+			var report assumptions.Report
+			if err := json.Unmarshal(output, &report); err != nil {
+				t.Fatalf("invalid report: %v\n%s", err, output)
 			}
+			if scenario.valid {
+				if code != 0 || !report.Compatible || len(report.Matches) != 1 || report.Matches[0].ContractCheck != "openapi_3_0_provider_contract" || report.RulesVersion != assumptions.RulesVersion {
+					t.Fatalf("provider-owned spec was not used, exit %d: %s", code, output)
+				}
+				code, output = executeCapturingStdout(t, args)
+				if code != 0 || !strings.Contains(string(output), "1 HTTP provider-spec checks") {
+					t.Fatalf("text report hides provider-spec assurance, exit %d: %s", code, output)
+				}
+			} else if code != 1 || report.Compatible || len(report.Findings) != 1 || report.Findings[0].Code != "http_contract_violation" {
+				t.Fatalf("provider contract violation passed, exit %d: %s", code, output)
+			}
+
 		})
 	}
 }
 
-func TestCLIAssumptionCheckBothViewpoints(t *testing.T) {
+func TestCLIAssumptionCheckExplicitPair(t *testing.T) {
 	consumer := cliCheckArchive(t, true, "/items?limit=1", 200, `{"stock":3}`)
 	provider := cliCheckArchive(t, false, "/items?limit=1", 200, `{"stock":3.0}`)
-	for _, mode := range []string{"consumer", "provider"} {
-		t.Run(mode, func(t *testing.T) {
-			code, data := executeCapturingStdout(t, []string{"check", mode, "--consumer", filepath.Join(consumer, "bundle.json"), "--provider", provider, "--format", "json"})
-			var report assumptions.Report
-			if err := json.Unmarshal(data, &report); err != nil {
-				t.Fatalf("invalid report: %v\n%s", err, data)
-			}
-			if code != 0 || !report.Compatible || report.Mode != mode || report.Counts.Verified != 1 || report.Binding != "declared_mapping" {
-				t.Fatalf("check returned %d: %+v", code, report)
-			}
-		})
+
+	code, data := executeCapturingStdout(t, []string{"check", "--consumer", filepath.Join(consumer, "bundle.json"), "--provider", provider, "--format", "json"})
+	var report assumptions.Report
+	if err := json.Unmarshal(data, &report); err != nil {
+		t.Fatalf("invalid report: %v\n%s", err, data)
 	}
+	if code != 0 || !report.Compatible || report.Counts.Verified != 1 || report.Binding != "declared_mapping" {
+		t.Fatalf("check returned %d: %+v", code, report)
+	}
+
 }
 
 func TestCLIAssumptionCheckReportsFailureAndWritesJSON(t *testing.T) {
@@ -184,7 +182,7 @@ func TestCLIAssumptionCheckReportsFailureAndWritesJSON(t *testing.T) {
 	} {
 		t.Run(scenario.name, func(t *testing.T) {
 			provider := cliCheckArchive(t, false, scenario.path, scenario.status, scenario.response)
-			args := []string{"check", "consumer", "--consumer", consumer, "--provider", provider}
+			args := []string{"check", "--consumer", consumer, "--provider", provider}
 			code, text := executeCapturingStdout(t, args)
 			if code != 1 || !strings.Contains(string(text), "["+scenario.kind+"]") || !strings.Contains(string(text), "tests/attempt.json#/capture/traffic/0") {
 				t.Fatalf("check exit %d: %s", code, text)
@@ -209,7 +207,7 @@ func TestCLIAssumptionCheckReportsFailureAndWritesJSON(t *testing.T) {
 func TestCLIAssumptionCheckProtectsInputsAndExistingReports(t *testing.T) {
 	consumer := cliCheckArchive(t, true, "/items", 200, `{"ok":true}`)
 	provider := cliCheckArchive(t, false, "/items", 200, `{"ok":true}`)
-	args := []string{"check", "consumer", "--consumer", consumer, "--provider", provider}
+	args := []string{"check", "--consumer", consumer, "--provider", provider}
 	manifest := filepath.Join(consumer, "bundle.json")
 	before, err := os.ReadFile(manifest)
 	if err != nil {
@@ -267,7 +265,7 @@ func TestCLIAssumptionCheckOutputRespectsUmask(t *testing.T) {
 						t.Fatal(err)
 					}
 				}
-				args := []string{"check", "consumer", "--consumer", consumer, "--provider", provider, "--format", format, "--output", output}
+				args := []string{"check", "--consumer", consumer, "--provider", provider, "--format", format, "--output", output}
 				if code := execute(context.Background(), args); code != 0 {
 					t.Fatalf("check exit %d", code)
 				}
@@ -284,7 +282,7 @@ func TestCLIAssumptionCheckOutputRespectsUmask(t *testing.T) {
 					if err := json.Unmarshal(data, &report); err != nil || !report.Compatible {
 						t.Fatalf("invalid check report: %s, %v", data, err)
 					}
-				} else if !strings.HasPrefix(string(data), "PASS: check consumer") {
+				} else if !strings.HasPrefix(string(data), "PASS: check") {
 					t.Fatalf("invalid check report: %s", data)
 				}
 			})
@@ -294,16 +292,16 @@ func TestCLIAssumptionCheckOutputRespectsUmask(t *testing.T) {
 
 func TestCLIAssumptionCheckUsage(t *testing.T) {
 	for _, args := range [][]string{
-		{"check", "--help"}, {"check", "consumer", "--help"}, {"check", "provider", "--help"},
+		{"check", "--help"}, {"check", "-h"},
 	} {
 		if code := execute(context.Background(), args); code != 0 {
 			t.Fatalf("help %v: exit %d", args, code)
 		}
 	}
 	for _, args := range [][]string{
-		{"check"}, {"check", "other"}, {"check", "consumer"}, {"check", "provider", "--consumer", "x"},
-		{"check", "consumer", "--consumer", "x", "--provider", "y", "--format", "yaml"},
-		{"check", "consumer", "--consumer", "x", "--provider", "y", "extra"},
+		{"check"}, {"check", "other"}, {"check", "consumer"}, {"check", "--consumer", "x"},
+		{"check", "--consumer", "x", "--provider", "y", "--format", "yaml"},
+		{"check", "--consumer", "x", "--provider", "y", "extra"},
 	} {
 		if code := execute(context.Background(), args); code != 2 {
 			t.Fatalf("usage %v: exit %d", args, code)
@@ -323,7 +321,7 @@ func TestCLIAssumptionCheckProtectsCaseAliases(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	code := execute(context.Background(), []string{"check", "consumer", "--consumer", consumer, "--provider", provider, "--output", filepath.Join(alias, "bundle.json")})
+	code := execute(context.Background(), []string{"check", "--consumer", consumer, "--provider", provider, "--output", filepath.Join(alias, "bundle.json")})
 	after, err := os.ReadFile(manifest)
 	if code != 2 || err != nil || string(before) != string(after) {
 		t.Fatalf("case alias bypassed input protection: exit %d error %v", code, err)
@@ -337,7 +335,7 @@ func TestCLIAssumptionCheckSavesUnverifiedReportWithoutExports(t *testing.T) {
 		t.Fatal(err)
 	}
 	output := filepath.Join(t.TempDir(), "unverified.json")
-	code := execute(context.Background(), []string{"check", "provider", "--consumer", consumer, "--provider", provider, "--format", "json", "--output", output})
+	code := execute(context.Background(), []string{"check", "--consumer", consumer, "--provider", provider, "--format", "json", "--output", output})
 	data, err := os.ReadFile(output)
 	if err != nil {
 		t.Fatal(err)

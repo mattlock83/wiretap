@@ -68,7 +68,7 @@ func TestTestLifecycleRetainsSyntheticTestData(t *testing.T) {
 
 func TestOnlyCurrentControlRoutesAndFieldsAreAccepted(t *testing.T) {
 	control, _ := dependencyCaptureRuntime(t)
-	for _, path := range []string{"/v1/generateSchema", "/v1/startServer", "/v1/killServer", "/v1/lifecycle/start", "/v1/lifecycle/stop", "/v1/proxy/start", "/v1/proxy/mode", "/v1/testcases/start", "/v1/testcases/finish", "/v1/testcases/status", "/v1/artifact", "/v1/redactions"} {
+	for _, path := range []string{"/v1/report", "/v1/generateSchema", "/v1/startServer", "/v1/killServer", "/v1/lifecycle/start", "/v1/lifecycle/stop", "/v1/proxy/start", "/v1/proxy/mode", "/v1/testcases/start", "/v1/testcases/finish", "/v1/testcases/status", "/v1/artifact", "/v1/redactions"} {
 		apiStatus(t, control.URL, path, map[string]any{}, http.StatusNotFound)
 	}
 	apiStatus(t, control.URL, "/v1/setupTest", map[string]any{"name": "removed identity", "application_knowledge": map[string]string{"test_id": "test:old"}}, http.StatusBadRequest)
@@ -77,7 +77,6 @@ func TestOnlyCurrentControlRoutesAndFieldsAreAccepted(t *testing.T) {
 	for path, payload := range map[string]map[string]any{
 		"/v1/startRun":     {"target_url": "http://sut.test"},
 		"/v1/setupTest":    {"name": "old schema field", "sut_schemas": []any{}},
-		"/v1/report":       {"artifacts_dir": t.TempDir()},
 		"/v1/teardownTest": {"session_id": "unused", "unknown": true},
 	} {
 		apiStatus(t, control.URL, path, payload, http.StatusBadRequest)

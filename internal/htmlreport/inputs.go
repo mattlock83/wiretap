@@ -128,7 +128,19 @@ func Archive(ctx context.Context, path, sutName string, includeArtifacts bool) (
 	if err != nil {
 		return Inputs{}, err
 	}
-	result := Inputs{Report: report, WiretapName: "coverage.json"}
+	export, exportErr := arazzo.GenerateSnapshot(run, captures, sutName)
+	return FromSnapshot(ctx, run, report, export, exportErr)
+}
+
+// FromSnapshot assembles the HTML inputs from a verified inventory and its
+// derived outputs. Workflow failures are displayed without changing coverage.
+func FromSnapshot(ctx context.Context, run *bundle.Run, report *coverage.Report, export *arazzo.Export, exportErr error) (Inputs, error) {
+	if run == nil || report == nil {
+		return Inputs{}, errors.New("HTML report requires an archive and coverage snapshot")
+	}
+	copy := *report
+	copy.Notes = append([]string(nil), report.Notes...)
+	result := Inputs{Report: &copy, WiretapName: "coverage.json"}
 	specs := map[string]string{}
 	seenContracts := map[string]bool{}
 	for _, ref := range run.Schemas {
@@ -157,14 +169,10 @@ func Archive(ctx context.Context, path, sutName string, includeArtifacts bool) (
 	if err := ctx.Err(); err != nil {
 		return Inputs{}, err
 	}
-	export, err := arazzo.Generate(path, sutName)
-	if canceled := ctx.Err(); canceled != nil {
-		return Inputs{}, canceled
-	}
-	if err != nil {
-		report.Notes = append(report.Notes, "Arazzo workflows unavailable: "+err.Error())
-	} else if export.Document == nil {
-		report.Notes = append(report.Notes, "Arazzo workflows unavailable: the capture contains no eligible JSON/REST interactions.")
+	if exportErr != nil {
+		copy.Notes = append(copy.Notes, "Arazzo workflows unavailable: "+exportErr.Error())
+	} else if export == nil || export.Document == nil {
+		copy.Notes = append(copy.Notes, "Arazzo workflows unavailable: the capture contains no eligible JSON/REST interactions.")
 	} else {
 		result.Arazzo = export.Document
 		result.ArazzoName = "arazzo.json"

@@ -10,14 +10,14 @@ import (
 )
 
 func (a *App) startRun(ctx context.Context) error {
-	if err := a.lifecycle.Start(ctx); err != nil && !errors.Is(err, proxy.ErrAlreadyStarted) {
+	if err := a.startProxy(ctx); err != nil && !errors.Is(err, proxy.ErrAlreadyStarted) {
 		return err
 	}
 	_, err := a.ensureBundle()
 	if err != nil {
 		stopCtx, cancel := context.WithTimeout(context.Background(), time.Second)
 		defer cancel()
-		return errors.Join(err, a.lifecycle.Stop(stopCtx))
+		return errors.Join(err, a.proxyServer.Stop(stopCtx))
 	}
 	return nil
 }
@@ -32,7 +32,7 @@ func (a *App) finishRun(ctx context.Context) (string, error) {
 	if a.hasActiveSessions() {
 		return "", errors.New("capture exchanges are still active")
 	}
-	if err := a.lifecycle.Stop(ctx); err != nil {
+	if err := a.proxyServer.Stop(ctx); err != nil {
 		return "", err
 	}
 	current := a.currentBundle()
@@ -51,11 +51,20 @@ func (a *App) interruptRun() error {
 	defer a.controlMu.Unlock()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	stopErr := a.lifecycle.Stop(ctx)
+	stopErr := a.proxyServer.Stop(ctx)
 	current := a.currentBundle()
 	err := a.closeBundle("interrupted")
 	if err == nil && current != nil {
 		_, _, err = bundle.Load(current.Path())
 	}
 	return errors.Join(stopErr, err)
+}
+
+func (a *App) startProxy(ctx context.Context) error {
+	a.logger.Info("starting proxy")
+	info, err := a.proxyServer.Start(ctx)
+	if err == nil {
+		a.proxyInfo = info
+	}
+	return err
 }

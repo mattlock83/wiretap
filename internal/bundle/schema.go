@@ -37,8 +37,8 @@ type schemaManifest struct {
 }
 
 func validateSchemaBoundary(ref artifact.SchemaRef) error {
-	if strings.EqualFold(strings.TrimSpace(ref.Type), "protobuf") || artifact.UnsupportedRPCProtocol(ref.Protocol) {
-		return fmt.Errorf("native gRPC and protobuf contracts are unsupported")
+	if ref.Type != "openapi" || ref.Protocol != "" && ref.Protocol != "http" {
+		return fmt.Errorf("unsupported contract type/protocol %q/%q; only OpenAPI over HTTP is supported", ref.Type, ref.Protocol)
 	}
 	if ref.Role != "sut" && ref.Role != "provided" && ref.Role != "dependency" {
 		return fmt.Errorf("contract %q has unsupported boundary role %q", ref.ID, ref.Role)
@@ -52,17 +52,10 @@ func (w *Writer) freezeSchema(ref artifact.SchemaRef) (artifact.SchemaRef, error
 	if err := validateSchemaBoundary(ref); err != nil {
 		return ref, err
 	}
-	switch ref.Type {
-	case "avro", "asyncapi", "graphql":
-		return w.freezeContractPackage(ref)
-	case "openapi":
-	default:
-		return ref, fmt.Errorf("unsupported contract type %q", ref.Type)
-	}
 	var rootURL *url.URL
 	switch strings.ToLower(ref.Source.Type) {
 	case "omitted":
-		if ref.Source.Path != "" || ref.Source.URL != "" || ref.Source.Content != "" || ref.Source.SHA256 != "" || len(ref.Source.Files) != 0 {
+		if ref.Source.Path != "" || ref.Source.URL != "" || ref.Source.Content != "" || ref.Source.SHA256 != "" {
 			return ref, errors.New("omitted schema cannot contain a source")
 		}
 		return ref, nil

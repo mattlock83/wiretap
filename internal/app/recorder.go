@@ -8,14 +8,10 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"net/url"
 	"os"
-	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -148,7 +144,6 @@ func (s *TestCaseStore) FinishCase(status string, env *artifact.Environment) (*a
 	flows := append([]artifact.Flow{}, state.flows...)
 	linkCausality(flows)
 	for i := range flows {
-		flows[i].Fingerprint = flowFingerprint(flows[i])
 		if flows[i].Channel == "sut_to_dependency" {
 			flows[i].Assumption = &artifact.DependencyAssumption{EvidenceBasis: "observed_exchange", ConsumedFields: "unknown"}
 			flows[i].Assumption.ProviderCheck.Status = "not_checked"
@@ -358,89 +353,6 @@ func (s *TestCaseStore) MarkCaptureIncomplete(message string) {
 	if s.active != nil {
 		s.active.captureIncomplete = true
 		s.active.captureDiagnostics = append(s.active.captureDiagnostics, message)
-	}
-}
-
-// flowFingerprint hashes the interaction shape (not its values) so identical
-// interactions across runs and repos dedupe even when test data varies.
-func flowFingerprint(flow artifact.Flow) string {
-	var reqMethod, reqPath, reqShape, respShape string
-	status := 0
-	if flow.Request.HTTP != nil {
-		reqMethod = flow.Request.HTTP.Method
-		if parsed, err := url.Parse(flow.Request.HTTP.URL); err == nil {
-			reqPath = parsed.Path
-		} else {
-			reqPath = flow.Request.HTTP.URL
-		}
-		reqShape = bodyShape(flow.Request.HTTP.Body)
-	}
-	if flow.Response.HTTP != nil {
-		status = flow.Response.HTTP.Status
-		respShape = bodyShape(flow.Response.HTTP.Body)
-	}
-	channel := flow.Channel
-	if flow.AssetID != "" {
-		channel += ":" + flow.AssetID
-	}
-	canonical := strings.Join([]string{
-		channel, reqMethod, reqPath, strconv.Itoa(status), reqShape, respShape,
-	}, "|")
-	sum := sha256.Sum256([]byte(canonical))
-	return hex.EncodeToString(sum[:])[:16]
-}
-
-// bodyShape reduces a JSON body to its key/type structure; non-JSON bodies
-// collapse to a coarse token.
-func bodyShape(body *artifact.Body) string {
-	if body == nil {
-		return ""
-	}
-	if body.Truncated {
-		return "truncated"
-	}
-	if body.Encoding == "base64" {
-		return "binary"
-	}
-	trimmed := strings.TrimSpace(body.Text)
-	if trimmed == "" {
-		return ""
-	}
-	var payload any
-	if err := json.Unmarshal([]byte(trimmed), &payload); err != nil {
-		return "text"
-	}
-	return valueShape(payload)
-}
-
-func valueShape(value any) string {
-	switch typed := value.(type) {
-	case map[string]any:
-		keys := make([]string, 0, len(typed))
-		for key := range typed {
-			keys = append(keys, key)
-		}
-		sort.Strings(keys)
-		parts := make([]string, 0, len(keys))
-		for _, key := range keys {
-			parts = append(parts, key+":"+valueShape(typed[key]))
-		}
-		return "{" + strings.Join(parts, ",") + "}"
-	case []any:
-		if len(typed) == 0 {
-			return "[]"
-		}
-		return "[" + valueShape(typed[0]) + "]"
-	case string:
-		return "string"
-	case float64:
-		return "number"
-	case bool:
-		return "bool"
-	case nil:
-		return "null"
-	default:
-		return "unknown"
 	}
 }
 

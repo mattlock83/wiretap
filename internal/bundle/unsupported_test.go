@@ -11,7 +11,7 @@ import (
 	"github.com/mattlock83/wiretap/internal/artifact"
 )
 
-func TestNativeRPCContractsAndCapturesAreUnsupported(t *testing.T) {
+func TestNonHTTPContractsAndCapturesAreUnsupported(t *testing.T) {
 	writer, err := New(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -29,7 +29,7 @@ func TestNativeRPCContractsAndCapturesAreUnsupported(t *testing.T) {
 	}
 }
 
-func TestNativeRPCManifestEvidenceIsRejected(t *testing.T) {
+func TestUnsupportedManifestEvidenceIsRejected(t *testing.T) {
 	writer, err := New(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -52,6 +52,10 @@ func TestNativeRPCManifestEvidenceIsRejected(t *testing.T) {
 	}
 	for _, mutate := range []func(*Run){
 		func(run *Run) { run.RequiredCapabilities = []string{"grpc-observation.v1"} },
+		func(run *Run) { run.RequiredCapabilities = []string{"event-interactions.v1"} },
+		func(run *Run) { run.RequiredCapabilities = []string{"contract-packages.v1"} },
+		func(run *Run) { run.ProvidedAPIs = []API{{ID: "event", Protocols: []string{"kafka"}}} },
+		func(run *Run) { run.ProvidedAPIs = []API{{ID: "event", Contracts: []APIContract{{Type: "avro"}}}} },
 		func(run *Run) { run.Schemas = []artifact.SchemaRef{{ID: "rpc", Role: "sut", Type: "protobuf"}} },
 		func(run *Run) { run.ProvidedAPIs = []API{{ID: "rpc", Protocols: []string{"grpc"}}} },
 		func(run *Run) { run.ProvidedAPIs = []API{{ID: "rpc", Protocols: []string{" GrPc-WeB "}}} },
@@ -74,8 +78,8 @@ func TestNativeRPCManifestEvidenceIsRejected(t *testing.T) {
 	}
 }
 
-func TestNativeRPCAttachmentSelectorsAreRejected(t *testing.T) {
-	for _, raw := range []string{`{"kind":"wire"}`, `{"message_index":0}`, `{"status_detail_index":0}`, `{"Kind":"wire"}`, `{"MESSAGE_INDEX":0}`, `{"Status_Detail_Index":0}`} {
+func TestUnsupportedAttachmentSelectorsAreRejected(t *testing.T) {
+	for _, raw := range []string{`{"kind":"wire"}`, `{"message_index":0}`, `{"status_detail_index":0}`, `{"Kind":"wire"}`, `{"MESSAGE_INDEX":0}`, `{"Status_Detail_Index":0}`, `{"event_id":"event"}`, `{"Payload_Name":"body"}`} {
 		var ref BodyRef
 		if err := json.Unmarshal([]byte(raw), &ref); err == nil || !strings.Contains(err.Error(), "unsupported") {
 			t.Fatalf("native RPC attachment selector accepted: %s: %v", raw, err)

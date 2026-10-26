@@ -22,8 +22,6 @@ import (
 	"github.com/mattlock83/wiretap/internal/artifact"
 	"github.com/mattlock83/wiretap/internal/bundle"
 	"github.com/mattlock83/wiretap/internal/version"
-
-	"gopkg.in/yaml.v3"
 )
 
 const ReportVersion = "1.0"
@@ -31,144 +29,119 @@ const ReportVersion = "1.0"
 // Report envelopes and raw capture formats evolve independently. The recording
 // remains authoritative for every body preview and comparison observation.
 type CaptureSource struct {
-	ProviderMappings map[string]bundle.ProviderRef `json:"provider_mappings,omitempty" yaml:"provider_mappings,omitempty"`
-	FormatVersion    string                        `json:"format_version" yaml:"format_version"`
-	RunID            string                        `json:"run_id" yaml:"run_id"`
-	Revision         uint64                        `json:"revision" yaml:"revision"`
-	State            string                        `json:"state" yaml:"state"`
-	Producer         *version.Producer             `json:"producer,omitempty" yaml:"producer,omitempty"`
-	Application      *bundle.Application           `json:"application,omitempty" yaml:"application,omitempty"`
-	TestSource       map[string]any                `json:"test_source,omitempty" yaml:"test_source,omitempty"`
-	SUTSource        map[string]any                `json:"sut_source,omitempty" yaml:"sut_source,omitempty"`
+	ProviderMappings map[string]bundle.ProviderRef `json:"provider_mappings,omitempty"`
+	FormatVersion    string                        `json:"format_version"`
+	RunID            string                        `json:"run_id"`
+	Revision         uint64                        `json:"revision"`
+	State            string                        `json:"state"`
+	Producer         *version.Producer             `json:"producer,omitempty"`
+	Application      *bundle.Application           `json:"application,omitempty"`
+	TestSource       map[string]any                `json:"test_source,omitempty"`
+	SUTSource        map[string]any                `json:"sut_source,omitempty"`
 }
 type Report struct {
-	ReportVersion string                  `json:"report_version" yaml:"report_version"`
-	Producer      version.Producer        `json:"producer" yaml:"producer"`
-	Capture       *CaptureSource          `json:"capture" yaml:"capture"`
-	Unmeasured    []UnmeasuredInteraction `json:"unmeasured_interactions,omitempty" yaml:"unmeasured_interactions,omitempty"`
-	Contracts     *ContractCoverage       `json:"contract_coverage,omitempty" yaml:"contract_coverage,omitempty"`
-	GeneratedAt   time.Time               `json:"generated_at" yaml:"generated_at"`
-	SUTName       string                  `json:"sut_name" yaml:"sut_name"`
-	ArtifactCount int                     `json:"artifact_count" yaml:"artifact_count"`
-	Artifacts     []string                `json:"artifacts,omitempty" yaml:"artifacts,omitempty"`
-	Provided      SpecCoverageGroup       `json:"provided" yaml:"provided"`
-	Dependent     SpecCoverageGroup       `json:"dependent" yaml:"dependent"`
-	TestCases     []TestCaseCoverage      `json:"testcases,omitempty" yaml:"testcases,omitempty"`
-	Notes         []string                `json:"notes,omitempty" yaml:"notes,omitempty"`
+	ReportVersion string             `json:"report_version"`
+	Producer      version.Producer   `json:"producer"`
+	Capture       *CaptureSource     `json:"capture"`
+	Contracts     *ContractCoverage  `json:"contract_coverage,omitempty"`
+	GeneratedAt   time.Time          `json:"generated_at"`
+	SUTName       string             `json:"sut_name"`
+	ArtifactCount int                `json:"artifact_count"`
+	Artifacts     []string           `json:"artifacts,omitempty"`
+	Provided      SpecCoverageGroup  `json:"provided"`
+	Dependent     SpecCoverageGroup  `json:"dependent"`
+	TestCases     []TestCaseCoverage `json:"testcases,omitempty"`
+	Notes         []string           `json:"notes,omitempty"`
 
 	artifactEntries []artifactEntry
 	explicitSUTName bool
 }
 
-// UnmeasuredInteraction preserves an explicit gap when the recording format
-// supports an exchange that the current measurement engine cannot evaluate.
-type UnmeasuredInteraction struct {
-	AttemptID string `json:"attempt_id" yaml:"attempt_id"`
-	FlowID    string `json:"flow_id" yaml:"flow_id"`
-	Protocol  string `json:"protocol" yaml:"protocol"`
-	Kind      string `json:"kind" yaml:"kind"`
-	Reason    string `json:"reason" yaml:"reason"`
-}
-
-func unmeasuredInteractions(captures []*artifact.Artifact) []UnmeasuredInteraction {
-	var out []UnmeasuredInteraction
-	for _, capture := range captures {
-		for _, flow := range capture.Traffic {
-			if flow.Interaction != nil {
-				out = append(out, UnmeasuredInteraction{AttemptID: capture.TestCase.ID, FlowID: flow.ID, Protocol: flow.Protocol, Kind: flow.Interaction.Kind, Reason: "Event interaction coverage is not supported; retained events are observations, not measured contract coverage."})
-			}
-		}
-	}
-	return out
-}
-
 type SpecCoverageGroup struct {
-	Specs []SpecCoverage `json:"specs" yaml:"specs"`
+	Specs []SpecCoverage `json:"specs"`
 }
 
 type SpecCoverage struct {
-	Protocol         string             `json:"protocol,omitempty" yaml:"protocol,omitempty"`
-	DenominatorKnown bool               `json:"denominator_known" yaml:"denominator_known"`
-	SchemaSet        string             `json:"schema_set,omitempty" yaml:"schema_set,omitempty"`
-	SchemaID         string             `json:"schema_id" yaml:"schema_id"`
-	Role             string             `json:"role" yaml:"role"`
-	AssetID          string             `json:"asset_id,omitempty" yaml:"asset_id,omitempty"`
-	AssetName        string             `json:"asset_name,omitempty" yaml:"asset_name,omitempty"`
-	AssetSHA         string             `json:"asset_sha,omitempty" yaml:"asset_sha,omitempty"`
-	Type             string             `json:"type" yaml:"type"`
-	Source           string             `json:"source" yaml:"source"`
-	Exercised        []OperationSamples `json:"exercised,omitempty" yaml:"exercised,omitempty"`
-	NotCovered       []OperationSamples `json:"not_covered,omitempty" yaml:"not_covered,omitempty"`
+	Protocol         string             `json:"protocol,omitempty"`
+	DenominatorKnown bool               `json:"denominator_known"`
+	SchemaSet        string             `json:"schema_set,omitempty"`
+	SchemaID         string             `json:"schema_id"`
+	Role             string             `json:"role"`
+	AssetID          string             `json:"asset_id,omitempty"`
+	AssetName        string             `json:"asset_name,omitempty"`
+	AssetSHA         string             `json:"asset_sha,omitempty"`
+	Type             string             `json:"type"`
+	Source           string             `json:"source"`
+	Exercised        []OperationSamples `json:"exercised,omitempty"`
+	NotCovered       []OperationSamples `json:"not_covered,omitempty"`
 }
 
 type OperationSamples struct {
-	Operation string       `json:"operation" yaml:"operation"`
-	Samples   []FlowSample `json:"samples,omitempty" yaml:"samples,omitempty"`
+	Operation string       `json:"operation"`
+	Samples   []FlowSample `json:"samples,omitempty"`
 }
 
 type TestCaseCoverage struct {
-	Attempts  []artifact.TestCase    `json:"attempts,omitempty" yaml:"attempts,omitempty"`
-	Name      string                 `json:"name" yaml:"name"`
-	Traffic   []FlowSample           `json:"traffic,omitempty" yaml:"traffic,omitempty"`
-	Provided  []SpecOperationSamples `json:"provided,omitempty" yaml:"provided,omitempty"`
-	Dependent []SpecOperationSamples `json:"dependent,omitempty" yaml:"dependent,omitempty"`
+	Attempts  []artifact.TestCase    `json:"attempts,omitempty"`
+	Name      string                 `json:"name"`
+	Traffic   []FlowSample           `json:"traffic,omitempty"`
+	Provided  []SpecOperationSamples `json:"provided,omitempty"`
+	Dependent []SpecOperationSamples `json:"dependent,omitempty"`
 }
 
 type SpecOperationSamples struct {
-	SchemaID   string             `json:"schema_id" yaml:"schema_id"`
-	SchemaSet  string             `json:"schema_set,omitempty" yaml:"schema_set,omitempty"`
-	AssetID    string             `json:"asset_id,omitempty" yaml:"asset_id,omitempty"`
-	Type       string             `json:"type" yaml:"type"`
-	Source     string             `json:"source" yaml:"source"`
-	Operations []OperationSamples `json:"operations,omitempty" yaml:"operations,omitempty"`
+	SchemaID   string             `json:"schema_id"`
+	SchemaSet  string             `json:"schema_set,omitempty"`
+	AssetID    string             `json:"asset_id,omitempty"`
+	Type       string             `json:"type"`
+	Source     string             `json:"source"`
+	Operations []OperationSamples `json:"operations,omitempty"`
 }
 
 type FlowSample struct {
-	TestIdentity       *artifact.TestIdentity `json:"test_identity,omitempty" yaml:"test_identity,omitempty"`
-	RedactionRules     []artifact.Redaction   `json:"redaction_rules,omitempty" yaml:"redaction_rules,omitempty"`
-	Interaction        *artifact.Interaction  `json:"interaction,omitempty" yaml:"interaction,omitempty"`
-	CaptureIncomplete  bool                   `json:"capture_incomplete,omitempty" yaml:"capture_incomplete,omitempty"`
-	RequestSpanID      string                 `json:"request_span_id,omitempty" yaml:"request_span_id,omitempty"`
-	TraceContextSource string                 `json:"trace_context_source,omitempty" yaml:"trace_context_source,omitempty"`
-	TestCorrelation    string                 `json:"test_correlation,omitempty" yaml:"test_correlation,omitempty"`
-	ParentCorrelation  string                 `json:"parent_correlation,omitempty" yaml:"parent_correlation,omitempty"`
-	TestCaseID         string                 `json:"testcase_id,omitempty" yaml:"testcase_id,omitempty"`
-	TestTraceID        string                 `json:"test_trace_id,omitempty" yaml:"test_trace_id,omitempty"`
-	RootSpanID         string                 `json:"root_span_id,omitempty" yaml:"root_span_id,omitempty"`
+	TestIdentity       *artifact.TestIdentity `json:"test_identity,omitempty"`
+	RedactionRules     []artifact.Redaction   `json:"redaction_rules,omitempty"`
+	CaptureIncomplete  bool                   `json:"capture_incomplete,omitempty"`
+	RequestSpanID      string                 `json:"request_span_id,omitempty"`
+	TraceContextSource string                 `json:"trace_context_source,omitempty"`
+	TestCorrelation    string                 `json:"test_correlation,omitempty"`
+	ParentCorrelation  string                 `json:"parent_correlation,omitempty"`
+	TestCaseID         string                 `json:"testcase_id,omitempty"`
+	TestTraceID        string                 `json:"test_trace_id,omitempty"`
+	RootSpanID         string                 `json:"root_span_id,omitempty"`
 
-	TestCase       string             `json:"testcase" yaml:"testcase"`
-	TestStatus     string             `json:"test_status,omitempty" yaml:"test_status,omitempty"`
-	FlowID         string             `json:"flow_id,omitempty" yaml:"flow_id,omitempty"`
-	Protocol       string             `json:"protocol,omitempty" yaml:"protocol,omitempty"`
-	Channel        string             `json:"channel,omitempty" yaml:"channel,omitempty"`
-	AssetID        string             `json:"asset_id,omitempty" yaml:"asset_id,omitempty"`
-	TraceID        string             `json:"trace_id,omitempty" yaml:"trace_id,omitempty"`
-	ParentFlowID   string             `json:"parent_flow_id,omitempty" yaml:"parent_flow_id,omitempty"`
-	Fingerprint    string             `json:"fingerprint,omitempty" yaml:"fingerprint,omitempty"`
-	TransportError string             `json:"transport_error,omitempty" yaml:"transport_error,omitempty"`
-	Request        InteractionMessage `json:"request,omitempty" yaml:"request,omitempty"`
-	Response       InteractionMessage `json:"response,omitempty" yaml:"response,omitempty"`
+	TestCase       string             `json:"testcase"`
+	TestStatus     string             `json:"test_status,omitempty"`
+	FlowID         string             `json:"flow_id,omitempty"`
+	Protocol       string             `json:"protocol,omitempty"`
+	Channel        string             `json:"channel,omitempty"`
+	AssetID        string             `json:"asset_id,omitempty"`
+	TraceID        string             `json:"trace_id,omitempty"`
+	ParentFlowID   string             `json:"parent_flow_id,omitempty"`
+	TransportError string             `json:"transport_error,omitempty"`
+	Request        InteractionMessage `json:"request,omitempty"`
+	Response       InteractionMessage `json:"response,omitempty"`
 }
 
 type BodyAvailability struct {
-	Present         bool   `json:"present" yaml:"present"`
-	Omitted         bool   `json:"omitted" yaml:"omitted"`
-	Redacted        bool   `json:"redacted" yaml:"redacted"`
-	Encoding        string `json:"encoding,omitempty" yaml:"encoding,omitempty"`
-	ContentEncoding string `json:"content_encoding,omitempty" yaml:"content_encoding,omitempty"`
-	RetainedBytes   int    `json:"retained_bytes" yaml:"retained_bytes"`
-	OriginalBytes   int64  `json:"original_bytes" yaml:"original_bytes"`
-	Truncated       bool   `json:"truncated" yaml:"truncated"`
+	Present         bool   `json:"present"`
+	Omitted         bool   `json:"omitted"`
+	Redacted        bool   `json:"redacted"`
+	Encoding        string `json:"encoding,omitempty"`
+	ContentEncoding string `json:"content_encoding,omitempty"`
+	RetainedBytes   int    `json:"retained_bytes"`
+	OriginalBytes   int64  `json:"original_bytes"`
+	Truncated       bool   `json:"truncated"`
 }
 type InteractionMessage struct {
-	BodyInfo     *BodyAvailability `json:"body_info,omitempty" yaml:"body_info,omitempty"`
-	Method       string            `json:"method,omitempty" yaml:"method,omitempty"`
-	URL          string            `json:"url,omitempty" yaml:"url,omitempty"`
-	Status       int               `json:"status,omitempty" yaml:"status,omitempty"`
-	Headers      artifact.Headers  `json:"headers,omitempty" yaml:"headers,omitempty"`
-	Trailers     artifact.Headers  `json:"trailers,omitempty" yaml:"trailers,omitempty"`
-	Body         string            `json:"body,omitempty" yaml:"body,omitempty"`
-	ArtifactBody *artifact.Body    `json:"-" yaml:"-"`
+	BodyInfo     *BodyAvailability `json:"body_info,omitempty"`
+	Method       string            `json:"method,omitempty"`
+	URL          string            `json:"url,omitempty"`
+	Status       int               `json:"status,omitempty"`
+	Headers      artifact.Headers  `json:"headers,omitempty"`
+	Trailers     artifact.Headers  `json:"trailers,omitempty"`
+	Body         string            `json:"body,omitempty"`
+	ArtifactBody *artifact.Body    `json:"-"`
 }
 
 type loadedSchema struct {
@@ -262,10 +235,6 @@ func GenerateBundleSnapshot(bundlePath string, run *bundle.Run, captures []*arti
 	}
 	report.Capture = &CaptureSource{ProviderMappings: run.ProviderMappings, FormatVersion: run.EvidenceVersion, RunID: run.RunID, Revision: run.Revision, State: run.RunState, Producer: run.Producer, Application: run.Application, TestSource: run.TestSource, SUTSource: run.SUTSource}
 	report.Contracts = buildContractCoverage(run, captures)
-	report.Unmeasured = unmeasuredInteractions(captures)
-	for _, item := range report.Unmeasured {
-		report.Notes = append(report.Notes, fmt.Sprintf("Attempt %s, interaction %s (%s %s): %s", item.AttemptID, item.FlowID, item.Protocol, item.Kind, item.Reason))
-	}
 	return report, nil
 }
 
@@ -304,13 +273,6 @@ func WriteReport(w io.Writer, report *Report, format string) error {
 	switch strings.ToLower(strings.TrimSpace(format)) {
 	case "text":
 		return writeTextReport(w, report)
-	case "yaml":
-		data, err := yaml.Marshal(report)
-		if err != nil {
-			return err
-		}
-		_, err = w.Write(data)
-		return err
 	case "json", "":
 		enc := json.NewEncoder(w)
 		enc.SetIndent("", "  ")
@@ -432,9 +394,6 @@ func coverageRole(role string) string {
 }
 
 func flowMatchesSchemaBoundary(flow artifact.Flow, schema artifact.SchemaRef) bool {
-	if flow.Interaction != nil {
-		return false
-	}
 	if schema.Role == "provided" {
 		// Explicit provider boundaries must not inherit the legacy single-SUT
 		// association or measure another provider's request.
@@ -743,7 +702,6 @@ func sortOperationSamples(ops []OperationSamples) {
 func flowSampleFromFlow(entry flowEntry) FlowSample {
 	flow := entry.Flow
 	sample := FlowSample{
-		Interaction:        flow.Interaction,
 		CaptureIncomplete:  entry.CaptureIncomplete,
 		TestCase:           entry.TestCase,
 		TestStatus:         entry.Status,
@@ -759,11 +717,7 @@ func flowSampleFromFlow(entry flowEntry) FlowSample {
 		RedactionRules:     entry.RedactionRules, TestIdentity: entry.Case.Identity,
 		TestCaseID: entry.Case.ID, TestTraceID: entry.Case.TraceID, RootSpanID: entry.Case.RootSpanID,
 		ParentFlowID:   flow.ParentFlowID,
-		Fingerprint:    flow.Fingerprint,
 		TransportError: flow.TransportError,
-	}
-	if flow.Interaction != nil {
-		sample.CaptureIncomplete = sample.CaptureIncomplete || flow.Interaction.CaptureState != "complete"
 	}
 	if flow.Protocol == "http" {
 		if flow.Request.HTTP != nil {

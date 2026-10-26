@@ -144,9 +144,6 @@ func writeTextReport(w io.Writer, report *Report) error {
 			}
 		}
 	}
-	if len(report.Unmeasured) > 0 {
-		fmt.Fprintf(&out, "\nUnmeasured interactions: %d\n", len(report.Unmeasured))
-	}
 	for i, note := range report.Notes {
 		if i == 5 {
 			fmt.Fprintf(&out, "... %d more notes in the JSON report.\n", len(report.Notes)-i)

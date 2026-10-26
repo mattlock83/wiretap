@@ -45,30 +45,29 @@ func TestCheckObservedTypesEnumsAndLengthsFailInBothModes(t *testing.T) {
 					consumerMessage.Body.Text = `{"field":` + tc.consumer + `}`
 					providerMessage.Body.Text = `{"field":` + tc.provider + `}`
 					options := checkHTTPPair(t, []*artifact.Artifact{checkCapture(false, consumer)}, []*artifact.Artifact{checkCapture(true, provider)})
-					for _, mode := range []string{"consumer", "provider"} {
-						t.Run(mode, func(t *testing.T) {
-							options.Mode = mode
-							report := mustCheck(t, options)
-							if report.Compatible || report.Counts.Assumptions != 1 || report.Counts.Verified != 0 || len(report.Findings) != 1 {
-								t.Fatalf("different %s values were certified by %s mode: %+v", phase, mode, report)
+
+					t.Run("explicit pair", func(t *testing.T) {
+						report := mustCheck(t, options)
+						if report.Compatible || report.Counts.Assumptions != 1 || report.Counts.Verified != 0 || len(report.Findings) != 1 {
+							t.Fatalf("different %s values were certified: %+v", phase, report)
+						}
+						if phase == "request" {
+							if report.Counts.Uncovered != 1 || report.Counts.Mismatched != 0 || !findingCode(report, "provider_request_uncovered") {
+								t.Fatalf("changed request needs its own provider test example: %+v", report)
 							}
-							if phase == "request" {
-								if report.Counts.Uncovered != 1 || report.Counts.Mismatched != 0 || !findingCode(report, "provider_request_uncovered") {
-									t.Fatalf("changed request needs its own provider test example: %+v", report)
-								}
-							} else {
-								if report.Counts.Mismatched != 1 || report.Counts.Uncovered != 0 || !findingCode(report, "provider_response_mismatch") {
-									t.Fatalf("changed mock reply must disagree with the matching request's provider response: %+v", report)
-								}
-								if len(report.Findings[0].Differences) == 0 || !strings.HasPrefix(report.Findings[0].Differences[0], "response/body/value/field") {
-									t.Fatalf("changed value has no field-level diagnostic: %+v", report.Findings[0])
-								}
+						} else {
+							if report.Counts.Mismatched != 1 || report.Counts.Uncovered != 0 || !findingCode(report, "provider_response_mismatch") {
+								t.Fatalf("changed mock reply must disagree with the matching request's provider response: %+v", report)
 							}
-							if report.Findings[0].Consumer == nil || len(report.Findings[0].Provider) != 1 {
-								t.Fatalf("type, literal or size disagreement lost concrete source evidence: %+v", report.Findings[0])
+							if len(report.Findings[0].Differences) == 0 || !strings.HasPrefix(report.Findings[0].Differences[0], "response/body/value/field") {
+								t.Fatalf("changed value has no field-level diagnostic: %+v", report.Findings[0])
 							}
-						})
-					}
+						}
+						if report.Findings[0].Consumer == nil || len(report.Findings[0].Provider) != 1 {
+							t.Fatalf("type, literal or size disagreement lost concrete source evidence: %+v", report.Findings[0])
+						}
+					})
+
 				})
 			}
 		})
@@ -87,12 +86,10 @@ func TestCheckRejectsNonJSONBodies(t *testing.T) {
 				cm.Headers["Content-Type"], pm.Headers["Content-Type"] = []string{media}, []string{media}
 				cm.Body.Text, pm.Body.Text = "1", "1.0"
 				options := checkHTTPPair(t, []*artifact.Artifact{checkCapture(false, consumer)}, []*artifact.Artifact{checkCapture(true, provider)})
-				for _, mode := range []string{"consumer", "provider"} {
-					options.Mode = mode
-					if _, err := Check(t.Context(), options); !errors.Is(err, ErrInput) {
-						t.Fatalf("unsupported representation certified: %v", err)
-					}
+				if _, err := Check(t.Context(), options); !errors.Is(err, ErrInput) {
+					t.Fatalf("unsupported representation certified: %v", err)
 				}
+
 			})
 		}
 	}

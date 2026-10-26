@@ -45,7 +45,7 @@ func (m *Message) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// UnmarshalJSON rejects native RPC evidence before legacy fields can be ignored.
+// UnmarshalJSON rejects unsupported evidence before legacy fields can be ignored.
 func (f *Flow) UnmarshalJSON(data []byte) error {
 	type plain Flow
 	var fields map[string]json.RawMessage
@@ -53,6 +53,9 @@ func (f *Flow) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	for key, raw := range fields {
+		if strings.EqualFold(key, "interaction") {
+			return fmt.Errorf("event interaction evidence is unsupported; only HTTP request/response captures are supported")
+		}
 		if strings.EqualFold(key, "grpc_events") {
 			return fmt.Errorf("native gRPC capture evidence is unsupported")
 		}
@@ -61,8 +64,8 @@ func (f *Flow) UnmarshalJSON(data []byte) error {
 			if err := json.Unmarshal(raw, &protocol); err != nil {
 				return err
 			}
-			if UnsupportedRPCProtocol(protocol) {
-				return fmt.Errorf("native gRPC capture evidence is unsupported")
+			if protocol != "" && protocol != "http" {
+				return fmt.Errorf("unsupported capture protocol %q; only HTTP is supported", protocol)
 			}
 		}
 	}
@@ -70,8 +73,8 @@ func (f *Flow) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &value); err != nil {
 		return err
 	}
-	if UnsupportedRPCProtocol(value.Protocol) {
-		return fmt.Errorf("native gRPC capture evidence is unsupported")
+	if value.Protocol != "" && value.Protocol != "http" {
+		return fmt.Errorf("unsupported capture protocol %q; only HTTP is supported", value.Protocol)
 	}
 	*f = Flow(value)
 	return nil
@@ -107,12 +110,14 @@ func (ref *SchemaRef) UnmarshalJSON(data []byte) error {
 	if err := decoder.Decode(&value); err != nil {
 		return err
 	}
+	if value.Type != "openapi" || value.Protocol != "" && value.Protocol != "http" {
+		return fmt.Errorf("unsupported contract type/protocol %q/%q; only OpenAPI over HTTP is supported", value.Type, value.Protocol)
+	}
 	*ref = SchemaRef(value)
 	return nil
 }
 
-// UnmarshalJSON accepts portable contract sources and rejects removed protobuf
-// discovery inputs instead of treating them as inert HTTP source metadata.
+// UnmarshalJSON accepts OpenAPI sources and rejects removed source metadata.
 func (source *SchemaSource) UnmarshalJSON(data []byte) error {
 	type plain SchemaSource
 	var fields map[string]json.RawMessage
@@ -120,6 +125,9 @@ func (source *SchemaSource) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	for key, raw := range fields {
+		if strings.EqualFold(key, "files") {
+			return fmt.Errorf("opaque contract packages are unsupported; use an OpenAPI source")
+		}
 		if strings.EqualFold(key, "import_paths") {
 			return fmt.Errorf("protobuf import paths are unsupported")
 		}
@@ -139,6 +147,9 @@ func (source *SchemaSource) UnmarshalJSON(data []byte) error {
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&value); err != nil {
 		return err
+	}
+	if value.Type == "package" {
+		return fmt.Errorf("opaque contract packages are unsupported; use an OpenAPI source")
 	}
 	*source = SchemaSource(value)
 	return nil

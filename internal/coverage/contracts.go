@@ -17,92 +17,91 @@ const ContractRulesVersion = "wiretap-contract-1"
 // ContractCoverage is a disposable measurement of one verified bundle snapshot.
 // It deliberately makes no all-API, assertion, or provider-compatibility claim.
 type ContractCoverage struct {
-	Unmeasured       []UnmeasuredInteraction `json:"unmeasured_interactions,omitempty" yaml:"unmeasured_interactions,omitempty"`
-	RulesVersion     string                  `json:"rules_version" yaml:"rules_version"`
-	RunID            string                  `json:"run_id" yaml:"run_id"`
-	RunState         string                  `json:"run_state" yaml:"run_state"`
-	SnapshotRevision uint64                  `json:"snapshot_revision" yaml:"snapshot_revision"`
-	Complete         bool                    `json:"complete" yaml:"complete"`
-	Scope            string                  `json:"scope" yaml:"scope"`
-	Specs            []*ContractSpec         `json:"specs" yaml:"specs"`
+	RulesVersion     string          `json:"rules_version"`
+	RunID            string          `json:"run_id"`
+	RunState         string          `json:"run_state"`
+	SnapshotRevision uint64          `json:"snapshot_revision"`
+	Complete         bool            `json:"complete"`
+	Scope            string          `json:"scope"`
+	Specs            []*ContractSpec `json:"specs"`
 }
 
 type ContractSpec struct {
-	RulesVersion     string                    `json:"rules_version" yaml:"rules_version"`
-	APIID            string                    `json:"api_id" yaml:"api_id"`
-	SchemaID         string                    `json:"schema_id" yaml:"schema_id"`
-	Revision         string                    `json:"contract_revision" yaml:"contract_revision"`
-	Origin           string                    `json:"origin" yaml:"origin"`
-	TargetKind       string                    `json:"target_kind" yaml:"target_kind"`
-	Dialect          string                    `json:"dialect,omitempty" yaml:"dialect,omitempty"`
-	DenominatorKnown bool                      `json:"denominator_known" yaml:"denominator_known"`
-	Notes            []string                  `json:"notes,omitempty" yaml:"notes,omitempty"`
-	Targets          []*ContractTarget         `json:"targets" yaml:"targets"`
-	Counts           map[string]ContractCounts `json:"counts" yaml:"counts"`
-	Violations       []ContractViolation       `json:"violations,omitempty" yaml:"violations,omitempty"`
-	Combinations     []ContractCombination     `json:"combinations,omitempty" yaml:"combinations,omitempty"`
+	RulesVersion     string                    `json:"rules_version"`
+	APIID            string                    `json:"api_id"`
+	SchemaID         string                    `json:"schema_id"`
+	Revision         string                    `json:"contract_revision"`
+	Origin           string                    `json:"origin"`
+	TargetKind       string                    `json:"target_kind"`
+	Dialect          string                    `json:"dialect,omitempty"`
+	DenominatorKnown bool                      `json:"denominator_known"`
+	Notes            []string                  `json:"notes,omitempty"`
+	Targets          []*ContractTarget         `json:"targets"`
+	Counts           map[string]ContractCounts `json:"counts"`
+	Violations       []ContractViolation       `json:"violations,omitempty"`
+	Combinations     []ContractCombination     `json:"combinations,omitempty"`
 }
 
 type ContractCounts struct {
-	Covered     int `json:"covered" yaml:"covered"`
-	NotCovered  int `json:"not_covered" yaml:"not_covered"`
-	Unknown     int `json:"unknown" yaml:"unknown"`
-	Unsupported int `json:"unsupported" yaml:"unsupported"`
-	Excluded    int `json:"excluded" yaml:"excluded"`
+	Covered     int `json:"covered"`
+	NotCovered  int `json:"not_covered"`
+	Unknown     int `json:"unknown"`
+	Unsupported int `json:"unsupported"`
+	Excluded    int `json:"excluded"`
 }
 
 type ContractTarget struct {
-	FieldPath    string             `json:"field_path,omitempty" yaml:"field_path,omitempty"`
-	Key          string             `json:"key" yaml:"key"`
-	OperationKey string             `json:"operation_key" yaml:"operation_key"`
-	Operation    string             `json:"operation" yaml:"operation"`
-	Phase        string             `json:"phase" yaml:"phase"`
-	Location     string             `json:"schema_location" yaml:"schema_location"`
-	Family       string             `json:"family" yaml:"family"`
-	Condition    string             `json:"condition" yaml:"condition"`
-	AppliesWhen  string             `json:"applies_when" yaml:"applies_when"`
-	State        string             `json:"state" yaml:"state"`
-	Feasibility  string             `json:"feasibility" yaml:"feasibility"`
-	Reason       string             `json:"reason,omitempty" yaml:"reason,omitempty"`
-	Evidence     []ContractEvidence `json:"evidence,omitempty" yaml:"evidence,omitempty"`
+	FieldPath    string             `json:"field_path,omitempty"`
+	Key          string             `json:"key"`
+	OperationKey string             `json:"operation_key"`
+	Operation    string             `json:"operation"`
+	Phase        string             `json:"phase"`
+	Location     string             `json:"schema_location"`
+	Family       string             `json:"family"`
+	Condition    string             `json:"condition"`
+	AppliesWhen  string             `json:"applies_when"`
+	State        string             `json:"state"`
+	Feasibility  string             `json:"feasibility"`
+	Reason       string             `json:"reason,omitempty"`
+	Evidence     []ContractEvidence `json:"evidence,omitempty"`
 	match        func(any, bool) bool
 }
 
 type ContractEvidence struct {
-	CaptureIncomplete bool   `json:"capture_incomplete" yaml:"capture_incomplete"`
-	TransportError    string `json:"transport_error,omitempty" yaml:"transport_error,omitempty"`
-	Validation        string `json:"validation" yaml:"validation"`
-	RunID             string `json:"run_id" yaml:"run_id"`
-	AttemptID         string `json:"attempt_id" yaml:"attempt_id"`
-	FlowID            string `json:"flow_id" yaml:"flow_id"`
-	Path              string `json:"evidence_path" yaml:"evidence_path"`
-	TestName          string `json:"test_name" yaml:"test_name"`
-	Outcome           string `json:"outcome" yaml:"outcome"`
-	Phase             string `json:"phase" yaml:"phase"`
-	InstanceLocation  string `json:"instance_location" yaml:"instance_location"`
-	Result            string `json:"result" yaml:"result"`
-	Reason            string `json:"reason,omitempty" yaml:"reason,omitempty"`
+	CaptureIncomplete bool   `json:"capture_incomplete"`
+	TransportError    string `json:"transport_error,omitempty"`
+	Validation        string `json:"validation"`
+	RunID             string `json:"run_id"`
+	AttemptID         string `json:"attempt_id"`
+	FlowID            string `json:"flow_id"`
+	Path              string `json:"evidence_path"`
+	TestName          string `json:"test_name"`
+	Outcome           string `json:"outcome"`
+	Phase             string `json:"phase"`
+	InstanceLocation  string `json:"instance_location"`
+	Result            string `json:"result"`
+	Reason            string `json:"reason,omitempty"`
 }
 
 type ContractViolation struct {
-	Constraint     string           `json:"constraint,omitempty" yaml:"constraint,omitempty"`
-	SchemaLocation string           `json:"schema_location,omitempty" yaml:"schema_location,omitempty"`
-	Evidence       ContractEvidence `json:"evidence" yaml:"evidence"`
-	Operation      string           `json:"operation" yaml:"operation"`
-	Reason         string           `json:"reason" yaml:"reason"`
+	Constraint     string           `json:"constraint,omitempty"`
+	SchemaLocation string           `json:"schema_location,omitempty"`
+	Evidence       ContractEvidence `json:"evidence"`
+	Operation      string           `json:"operation"`
+	Reason         string           `json:"reason"`
 }
 
 type ConditionHit struct {
-	Key              string `json:"key" yaml:"key"`
-	InstanceLocation string `json:"instance_location" yaml:"instance_location"`
+	Key              string `json:"key"`
+	InstanceLocation string `json:"instance_location"`
 }
 
 type ContractCombination struct {
-	Fingerprint  string           `json:"fingerprint" yaml:"fingerprint"`
-	OperationKey string           `json:"operation_key" yaml:"operation_key"`
-	Phase        string           `json:"phase" yaml:"phase"`
-	Hits         []ConditionHit   `json:"hits" yaml:"hits"`
-	Evidence     ContractEvidence `json:"evidence" yaml:"evidence"`
+	Fingerprint  string           `json:"fingerprint"`
+	OperationKey string           `json:"operation_key"`
+	Phase        string           `json:"phase"`
+	Hits         []ConditionHit   `json:"hits"`
+	Evidence     ContractEvidence `json:"evidence"`
 }
 
 type contractBuilder struct {
@@ -156,10 +155,6 @@ func (t *ContractTarget) observe(e ContractEvidence) {
 
 func buildContractCoverage(run *bundle.Run, captures []*artifact.Artifact) *ContractCoverage {
 	out := &ContractCoverage{RulesVersion: ContractRulesVersion, RunID: run.RunID, RunState: run.RunState, SnapshotRevision: run.Revision, Complete: run.RunState == "complete" && len(run.Pending) == 0, Scope: "registered supplied contracts only; condition combinations are observations, not compatibility or assertion proof", Specs: []*ContractSpec{}}
-	out.Unmeasured = unmeasuredInteractions(captures)
-	if len(out.Unmeasured) > 0 {
-		out.Complete = false
-	}
 	refs := append([]artifact.SchemaRef{}, run.Schemas...)
 	for _, a := range captures {
 		refs = append(refs, a.Schemas...)

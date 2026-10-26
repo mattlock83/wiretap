@@ -44,11 +44,11 @@ func TestRunSetChecksShardsWithoutSplicingExchanges(t *testing.T) {
 	consumer := writeCheckArchive(t, consumerCheckIdentity(), "complete", checkCapture(false, first, second))
 	firstProvider := writeCheckArchive(t, buildIdentity(providerCheckIdentity(), "build-1"), "complete", checkCapture(true, cloneNormalizationFlow(t, first)))
 	secondProvider := writeCheckArchive(t, buildIdentity(providerCheckIdentity(), "build-1"), "complete", checkCapture(true, cloneNormalizationFlow(t, second)))
-	if mustCheck(t, Options{Mode: "consumer", Consumer: consumer, Provider: firstProvider}).Compatible {
+	if mustCheck(t, Options{Consumer: consumer, Provider: firstProvider}).Compatible {
 		t.Fatal("single shard hid missing example")
 	}
 	consumerSet, providerSet := writeRunSet(t, consumer), writeRunSet(t, firstProvider, secondProvider)
-	report, err := CheckRunSets(t.Context(), consumerSet, providerSet, "consumer", "", nil)
+	report, err := CheckRunSets(t.Context(), consumerSet, providerSet, "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +62,7 @@ func TestRunSetChecksShardsWithoutSplicingExchanges(t *testing.T) {
 	wrong2.Response = first.Response
 	p1 := writeCheckArchive(t, buildIdentity(providerCheckIdentity(), "build-1"), "complete", checkCapture(true, wrong))
 	p2 := writeCheckArchive(t, buildIdentity(providerCheckIdentity(), "build-1"), "complete", checkCapture(true, wrong2))
-	report, err = CheckRunSets(t.Context(), consumerSet, writeRunSet(t, p1, p2), "provider", "", nil)
+	report, err = CheckRunSets(t.Context(), consumerSet, writeRunSet(t, p1, p2), "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -114,7 +114,7 @@ func TestRunSetRejectsCorruptedArazzoEvenWhenOtherShardMatches(t *testing.T) {
 	if err := os.WriteFile(files[0], []byte(`{}`), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := CheckRunSets(t.Context(), writeRunSet(t, consumer), providerSet, "consumer", "", nil); err == nil {
+	if _, err := CheckRunSets(t.Context(), writeRunSet(t, consumer), providerSet, "", nil); err == nil {
 		t.Fatal("corrupt shard was hidden")
 	}
 }
@@ -126,7 +126,7 @@ func TestRunSetCheckRetainsHeaderPolicyAndStableWitness(t *testing.T) {
 	second := writeCheckArchive(t, buildIdentity(providerCheckIdentity(), "one"), "complete", checkCapture(true, cloneNormalizationFlow(t, flow)))
 	consumerSet := writeRunSet(t, consumer)
 	providerSet := writeRunSet(t, first, second)
-	forward, err := CheckRunSets(t.Context(), consumerSet, providerSet, "consumer", "", []string{"X-Build-Noise"})
+	forward, err := CheckRunSets(t.Context(), consumerSet, providerSet, "", []string{"X-Build-Noise"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -143,7 +143,7 @@ func TestRunSetCheckRetainsHeaderPolicyAndStableWitness(t *testing.T) {
 	if err := os.WriteFile(providerSet, data, 0600); err != nil {
 		t.Fatal(err)
 	}
-	backward, err := CheckRunSets(t.Context(), consumerSet, providerSet, "consumer", "", []string{"X-Build-Noise"})
+	backward, err := CheckRunSets(t.Context(), consumerSet, providerSet, "", []string{"X-Build-Noise"})
 	if err != nil {
 		t.Fatal(err)
 	}

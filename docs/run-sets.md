@@ -36,7 +36,7 @@ This envelope is distinct from a single-archive coverage report.
 ```sh
 wiretap run-set --bundle consumer/package-a --bundle consumer/package-b \
   --output consumer-runs.json
-wiretap check consumer --consumer-set consumer-runs.json \
+wiretap check --consumer-set consumer-runs.json \
   --provider-set provider-runs.json --dependency inventory --format json \
   --output assumptions.json
 ```
@@ -59,11 +59,10 @@ unsupported traffic cannot be silently certified. Each member is also subject
 to the [strict whole-run Arazzo export limits](assumption-checks.md#arazzo-check-inputs).
 Verification does not execute Arazzo workflow expressions.
 
-Use `--consumer-set` and `--provider-set` together. They are separate from
-automatic `--artifacts` selection, which deliberately requires one unambiguous
-snapshot. Every member's projection remains under its own `exports/arazzo/` directory; a run set does not synthesize a combined replay
-or change test identities. Run sets do not accept per-member Arazzo path overrides. Keep original archives and exports alongside the manifest.
+Use `--consumer-set` and `--provider-set` together. Every member's projection
+remains under its own `exports/arazzo/` directory; a run set does not synthesize
+a combined replay or change test identities. Run sets do not accept per-member
+Arazzo path overrides. Keep original archives and exports alongside the manifest.
 
-Coverage policies and baseline comparison currently accept single-archive
-coverage reports. Apply those gates per package/shard; the aggregate condition
-view is available as JSON for inspection or downstream tooling.
+Aggregate coverage is available as JSON. HTML dashboards currently describe one
+archive; inspect each member's dashboard for test-level requests and responses.

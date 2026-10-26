@@ -6,13 +6,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/mattlock83/wiretap/internal/artifact"
 	"github.com/mattlock83/wiretap/internal/bundle"
-	"github.com/mattlock83/wiretap/internal/coverage"
 	"github.com/mattlock83/wiretap/internal/proxy"
 	"github.com/mattlock83/wiretap/internal/runoutput"
 	"github.com/mattlock83/wiretap/internal/tracecontext"
@@ -31,7 +29,7 @@ func (a *App) handleProxyCA(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 		return
 	}
-	pemBytes, err := a.proxyComponent.CACertPEM()
+	pemBytes, err := a.proxyServer.CACertPEM()
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
@@ -56,7 +54,7 @@ func (a *App) handleStartRun(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 		return
 	}
-	if a.proxyComponent == nil {
+	if a.proxyServer == nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "capture proxy not configured"})
 		return
 	}
@@ -88,7 +86,7 @@ func (a *App) handleStartRun(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	info := mergeProxyInfo(a.proxyComponent)
+	info := a.proxySnapshot()
 	sutURL := normalizeURL(info.ListenAddr)
 	defaults := a.testDefaults()
 	defaults.Application = a.currentBundle().Snapshot().Application
@@ -125,7 +123,7 @@ func (a *App) handleSetupTest(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 		return
 	}
-	if a.proxyComponent == nil {
+	if a.proxyServer == nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "capture proxy not configured"})
 		return
 	}
@@ -199,7 +197,7 @@ func (a *App) handleSetupTest(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if err := a.proxyComponent.Start(r.Context()); err != nil && !errors.Is(err, proxy.ErrAlreadyStarted) {
+	if err := a.startProxy(r.Context()); err != nil && !errors.Is(err, proxy.ErrAlreadyStarted) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
@@ -263,7 +261,7 @@ func (a *App) handleSetupTest(w http.ResponseWriter, r *http.Request) {
 	}
 	a.sessionsMu.Unlock()
 
-	proxyURL := normalizeURL(a.proxyComponent.ListenAddr())
+	proxyURL := normalizeURL(a.proxyServer.ListenAddr())
 	dependencyURLs := make(map[string]string, len(dependencies))
 	for assetID := range dependencies {
 		if payload.ExplicitSession && !root.IsValid() {
@@ -366,49 +364,6 @@ func (a *App) handleTeardownTest(w http.ResponseWriter, r *http.Request) {
 	a.writeCaptureResponse(w, artifactDoc, path, sessionID)
 }
 
-type runtimeReportRequest struct {
-	BundlePath string `json:"bundle_path,omitempty"`
-}
-
-func (a *App) handleRuntimeReport(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
-		return
-	}
-	var payload runtimeReportRequest
-	if err := decodeStrictJSON(r, &payload); err != nil && !errors.Is(err, io.EOF) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
-		return
-	}
-	input := strings.TrimSpace(payload.BundlePath)
-	if input == "" {
-		if current := a.currentBundle(); current != nil {
-			input = current.Path()
-		}
-	}
-	if input == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bundle_path is required when no capture run exists"})
-		return
-	}
-	report, err := coverage.Generate(r.Context(), input, "", false)
-	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
-		return
-	}
-	response := map[string]any{"report": report}
-	run, _, err := bundle.Load(input)
-	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
-		return
-	}
-	absolute, _ := filepath.Abs(input)
-	response["run_id"] = run.RunID
-	response["bundle_path"] = absolute
-	response["run_state"] = run.RunState
-	response["snapshot_revision"] = run.Revision
-	writeJSON(w, http.StatusOK, response)
-}
-
 func (a *App) handleFinishRun(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
@@ -465,8 +420,8 @@ func (a *App) configureProxy(payload proxyOptions) error {
 	if payload.TargetURL == "" && a.reverseTarget == "" {
 		payload.TargetURL = a.testDefaults().SUTBaseURL
 	}
-	if listen := strings.TrimSpace(payload.ListenAddr); listen != "" && listen != a.proxyComponent.ListenAddr() {
-		if err := a.proxyComponent.SetListenAddr(listen); err != nil {
+	if listen := strings.TrimSpace(payload.ListenAddr); listen != "" && listen != a.proxyServer.ListenAddr() {
+		if err := a.proxyServer.SetListenAddr(listen); err != nil {
 			return err
 		}
 	}
@@ -480,8 +435,8 @@ func (a *App) configureProxy(payload proxyOptions) error {
 
 func (a *App) environmentSnapshot() *artifact.Environment {
 	env := &artifact.Environment{}
-	if a.proxyComponent != nil {
-		info := mergeProxyInfo(a.proxyComponent)
+	if a.proxyServer != nil {
+		info := a.proxySnapshot()
 		env.ProxyListen = normalizeURL(info.ListenAddr)
 		env.ProxyMode = string(info.Mode)
 	}
@@ -549,13 +504,10 @@ func normalizeURL(raw string) string {
 	return "http://" + raw
 }
 
-func mergeProxyInfo(component *ProxyComponent) proxy.Info {
-	if component == nil {
-		return proxy.Info{}
-	}
-	info := component.Info()
+func (a *App) proxySnapshot() proxy.Info {
+	info := a.proxyInfo
 	if info.ListenAddr == "" {
-		info.ListenAddr = component.ListenAddr()
+		info.ListenAddr = a.proxyServer.ListenAddr()
 	}
 	return info
 }

@@ -29,7 +29,7 @@ An inventory limit error stops output generation and identifies the setting to
 raise for a larger trusted archive.
 
 These budgets include `bundle.json`, attempt captures, contract manifests, every
-frozen contract and import, HTTP/event payload attachments. Reading the
+frozen contract and import, and retained HTTP payload attachments. Reading the
 same path again consumes the budget again. For example, a payload shared by many
 attempts is restored into each attempt and counts each time; the budget is not
 the archive's unique size on disk.

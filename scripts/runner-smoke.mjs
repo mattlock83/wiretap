@@ -113,7 +113,7 @@ const marker = `const fs = require('node:fs'); const path = require('node:path')
 const mark = event => fs.appendFileSync(path.join(__dirname, 'hooks.jsonl'), JSON.stringify(event) + '\\n');\n`;
 const typedConsumer = `
 import type { RequestListener } from 'node:http';
-import { withWiretap, captureJest, createJestSuite } from '@wiretap/sdk/jest';
+import { withWiretap, captureJest } from '@wiretap/sdk/jest';
 import '@wiretap/sdk/tracing';
 import type { Config as JestConfig } from 'jest';
 
@@ -122,15 +122,13 @@ const existing: JestConfig = { testEnvironment: 'node', reporters: ['default'] }
 const configured: JestConfig = withWiretap(existing, {
   binary: 'wiretap', config: '.wiretap.yaml', outputDir: 'artifacts',
   app: '<rootDir>/app.cjs',
-  capture: { schemaRequired: false, outputs: { coverage: ['json', 'text', 'html'], arazzo: true } },
+  capture: { schemaRequired: false },
+  outputs: { coverage: ['json', 'text', 'html'], arazzo: true },
 });
 void configured;
 
 function customJestFixture(): void {
   captureJest({ schemaRequired: false, app, onSession(session) { const id: string = session.sessionId; void id; } });
-  const suite = createJestSuite({ schemaRequired: false });
-  suite.test('selected case', async () => { await fetch(suite.sutUrl); });
-  suite.test.each(['one', 'two'])('parameter %s', async value => { void value; });
 }
 void customJestFixture;
 `;
@@ -188,7 +186,7 @@ try {
   await Promise.all([
     write('jest.config.cjs', `module.exports = require('@wiretap/sdk/jest').withWiretap({
       testMatch: ['**/outcomes.spec.cjs'], transform: {}, globalSetup: './setup.cjs', globalTeardown: './teardown.cjs'
-    }, { app: '<rootDir>/app.cjs', capture: { outputs: { coverage: ['json', 'text', 'html'], arazzo: true } } });\n`),
+    }, { app: '<rootDir>/app.cjs', outputs: { coverage: ['json', 'text', 'html'], arazzo: true } });\n`),
     write('setup.cjs', marker + `module.exports = async () => { mark('setup'); process.env.USER_SETUP = 'ready'; };\n`),
     write('teardown.cjs', marker + `module.exports = async () => { mark('teardown'); };\n`),
     write('outcomes.spec.cjs', `

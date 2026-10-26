@@ -297,7 +297,7 @@ func (a *App) setReverseTarget(target string) error {
 	if a.hasActiveSessions() && target != a.reverseTarget {
 		return fmt.Errorf("cannot change the SUT target while capture sessions are active")
 	}
-	if err := a.proxyComponent.SetReverseTarget(target); err != nil {
+	if err := a.proxyServer.SetReverseTarget(target); err != nil {
 		return err
 	}
 	a.reverseTarget = target
@@ -325,7 +325,7 @@ func (a *App) resetCaptureRouting() {
 	a.defaultSessionID = ""
 	a.sessionsMu.Unlock()
 	a.reverseTarget = ""
-	if a.proxyComponent != nil {
-		_ = a.proxyComponent.SetReverseTarget("")
+	if a.proxyServer != nil {
+		_ = a.proxyServer.SetReverseTarget("")
 	}
 }

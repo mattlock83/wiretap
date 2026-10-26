@@ -17,7 +17,7 @@ func TestCLIRejectsTestOrchestration(t *testing.T) {
 }
 
 func TestCLIHelp(t *testing.T) {
-	for _, command := range []string{"", "ca", "report", "export", "check", "init", "doctor", "run-set", "compare", "version"} {
+	for _, command := range []string{"", "ca", "report", "check", "init", "doctor", "run-set", "version"} {
 		args := []string{"--help"}
 		if command != "" {
 			args = append([]string{command}, args...)
@@ -30,14 +30,14 @@ func TestCLIHelp(t *testing.T) {
 }
 
 func TestCLIFlagErrorsArePrintedOnceOnStderr(t *testing.T) {
-	for _, prefix := range [][]string{nil, {"ca"}, {"report"}, {"export"}, {"check", "consumer"}, {"init"}, {"doctor"}, {"run-set"}, {"compare"}, {"version"}, {"--version"}} {
+	for _, prefix := range [][]string{nil, {"ca"}, {"report"}, {"check"}, {"init"}, {"doctor"}, {"run-set"}, {"version"}, {"--version"}} {
 		args := append(append([]string{}, prefix...), "--not-a-flag")
 		code, out, diagnostic := executeCapturingStreams(t, args)
 		if code != 2 || out != "" || strings.Count(diagnostic, "flag provided but not defined: -not-a-flag") != 1 || strings.Contains(diagnostic, "Usage:") || !strings.Contains(diagnostic, "--help for usage") {
 			t.Fatalf("execute(%q) = %d, stdout %q, stderr %q", args, code, out, diagnostic)
 		}
 	}
-	for _, args := range [][]string{{"--config"}, {"report", "--bundle"}, {"check", "consumer", "--consumer"}, {"run-set", "--bundle"}, {"version", "--json=bad"}} {
+	for _, args := range [][]string{{"--config"}, {"report", "--bundle"}, {"check", "--consumer"}, {"run-set", "--bundle"}, {"version", "--json=bad"}} {
 		code, out, diagnostic := executeCapturingStreams(t, args)
 		if code != 2 || out != "" || strings.Count(diagnostic, "usage:") != 1 || strings.Contains(diagnostic, "Usage:") {
 			t.Fatalf("execute(%q) = %d, stdout %q, stderr %q", args, code, out, diagnostic)
@@ -48,15 +48,14 @@ func TestCLIFlagErrorsArePrintedOnceOnStderr(t *testing.T) {
 func TestCLIMissingInputsUseExitTwo(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "missing")
 	for _, args := range [][]string{
-		{"report"}, {"export"}, {"init"}, {"compare"}, {"run-set"},
+		{"report"}, {"init"}, {"run-set"},
 		{"--config", missing}, {"ca", "--config", missing},
 		{"report", "--bundle", missing},
-		{"export", "--bundle", missing, "--format", "postman"},
-		{"export", "--bundle", missing, "--format", "all"},
+		{"report", "--bundle", missing, "--format", "postman"},
+		{"report", "--bundle", missing, "--format", "all"},
 		{"report", "--run-set", missing},
-		{"compare", "--baseline", missing, "--current", missing},
 		{"run-set", "--bundle", missing, "--output", filepath.Join(t.TempDir(), "set.json")},
-		{"check", "consumer", "--consumer", missing, "--provider", missing},
+		{"check", "--consumer", missing, "--provider", missing},
 	} {
 		code, out, diagnostic := executeCapturingStreams(t, args)
 		if code != 2 || out != "" || diagnostic == "" {
@@ -82,9 +81,8 @@ func TestCLICancellationIsAnOperationalFailure(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	for _, args := range [][]string{
-		{"compare", "--baseline", "before.json", "--current", "after.json"},
 		{"run-set", "--bundle", "capture", "--output", "set.json"},
-		{"check", "consumer", "--consumer-set", "consumers.json", "--provider-set", "providers.json"},
+		{"check", "--consumer-set", "consumers.json", "--provider-set", "providers.json"},
 	} {
 		if code := execute(ctx, args); code != 1 {
 			t.Fatalf("cancelled execute(%q) = %d, want 1", args, code)
@@ -118,11 +116,27 @@ func executeCapturingStreams(t *testing.T, args []string) (int, string, string) 
 }
 
 func TestCLIRejectsRemovedExportFormats(t *testing.T) {
-	for _, command := range []string{"report", "export"} {
-		for _, format := range []string{"workflow", "openapi", "okf"} {
-			if code := execute(context.Background(), []string{command, "--bundle", t.TempDir(), "--format", format}); code != 2 {
-				t.Fatalf("%s accepted removed %s export format: exit %d", command, format, code)
-			}
+
+	for _, format := range []string{"workflow", "openapi", "okf", "postman", "yaml"} {
+		if code := execute(context.Background(), []string{"report", "--bundle", t.TempDir(), "--format", format}); code != 2 {
+			t.Fatalf("%s accepted removed %s export format: exit %d", "report", format, code)
+		}
+	}
+
+}
+
+func TestCLIRejectsRemovedCommandsAndFlags(t *testing.T) {
+	for _, args := range [][]string{
+		{"export", "--help"}, {"compare", "--help"},
+		{"report", "--bundle", "capture", "--policy", "policy.json"},
+		{"check", "consumer", "--consumer", "a", "--provider", "b"},
+		{"check", "provider", "--consumer", "a", "--provider", "b"},
+		{"check", "--consumer", "a", "--artifacts", "store"},
+		{"check", "--consumer", "a", "--provider", "b", "--format", "markdown"},
+		{"check", "--consumer", "a", "--provider", "b", "--format", "junit"},
+	} {
+		if code, output, _ := executeCapturingStreams(t, args); code != 2 || output != "" {
+			t.Fatalf("removed feature %v: exit %d, stdout %q", args, code, output)
 		}
 	}
 }

@@ -25,7 +25,6 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("/v1/startRun", a.handleStartRun)
 	mux.HandleFunc("/v1/setupTest", a.handleSetupTest)
 	mux.HandleFunc("/v1/teardownTest", a.handleTeardownTest)
-	mux.HandleFunc("/v1/report", a.handleRuntimeReport)
 	mux.HandleFunc("/v1/finishRun", a.handleFinishRun)
 	mux.HandleFunc("/v1/proxy/ca", a.handleProxyCA)
 	return loggingMiddleware(a.logger, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

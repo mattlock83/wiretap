@@ -27,10 +27,10 @@ exit fails cleanup even if an export receipt was already returned.
 
 Adapters preserve the runner's original test failure and report secondary
 capture cleanup failures. Static skips that never start an attempt need no
-capture record. Dynamic skips of an active attempt record `skip`; a timeout or
-fixture failure records `fail`. Negative contract-validation evidence alone
+capture record. A timeout or fixture failure records `fail`. Negative contract-validation evidence alone
 does not change a passing framework outcome. Identities remain stable across
-retries, with increasing attempt ordinals and a fresh trace per attempt.
+retries, with a fresh trace per attempt. Automatic Jest capture does not assign
+an attempt ordinal; an explicitly supplied ordinal is retained.
 
 The optional capabilities probe describes API `1.0`. The Jest integration
 uses the established lifecycle endpoints. All conformance commands prepare

@@ -30,9 +30,6 @@ var IgnoredHeaders = []string{
 // boundary IDs, endpoints, test names and recording timestamps. The signatures
 // preserve complete examples; they do not infer which fields a consumer uses.
 func normalizeFlow(flow artifact.Flow, ignoreHeaders []string) (request, response string, err error) {
-	if flow.Interaction != nil {
-		return "", "", fmt.Errorf("event interactions are unsupported by assumption checking")
-	}
 	if flow.TransportError != "" {
 		return "", "", fmt.Errorf("transport failure: %s", flow.TransportError)
 	}

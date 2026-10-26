@@ -14,7 +14,6 @@ The Jest adapter hosts an existing Node HTTP handler or routes to an already run
 | HTTP/HTTPS + OpenAPI 3.0 | Boundary capture, supported condition coverage and exercised-rule checks. |
 | JSON/REST Arazzo | Strict workflow export, portable OpenAPI companions and archive-backed assumption checks. |
 | OpenAPI 3.1 and unsupported constructs | Explicit measurement/check limits. |
-| Generic event evidence | Opaque archive preservation with explicit unmeasured scope; no automatic capture adapter. |
 
 Only HTTP/HTTPS capture is supported. See [HTTPS trust](https-trust.md), [coverage rules](contract-coverage-rules.md) and [check limits](assumption-checks.md#what-the-check-will-not-establish). Coverage percentages alone do not prove compatibility.
 
@@ -26,9 +25,8 @@ Only HTTP/HTTPS capture is supported. See [HTTPS trust](https-trust.md), [covera
 | Raw archive | `format_version: "3.1"` | Enforce supported capabilities and integrity. |
 | Coverage/check reports and receipts | `report_version: "1.0"` | Check envelope and measurement rules before decisions. |
 | Run sets | `run_set_version: "1.0"` | Verify pinned member hashes and same-build identity. |
-| Coverage policy | `policy_version: "1.0"` | Reject unknown/misspelled keys; gates are opt-in. |
 | Measurement | Per-report/per-spec `rules_version` | Compare matching known rule identities. |
 
-This experimental branch removes prior projection and native RPC formats. Removed options and evidence are rejected. Preserve complete archives and use this branch's runtime and Jest package together. Producer identity describes the tool, independently of the application revision in `sut_source`.
+This experimental branch supports HTTP/OpenAPI archives only. Removed options and evidence are rejected. Preserve complete archives and use this branch's runtime and Jest package together. Producer identity describes the tool, independently of the application revision in `sut_source`.
 
-Schemas: [archive](bundle-evidence.schema.json), [coverage](coverage-report.schema.json), [checks](check-report.schema.json), [run sets](run-set.schema.json), [control/export responses](control-api.schema.json). Successful responses and errors have separate shapes. Check reports can also be [Markdown or JUnit XML](report-policies.md#send-assumption-checks-to-ci).
+Schemas: [archive](bundle-evidence.schema.json), [coverage](coverage-report.schema.json), [checks](check-report.schema.json), [run sets](run-set.schema.json), [control/export responses](control-api.schema.json). Successful responses and errors have separate shapes. Check reports support text and JSON.

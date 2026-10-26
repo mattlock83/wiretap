@@ -62,12 +62,12 @@
     {
       "id": "attempt.identity",
       "applies_to": ["framework_adapter"],
-      "expect": {"stable_id_and_variant_across_retries": true, "first_attempt_ordinal": 1, "increasing_retry_ordinals": true, "duplicate_registered_tests_distinct": true, "parallel_attempts_distinct_traces": true}
+      "expect": {"stable_id_and_variant_across_retries": true, "optional_explicit_attempt_ordinal": true, "duplicate_registered_tests_distinct": true, "parallel_attempts_distinct_traces": true}
     },
     {
       "id": "attempt.final_outcome",
       "applies_to": ["framework_adapter"],
-      "expect": {"pass": "pass", "assertion_failure": "fail", "fixture_failure": "fail", "timeout": "fail", "dynamic_skip": "skip", "negative_schema_validation_alone": "pass", "capture_teardown_after_user_cleanup": true, "late_callbacks_cannot_acquire_next_attempt": true}
+      "expect": {"pass": "pass", "assertion_failure": "fail", "fixture_failure": "fail", "timeout": "fail", "negative_schema_validation_alone": "pass", "capture_teardown_after_user_cleanup": true, "late_callbacks_cannot_acquire_next_attempt": true}
     },
     {
       "id": "attempt.secondary_cleanup",

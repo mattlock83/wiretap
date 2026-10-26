@@ -78,18 +78,17 @@ func httpRulesPair(t *testing.T, consumer, provider map[string]any, value string
 
 func assertHTTPRulesMismatch(t *testing.T, options Options) {
 	t.Helper()
-	for _, mode := range []string{"consumer", "provider"} {
-		t.Run(mode, func(t *testing.T) {
-			options.Mode = mode
-			report := mustCheck(t, options)
-			if report.Compatible || report.Counts.Verified != 0 || report.Counts.Mismatched != 1 || !findingCode(report, "http_contract_mismatch") {
-				t.Fatalf("declared rule drift with shared valid values was certified in %s mode: %+v", mode, report)
-			}
-			if len(report.Findings) != 1 || len(report.Findings[0].Differences) == 0 || !strings.HasPrefix(report.Findings[0].Differences[0], "contract/") {
-				t.Fatalf("rule drift has no field-level contract diagnostic: %+v", report.Findings)
-			}
-		})
-	}
+
+	t.Run("explicit pair", func(t *testing.T) {
+		report := mustCheck(t, options)
+		if report.Compatible || report.Counts.Verified != 0 || report.Counts.Mismatched != 1 || !findingCode(report, "http_contract_mismatch") {
+			t.Fatalf("declared rule drift with shared valid values was certified: %+v", report)
+		}
+		if len(report.Findings) != 1 || len(report.Findings[0].Differences) == 0 || !strings.HasPrefix(report.Findings[0].Differences[0], "contract/") {
+			t.Fatalf("rule drift has no field-level contract diagnostic: %+v", report.Findings)
+		}
+	})
+
 }
 
 func TestCheckHTTPValidationRuleDriftWithSharedValidValues(t *testing.T) {
@@ -169,15 +168,14 @@ func TestCheckHTTPRulesIgnoreAnnotationsRepresentationsAndUnusedAlternatives(t *
 				httpRulesResponse(provider)["content"].(map[string]any)["application/xml"] = map[string]any{"schema": map[string]any{"type": "integer"}}
 			}
 			options := httpRulesPair(t, consumer, provider, `"ready"`)
-			for _, mode := range []string{"consumer", "provider"} {
-				t.Run(mode, func(t *testing.T) {
-					options.Mode = mode
-					report := mustCheck(t, options)
-					if !report.Compatible || report.Counts.Verified != 1 || len(report.Matches) != 1 || report.Matches[0].ContractCheck != "openapi_3_0_validation_rules" {
-						t.Fatalf("equivalent exercised rules were rejected due to annotations, representation or unrelated rules: %+v", report)
-					}
-				})
-			}
+
+			t.Run("explicit pair", func(t *testing.T) {
+				report := mustCheck(t, options)
+				if !report.Compatible || report.Counts.Verified != 1 || len(report.Matches) != 1 || report.Matches[0].ContractCheck != "openapi_3_0_validation_rules" {
+					t.Fatalf("equivalent exercised rules were rejected due to annotations, representation or unrelated rules: %+v", report)
+				}
+			})
+
 		})
 	}
 }
@@ -197,23 +195,22 @@ func TestCheckHTTPContractAvailability(t *testing.T) {
 				consumer["openapi"], provider["openapi"] = "3.1.0", "3.1.0"
 			}
 			options := httpRulesPair(t, consumer, provider, `"shared"`)
-			for _, mode := range []string{"consumer", "provider"} {
-				t.Run(mode, func(t *testing.T) {
-					options.Mode = mode
-					report := mustCheck(t, options)
-					if kind == "both absent" || kind == "consumer absent" {
-						marker := "unavailable"
-						if kind == "consumer absent" {
-							marker = "openapi_3_0_provider_contract"
-						}
-						if !report.Compatible || len(report.Matches) != 1 || report.Matches[0].ContractCheck != marker {
-							t.Fatalf("example match failed or claimed the wrong contract assurance: %+v", report)
-						}
-					} else if report.Compatible || report.Counts.Unverified != 1 || !findingCode(report, "http_contract_unavailable") {
-						t.Fatalf("unavailable contract comparison was certified: %+v", report)
+
+			t.Run("explicit pair", func(t *testing.T) {
+				report := mustCheck(t, options)
+				if kind == "both absent" || kind == "consumer absent" {
+					marker := "unavailable"
+					if kind == "consumer absent" {
+						marker = "openapi_3_0_provider_contract"
 					}
-				})
-			}
+					if !report.Compatible || len(report.Matches) != 1 || report.Matches[0].ContractCheck != marker {
+						t.Fatalf("example match failed or claimed the wrong contract assurance: %+v", report)
+					}
+				} else if report.Compatible || report.Counts.Unverified != 1 || !findingCode(report, "http_contract_unavailable") {
+					t.Fatalf("unavailable contract comparison was certified: %+v", report)
+				}
+			})
+
 		})
 	}
 }
@@ -237,12 +234,10 @@ func TestCheckHTTPAmbiguousCapturedMediaTypesPreventArazzoVerification(t *testin
 					}
 				}
 				options := checkHTTPPair(t, []*artifact.Artifact{consumer}, []*artifact.Artifact{provider})
-				for _, mode := range []string{"consumer", "provider"} {
-					options.Mode = mode
-					if _, err := Check(t.Context(), options); !errors.Is(err, ErrInput) {
-						t.Fatalf("ambiguous Arazzo media accepted: %v", err)
-					}
+				if _, err := Check(t.Context(), options); !errors.Is(err, ErrInput) {
+					t.Fatalf("ambiguous Arazzo media accepted: %v", err)
 				}
+
 			})
 		}
 	}
@@ -261,15 +256,14 @@ func TestCheckHTTPProviderContractSupportsAbsentAndOmittedConsumerSchema(t *test
 			}
 			provider := httpRulesCapture(t, true, httpRulesDocument("response", map[string]any{"type": "string", "enum": []any{"shared", "other"}, "minLength": 2, "maxLength": 10}), `"shared"`)
 			options := checkHTTPPair(t, []*artifact.Artifact{consumer}, []*artifact.Artifact{provider})
-			for _, mode := range []string{"consumer", "provider"} {
-				t.Run(mode, func(t *testing.T) {
-					options.Mode = mode
-					report := mustCheck(t, options)
-					if !report.Compatible || report.Counts.Verified != 1 || len(report.Matches) != 1 || report.Matches[0].ContractCheck != "openapi_3_0_provider_contract" {
-						t.Fatalf("optional consumer schema prevented provider-backed comparison or claimed independent consumer rules: %+v", report)
-					}
-				})
-			}
+
+			t.Run("explicit pair", func(t *testing.T) {
+				report := mustCheck(t, options)
+				if !report.Compatible || report.Counts.Verified != 1 || len(report.Matches) != 1 || report.Matches[0].ContractCheck != "openapi_3_0_provider_contract" {
+					t.Fatalf("optional consumer schema prevented provider-backed comparison or claimed independent consumer rules: %+v", report)
+				}
+			})
+
 		})
 	}
 }
@@ -289,15 +283,14 @@ func TestCheckHTTPProviderOnlyContractRejectsObservedConstraintViolations(t *tes
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			options := httpRulesPair(t, nil, httpRulesDocument(tc.phase, tc.rule), tc.value)
-			for _, mode := range []string{"consumer", "provider"} {
-				t.Run(mode, func(t *testing.T) {
-					options.Mode = mode
-					report := mustCheck(t, options)
-					if report.Compatible || report.Counts.Verified != 0 || report.Counts.Mismatched != 1 || !findingCode(report, "http_contract_violation") {
-						t.Fatalf("equal captured values violating provider constraints were certified: %+v", report)
-					}
-				})
-			}
+
+			t.Run("explicit pair", func(t *testing.T) {
+				report := mustCheck(t, options)
+				if report.Compatible || report.Counts.Verified != 0 || report.Counts.Mismatched != 1 || !findingCode(report, "http_contract_violation") {
+					t.Fatalf("equal captured values violating provider constraints were certified: %+v", report)
+				}
+			})
+
 		})
 	}
 }
@@ -317,15 +310,14 @@ func TestCheckHTTPProviderContractValidatesEachActualExchange(t *testing.T) {
 			// Explicit normalization exceptions do not excuse a declared rule
 			// violation in either original, complete recorded exchange.
 			options.IgnoreHeaders = []string{"x-tenant"}
-			for _, mode := range []string{"consumer", "provider"} {
-				t.Run(mode, func(t *testing.T) {
-					options.Mode = mode
-					report := mustCheck(t, options)
-					if report.Compatible || report.Counts.Mismatched != 1 || !findingCode(report, "http_contract_violation") || !strings.HasPrefix(report.Findings[0].Message, invalidSide+" captured exchange") {
-						t.Fatalf("%s values were not independently checked against provider rules: %+v", invalidSide, report)
-					}
-				})
-			}
+
+			t.Run("explicit pair", func(t *testing.T) {
+				report := mustCheck(t, options)
+				if report.Compatible || report.Counts.Mismatched != 1 || !findingCode(report, "http_contract_violation") || !strings.HasPrefix(report.Findings[0].Message, invalidSide+" captured exchange") {
+					t.Fatalf("%s values were not independently checked against provider rules: %+v", invalidSide, report)
+				}
+			})
+
 		})
 	}
 }
@@ -338,13 +330,11 @@ func TestCheckHTTPProviderOnlyContractAllowsIntentionalInvalidRequestError(t *te
 	consumer, provider := httpRulesCapture(t, false, nil, `"invalid request"`), httpRulesCapture(t, true, document, `"invalid request"`)
 	consumer.Traffic[0].Response.HTTP.Status, provider.Traffic[0].Response.HTTP.Status = 400, 400
 	options := checkHTTPPair(t, []*artifact.Artifact{consumer}, []*artifact.Artifact{provider})
-	for _, mode := range []string{"consumer", "provider"} {
-		options.Mode = mode
-		report := mustCheck(t, options)
-		if !report.Compatible || len(report.Matches) != 1 || report.Matches[0].ContractCheck != "openapi_3_0_provider_contract" {
-			t.Fatalf("provider-only fallback rejected a valid intentional 400 exchange: %+v", report)
-		}
+	report := mustCheck(t, options)
+	if !report.Compatible || len(report.Matches) != 1 || report.Matches[0].ContractCheck != "openapi_3_0_provider_contract" {
+		t.Fatalf("provider-only fallback rejected a valid intentional 400 exchange: %+v", report)
 	}
+
 }
 
 func TestCheckHTTPHeaderCaseAmbiguityCannotHideRuleDrift(t *testing.T) {
@@ -369,15 +359,14 @@ func TestCheckHTTPHeaderCaseAmbiguityCannotHideRuleDrift(t *testing.T) {
 				}
 			}
 			options := httpRulesPair(t, consumer, provider, `"shared"`)
-			for _, mode := range []string{"consumer", "provider"} {
-				t.Run(mode, func(t *testing.T) {
-					options.Mode = mode
-					report := mustCheck(t, options)
-					if report.Compatible || report.Counts.Verified != 0 || report.Counts.Unverified != 1 || !findingCode(report, "http_contract_unavailable") {
-						t.Fatalf("case-insensitive projection silently overwrote a different header rule: %+v", report)
-					}
-				})
-			}
+
+			t.Run("explicit pair", func(t *testing.T) {
+				report := mustCheck(t, options)
+				if report.Compatible || report.Counts.Verified != 0 || report.Counts.Unverified != 1 || !findingCode(report, "http_contract_unavailable") {
+					t.Fatalf("case-insensitive projection silently overwrote a different header rule: %+v", report)
+				}
+			})
+
 		})
 	}
 }
@@ -392,10 +381,8 @@ func TestCheckHTTPExactHeaderOverrideUsesEffectiveOperationRule(t *testing.T) {
 		httpRulesOperation(document)["parameters"] = []any{parameter(3)}
 	}
 	options := httpRulesPair(t, consumer, provider, `"shared"`)
-	for _, mode := range []string{"consumer", "provider"} {
-		options.Mode = mode
-		if report := mustCheck(t, options); !report.Compatible || report.Counts.Verified != 1 {
-			t.Fatalf("effective exact-name parameter override was confused with case ambiguity: %+v", report)
-		}
+	if report := mustCheck(t, options); !report.Compatible || report.Counts.Verified != 1 {
+		t.Fatalf("effective exact-name parameter override was confused with case ambiguity: %+v", report)
 	}
+
 }

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/mattlock83/wiretap/internal/artifact"
 	"io"
 	"strings"
 )
@@ -50,13 +49,13 @@ func DecodeManifest(data []byte) (*Run, error) {
 	for _, group := range [][]API{run.ProvidedAPIs, run.Dependencies} {
 		for _, api := range group {
 			for _, protocol := range api.Protocols {
-				if artifact.UnsupportedRPCProtocol(protocol) {
-					return nil, errors.New("native gRPC API inventory is unsupported")
+				if protocol != "http" {
+					return nil, fmt.Errorf("unsupported API inventory protocol %q; only HTTP is supported", protocol)
 				}
 			}
 			for _, contract := range api.Contracts {
-				if strings.EqualFold(strings.TrimSpace(contract.Type), "protobuf") {
-					return nil, errors.New("protobuf contracts are unsupported")
+				if contract.Type != "openapi" {
+					return nil, fmt.Errorf("unsupported contract type %q; only OpenAPI is supported", contract.Type)
 				}
 			}
 		}

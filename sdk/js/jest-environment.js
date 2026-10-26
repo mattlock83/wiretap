@@ -106,24 +106,18 @@ class WiretapEnvironment extends TestEnvironment {
     // test. Each TestEntry keeps its identity for all of its attempts.
     if (event.name === 'run_start') this.registerIdentities(state.rootDescribeBlock);
     const test = event.test;
-    if (event.name === 'test_started' && test.fn && (test.fn.__wiretapStart || this.captureOptions.autoCapture || this.global.__wiretapCaptureConfig)) {
+    if (event.name === 'test_started' && test.fn && (this.captureOptions.autoCapture || this.global.__wiretapCaptureConfig)) {
       const name = fullTestName(test);
-      let pending;
-      if (test.fn.__wiretapStart) {
-        pending = test.fn.__wiretapStart(name);
-        test.fn.__wiretapAttempt = pending;
-      } else {
-        const { autoCapture, app, managed, globalSetup, globalTeardown, ...defaults } = this.captureOptions;
-        const config = { ...defaults, ...this.global.__wiretapCaptureConfig, manageRuntime: false };
-        this.runtime ||= sdk.startCapture(config);
-        pending = this.runtime.then(runtime => runtime.createTestAttempt(name, {
-          ...config, ...config.testDefaults,
-          identity: config.testDefaults?.identity ?? config.identity ?? this.automaticIdentities.get(test),
-          explicitSession: test.concurrent || (config.testDefaults?.explicitSession ?? config.explicitSession ?? false)
-        }));
-        this.wrappedTests.set(test, test.fn);
-        test.fn = inAttempt(test.fn, pending);
-      }
+      const { autoCapture, app, managed, globalSetup, globalTeardown, ...defaults } = this.captureOptions;
+      const config = { ...defaults, ...this.global.__wiretapCaptureConfig };
+      this.runtime ||= sdk.startCapture(config);
+      const pending = this.runtime.then(runtime => runtime.createTestAttempt(name, {
+        ...config,
+        identity: config.identity ?? this.automaticIdentities.get(test),
+        explicitSession: test.concurrent || Boolean(config.explicitSession)
+      }));
+      this.wrappedTests.set(test, test.fn);
+      test.fn = inAttempt(test.fn, pending);
       this.attempts.set(test, pending);
       // Observe setup errors through the test callback/completion path.
       pending.catch(() => {});

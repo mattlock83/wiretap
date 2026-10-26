@@ -34,7 +34,6 @@ The main HTTP API requires OpenAPI by default. Dependency contracts are optional
 | [Bundle format](bundle-evidence.md) | Parse inventories, attempts, contracts and payloads. |
 | [Machine interface](machine-interface.md) | Consume versioned evidence and reports. |
 | [Run sets](run-sets.md) | Pin completed shards from one build. |
-| [Coverage policies and CI reports](report-policies.md) | Apply gates and export Markdown or JUnit XML. |
 | [Archive loading](archive-loading.md) | Configure bounded reads and integrity checks. |
 | [Architecture](architecture.md) | Understand runtime and Jest responsibilities. |
 | [Support](support.md) | Supported integration and format policies. |

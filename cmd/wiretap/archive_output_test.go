@@ -40,7 +40,7 @@ func TestCLIOutputsProtectDirectlyReferencedExportPayloads(t *testing.T) {
 			}
 			args := []string{"report", "--bundle", root, "--output", output}
 			if target == "arazzo" {
-				args = []string{"export", "--bundle", root, "--format", "arazzo", "--output", output}
+				args = []string{"report", "--bundle", root, "--format", "arazzo", "--output", output}
 			}
 			if target == "all coverage" || target == "all html" || target == "all arazzo" || target == "all receipt" {
 				args = []string{"report", "--bundle", root, "--format", "all"}
@@ -117,49 +117,49 @@ func relocateHTTPBodyReference(t *testing.T, root, relative string) []byte {
 }
 
 func TestCLICoverageOutputProtectsEvidence(t *testing.T) {
-	for _, command := range []string{"report", "export"} {
-		for _, format := range []string{"json", "yaml", "text", "html"} {
-			for _, target := range []string{"manifest", "attempt", "directory alias", "leaf symlink", "hardlink"} {
-				t.Run(command+"/"+format+"/"+target, func(t *testing.T) {
-					root := httpBundleFixture(t)
-					manifest := filepath.Join(root, "bundle.json")
-					before, err := os.ReadFile(manifest)
-					if err != nil {
-						t.Fatal(err)
+
+	for _, format := range []string{"json", "text", "html"} {
+		for _, target := range []string{"manifest", "attempt", "directory alias", "leaf symlink", "hardlink"} {
+			t.Run("report/"+format+"/"+target, func(t *testing.T) {
+				root := httpBundleFixture(t)
+				manifest := filepath.Join(root, "bundle.json")
+				before, err := os.ReadFile(manifest)
+				if err != nil {
+					t.Fatal(err)
+				}
+				output := manifest
+				switch target {
+				case "attempt":
+					output = filepath.Join(root, "tests", "read-items.json")
+				case "directory alias":
+					alias := filepath.Join(t.TempDir(), "capture")
+					if err := os.Symlink(root, alias); err != nil {
+						t.Skip(err)
 					}
-					output := manifest
-					switch target {
-					case "attempt":
-						output = filepath.Join(root, "tests", "read-items.json")
-					case "directory alias":
-						alias := filepath.Join(t.TempDir(), "capture")
-						if err := os.Symlink(root, alias); err != nil {
-							t.Skip(err)
-						}
-						output = filepath.Join(alias, "bundle.json")
-					case "leaf symlink", "hardlink":
-						output = filepath.Join(t.TempDir(), "output.json")
-						link := os.Symlink
-						if target == "hardlink" {
-							link = os.Link
-						}
-						if err := link(manifest, output); err != nil {
-							t.Skip(err)
-						}
+					output = filepath.Join(alias, "bundle.json")
+				case "leaf symlink", "hardlink":
+					output = filepath.Join(t.TempDir(), "output.json")
+					link := os.Symlink
+					if target == "hardlink" {
+						link = os.Link
 					}
-					if code := execute(context.Background(), []string{command, "--bundle", root, "--format", format, "--output", output}); code == 0 {
-						t.Fatal("accepted output that aliases capture evidence")
+					if err := link(manifest, output); err != nil {
+						t.Skip(err)
 					}
-					if after, err := os.ReadFile(manifest); err != nil || string(after) != string(before) {
-						t.Fatalf("changed source manifest: %v", err)
-					}
-					if _, _, err := bundle.Load(root); err != nil {
-						t.Fatalf("changed source archive: %v", err)
-					}
-				})
-			}
+				}
+				if code := execute(context.Background(), []string{"report", "--bundle", root, "--format", format, "--output", output}); code == 0 {
+					t.Fatal("accepted output that aliases capture evidence")
+				}
+				if after, err := os.ReadFile(manifest); err != nil || string(after) != string(before) {
+					t.Fatalf("changed source manifest: %v", err)
+				}
+				if _, _, err := bundle.Load(root); err != nil {
+					t.Fatalf("changed source archive: %v", err)
+				}
+			})
 		}
 	}
+
 }
 
 func TestCLIReportRegeneratesInsideExports(t *testing.T) {
@@ -172,14 +172,14 @@ func TestCLIReportRegeneratesInsideExports(t *testing.T) {
 	if err := os.WriteFile(output, []byte("old"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	for _, command := range []string{"report", "export"} {
-		if code := execute(context.Background(), []string{command, "--bundle", root, "--output", output}); code != 0 {
-			t.Fatalf("report into exports = %d", code)
-		}
-		if info, err := os.Stat(output); err != nil || (runtime.GOOS != "windows" && info.Mode().Perm() != 0600) {
-			t.Fatalf("lost existing report permissions: %v %v", info, err)
-		}
+
+	if code := execute(context.Background(), []string{"report", "--bundle", root, "--output", output}); code != 0 {
+		t.Fatalf("report into exports = %d", code)
 	}
+	if info, err := os.Stat(output); err != nil || (runtime.GOOS != "windows" && info.Mode().Perm() != 0600) {
+		t.Fatalf("lost existing report permissions: %v %v", info, err)
+	}
+
 	if _, _, err := bundle.Load(root); err != nil {
 		t.Fatal(err)
 	}
@@ -269,7 +269,7 @@ func TestCLIArazzoProtectsSourceDirectories(t *testing.T) {
 				}
 				option, output = "--output-dir", filepath.Join(root, "exports", "new", "nested")
 			}
-			if code := execute(context.Background(), []string{"export", "--bundle", root, "--format", "arazzo", option, output}); code == 0 {
+			if code := execute(context.Background(), []string{"report", "--bundle", root, "--format", "arazzo", option, output}); code == 0 {
 				t.Fatal("accepted source destination")
 			}
 			if _, _, err := bundle.Load(root); err != nil {

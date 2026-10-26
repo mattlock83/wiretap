@@ -14,25 +14,26 @@ import (
 	"github.com/mattlock83/wiretap/internal/bundle"
 	"github.com/mattlock83/wiretap/internal/core"
 	"github.com/mattlock83/wiretap/internal/project"
+	"github.com/mattlock83/wiretap/internal/proxy"
 )
 
 type Deps struct {
 	Project *project.Config
 	Config  core.Config
 	Logger  *slog.Logger
-	Proxy   core.Component
+	Proxy   *proxy.Server
 }
 
 type App struct {
-	project   *project.Config
-	cfg       core.Config
-	logger    *slog.Logger
-	lifecycle *core.Lifecycle
-	server    *http.Server
-	bundleMu  sync.Mutex
-	bundle    *bundle.Writer
+	project  *project.Config
+	cfg      core.Config
+	logger   *slog.Logger
+	server   *http.Server
+	bundleMu sync.Mutex
+	bundle   *bundle.Writer
 
-	proxyComponent *ProxyComponent
+	proxyServer *proxy.Server
+	proxyInfo   proxy.Info
 
 	controlMu     sync.Mutex
 	traceOwners   map[string]string
@@ -142,33 +143,22 @@ func New(deps Deps) (*App, error) {
 		logger = newLogger(cfg.Log)
 	}
 
-	proxy := deps.Proxy
-	if proxy == nil {
-		component, err := NewProxyComponent(cfg.Proxy, logger, cfg.Capture.MaxBodyBytes)
-		if err != nil {
-			return nil, err
-		}
-		proxy = component
-	}
-	lifecycle := &core.Lifecycle{
-		Proxy:  proxy,
-		Logger: logger,
+	proxyServer := deps.Proxy
+	if proxyServer == nil {
+		proxyServer = newProxyServer(cfg.Proxy, logger, cfg.Capture.MaxBodyBytes)
 	}
 
 	app := &App{
 		cfg:         cfg,
 		project:     deps.Project,
 		logger:      logger,
-		lifecycle:   lifecycle,
+		proxyServer: proxyServer,
 		sessions:    map[string]*runtimeSession{},
 		traceOwners: map[string]string{},
 	}
 
-	if component, ok := proxy.(*ProxyComponent); ok {
-		app.proxyComponent = component
-		component.SetDependencyResolver(app.resolveDependencyRoute)
-		component.server.SetAdmissionResolver(app.admitRequest)
-	}
+	proxyServer.SetDependencyResolver(app.resolveDependencyRoute)
+	proxyServer.SetAdmissionResolver(app.admitRequest)
 
 	app.server = &http.Server{
 		Addr:         cfg.HTTP.ListenAddr,

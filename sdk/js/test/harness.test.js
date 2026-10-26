@@ -19,28 +19,6 @@ async function controlServer(handler) {
   };
 }
 
-test('attempt.secondary_cleanup: preserve the original throw and report teardown failure', async t => {
-  const diagnostics = [];
-  t.mock.method(console, 'error', (...args) => diagnostics.push(args));
-  const server = await controlServer((path, body) => {
-    if (path === '/v1/setupTest') return { session_id: body.name, name: body.name };
-    if (path === '/v1/teardownTest') return { capture: { capture_incomplete: true, capture_diagnostics: ['secondary cleanup failure'] } };
-    return {};
-  });
-  t.after(() => server.close());
-  const runtime = await startCapture({ baseUrl: server.baseUrl, schemaRequired: false, manageRuntime: false });
-  const original = new Error('original test failure');
-  await assert.rejects(runtime.runTest('ordinary error', () => { throw original; }), error => error === original);
-  assert.match(original.cleanupError.message, /secondary cleanup failure/);
-  assert.deepEqual(original.cleanupErrors, [original.cleanupError]);
-  for (const failure of [Object.freeze(new Error('frozen original')), 'primitive original']) {
-    await assert.rejects(runtime.runTest('caller-owned error', () => { throw failure; }), error => error === failure);
-  }
-  assert.equal(diagnostics.length, 2);
-  assert.ok(diagnostics.every(args => args[0] === 'Wiretap cleanup also failed:' && args[1].message === 'secondary cleanup failure'));
-  await runtime.finishRun();
-});
-
 test("removed redaction options fail clearly before creating capture state", async () => {
   const calls = [];
   const server = await controlServer((path) => {
@@ -52,14 +30,11 @@ test("removed redaction options fail clearly before creating capture state", asy
     for (const redactions of [[], undefined, null, [{ field: "request.headers.authorization", rule: "mask" }]]) {
       const config = { baseUrl: server.baseUrl, schemaRequired: false, redactions };
       await assert.rejects(startCapture(config), removed);
-      await assert.rejects(startCapture({ baseUrl: server.baseUrl, schemaRequired: false, testDefaults: { redactions } }), removed);
     }
     assert.deepEqual(calls, []);
 
     const runtime = await startCapture({ baseUrl: server.baseUrl, schemaRequired: false });
-    await assert.rejects(runtime.setupTest({ name: "manual", redactions: [] }), removed);
     assert.throws(() => runtime.createTestAttempt("framework", { redactions: [] }), removed);
-    await assert.rejects(runtime.runTest("callback", () => assert.fail("must not run"), { redactions: [] }), removed);
     assert.deepEqual(calls, ["/v1/startRun"]);
   } finally {
     await server.close();
@@ -77,11 +52,12 @@ test("startCapture and named test session send capture-only payloads", async () 
   });
   try {
     const runtime = await startCapture({ baseUrl: server.baseUrl, sutBaseUrl: "http://sut.test", schemas: [{ id: "sut-api" }] });
-    const session = await runtime.setupTest({ name: "hello world happy flow" });
+    const attempt = runtime.createTestAttempt("hello world happy flow");
+    const session = await attempt.run(session => session);
     assert.equal(session.name, "hello world happy flow");
     assert.equal(session.bundlePath, "/bundle");
     assert.equal(session.runId, "run-1");
-    await runtime.teardownTest({ status: "pass" });
+    await attempt.finish({ status: "pass" });
     assert.deepEqual(calls[0], {
       path: "/v1/startRun",
       body: { proxy: { target_url: "http://sut.test" } }
@@ -98,24 +74,6 @@ test("startCapture and named test session send capture-only payloads", async () 
     assert.equal(calls[2].body.status, "pass");
     assert.equal(JSON.stringify(calls).includes("mock"), false);
     assert.deepEqual(setupPayload.dependencies, []);
-  } finally {
-    await server.close();
-  }
-});
-
-test("report selects a bundle", async () => {
-  let reportPayload;
-  const server = await controlServer((path, body) => {
-    if (path === "/v1/startRun") return { sut_url: "http://127.0.0.1:20010", proxy: { listen_addr: "127.0.0.1:20010" } };
-    if (path === "/v1/report") { reportPayload = body; return { status: "ok" }; }
-    return {};
-  });
-  try {
-    const runtime = await startCapture({ baseUrl: server.baseUrl, schemaRequired: false });
-    await runtime.report({
-      bundlePath: "capture-bundle"
-    });
-    assert.deepEqual(reportPayload, { bundle_path: "capture-bundle" });
   } finally {
     await server.close();
   }
@@ -147,8 +105,8 @@ test("declared external dependencies retain strict schemas and session-scoped ca
         inventory: { assetName: "Inventory API", upstreamUrl: "http://wiremock.test", schema: inventorySchema }
       }
     });
-    assert.equal(runtime.dependencyUrl("inventory"), "http://127.0.0.1:20010/__wiretap/dep/inventory");
-    const session = await runtime.setupTest({ name: "orders call inventory", explicitSession: true });
+    const attempt = runtime.createTestAttempt("orders call inventory", { explicitSession: true });
+    const session = await attempt.run(session => session);
     assert.deepEqual(calls[1].body.dependencies, [{
       asset_id: "inventory",
       asset_name: "Inventory API",
@@ -157,8 +115,7 @@ test("declared external dependencies retain strict schemas and session-scoped ca
       schemas: [inventorySchema]
     }]);
     assert.equal(session.dependencyUrls.inventory, "http://127.0.0.1:20010/__wiretap/session/session-1/dep/inventory");
-    assert.equal(runtime.dependencyUrl("inventory"), session.dependencyUrls.inventory);
-    assert.throws(() => runtime.dependencyUrl("payments"), /not configured/);
+    await attempt.finish();
     assert.equal(JSON.stringify(calls).includes('"mock"'), false);
   } finally {
     await server.close();
@@ -197,25 +154,22 @@ test("HTTP dependencies need no spec by default and preserve explicit schema req
       upstreamUrl: `http://${kind}.test`, upstreamKind: kind
     }]));
     const runtime = await startCapture({ baseUrl: server.baseUrl, schemas: [{ id: "sut-api" }], dependencies });
-    await runtime.setupTest({ name: "records consumed APIs" });
+    await runtime.createTestAttempt("records consumed APIs").finish();
     const setup = calls.find(call => call.path === "/v1/setupTest").body;
     assert.deepEqual(setup.schemas, [{ id: "sut-api" }]);
     assert.deepEqual(setup.dependencies, ["mock", "service", "unknown"].map(kind => ({
       asset_id: kind, upstream_kind: kind, upstream_url: `http://${kind}.test`
     })));
-    await runtime.teardownTest({ status: "pass" });
 
     const schema = { id: "inventory", type: "openapi", source: { type: "file", path: "inventory.yaml" } };
-    await runtime.setupTest({ name: "opts in to dependency validation", dependencies: {
+    await runtime.createTestAttempt("opts in to dependency validation", { dependencies: {
       strict: { upstreamUrl: "http://strict.test", schemaRequired: true, schema },
       optional: { upstreamUrl: "http://optional.test", schemaRequired: false }
-    } });
+    } }).finish();
     const strictSetup = calls.filter(call => call.path === "/v1/setupTest").at(-1).body;
     assert.equal(strictSetup.dependencies[0].schema_required, true);
     assert.deepEqual(strictSetup.dependencies[0].schemas, [schema]);
     assert.equal(strictSetup.dependencies[1].schema_required, false);
-    await runtime.teardownTest({ status: "pass" });
-    await runtime.finishRun();
     await assert.rejects(startCapture({ schemas: [{ id: "sut" }], dependencies: {
       grpc: { upstreamUrl: "http://grpc.test", protocol: "grpc", schemaRequired: false }
     } }), /protocol was removed; Wiretap supports HTTP APIs/);
@@ -227,18 +181,17 @@ test("schemas are required unless explicitly omitted", async () => {
   try {
     await assert.rejects(() => startCapture({ baseUrl: server.baseUrl }), /OpenAPI schemas are required/);
     const runtime = await startCapture({ baseUrl: server.baseUrl, schemas: [{ id: "sut-api" }], schemaRequired: false });
-    assert.deepEqual(runtime.defaultSchemas, [{ id: "sut-api" }]);
+    await runtime.createTestAttempt("explicit schema").finish();
   } finally { await server.close(); }
 });
 
-test("explicit schema omission permits skipped validation and finalizes the run", async () => {
+test("explicit schema omission permits skipped validation", async () => {
   const calls = [];
   const server = await controlServer((path, body) => {
     calls.push({ path, body });
     if (path === "/v1/startRun") return { sut_url: "http://127.0.0.1:20010", proxy: { listen_addr: "127.0.0.1:20010" } };
     if (path === "/v1/setupTest") return { session_id: "session-1", name: body.name, proxy_listen: "http://127.0.0.1:20010" };
     if (path === "/v1/teardownTest") return { capture: { schema_validation: { status: "skipped" } } };
-    if (path === "/v1/finishRun") return { status: "complete" };
     return {};
   });
   try {
@@ -247,16 +200,14 @@ test("explicit schema omission permits skipped validation and finalizes the run"
       sutBaseUrl: "http://sut.test",
       schemaRequired: false
     });
-    await runtime.setupTest({ name: "creates an order" });
-    await runtime.teardownTest({ status: "pass" });
-    const result = await runtime.finishRun();
+    const result = await runtime.createTestAttempt("creates an order").finish();
 
     const setup = calls.find((call) => call.path === "/v1/setupTest");
     assert.equal(setup.body.schema_required, false);
     assert.deepEqual(setup.body.schemas, []);
     const paths = calls.map((call) => call.path);
-    assert.deepEqual(paths, ["/v1/startRun", "/v1/setupTest", "/v1/teardownTest", "/v1/finishRun"]);
-    assert.deepEqual(result, { status: "complete" });
+    assert.deepEqual(paths, ["/v1/startRun", "/v1/setupTest", "/v1/teardownTest"]);
+    assert.equal(result.capture.schema_validation.status, "skipped");
 
   } finally {
     await server.close();
@@ -272,8 +223,7 @@ test("schema violations remain evidence without failing teardown", async () => {
   });
   try {
     const runtime = await startCapture({ baseUrl: server.baseUrl, schemas: [{ id: "sut-api" }] });
-    await runtime.setupTest({ name: "invalid response" });
-    const result = await runtime.teardownTest({ status: "pass" });
+    const result = await runtime.createTestAttempt("invalid response").finish();
     assert.equal(result.capture.schema_validation.status, "fail");
     assert.equal(result.capture.schema_validation.errors[0].message, "response body is invalid");
   } finally {
@@ -298,9 +248,8 @@ test("project defaults are inherited and shared suites leave finalization to the
   const previousBase = process.env.WIRETAP_BASE_URL;
   process.env.WIRETAP_BASE_URL = server.baseUrl;
   try {
-    const runtime = await startCapture({ manageRuntime: false });
-    await runtime.runTest("configured test", () => {});
-    await runtime.finishRun();
+    const runtime = await startCapture();
+    await runtime.createTestAttempt("configured test").finish();
     const setup = calls.find(call => call.path === "/v1/setupTest").body;
     assert.deepEqual(setup.application, application);
     assert.equal(Object.hasOwn(calls[0].body, "application"), false);
@@ -308,7 +257,7 @@ test("project defaults are inherited and shared suites leave finalization to the
     assert.equal(setup.sut_base_url, "http://sut.test");
     assert.equal(setup.dependencies[0].schema_required, false);
     assert.equal(setup.dependencies[0].upstream_kind, "mock");
-    await runtime.runTest("clears dependencies", () => {}, { dependencies: [] });
+    await runtime.createTestAttempt("clears dependencies", { dependencies: [] }).finish();
     assert.deepEqual(calls.filter(call => call.path === "/v1/setupTest")[1].body.dependencies, []);
     assert.equal(calls.some(call => call.path === "/v1/finishRun"), false);
   } finally {
@@ -330,32 +279,15 @@ test("application metadata is sent at run start and resolved for each test", asy
   });
   try {
     const runtime = await startCapture({ baseUrl: server.baseUrl, application });
-    await runtime.runTest("runtime application", () => {});
-    await runtime.runTest("test application", () => {}, { application: testApplication });
-    await runtime.runTest("runtime application again", () => {});
-    await runtime.finishRun();
+    await runtime.createTestAttempt("runtime application").finish();
+    await runtime.createTestAttempt("test application", { application: testApplication }).finish();
+    await runtime.createTestAttempt("runtime application again").finish();
     assert.deepEqual(calls[0].body.application, application);
     const setups = calls.filter(call => call.path === "/v1/setupTest").map(call => call.body.application);
     assert.deepEqual(setups, [application, testApplication, application]);
   } finally {
     await server.close();
   }
-});
-
-test("suite owner selects outputs and receives exact generated paths", async () => {
-  const outputs = { coverage: ["json", "yaml"], arazzo: true };
-  const expected = { bundle_path: "/capture/run-1", coverage: { json: "/capture/run-1/exports/coverage.json" }, arazzo: "/capture/run-1/exports/arazzo/arazzo.json", errors: [] };
-  let payload;
-  const server = await controlServer((path, body) => {
-    if (path === "/v1/finishRun") { payload = body; return { status: "complete", outputs: expected }; }
-    return {};
-  });
-  try {
-    const runtime = await startCapture({ baseUrl: server.baseUrl, schemaRequired: false, outputs });
-    const result = await runtime.finishRun();
-    assert.deepEqual(payload, { outputs });
-    assert.deepEqual(result.outputs, expected);
-  } finally { await server.close(); }
 });
 
 test("logical identity is separate from retries and execution traces", async () => {
@@ -367,7 +299,7 @@ test("logical identity is separate from retries and execution traces", async () 
   try {
     const runtime = await startCapture({ baseUrl: server.baseUrl, schemaRequired: false });
     for (let ordinal = 0; ordinal < 2; ordinal++) {
-      await runtime.runTest("display label", () => {}, { identity: { id: "orders/create", variant: "invalid", attemptOrdinal: ordinal } });
+      await runtime.createTestAttempt("display label", { identity: { id: "orders/create", variant: "invalid", attemptOrdinal: ordinal } }).finish();
     }
     assert.deepEqual(setups.map(call => call.test_identity), [
       { id: "orders/create", variant: "invalid", attempt_ordinal: 0 },

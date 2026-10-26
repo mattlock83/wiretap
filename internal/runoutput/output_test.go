@@ -44,11 +44,11 @@ func TestFailedAttemptsProduceEverySelectedOutput(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := Generate(t.Context(), root, Config{Coverage: []string{"json", "yaml", "text", "html"}, Arazzo: true})
+	result, err := Generate(t.Context(), root, Config{Coverage: []string{"json", "text", "html"}, Arazzo: true})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(result.Coverage) != 4 || result.Arazzo == "" || len(result.Errors) != 0 {
+	if len(result.Coverage) != 3 || result.Arazzo == "" || len(result.Errors) != 0 {
 		t.Fatalf("wrong outputs: %+v", result)
 	}
 	var report coverage.Report

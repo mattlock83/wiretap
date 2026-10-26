@@ -256,7 +256,6 @@ func TestNormalizeRefusesUnavailableEvidence(t *testing.T) {
 		{"invalid base64", func(f *artifact.Flow) { f.Response.HTTP.Body = &artifact.Body{Bytes: "invalid!"} }},
 		{"transport error", func(f *artifact.Flow) { f.TransportError = "connection reset" }},
 		{"unsupported protocol", func(f *artifact.Flow) { f.Protocol = "graphql" }},
-		{"event interaction", func(f *artifact.Flow) { f.Interaction = &artifact.Interaction{} }},
 		{"invalid URL", func(f *artifact.Flow) { f.Request.HTTP.URL = "http://bad/%zz" }},
 		{"URL credentials", func(f *artifact.Flow) { f.Request.HTTP.URL = "http://dummy:secret@provider/items" }},
 		{"URL fragment", func(f *artifact.Flow) { f.Request.HTTP.URL = "http://provider/items#not-on-the-wire" }},

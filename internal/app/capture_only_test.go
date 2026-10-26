@@ -19,7 +19,7 @@ func TestCaptureAPIRejectsUnknownFields(t *testing.T) {
 	server := httptest.NewServer(appInstance.routes())
 	defer server.Close()
 
-	for _, path := range []string{"/v1/startRun", "/v1/report"} {
+	for _, path := range []string{"/v1/startRun"} {
 		t.Run(path, func(t *testing.T) {
 			resp, err := http.Post(server.URL+path, "application/json", bytes.NewReader([]byte(`{"unexpected":true}`)))
 			if err != nil {

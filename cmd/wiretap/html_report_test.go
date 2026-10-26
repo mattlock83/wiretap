@@ -53,12 +53,12 @@ func TestHTMLReportFromArchiveAndStandaloneFiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, command := range []string{"report", "export"} {
-		code, data := executeCapturingStdout(t, []string{command, "--bundle", archive, "--format", "html"})
-		if code != 0 || !strings.Contains(string(data), `data-wiretap-report="coverage"`) || !strings.Contains(string(data), "reads items") || !strings.Contains(string(data), "Contract coverage") {
-			t.Fatalf("archive HTML failed: exit %d: %s", code, data)
-		}
+
+	code, data := executeCapturingStdout(t, []string{"report", "--bundle", archive, "--format", "html"})
+	if code != 0 || !strings.Contains(string(data), `data-wiretap-report="coverage"`) || !strings.Contains(string(data), "reads items") || !strings.Contains(string(data), "Contract coverage") {
+		t.Fatalf("archive HTML failed: exit %d: %s", code, data)
 	}
+
 	if after, err := os.ReadFile(filepath.Join(archive, "bundle.json")); err != nil || !bytes.Equal(manifest, after) {
 		t.Fatal("HTML report mutated its archive")
 	}
@@ -68,7 +68,7 @@ func TestHTMLReportFromArchiveAndStandaloneFiles(t *testing.T) {
 	if code := execute(context.Background(), args); code != 0 {
 		t.Fatalf("standalone HTML failed: exit %d", code)
 	}
-	data, err := os.ReadFile(output)
+	data, err = os.ReadFile(output)
 	if err != nil || !strings.Contains(string(data), "Example API") || !strings.Contains(string(data), "openapi.yaml") || !strings.Contains(string(data), "Arazzo") || !strings.Contains(string(data), "missing item") {
 		t.Fatalf("standalone HTML omitted sources or test evidence: %v", err)
 	}

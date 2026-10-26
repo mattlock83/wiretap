@@ -22,17 +22,25 @@
   errors and retain per-run receipts/logs.
 - Add minimal local setup initialization/diagnostics and explicit same-build
   run sets for package/CI shards without rewriting source evidence.
-- Add opt-in per-API coverage policies, baseline coverage diffs and
-  Markdown/JUnit assumption reports with bounded expected/actual excerpts.
+- Keep explicit pair and run-set checks with text/JSON results; remove artifact
+  discovery, coverage policy gates, baseline diffs and Markdown/JUnit output.
 - Document supported integrations, SDK ownership and format compatibility; add
   capability discovery and schemas for checks, run sets and control receipts.
-- Show contract assurance in text, Markdown and JUnit reports, and warn when
+- Show contract assurance in text and JSON reports, and warn when
   recorded test attempts captured no traffic.
 - Keep a runnable external Jest example and clean installation checks.
 - Simplify CLI help, print flag errors once, and use exit 2 consistently for
   invalid or missing inputs while preserving failed checks and output errors.
 - Bound terminal report details with omission counts and print exact coverage
   and Arazzo paths after Jest cleanup and run finalization.
+
+- Restore self-contained HTML reporting from Wiretap JSON, OpenAPI specs and
+  Arazzo, with test-linked coverage and captured HTTP exchanges.
+- Consolidate exports under `report` and comparisons under `check`; remove YAML
+  coverage, live report requests, unused event records and opaque contract packages.
+- Keep the Jest SDK focused on `withWiretap` and `captureJest`, with one options
+  path and automatic attempt ownership.
+- Reuse one verified archive snapshot for coverage, HTML and Arazzo generation.
 
 ### Fixes
 

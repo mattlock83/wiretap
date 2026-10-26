@@ -15,6 +15,5 @@ Proposed work here is not shipped functionality or a delivery commitment. This e
 - Explore expected-negative annotations and evidence that the test asserted a rejection. A status code or name alone cannot establish this.
 - Consider explicit pairwise combination targets with a declared policy and denominator.
 - Improve Jest fixture/concurrency diagnostics where a concrete integration need appears.
-- Consider a small offline viewer if text, JSON, Markdown and CI reports leave an inspection gap.
 
 Test generation, dependency simulation, hosted registries and managed test execution remain outside scope. The existing Jest runner still owns test execution and assertions.

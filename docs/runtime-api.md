@@ -19,7 +19,6 @@ Wiretap and does not itself establish that authentication was tested.
 | POST | `/v1/setupTest` | Register a test attempt, trace and schemas. |
 | POST | `/v1/teardownTest` | Drain, validate, and commit an attempt. |
 | POST | `/v1/finishRun` | Finalize the bundle and stop capture. |
-| POST | `/v1/report` | Calculate JSON coverage from the current or selected run artifact. |
 | GET | `/v1/proxy/ca` | Read the public proxy CA certificate. |
 
 ## Suite lifecycle
@@ -209,21 +208,9 @@ mutate the attempt or enter another session. Await background work first.
 
 ## Reports
 
-`POST /v1/report` verifies the current run artifact and returns coverage in
-`report`, alongside `run_id`, `bundle_path`, `run_state` and `snapshot_revision`.
-A copied artifact directory can be selected with `bundle_path`:
-
-```json
-{
-  "bundle_path": "artifacts/<run-id>"
-}
-```
-
-Only run artifact directories are accepted. Unknown request fields are rejected.
-The response includes detailed condition results under `report.contract_coverage`. Automatic
-exports also produce `coverage.html` by default; its path is returned in
-`outputs.coverage.html`. The CLI can also export YAML and JSON/REST Arazzo
-workflows; see [capture artifacts and exports](artifacts.md).
+Run finalization generates configured JSON/text/HTML coverage and eligible Arazzo
+workflows. Their paths are returned under `outputs`. To regenerate outputs from
+a saved archive, use `wiretap report`; see [capture artifacts and exports](artifacts.md).
 
 ## Proxy certificate
 

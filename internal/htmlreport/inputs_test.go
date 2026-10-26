@@ -227,6 +227,33 @@ func TestArchivePreservesCoverageWhenArazzoUnavailable(t *testing.T) {
 	}
 }
 
+func TestFromSnapshotKeepsWorkflowNotesOutOfSharedCoverage(t *testing.T) {
+	path := htmlArchive(t, false, false, nil)
+	run, captures, err := bundle.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	report, err := coverage.GenerateBundleSnapshot(path, run, captures, "Items", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	report.Notes = make([]string, 1, 4)
+	report.Notes[0] = "original note"
+	for _, workflowErr := range []error{nil, errors.New("incomplete workflow")} {
+		inputs, err := FromSnapshot(context.Background(), run, report, nil, workflowErr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(inputs.Report.Notes) != 2 {
+			t.Fatalf("missing workflow note: %v", inputs.Report.Notes)
+		}
+		inputs.Report.Notes[0] = "changed in HTML"
+		if len(report.Notes) != 1 || report.Notes[0] != "original note" || report.Notes[:cap(report.Notes)][1] != "" {
+			t.Fatalf("HTML changed shared coverage notes: %v", report.Notes[:cap(report.Notes)])
+		}
+	}
+}
+
 func TestArchiveKeepsUnknownCoverageAndObservedWorkflowsForOmittedSpec(t *testing.T) {
 	refs := []artifact.SchemaRef{{ID: "items", AssetID: "items", Role: "sut", Type: "openapi", Source: artifact.SchemaSource{Type: "omitted"}}}
 	inputs, err := Archive(context.Background(), htmlArchive(t, false, true, refs), "Items", false)

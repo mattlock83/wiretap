@@ -15,11 +15,10 @@ class CoreClient {
   startRun(payload, options) { return this._request("POST", "/v1/startRun", payload || {}, options); }
   setupTest(payload, options) { return this._request("POST", "/v1/setupTest", payload || {}, options); }
   teardownTest(payload, options) { return this._request("POST", "/v1/teardownTest", payload || {}, options); }
-  report(payload, options) { return this._request("POST", "/v1/report", payload || {}, options); }
   finishRun(payload = {}, options) { return this._request("POST", "/v1/finishRun", payload, options); }
 
   async _request(method, path, payload, { signal } = {}) {
-    if (typeof fetch !== "function") throw new Error("global fetch is not available; require Node.js >= 18");
+    if (typeof fetch !== "function") throw new Error("global fetch is not available; require Node.js >= 22");
     const options = { method, headers: { "content-type": "application/json" } };
     if (payload !== undefined) options.body = JSON.stringify(payload);
     // A default cleanup deadline must allow the requested runtime drain. An

@@ -73,9 +73,7 @@ Wiretap keeps the test grouping and leaves ambiguous parents unset.
 
 Wrap the Jest configuration with `withWiretap` from `@wiretap/sdk/jest`.
 It installs the environment and tracing around ordinary Jest tests and fixtures.
-For selective capture in a custom integration, use `createJestSuite` with
-`testEnvironment: "@wiretap/sdk/jest-environment"`. Do not combine both modes in
-the same test. Jest skips per-test hooks for `.concurrent`;
+Jest skips per-test hooks for `.concurrent`;
 put concurrent fixtures inside the callback. Suite-wide hooks do not belong to
 an individual attempt. See the [Jest guide](../sdk/js/docs/jest.md).
 
@@ -142,38 +140,18 @@ Use the [checking guide](assumption-checks.md) for setup and examples. Its
 [result interpretation](assumption-checks.md#interpreting-results) define what
 the verdict means.
 
-### Shared artifacts are missing, ambiguous or select no consumers
+### Provider identity or version does not agree
 
-`--artifacts` expects a local extracted directory with application IDs as the
-top-level folders, such as `api-evidence/inventory-service/<run-id>/bundle.json`.
-The folder must match the captured application ID. Keep `tests/`, `contracts/`,
-`payloads/` and `exports/arazzo/` alongside each manifest. A ZIP/TAR file or a folder containing only workflows cannot be discovered as a complete run.
-Restore real directories and files rather than symbolic links. An invalid or
-unsupported manifest anywhere in the scanned store fails discovery. Keep the
-local root dedicated to selected snapshots; the guide documents its
-[scan limits](assumption-checks.md#share-provider-snapshots).
+Pass the intended complete archives using `--consumer` and `--provider`, or
+both run-set flags. A declared consumer `provider_mappings` entry must name the
+supplied provider application's ID and API ID. A version pin must match the
+provider's captured `sut_source.version`. Missing version metadata cannot
+establish agreement.
 
-For `check consumer`, every selected mock needs a declared `provider_mappings`
-entry naming the provider application/API. Ensure its provider snapshot is
-present and, if the mapping pins a version, that the archive records that exact
-`sut_source.version`. A missing provider is an input error. For `check provider`,
-consumer mappings must name the local provider application/API. No mapped
-consumers is an input error; it does not certify that a provider has no users.
-
-If more than one snapshot matches a selected application/API, restore only the
-intended run into the local comparison set. Consumer version pins narrow
-provider discovery but do not choose between multiple runs of the same version.
-Provider mode requires one selected snapshot per consumer application/API.
-Wiretap never guesses the newest run or merges historical passing examples.
-Your remote store can keep full history; download a deliberate set for each
-check. Use explicit `--consumer` and `--provider` paths without `--artifacts`
-when you want to select a particular pair.
-
-Provider mode retains consumer mappings pinned to a different provider version
-as `provider_version_unverified`. Review the intended application versions and
-regenerate consumer evidence against the desired provider version; those
-consumers are not silently skipped. See the
-[shared snapshot workflow](assumption-checks.md#share-provider-snapshots).
+Restore the intended build's complete archive and Arazzo exports, including
+`tests/`, `contracts/` and `payloads/`. Extract ZIP/TAR files before checking.
+Wiretap does not choose snapshots or fetch missing evidence. See
+[snapshot selection](assumption-checks.md#share-provider-snapshots).
 
 ### Both suites test the endpoint, but the request is uncovered
 
@@ -279,11 +257,11 @@ cannot turn an uncovered request into a verified one.
 The checker regenerates workflow content from the complete archive and verifies the selected document and source companions. A document from another run, hand-edited request, altered source or missing eligible workflow cannot replace the evidence. Regenerate from the exact intended archives:
 
 ```sh
-wiretap export --bundle ./consumer-run --format arazzo --output-dir ./consumer-run/exports/arazzo
-wiretap export --bundle ./provider-run --format arazzo --output-dir ./provider-run/exports/arazzo
+wiretap report --bundle ./consumer-run --format arazzo --output-dir ./consumer-run/exports/arazzo
+wiretap report --bundle ./provider-run --format arazzo --output-dir ./provider-run/exports/arazzo
 ```
 
-Keep contracts and payloads. Regeneration cannot recover missing evidence; restore complete archives when integrity checks fail. Explicit pairs accept `--consumer-arazzo` and `--provider-arazzo`; discovery and run sets use each run's `exports/arazzo/arazzo.json`. Strict whole-run export can fail for incomplete or unrepresentable eligible traffic even on another boundary or an excluded provider attempt. Verification uses the archives for actual response evidence and does not execute workflow expressions. See [Arazzo limits](assumption-checks.md#arazzo-check-inputs).
+Keep contracts and payloads. Regeneration cannot recover missing evidence; restore complete archives when integrity checks fail. Explicit pairs accept `--consumer-arazzo` and `--provider-arazzo`; run sets use each run's `exports/arazzo/arazzo.json`. Strict whole-run export can fail for incomplete or unrepresentable eligible traffic even on another boundary or an excluded provider attempt. Verification uses the archives for actual response evidence and does not execute workflow expressions. See [Arazzo limits](assumption-checks.md#arazzo-check-inputs).
 
 ### The check failed and no JSON report appeared
 
@@ -294,9 +272,8 @@ failure can also prevent a new report. Preserve the command's exit status and
 stderr; use a fresh output path so an old file cannot be confused with this run.
 See the [CI gate example](ci-example.md#gate-consumerprovider-assumptions-offline).
 
-The output's parent directory must exist. With `--artifacts`, `--output` must
-be outside the entire artifact root and the local input archive. In explicit
-pair mode it must be outside both archives and the selected Arazzo export trees. It cannot replace a workflow or source companion. Once a valid pair is selected, incomplete
+The output's parent directory must exist. `--output` must be outside both
+archives and the selected Arazzo export trees, and cannot replace a run-set manifest. It cannot replace a workflow or source companion. Once a valid pair is selected, incomplete
 runs, unverifiable provider identities and zero captured calls to the selected
 mock instead produce an unverified result before Arazzo verification.
 

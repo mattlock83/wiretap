@@ -77,22 +77,6 @@ func TestFlowFromProxyCarriesCaptureMetadataAndError(t *testing.T) {
 	}
 }
 
-func TestFinishCaseAttachesFingerprint(t *testing.T) {
-	store := testRecorder(t, capture.DefaultMaxBodyBytes)
-	_, _ = store.StartCase("fingerprint-case", nil, nil, "")
-	if err := store.RegisterActive(); err != nil {
-		t.Fatal(err)
-	}
-	store.RecordHTTP(proxy.HTTPExchange{Method: http.MethodGet, URL: "http://sut.test/hello", Status: http.StatusOK})
-	art, _, err := store.FinishCase("pass", nil)
-	if err != nil {
-		t.Fatalf("finish case: %v", err)
-	}
-	if len(art.Traffic) != 1 || art.Traffic[0].Fingerprint == "" {
-		t.Fatalf("unexpected traffic: %+v", art.Traffic)
-	}
-}
-
 func TestFillSchemaSHAInline(t *testing.T) {
 	store := testRecorder(t, capture.DefaultMaxBodyBytes)
 	_, _ = store.StartCase("sha-case", nil, nil, "")

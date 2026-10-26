@@ -128,13 +128,26 @@ func TestRemovedRPCSchemaMetadataCannotBeDecodedAsHTTP(t *testing.T) {
 	}
 }
 
-func TestUnrelatedCustomProtocolRemainsSupported(t *testing.T) {
-	var flow Flow
-	if err := json.Unmarshal([]byte(`{"id":"custom","protocol":"example.custom-v2"}`), &flow); err != nil {
-		t.Fatal(err)
+func TestRemovedEventAndOpaqueContractEvidenceIsRejected(t *testing.T) {
+	for _, raw := range []string{`{"id":"custom","protocol":"example.custom-v2"}`, `{"id":"http","protocol":"http","interaction":{}}`, `{"id":"http","INTERACTION":null}`} {
+		var flow Flow
+		if err := json.Unmarshal([]byte(raw), &flow); err == nil {
+			t.Fatalf("unsupported flow accepted: %s", raw)
+		}
 	}
-	if err := ValidateInteractions(&Artifact{Traffic: []Flow{flow}}); err != nil {
-		t.Fatal(err)
+	for _, raw := range []string{`{"type":"avro"}`, `{"type":"asyncapi"}`, `{"type":"graphql"}`, `{"type":"openapi","source":{"type":"package"}}`, `{"type":"openapi","source":{"type":"file","files":[]}}`} {
+		var schema SchemaRef
+		if err := json.Unmarshal([]byte(raw), &schema); err == nil {
+			t.Fatalf("unsupported contract accepted: %s", raw)
+		}
+	}
+}
+
+func TestValidateCaptureRejectsDuplicateHTTPFlows(t *testing.T) {
+	for _, flows := range [][]Flow{{{ID: "a", Protocol: "http"}, {ID: "a", Protocol: "http"}}, {{Protocol: "http"}}, {{ID: "event", Protocol: "kafka"}}} {
+		if err := ValidateCapture(&Artifact{Traffic: flows}); err == nil {
+			t.Fatalf("invalid flows accepted: %#v", flows)
+		}
 	}
 }
 

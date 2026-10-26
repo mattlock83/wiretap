@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/mattlock83/wiretap/internal/arazzo"
@@ -30,7 +31,7 @@ func Defaults() Config {
 func (c Config) Validate() error {
 	seen := map[string]bool{}
 	for _, format := range c.Coverage {
-		if format != "json" && format != "yaml" && format != "text" && format != "html" {
+		if format != "json" && format != "text" && format != "html" {
 			return fmt.Errorf("outputs.coverage: unsupported format %q", format)
 		}
 		if seen[format] {
@@ -61,11 +62,15 @@ func Generate(ctx context.Context, archive string, cfg Config) (*Result, error) 
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	root, err := filepath.Abs(archive)
 	if err != nil {
 		return nil, err
 	}
-	if _, _, err := bundle.Load(root); err != nil {
+	run, captures, err := bundle.Load(root)
+	if err != nil {
 		return nil, err
 	}
 	guard, err := archiveoutput.New(root)
@@ -84,8 +89,13 @@ func Generate(ctx context.Context, archive string, cfg Config) (*Result, error) 
 		result.Errors = append(result.Errors, Diagnostic{format, err.Error()})
 		failures = append(failures, fmt.Errorf("%s export: %w", format, err))
 	}
+	var generated *arazzo.Export
+	var arazzoErr error
+	if cfg.Arazzo || slices.Contains(cfg.Coverage, "html") {
+		generated, arazzoErr = arazzo.GenerateSnapshot(run, captures, "")
+	}
 	if len(cfg.Coverage) > 0 {
-		report, err := coverage.Generate(ctx, root, "", false)
+		report, err := coverage.GenerateBundleSnapshot(root, run, captures, "", false)
 		if err != nil {
 			fail("coverage", err)
 		} else {
@@ -94,7 +104,7 @@ func Generate(ctx context.Context, archive string, cfg Config) (*Result, error) 
 				var err error
 				if format == "html" {
 					var inputs htmlreport.Inputs
-					inputs, err = htmlreport.Archive(ctx, root, "", false)
+					inputs, err = htmlreport.FromSnapshot(ctx, run, report, generated, arazzoErr)
 					if err == nil {
 						err = htmlreport.Write(&data, inputs)
 					}
@@ -121,7 +131,7 @@ func Generate(ctx context.Context, archive string, cfg Config) (*Result, error) 
 		if err := ctx.Err(); err != nil {
 			fail("arazzo", err)
 		} else {
-			generated, err := arazzo.Generate(root, "")
+			err := arazzoErr
 			if err == nil && generated != nil && generated.Document != nil {
 				var data bytes.Buffer
 				err = arazzo.Write(&data, generated.Document)

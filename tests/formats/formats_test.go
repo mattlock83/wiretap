@@ -48,6 +48,8 @@ func validate(t *testing.T, name string, value any) {
 	key := "report_version"
 	if name == "run-set" {
 		key = "run_set_version"
+	} else if name == "bundle-evidence" {
+		key = "format_version"
 	}
 	object[key] = "999.0"
 	if err := schema.Validate(object); err == nil {
@@ -85,21 +87,44 @@ func TestPublicReportSchemas(t *testing.T) {
 		if err := writer.Finalize("complete"); err != nil {
 			t.Fatal(err)
 		}
+		run := writer.Snapshot()
+		validate(t, "bundle-evidence", run)
+		raw, err := os.ReadFile(filepath.Join(writer.Path(), run.Attempts[0].Path))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var attempt bundle.Attempt
+		if err := json.Unmarshal(raw, &attempt); err != nil {
+			t.Fatal(err)
+		}
+		validate(t, "bundle-evidence", attempt)
+		// Transport failures still belong to the HTTP archive, even without a reply.
+		attempt.Capture.Traffic[0].Response = artifact.Message{}
+		attempt.Capture.Traffic[0].TransportError = "connection reset"
+		validate(t, "bundle-evidence", attempt)
 		result, err := runoutput.Generate(t.Context(), writer.Path(), runoutput.Defaults())
 		if err != nil {
 			t.Fatal(err)
 		}
 		validate(t, "control-api", result)
+		raw, err = os.ReadFile(result.Coverage["json"])
+		if err != nil {
+			t.Fatal(err)
+		}
+		var report map[string]any
+		if err := json.Unmarshal(raw, &report); err != nil {
+			t.Fatal(err)
+		}
+		validate(t, "coverage-report", report)
 		validate(t, "control-api", map[string]any{"report_version": "1.0", "producer": result.Producer, "status": "complete", "run_id": writer.Snapshot().RunID, "bundle_path": writer.Path(), "outputs": result})
 		return writer.Path()
 	}
 	consumer, provider := archive(false), archive(true)
-	pair, err := assumptions.Check(t.Context(), assumptions.Options{Mode: "consumer", Consumer: consumer, Provider: provider})
+	pair, err := assumptions.Check(t.Context(), assumptions.Options{Consumer: consumer, Provider: provider})
 	if err != nil {
 		t.Fatal(err)
 	}
 	validate(t, "check-report", pair)
-	validate(t, "check-report", &assumptions.StoreReport{Producer: pair.Producer, ReportVersion: pair.ReportVersion, RulesVersion: pair.RulesVersion, Mode: pair.Mode, Scope: "discovered_consumer_provider_relationships", ArtifactsPath: t.TempDir(), Compatible: pair.Compatible, Counts: pair.Counts, Comparisons: []*assumptions.Report{pair}})
 	create := func(path string) string {
 		target := filepath.Join(t.TempDir(), "set.json")
 		manifest, err := runset.Create(t.Context(), []string{path}, target)
@@ -117,7 +142,7 @@ func TestPublicReportSchemas(t *testing.T) {
 		return target
 	}
 	consumerSet, providerSet := create(consumer), create(provider)
-	set, err := assumptions.CheckRunSets(t.Context(), consumerSet, providerSet, "consumer", "", nil)
+	set, err := assumptions.CheckRunSets(t.Context(), consumerSet, providerSet, "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

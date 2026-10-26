@@ -116,6 +116,16 @@ func Generate(archive, sutName string) (*Export, error) {
 	if err != nil {
 		return nil, fmt.Errorf("export Arazzo: %w", err)
 	}
+	return GenerateSnapshot(run, captures, sutName)
+}
+
+// GenerateSnapshot derives workflows from an already-verified archive snapshot.
+// It preserves the caller's capture order so the same snapshot can feed coverage.
+func GenerateSnapshot(run *bundle.Run, captures []*artifact.Artifact, sutName string) (*Export, error) {
+	if run == nil || len(run.Attempts) != len(captures) {
+		return nil, errors.New("export Arazzo: bundle inventory and captures disagree")
+	}
+	captures = append([]*artifact.Artifact(nil), captures...)
 	if sutName == "" {
 		sutName = "Wiretap"
 		if run.Application != nil {
@@ -139,7 +149,7 @@ func Generate(archive, sutName string) (*Export, error) {
 	for _, capture := range captures {
 		groups := map[string][]artifact.Flow{}
 		for _, flow := range capture.Traffic {
-			if flow.Protocol != "http" || flow.Interaction != nil || flow.Request.HTTP == nil {
+			if flow.Protocol != "http" || flow.Request.HTTP == nil {
 				continue
 			}
 			boundary := "sut"

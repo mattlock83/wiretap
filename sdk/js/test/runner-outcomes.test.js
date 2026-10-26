@@ -32,6 +32,7 @@ test('Jest final outcomes include timeouts, hooks and validation', async t => {
   assert.equal(outcomes.pass, 'pass');
   assert.equal(outcomes.validation, 'pass');
   assert.equal(outcomes.timeout, 'fail');
+  assert.equal(outcomes['falsy failure'], 'fail');
   assert.ok(setups.every(call => call.body.explicit_session === false), 'serial fallback must stay available');
   assert.equal(outcomes['test and capture cleanup fail'], 'fail');
   assert.match(runnerFailure.stderr, /original test failure retained/);

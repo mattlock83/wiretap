@@ -199,8 +199,6 @@ func sameJSON(a, b any) bool {
 }
 
 type BodyRef struct {
-	EventID        string `json:"event_id,omitempty"`
-	PayloadName    string `json:"payload_name,omitempty"`
 	FlowID         string `json:"flow_id"`
 	Phase          string `json:"phase"`
 	Representation string `json:"representation"`
@@ -401,7 +399,7 @@ func (w *Writer) Commit(art *artifact.Artifact) (string, error) {
 	if err := art.TestCase.Identity.Validate(); err != nil {
 		return "", err
 	}
-	if err := artifact.ValidateInteractions(art); err != nil {
+	if err := artifact.ValidateCapture(art); err != nil {
 		return "", err
 	}
 	for _, ref := range art.Schemas {
@@ -444,14 +442,9 @@ func (w *Writer) Commit(art *artifact.Artifact) (string, error) {
 			copyArt.Schemas[i].Source.Path = filepath.ToSlash(rel)
 		}
 	}
-	attempt := Attempt{EvidenceVersion: EvidenceVersion, RunID: w.run.RunID, AttemptID: id, Capture: copyArt, RequiredCapabilities: requiredCapabilities(copyArt.Schemas, []*artifact.Artifact{&copyArt})}
-	seenFlows := map[string]bool{}
+	attempt := Attempt{EvidenceVersion: EvidenceVersion, RunID: w.run.RunID, AttemptID: id, Capture: copyArt, RequiredCapabilities: []string{}}
 	for i := range copyArt.Traffic {
 		flow := &copyArt.Traffic[i]
-		if flow.ID == "" || seenFlows[flow.ID] {
-			return "", fmt.Errorf("duplicate or empty flow ID %q", flow.ID)
-		}
-		seenFlows[flow.ID] = true
 		for _, phase := range []string{"request", "response"} {
 			var msg *artifact.Message
 			if phase == "request" {
@@ -487,9 +480,6 @@ func (w *Writer) Commit(art *artifact.Artifact) (string, error) {
 			body.Text, body.Bytes = "", ""
 		}
 	}
-	if err := w.attachEvents(&attempt); err != nil {
-		return "", err
-	}
 	data, err := json.MarshalIndent(attempt, "", "  ")
 	if err != nil {
 		return "", err
@@ -512,7 +502,6 @@ func (w *Writer) Commit(art *artifact.Artifact) (string, error) {
 	w.run.Pending = removePending(w.run.Pending, id)
 	w.run.Attempts = append(w.run.Attempts, AttemptRef{AttemptID: id, FileRef: FileRef{Path: rel, SHA256: digest(data)}})
 	w.run.ProvidedAPIs, w.run.Dependencies = apiInventory(w.run, []*artifact.Artifact{art})
-	w.run.RequiredCapabilities = mergeCapabilities(w.run.RequiredCapabilities, attempt.RequiredCapabilities)
 	w.bump()
 	if err := w.writeRun(); err != nil {
 		w.run = previous
@@ -545,7 +534,7 @@ func (w *Writer) Finalize(state string) error {
 func (w *Writer) bump() { w.run.Revision++; w.run.UpdatedAt = time.Now().UTC() }
 
 func (w *Writer) writeRun() error {
-	w.run.RequiredCapabilities = mergeCapabilities(w.run.RequiredCapabilities, requiredCapabilities(w.run.Schemas, nil))
+	w.run.RequiredCapabilities = []string{}
 	w.run.InventoryScope = "configured_and_observed"
 	w.run.ProvidedAPIs, w.run.Dependencies = apiInventory(w.run, nil)
 	if w.run.Attempts == nil {
@@ -714,9 +703,6 @@ func loadWithReader(root string, reader *archiveReader) (*Run, []*artifact.Artif
 		if err := checkCapabilities(attempt.RequiredCapabilities); err != nil {
 			return nil, nil, err
 		}
-		if !sameJSON(attempt.RequiredCapabilities, requiredCapabilities(attempt.Capture.Schemas, []*artifact.Artifact{&attempt.Capture})) {
-			return nil, nil, fmt.Errorf("attempt %q capability declaration disagrees with content", ref.AttemptID)
-		}
 		if err := resolveSchemas(root, attempt.Capture.Schemas, reader); err != nil {
 			return nil, nil, err
 		}
@@ -733,15 +719,6 @@ func loadWithReader(root string, reader *archiveReader) (*Run, []*artifact.Artif
 		}
 		seenBodies := map[string]bool{}
 		for _, bodyRef := range attempt.Bodies {
-			if bodyRef.Phase == "event" {
-				if err := restoreEventBody(root, flowMap, seenBodies, bodyRef, reader.readFile); err != nil {
-					return nil, nil, err
-				}
-				continue
-			}
-			if bodyRef.EventID != "" || bodyRef.PayloadName != "" {
-				return nil, nil, errors.New("event selectors on a pair body reference")
-			}
 			key := bodyRef.FlowID + "/" + bodyRef.Phase
 			if seenBodies[key] {
 				return nil, nil, fmt.Errorf("duplicate body reference %q", key)
@@ -796,10 +773,7 @@ func loadWithReader(root string, reader *archiveReader) (*Run, []*artifact.Artif
 				}
 			}
 		}
-		if err := validateEventAttachments(attempt.Capture, seenBodies); err != nil {
-			return nil, nil, err
-		}
-		if err := artifact.ValidateInteractions(&attempt.Capture); err != nil {
+		if err := artifact.ValidateCapture(&attempt.Capture); err != nil {
 			return nil, nil, err
 		}
 		captures = append(captures, &attempt.Capture)
@@ -812,9 +786,6 @@ func loadWithReader(root string, reader *archiveReader) (*Run, []*artifact.Artif
 	}
 	if err := validateInventory(storedInventory, captures); err != nil {
 		return nil, nil, err
-	}
-	if !sameJSON(run.RequiredCapabilities, requiredCapabilities(run.Schemas, captures)) {
-		return nil, nil, errors.New("bundle capability declaration disagrees with content")
 	}
 	return &run, captures, nil
 }
@@ -843,11 +814,11 @@ func resolveSchemas(root string, schemas []artifact.SchemaRef, reader *archiveRe
 		if err := validateSchemaBoundary(*ref); err != nil {
 			return err
 		}
-		if ref.Type != "openapi" && !opaqueContractType(ref.Type) {
+		if ref.Type != "openapi" {
 			return fmt.Errorf("unsupported contract type %q", ref.Type)
 		}
 		if ref.Source.Type == "omitted" {
-			if ref.Source.Path != "" || ref.Source.URL != "" || ref.Source.Content != "" || ref.Source.SHA256 != "" || len(ref.Source.Files) != 0 {
+			if ref.Source.Path != "" || ref.Source.URL != "" || ref.Source.Content != "" || ref.Source.SHA256 != "" {
 				return fmt.Errorf("omitted schema %q contains a source", ref.ID)
 			}
 			continue
@@ -894,11 +865,7 @@ func resolveSchemas(root string, schemas []artifact.SchemaRef, reader *archiveRe
 		if manifest.SetHash != parts[1] || manifest.Root != rootRel {
 			return fmt.Errorf("schema %q manifest identity mismatch", ref.ID)
 		}
-		if opaqueContractType(ref.Type) {
-			if err := validateContractPackageManifest(*ref, manifest, setBase); err != nil {
-				return err
-			}
-		} else if manifest.Profile != "" || manifest.Type != "" {
+		if manifest.Profile != "" || manifest.Type != "" {
 			return fmt.Errorf("schema %q has an unsupported package profile", ref.ID)
 		}
 		if err := reader.requireReads(len(manifest.Files)); err != nil {
@@ -1033,9 +1000,9 @@ func (ref *BodyRef) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	for key := range fields {
-		for _, removed := range []string{"kind", "message_index", "status_detail_index"} {
+		for _, removed := range []string{"kind", "message_index", "status_detail_index", "event_id", "payload_name"} {
 			if strings.EqualFold(key, removed) {
-				return fmt.Errorf("unsupported native gRPC body selector %q", key)
+				return fmt.Errorf("unsupported body selector %q", key)
 			}
 		}
 	}

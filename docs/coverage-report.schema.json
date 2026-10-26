@@ -297,9 +297,6 @@
         "capture_incomplete": {
           "type": "boolean"
         },
-        "fingerprint": {
-          "type": "string"
-        },
         "parent_flow_id": {
           "type": "string"
         },

@@ -1,30 +1,31 @@
-const { createJestSuite } = require('../../jest');
+const { captureJest } = require('../../jest');
 let server;
 beforeAll(async () => { server = await require('./outcomes-server.cjs')(); });
-const suite = createJestSuite({ get baseUrl() { return server.url; }, schemaRequired: false });
-suite.test('pass', () => {});
-suite.test('timeout', async () => { await new Promise(resolve => setTimeout(resolve, 180)); }, 60);
-suite.test('never settles', () => new Promise(() => {}), 60);
-suite.test('assertion count', () => { expect.assertions(1); });
-suite.test('validation', () => {});
-suite.test('test and capture cleanup fail', () => { throw Error('original test failure retained'); });
+captureJest({ get baseUrl() { return server.url; }, schemaRequired: false });
+test('pass', () => {});
+test('timeout', async () => { await new Promise(resolve => setTimeout(resolve, 180)); }, 60);
+test('never settles', () => new Promise(() => {}), 60);
+test('falsy failure', () => { throw 0; });
+test('assertion count', () => { expect.assertions(1); });
+test('validation', () => {});
+test('test and capture cleanup fail', () => { throw Error('original test failure retained'); });
 describe('hooks', () => {
-  beforeEach(async () => { await fetch(suite.sutUrl + '/hook/setup'); });
+  beforeEach(async () => { await fetch(server.url + '/hook/setup'); });
   afterEach(async () => {
-    await fetch(suite.sutUrl + '/hook/cleanup');
+    await fetch(server.url + '/hook/cleanup');
     throw Error('cleanup failed');
   });
-  suite.test('hook failure', () => {});
+  test('hook failure', () => {});
 });
 describe('failed setup', () => {
   beforeEach(async () => {
-    await fetch(suite.sutUrl + '/failed-setup/setup');
+    await fetch(server.url + '/failed-setup/setup');
     throw Error('setup failed');
   });
-  afterEach(done => { fetch(suite.sutUrl + '/failed-setup/cleanup').then(() => done(), done); });
-  suite.test('body never runs', async () => { await fetch(suite.sutUrl + '/must-not-run'); });
+  afterEach(done => { fetch(server.url + '/failed-setup/cleanup').then(() => done(), done); });
+  test('body never runs', async () => { await fetch(server.url + '/must-not-run'); });
 });
 afterAll(async () => {
   await new Promise(resolve => setTimeout(resolve, 200));
-  await server.finish({ open: suite.runtime.openSessions.size });
+  await server.finish();
 });

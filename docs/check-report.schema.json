@@ -7,9 +7,6 @@
       "$ref": "#/$defs/pair"
     },
     {
-      "$ref": "#/$defs/store"
-    },
-    {
       "$ref": "#/$defs/set"
     }
   ],
@@ -249,12 +246,6 @@
         "producer": {
           "$ref": "#/$defs/producer"
         },
-        "mode": {
-          "enum": [
-            "consumer",
-            "provider"
-          ]
-        },
         "compatible": {
           "type": "boolean"
         },
@@ -318,7 +309,6 @@
         "report_version",
         "rules_version",
         "producer",
-        "mode",
         "compatible",
         "counts",
         "scope",
@@ -330,57 +320,6 @@
         "matches",
         "findings",
         "excluded_provider_evidence"
-      ]
-    },
-    "store": {
-      "type": "object",
-      "properties": {
-        "report_version": {
-          "const": "1.0"
-        },
-        "rules_version": {
-          "type": "string",
-          "minLength": 1
-        },
-        "producer": {
-          "$ref": "#/$defs/producer"
-        },
-        "mode": {
-          "enum": [
-            "consumer",
-            "provider"
-          ]
-        },
-        "compatible": {
-          "type": "boolean"
-        },
-        "counts": {
-          "$ref": "#/$defs/counts"
-        },
-        "scope": {
-          "const": "discovered_consumer_provider_relationships"
-        },
-        "artifacts_path": {
-          "type": "string",
-          "minLength": 1
-        },
-        "comparisons": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/pair"
-          }
-        }
-      },
-      "required": [
-        "report_version",
-        "rules_version",
-        "producer",
-        "mode",
-        "compatible",
-        "counts",
-        "scope",
-        "artifacts_path",
-        "comparisons"
       ]
     },
     "set": {
@@ -395,12 +334,6 @@
         },
         "producer": {
           "$ref": "#/$defs/producer"
-        },
-        "mode": {
-          "enum": [
-            "consumer",
-            "provider"
-          ]
         },
         "compatible": {
           "type": "boolean"
@@ -450,7 +383,6 @@
         "report_version",
         "rules_version",
         "producer",
-        "mode",
         "compatible",
         "counts",
         "scope",

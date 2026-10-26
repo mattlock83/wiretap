@@ -91,27 +91,25 @@ Teardown drains accepted exchanges for five seconds by default. Configure the AP
 | `wiretap init --sut-url <url> --schema <path> --application <id>` | Create a minimal HTTP project without overwriting a file. |
 | `wiretap doctor [--config path]` | Inspect local setup without starting capture. |
 | `wiretap report --bundle <run> --format html --output report.html` | Build an offline coverage and test-run dashboard. |
-| `wiretap report --bundle <run> --format text` | Read verified coverage; JSON is the default, YAML also works. |
+| `wiretap report --bundle <run> --format text` | Read verified coverage; JSON is the default. |
 | `wiretap report --coverage-json <json> --format html --output report.html` | Render exported coverage JSON with optional repeatable `--spec` and `--arazzo` inputs. |
-| `wiretap export --bundle <run> --format arazzo --output-dir <dir>` | Write Arazzo workflows and portable source companions. |
-| `wiretap export --bundle <run> --format all` | Generate default coverage formats and Arazzo outputs. |
-| `wiretap check consumer --consumer <run> --provider <run>` | Check captured mock assumptions with verified Arazzo inputs. |
-| `wiretap check provider --consumer <run> --provider <run>` | Check the same relationship from the provider viewpoint. |
+| `wiretap report --bundle <run> --format arazzo --output-dir <dir>` | Write Arazzo workflows and portable source companions. |
+| `wiretap report --bundle <run> --format all` | Generate default coverage formats and Arazzo outputs. |
+| `wiretap check --consumer <run> --provider <run>` | Check captured mock assumptions with verified Arazzo inputs. |
 | `wiretap run-set --bundle <a> --bundle <b> --output runs.json` | Pin completed shards from one build. |
 | `wiretap report --run-set runs.json` | Calculate aggregate JSON coverage. |
-| `wiretap compare --baseline <json> --current <json>` | Compare coverage targets. |
 | `wiretap ca` | Print the configured public proxy CA. |
 
-Coverage formats are `json`, `yaml`, `text` and `html`. Both `report` and `export` also support `arazzo` and `all`. Arazzo needs a destination to keep companion references portable. Standalone `--coverage-json` input is for HTML rendering; its optional specs and workflows are supplementary and do not recalculate the measurement. See [artifacts](artifacts.md) for the dashboard inputs and strict eligible-traffic limits.
+Coverage formats are `json`, `text` and `html`. `report` also supports `arazzo` and `all`. Arazzo needs a destination to keep companion references portable. Standalone `--coverage-json` input is for HTML rendering; its optional specs and workflows are supplementary and do not recalculate the measurement. See [artifacts](artifacts.md) for the dashboard inputs and strict eligible-traffic limits.
 
-Checks use Arazzo on both sides and require complete raw archives. Defaults are `exports/arazzo/arazzo.json` and its source files within each run. Explicit pairs accept `--consumer-arazzo` and `--provider-arazzo`; discovery (`--artifacts`) and run sets use each member's defaults. There is no input-format selector. Use `--dependency` when a pair has multiple mock APIs. Keep reports outside input archives, selected Arazzo export trees and artifact-store roots. See [assumption checks](assumption-checks.md#arazzo-check-inputs).
+Checks use Arazzo on both sides and require complete raw archives. Defaults are `exports/arazzo/arazzo.json` and its source files within each run. Explicit pairs accept `--consumer-arazzo` and `--provider-arazzo`; run sets use each member's defaults. There is no input-format selector. Use `--dependency` when a pair has multiple mock APIs. Keep reports outside input archives, selected Arazzo export trees and run-set manifests. See [assumption checks](assumption-checks.md#arazzo-check-inputs).
 
 ## Automatic outputs
 
 `outputs: {coverage: [json, text, html], arazzo: true}` is the default. It generates coverage and Arazzo after finalization. Open the receipt's `outputs.coverage.html` in a browser for the offline dashboard. The completion receipt and `exports/result.json` name exact paths and errors. Each export is independent; one failure retains other successful outputs but fails finalization/cleanup. Raw evidence remains available for an offline retry:
 
 ```sh
-wiretap export --bundle ./artifacts/wiretap/run-... --format all
+wiretap report --bundle ./artifacts/wiretap/run-... --format all
 ```
 
-Use [coverage policies](report-policies.md) for explicit gates and [run sets](run-sets.md) for same-build shards. Process option/input errors return `2`; runtime/export failures return `1`. Test outcomes remain owned by Jest.
+Use [run sets](run-sets.md) for same-build shards. Compatibility checks provide text and JSON results. Process option/input errors return `2`; runtime/export failures return `1`. Test outcomes remain owned by Jest.

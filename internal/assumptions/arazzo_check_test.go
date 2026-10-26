@@ -9,6 +9,7 @@ import (
 
 	"github.com/mattlock83/wiretap/internal/arazzo"
 	"github.com/mattlock83/wiretap/internal/artifact"
+	"github.com/mattlock83/wiretap/internal/bundle"
 )
 
 func integrationArazzoFlow() artifact.Flow {
@@ -71,25 +72,23 @@ func TestArazzoChecksUseCompleteArchiveResponsesWithArazzo(t *testing.T) {
 			if scenario == "ignored header" {
 				opts.IgnoreHeaders = []string{"X-Business"}
 			}
-			for _, mode := range []string{"consumer", "provider"} {
-				opts.Mode = mode
-				report := mustCheck(t, opts)
-				want := scenario == "compatible" || scenario == "ignored header"
-				if report.Compatible != want || report.Counts.Assumptions != 1 {
-					t.Fatalf("unexpected %s verdict: %+v", mode, report)
-				}
-				if !want && scenario != "request" && !findingCode(report, "provider_response_mismatch") {
-					t.Fatalf("response evidence lost: %+v", report)
-				}
-				if scenario == "request" && !findingCode(report, "provider_request_uncovered") {
-					t.Fatalf("missing request evidence: %+v", report)
-				}
-				for _, source := range []Source{report.Consumer, report.Provider} {
-					if source.Arazzo == "" || len(source.ArazzoFiles) == 0 || source.ManifestSHA256 == "" {
-						t.Fatalf("incomplete Arazzo provenance: %+v", source)
-					}
+			report := mustCheck(t, opts)
+			want := scenario == "compatible" || scenario == "ignored header"
+			if report.Compatible != want || report.Counts.Assumptions != 1 {
+				t.Fatalf("unexpected verdict: %+v", report)
+			}
+			if !want && scenario != "request" && !findingCode(report, "provider_response_mismatch") {
+				t.Fatalf("response evidence lost: %+v", report)
+			}
+			if scenario == "request" && !findingCode(report, "provider_request_uncovered") {
+				t.Fatalf("missing request evidence: %+v", report)
+			}
+			for _, source := range []Source{report.Consumer, report.Provider} {
+				if source.Arazzo == "" || len(source.ArazzoFiles) == 0 || source.ManifestSHA256 == "" {
+					t.Fatalf("incomplete Arazzo provenance: %+v", source)
 				}
 			}
+
 		})
 	}
 }
@@ -120,7 +119,7 @@ func TestArazzoChecksKeepFailedProviderAndIdentityUnverified(t *testing.T) {
 		t.Run(scenario, func(t *testing.T) {
 			consumer := checkCapture(false, integrationArazzoFlow())
 			provider := checkCapture(true, integrationArazzoFlow())
-			identity := storeConsumerIdentity("shop")
+			identity := mappedConsumerCheckIdentity()
 			providerIdentity, state := providerCheckIdentity(), "complete"
 			code := "provider_request_uncovered"
 			switch scenario {
@@ -133,7 +132,7 @@ func TestArazzoChecksKeepFailedProviderAndIdentityUnverified(t *testing.T) {
 				providerIdentity.Application.ID = "other"
 				code = "provider_identity_mismatch"
 			}
-			opts := Options{Mode: "consumer", Consumer: writeCheckArchive(t, identity, "complete", consumer), Provider: writeCheckArchive(t, providerIdentity, state, provider)}
+			opts := Options{Consumer: writeCheckArchive(t, identity, "complete", consumer), Provider: writeCheckArchive(t, providerIdentity, state, provider)}
 			writeArazzoCheckProjection(t, opts.Consumer)
 			writeArazzoCheckProjection(t, opts.Provider)
 			report := mustCheck(t, opts)
@@ -144,18 +143,18 @@ func TestArazzoChecksKeepFailedProviderAndIdentityUnverified(t *testing.T) {
 	}
 }
 
-func TestArazzoCheckSelectionAppliesToDiscoveryAndRunSets(t *testing.T) {
+func TestArazzoCheckSelectionAppliesToRunSets(t *testing.T) {
 	first, second := integrationArazzoFlow(), integrationArazzoFlow()
 	second.Request.HTTP.URL = "http://consumer.test/other"
 	second.Response.HTTP.Body.Text = `{"other":true}`
-	consumer := writeCheckArchive(t, storeConsumerIdentity("shop"), "complete", checkCapture(false, first, second))
+	consumer := writeCheckArchive(t, mappedConsumerCheckIdentity(), "complete", checkCapture(false, first, second))
 	providerOne := writeCheckArchive(t, buildIdentity(providerCheckIdentity(), "one"), "complete", checkCapture(true, cloneNormalizationFlow(t, first)))
 	providerTwo := writeCheckArchive(t, buildIdentity(providerCheckIdentity(), "one"), "complete", checkCapture(true, cloneNormalizationFlow(t, second)))
 	for _, root := range []string{consumer, providerOne, providerTwo} {
 		writeArazzoCheckProjection(t, root)
 	}
 	consumerSet, providerSet := writeRunSet(t, consumer), writeRunSet(t, providerOne, providerTwo)
-	report, err := CheckRunSets(t.Context(), consumerSet, providerSet, "consumer", "", nil)
+	report, err := CheckRunSets(t.Context(), consumerSet, providerSet, "", nil)
 	if err != nil || !report.Compatible || report.Counts.Verified != 2 || len(report.Providers) != 2 {
 		t.Fatalf("Arazzo shards: %+v, %v", report, err)
 	}
@@ -164,17 +163,10 @@ func TestArazzoCheckSelectionAppliesToDiscoveryAndRunSets(t *testing.T) {
 			t.Fatalf("wrong run-set inputs: %+v", source)
 		}
 	}
-	// Discovery verifies each run's Arazzo document and companions.
-	store := t.TempDir()
-	provider := writeCheckArchive(t, providerCheckIdentity(), "complete", checkCapture(true, first, second))
-	writeArazzoCheckProjection(t, provider)
-	storedProvider := putStoreArchive(t, store, "inventory", "run", provider)
-	storedConsumer := putStoreArchive(t, store, "shop", "run", consumer)
-	for _, opts := range []StoreOptions{{Mode: "consumer", Consumer: storedConsumer, Artifacts: store}, {Mode: "provider", Provider: storedProvider, Artifacts: store}} {
-		discovered, err := CheckStore(t.Context(), opts, nil)
-		if err != nil || !discovered.Compatible || discovered.Counts.Verified != 2 || len(discovered.Comparisons) != 1 {
-			t.Fatalf("Arazzo discovery: %+v, %v", discovered, err)
-		}
+}
 
-	}
+func mappedConsumerCheckIdentity() bundle.Identity {
+	identity := consumerCheckIdentity()
+	identity.ProviderMappings = map[string]bundle.ProviderRef{"stock": {ApplicationID: "inventory", APIID: "inventory-api"}}
+	return identity
 }

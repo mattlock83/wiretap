@@ -30,9 +30,9 @@ const RulesVersion = "wiretap-assumptions-4"
 var ErrInput = errors.New("invalid assumption-check input")
 
 type Options struct {
-	Mode, Consumer, Provider, Dependency string
-	ConsumerArazzo, ProviderArazzo       string
-	IgnoreHeaders                        []string
+	Consumer, Provider, Dependency string
+	ConsumerArazzo, ProviderArazzo string
+	IgnoreHeaders                  []string
 }
 
 type Source struct {
@@ -99,7 +99,6 @@ type Report struct {
 	Producer                 version.Producer   `json:"producer"`
 	ReportVersion            string             `json:"report_version"`
 	RulesVersion             string             `json:"rules_version"`
-	Mode                     string             `json:"mode"`
 	Scope                    string             `json:"scope"`
 	Compatible               bool               `json:"compatible"`
 	Consumer                 Source             `json:"consumer"`
@@ -128,14 +127,11 @@ type sample struct {
 	schemaProblem                string
 }
 
-// Check verifies the same consumer-to-provider obligation from either viewpoint.
+// Check verifies consumer-to-provider obligations.
 // Extra provider examples are not obligations for consumers. No requests run.
 func Check(ctx context.Context, options Options) (*Report, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
-	}
-	if options.Mode != "consumer" && options.Mode != "provider" {
-		return nil, fmt.Errorf("%w: check requires consumer or provider", ErrInput)
 	}
 	consumer, err := loadSnapshot(options.Consumer)
 	if err != nil {
@@ -162,7 +158,7 @@ func Check(ctx context.Context, options Options) (*Report, error) {
 	}
 	sort.Strings(ignored)
 	ignored = unique(ignored)
-	report := &Report{Producer: version.Current(), ReportVersion: "1.0", RulesVersion: RulesVersion, Mode: options.Mode,
+	report := &Report{Producer: version.Current(), ReportVersion: "1.0", RulesVersion: RulesVersion,
 		Scope: "observed_mock_examples_and_exercised_contracts", Dependency: dependency, Binding: "explicit_inputs",
 		Consumer: consumer.source(options.ConsumerArazzo), Provider: provider.source(options.ProviderArazzo),
 		IgnoredHeaders: ignored, Matches: []Match{}, Findings: []Finding{}, ExcludedProviderEvidence: []ExcludedEvidence{}}
@@ -463,9 +459,6 @@ func (s *snapshot) samples(channel, dependency string) []sample {
 		}
 		for index, flow := range capture.Traffic {
 			selected := flow.Channel == channel && (channel != "sut_to_dependency" || flow.AssetID == dependency)
-			if interaction := flow.Interaction; interaction != nil {
-				selected = channel == "sut_to_dependency" && interaction.Boundary.Role == "dependency" && interaction.Boundary.ID == dependency || channel == "test_to_sut" && interaction.Boundary.Role == "provided" && interaction.Boundary.ID == providerAPI(s.run)
-			}
 			if !selected {
 				continue
 			}

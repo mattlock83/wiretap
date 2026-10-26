@@ -33,18 +33,17 @@ test('default control startup has a finite deadline and an actionable error', as
 test('default teardown deadline accommodates the requested drain', async t => {
   const durations = mockControl(t, { hang: path => path === '/v1/teardownTest' });
   const runtime = await startCapture({ schemaRequired: false });
-  await runtime.setupTest({ name: 'example' });
-  await assert.rejects(runtime.teardownTest({ drainTimeoutMs: 60000 }), /70000ms/);
+  const attempt = runtime.createTestAttempt('example', { drainTimeoutMs: 60000 });
+  await assert.rejects(attempt.finish(), /70000ms/);
   assert.deepEqual(durations, [30000, 30000, 70000]);
 });
 
-test('explicit control deadlines apply to setup, cleanup and reporting', async t => {
-  const durations = mockControl(t, { hang: path => path === '/v1/report' || path === '/v1/teardownTest' });
+test('explicit control deadlines apply to startup, setup and cleanup', async t => {
+  const durations = mockControl(t, { hang: path => path === '/v1/teardownTest' });
   const runtime = await startCapture({ schemaRequired: false, timeoutMs: 50 });
-  await runtime.setupTest({ name: 'example' });
-  await assert.rejects(runtime.report(), /POST \/v1\/report timed out after 50ms/);
-  await assert.rejects(runtime.teardownTest({ drainTimeoutMs: 60000 }), /50ms/);
-  assert.deepEqual(durations, [50, 50, 50, 50]);
+  const attempt = runtime.createTestAttempt('example', { drainTimeoutMs: 60000 });
+  await assert.rejects(attempt.finish(), /50ms/);
+  assert.deepEqual(durations, [50, 50, 50]);
 });
 
 test('zero opts out without adding a deadline or AbortSignal', async t => {
@@ -55,8 +54,7 @@ test('zero opts out without adding a deadline or AbortSignal', async t => {
     return new Response('{}', { headers: { 'content-type': 'application/json' } });
   });
   const runtime = await startCapture({ schemaRequired: false, timeoutMs: 0 });
-  await runtime.report();
-  await runtime.finishRun();
+  await runtime.createTestAttempt("example").finish();
   assert.equal(calls, 3);
 });
 

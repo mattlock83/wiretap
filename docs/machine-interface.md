@@ -16,17 +16,17 @@ are printed once on stderr.
 | Exit | Meaning |
 | --- | --- |
 | `0` | Command succeeded, checks passed, or help was requested. |
-| `1` | A compatibility, coverage policy, baseline or setup check failed; capture, export or output writing can also fail with this status. |
+| `1` | A compatibility or setup check failed; capture, export or output writing can also fail with this status. |
 | `2` | Invalid command/flags, missing required arguments, or unreadable, corrupt or incompatible inputs. |
 
 `doctor` writes its diagnostic report and returns `1` when local setup checks
 fail, including a missing configuration. An invalid invocation returns `2`.
-Offline report/export commands return `2` for a missing or corrupt capture,
+Offline report commands return `2` for a missing or corrupt capture,
 without replacing existing outputs. Keep stderr and the exit status alongside
 machine reports; a failed command does not make a pre-existing report current.
 
 Text reports show bounded samples with omitted counts. Use JSON for complete
-check and baseline diagnostics, or JSON/YAML for complete coverage data. Display
+check diagnostics and coverage data. Display
 limits do not change measured totals or check verdicts.
 
 HTML is a derived offline dashboard.
@@ -43,7 +43,7 @@ Optional `producer` metadata records the capturing Wiretap version, source commi
 and dirty-build state. Old recordings lacking producer metadata remain readable;
 their producer is unknown. Export never assigns today's build to an old capture.
 
-JSON and YAML coverage use report envelope `report_version: "1.0"`, described by
+JSON coverage uses report envelope `report_version: "1.0"`, described by
 [coverage-report.schema.json](coverage-report.schema.json). `producer` identifies
 the measuring binary. `capture` identifies the source run, archive format,
 revision, application, supplied build sources and original producer. Existing
@@ -115,10 +115,9 @@ or retained evidence can make a result `unverified`.
 
 ## Assumption-check results
 
-`wiretap check consumer` and `wiretap check provider` compare an explicit
-consumer/provider pair, a local run against discovered peers under
-`--artifacts <root>`, or explicit same-build run sets. Discovery uses declared provider mappings and top-level
-application folders; it requires an unambiguous snapshot selection. Each pair
+`wiretap check --consumer <run> --provider <run>` compares an explicitly selected
+consumer/provider pair. For separate suites in the same build, use
+`--consumer-set` and `--provider-set` together. Each pair
 reads complete archives and Arazzo workflows from `exports/arazzo/arazzo.json` with their source companions. Explicit pairs can override those paths with `--consumer-arazzo` and `--provider-arazzo`. A passing result requires inputs verified against archive-derived
 projections and selected mock scenarios supported by complete
 passing provider service tests. With only the provider's frozen OpenAPI 3.0
@@ -132,29 +131,9 @@ passing-test provenance, mappings and frozen schemas. It does not execute Arazzo
 workflow expressions or success criteria.
 
 Use `--format json` for the versioned result, and `--output <file>` to save it.
-Pair, discovered-artifact and run-set results have `report_version: "1.0"` and
+Pair and run-set results have `report_version: "1.0"` and
 `rules_version: "wiretap-assumptions-4"`. Check both versions and `scope` before
 interpreting a result. JSON/REST workflow eligibility is checked before the comparison uses the complete retained response evidence.
-
-### Shared-artifact result
-
-With `--artifacts`, the envelope has
-`scope: "discovered_consumer_provider_relationships"`:
-
-| Field | Meaning |
-| --- | --- |
-| `mode` | `consumer` or `provider`, the local viewpoint used for discovery. |
-| `artifacts_path` | Local artifact root used to discover application snapshots. |
-| `compatible` | True only when all selected pair reports are compatible. An empty selection is an input error. |
-| `counts` | Sums of the corresponding count fields in every pair report. |
-| `comparisons` | Pair reports, each with its own archive identities, dependency, counts, evidence and findings. |
-
-The consumer command resolves every selected mock mapping to a provider. The
-provider command discovers consumer mappings to its application/API, including
-mappings to other provider versions so those mismatches remain visible.
-Ambiguous snapshots, missing peers and invalid discovery inputs fail with
-exit `2` and no new report. The check does not merge history or select a latest
-run. See [selection rules](assumption-checks.md#share-provider-snapshots).
 
 ### Run-set result
 
@@ -167,13 +146,11 @@ selection and aggregation limits.
 
 ### Pair result
 
-Explicit pair mode returns a pair report directly. Shared-artifact mode places
-the same report shape in each `comparisons` entry. A pair report has
+An explicit pair returns a report with
 `scope: "observed_mock_examples_and_exercised_contracts"`:
 
 | Field | Meaning |
 | --- | --- |
-| `mode` | `consumer` or `provider`, the selected local viewpoint. |
 | `compatible` | Whether every selected mock example has supporting provider evidence. |
 | `consumer`, `provider` | Archive path, run ID, snapshot revision, run state, SHA-256 of `bundle.json` in `manifest_sha256`, optional application/API identity and selected projection input paths. |
 | `dependency`, `binding` | Selected consumer mock ID and `declared_mapping` or `explicit_inputs` relationship. |
@@ -290,9 +267,8 @@ before any JSON report is written. A report write failure can also leave no new
 output. Consumers should preserve the exit status and stderr, and use a fresh
 report path rather than trusting an existing file after a failed invocation.
 
-`--output` requires an existing parent directory. Shared-artifact mode requires
-a destination outside the entire artifact root and the local input archive.
-Explicit pair mode requires a destination outside both archives and supplied
+`--output` requires an existing parent directory and a destination outside both
+archives and supplied
 Arazzo input directories. Keep output outside the containing export
 tree even when selecting a document file explicitly; the tree's source companions
 are also protected, including when an early unverified result skips projection
@@ -303,7 +279,7 @@ writes a separate report and leaves the inputs unchanged.
 ## Check reports, run sets and completion receipts
 
 [Assumption check schemas](check-report.schema.json) distinguish an explicit
-pair, discovered application relationships and same-build run sets by `scope`.
+pair and same-build run sets by `scope`.
 All have independent report/rules versions and producer metadata. Response
 mismatches include up to 20 field paths with bounded `expected` and `actual`
 excerpts from the first listed provider candidate. The exact comparison uses

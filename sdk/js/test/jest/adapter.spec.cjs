@@ -1,6 +1,6 @@
 const http = require('node:http');
 const { once } = require('node:events');
-const { createJestSuite } = require('../../jest');
+const { captureJest } = require('../../jest');
 const calls = [], requests = [];
 let server, url;
 beforeAll(async () => {
@@ -18,43 +18,41 @@ beforeAll(async () => {
 });
 // Defer resolving the dynamically allocated address until the suite starts.
 const config = { get baseUrl() { return url; }, schemaRequired: false };
-const suite = createJestSuite(config);
+captureJest(config);
 jest.retryTimes(1, { retryImmediately: true });
 let attempts = 0;
-suite.test('normal callback', async () => { await fetch(suite.sutUrl + '/normal'); });
-suite.test.concurrent.each(['alpha', 'beta'])('concurrent %s', async () => {
+test('normal callback', async () => { await fetch(url + '/normal'); });
+test.concurrent.each(['alpha', 'beta'])('concurrent %s', async () => {
   await new Promise(resolve => setTimeout(resolve, 5));
-  await fetch(suite.sutUrl + '/concurrent');
-  expect(suite.runtime.activeSession).not.toBeNull();
+  await fetch(url + '/concurrent');
 });
-suite.test.each([{ value: 'first' }, { value: 'second' }])('row $value', async () => { await fetch(`${suite.sutUrl}/table`); });
-suite.test('retried callback', async () => {
+test.each([{ value: 'first' }, { value: 'second' }])('row $value', async () => { await fetch(`${url}/table`); });
+test('retried callback', async () => {
   if (++attempts === 1) throw new Error('retry me');
-  await fetch(suite.sutUrl + '/retry');
+  await fetch(url + '/retry');
 });
-suite.test.skip('skipped callback', () => { throw new Error('must not run'); });
+test.skip('skipped callback', () => { throw new Error('must not run'); });
 describe('normal fixture hooks', () => {
-  beforeEach(async () => { await fetch(suite.sutUrl + '/fixture/setup'); });
-  afterEach(done => { fetch(suite.sutUrl + '/fixture/cleanup').then(() => done(), done); });
+  beforeEach(async () => { await fetch(url + '/fixture/setup'); });
+  afterEach(done => { fetch(url + '/fixture/cleanup').then(() => done(), done); });
   describe('nested', () => {
-    beforeEach(() => { expect(suite.runtime.activeSession).not.toBeNull(); });
-    afterEach(async () => { await fetch(suite.sutUrl + '/fixture/nested-cleanup'); });
-    suite.test.each(['one', 'two'])('test %s', async () => { await fetch(suite.sutUrl + '/fixture/test'); });
+    afterEach(async () => { await fetch(url + '/fixture/nested-cleanup'); });
+    test.each(['one', 'two'])('test %s', async () => { await fetch(url + '/fixture/test'); });
   });
 });
 describe('retry fixture hooks', () => {
   let retryAttempts = 0;
-  beforeEach(done => { fetch(suite.sutUrl + '/retry-fixture/setup').then(() => done(), done); });
-  afterEach(async () => { await fetch(suite.sutUrl + '/retry-fixture/cleanup'); });
-  suite.test('retried', async () => {
+  beforeEach(done => { fetch(url + '/retry-fixture/setup').then(() => done(), done); });
+  afterEach(async () => { await fetch(url + '/retry-fixture/cleanup'); });
+  test('retried', async () => {
     if (++retryAttempts === 1) throw Error('retry fixture attempt');
-    await fetch(suite.sutUrl + '/retry-fixture/test');
+    await fetch(url + '/retry-fixture/test');
   });
 });
 describe('generator fixture hooks', () => {
-  beforeEach(function* () { yield fetch(suite.sutUrl + '/generator/setup'); });
-  afterEach(function* () { yield fetch(suite.sutUrl + '/generator/cleanup'); });
-  suite.test('generator fixture test', async () => { await fetch(suite.sutUrl + '/generator/test'); });
+  beforeEach(function* () { yield fetch(url + '/generator/setup'); });
+  afterEach(function* () { yield fetch(url + '/generator/cleanup'); });
+  test('generator fixture test', async () => { await fetch(url + '/generator/test'); });
 });
 afterAll(async () => {
   await new Promise(resolve => server.close(resolve));

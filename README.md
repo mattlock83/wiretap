@@ -72,8 +72,8 @@ Retain the complete run directory. Use the archive path returned by the adapter;
 ```sh
 wiretap report --bundle ./artifacts/wiretap/run-... --format text
 wiretap report --bundle ./artifacts/wiretap/run-... --format html --output report.html
-wiretap export --bundle ./artifacts/wiretap/run-... --format all
-wiretap export --bundle ./artifacts/wiretap/run-... --format arazzo --output-dir ./arazzo
+wiretap report --bundle ./artifacts/wiretap/run-... --format all
+wiretap report --bundle ./artifacts/wiretap/run-... --format arazzo --output-dir ./arazzo
 ```
 
 Open `exports/coverage.html` directly in a browser. You can also [rebuild the dashboard from coverage JSON, specs and Arazzo](docs/artifacts.md#offline-html-dashboard) without the runtime or original workspace.
@@ -85,12 +85,11 @@ Arazzo exports supported JSON/REST workflows. Incomplete or unrepresentable elig
 Restore complete consumer and provider runs with their Arazzo exports, then compare them offline:
 
 ```sh
-wiretap check consumer --consumer ./orders-run --provider ./inventory-run --dependency inventory
-wiretap check provider --consumer ./orders-run --provider ./inventory-run --dependency inventory
+wiretap check --consumer ./orders-run --provider ./inventory-run --dependency inventory
 ```
 
 The checker verifies each Arazzo workflow and source companion against its capture archive. Each mock request and paired response needs support from a complete passing provider test. It can also compare exercised OpenAPI 3.0 rules. Missing provider coverage, changed response values and declared rule drift remain distinct findings. A passing check covers the selected examples and supported rules; assertions about business behavior remain in your tests.
 
-For shared application folders, use `--artifacts`; for explicitly selected shards of one build, use [run sets](docs/run-sets.md). See [assumption checks](docs/assumption-checks.md), [CI policies](docs/report-policies.md) and the [documentation index](docs/README.md).
+Use [run sets](docs/run-sets.md) to combine explicitly selected shards of one build. See [assumption checks](docs/assumption-checks.md), the [CI example](docs/ci-example.md) and the [documentation index](docs/README.md).
 
 This experimental branch supports Jest, HTTP/HTTPS capture and Arazzo export. See [support](docs/support.md), [architecture](docs/architecture.md) and [local release preparation](docs/local-release.md).

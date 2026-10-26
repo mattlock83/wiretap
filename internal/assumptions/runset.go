@@ -14,7 +14,6 @@ type SetReport struct {
 	RulesVersion   string           `json:"rules_version"`
 	Producer       version.Producer `json:"producer"`
 	Scope          string           `json:"scope"`
-	Mode           string           `json:"mode"`
 	Dependency     string           `json:"dependency"`
 	IgnoredHeaders []string         `json:"ignored_headers"`
 	Compatible     bool             `json:"compatible"`
@@ -28,7 +27,7 @@ type SetReport struct {
 // CheckRunSets keeps each matching request/response pair in one original
 // exchange. Only already-verified members from the same build can supply
 // alternative witnesses for a consumer assumption.
-func CheckRunSets(ctx context.Context, consumerPath, providerPath, mode, dependency string, ignored []string) (*SetReport, error) {
+func CheckRunSets(ctx context.Context, consumerPath, providerPath, dependency string, ignored []string) (*SetReport, error) {
 	consumers, err := runset.Load(ctx, consumerPath)
 	if err != nil {
 		return nil, fmt.Errorf("%w: consumer run set: %v", ErrInput, err)
@@ -40,14 +39,11 @@ func CheckRunSets(ctx context.Context, consumerPath, providerPath, mode, depende
 	if len(consumers.Archives)*len(providers.Archives) > 256 {
 		return nil, fmt.Errorf("%w: run set comparison exceeds 256 archive pairs", ErrInput)
 	}
-	if mode != "consumer" && mode != "provider" {
-		return nil, fmt.Errorf("%w: invalid run set check mode", ErrInput)
-	}
 	selected, err := selectDependency(consumers.Archives[0].Run, providers.Archives[0].Run, dependency)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrInput, err)
 	}
-	result := &SetReport{ReportVersion: "1.0", RulesVersion: RulesVersion, Producer: version.Current(), Scope: "same_build_run_sets", Mode: mode, Dependency: selected, IgnoredHeaders: []string{}, Consumers: []Source{}, Providers: []Source{}, Matches: []Match{}, Findings: []Finding{}}
+	result := &SetReport{ReportVersion: "1.0", RulesVersion: RulesVersion, Producer: version.Current(), Scope: "same_build_run_sets", Dependency: selected, IgnoredHeaders: []string{}, Consumers: []Source{}, Providers: []Source{}, Matches: []Match{}, Findings: []Finding{}}
 	// Verify projections even for an empty shard; it cannot hide a corrupted
 	// export merely because another shard supplied all usable evidence.
 	for index, set := range []*runset.Set{consumers, providers} {
@@ -75,7 +71,7 @@ func CheckRunSets(ctx context.Context, consumerPath, providerPath, mode, depende
 		matches := map[string]Match{}
 		findings := map[string]Finding{}
 		for _, provider := range providers.Archives {
-			report, err := Check(ctx, Options{Mode: mode, Consumer: consumer.Path, Provider: provider.Path, Dependency: selected, IgnoreHeaders: ignored})
+			report, err := Check(ctx, Options{Consumer: consumer.Path, Provider: provider.Path, Dependency: selected, IgnoreHeaders: ignored})
 			if err != nil {
 				return nil, err
 			}

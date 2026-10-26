@@ -111,7 +111,7 @@ func checkCapture(provider bool, flows ...artifact.Flow) *artifact.Artifact {
 
 func checkHTTPPair(t *testing.T, consumers, providers []*artifact.Artifact) Options {
 	t.Helper()
-	return Options{Mode: "consumer", Consumer: writeCheckArchive(t, consumerCheckIdentity(), "complete", consumers...), Provider: writeCheckArchive(t, providerCheckIdentity(), "complete", providers...)}
+	return Options{Consumer: writeCheckArchive(t, consumerCheckIdentity(), "complete", consumers...), Provider: writeCheckArchive(t, providerCheckIdentity(), "complete", providers...)}
 }
 
 func mustCheck(t *testing.T, options Options) *Report {
@@ -132,7 +132,7 @@ func findingCode(report *Report, code string) bool {
 	return false
 }
 
-func TestCheckConsumerAndProviderVerifySameObligation(t *testing.T) {
+func TestCheckConsumerObligationsIgnoreExtraProviderExamples(t *testing.T) {
 	consumer := checkFixtureFlow()
 	provider := cloneNormalizationFlow(t, consumer)
 	provider.Request.HTTP.URL = "https://provider.example/items/a%2Fb?a=first&q=one"
@@ -140,23 +140,22 @@ func TestCheckConsumerAndProviderVerifySameObligation(t *testing.T) {
 	extra := cloneNormalizationFlow(t, provider)
 	extra.Request.HTTP.URL = "https://provider.example/unrelated"
 	opts := checkHTTPPair(t, []*artifact.Artifact{checkCapture(false, consumer)}, []*artifact.Artifact{checkCapture(true, provider, extra)})
-	for _, mode := range []string{"consumer", "provider"} {
-		t.Run(mode, func(t *testing.T) {
-			opts.Mode = mode
-			report := mustCheck(t, opts)
-			if !report.Compatible || report.Counts.Assumptions != 1 || report.Counts.Verified != 1 || len(report.Findings) != 0 || len(report.Matches) != 1 {
-				t.Fatalf("supported mock example failed, or extra provider operation became an obligation: %+v", report)
+
+	t.Run("explicit pair", func(t *testing.T) {
+		report := mustCheck(t, opts)
+		if !report.Compatible || report.Counts.Assumptions != 1 || report.Counts.Verified != 1 || len(report.Findings) != 0 || len(report.Matches) != 1 {
+			t.Fatalf("supported mock example failed, or extra provider operation became an obligation: %+v", report)
+		}
+		if report.Dependency != "stock" || report.Binding != "explicit_inputs" || report.RulesVersion != RulesVersion || report.Consumer.ManifestSHA256 == "" {
+			t.Fatalf("comparison lost selection or provenance: %+v", report)
+		}
+		for _, evidence := range []Evidence{report.Matches[0].Consumer, report.Matches[0].Provider} {
+			if !strings.HasPrefix(evidence.EvidencePath, "tests/") || !strings.Contains(evidence.EvidencePath, ".json#/capture/traffic/") || evidence.RunID == "" || evidence.TestName == "" {
+				t.Fatalf("match has no concrete test/flow reference: %+v", evidence)
 			}
-			if report.Dependency != "stock" || report.Mode != mode || report.Binding != "explicit_inputs" || report.RulesVersion != RulesVersion || report.Consumer.ManifestSHA256 == "" {
-				t.Fatalf("comparison lost selection or provenance: %+v", report)
-			}
-			for _, evidence := range []Evidence{report.Matches[0].Consumer, report.Matches[0].Provider} {
-				if !strings.HasPrefix(evidence.EvidencePath, "tests/") || !strings.Contains(evidence.EvidencePath, ".json#/capture/traffic/") || evidence.RunID == "" || evidence.TestName == "" {
-					t.Fatalf("match has no concrete test/flow reference: %+v", evidence)
-				}
-			}
-		})
-	}
+		}
+	})
+
 }
 
 func TestCheckDistinguishesMissingScenarioFromResponseMismatch(t *testing.T) {
@@ -226,7 +225,7 @@ func TestCheckProviderIdentityVersionAndKind(t *testing.T) {
 			consumer, provider := consumerCheckIdentity(), providerCheckIdentity()
 			consumer.ProviderMappings = map[string]bundle.ProviderRef{}
 			tc.edit(&consumer, &provider)
-			opts := Options{Mode: "consumer", Dependency: "stock", Consumer: writeCheckArchive(t, consumer, "complete", checkCapture(false, checkFixtureFlow())), Provider: writeCheckArchive(t, provider, "complete", checkCapture(true, checkFixtureFlow()))}
+			opts := Options{Dependency: "stock", Consumer: writeCheckArchive(t, consumer, "complete", checkCapture(false, checkFixtureFlow())), Provider: writeCheckArchive(t, provider, "complete", checkCapture(true, checkFixtureFlow()))}
 			report := mustCheck(t, opts)
 			if report.Compatible || !findingCode(report, tc.code) {
 				t.Fatalf("incorrect provider binding was certified: %+v", report)
@@ -235,7 +234,7 @@ func TestCheckProviderIdentityVersionAndKind(t *testing.T) {
 	}
 	consumer := consumerCheckIdentity()
 	consumer.ProviderMappings = map[string]bundle.ProviderRef{"stock": {ApplicationID: "inventory", APIID: "inventory-api", Version: "v1"}}
-	report := mustCheck(t, Options{Mode: "provider", Consumer: writeCheckArchive(t, consumer, "complete", checkCapture(false, checkFixtureFlow())), Provider: writeCheckArchive(t, providerCheckIdentity(), "complete", checkCapture(true, checkFixtureFlow()))})
+	report := mustCheck(t, Options{Consumer: writeCheckArchive(t, consumer, "complete", checkCapture(false, checkFixtureFlow())), Provider: writeCheckArchive(t, providerCheckIdentity(), "complete", checkCapture(true, checkFixtureFlow()))})
 	if !report.Compatible || report.Binding != "declared_mapping" {
 		t.Fatalf("correct declared binding was not verified: %+v", report)
 	}
@@ -258,7 +257,7 @@ func TestCheckFailedAndIncompleteProviderAttemptsAreNotWitnesses(t *testing.T) {
 			case "open run":
 				state = "open"
 			}
-			opts := Options{Mode: "consumer", Consumer: writeCheckArchive(t, consumerCheckIdentity(), "complete", checkCapture(false, checkFixtureFlow())), Provider: writeCheckArchive(t, providerCheckIdentity(), state, provider)}
+			opts := Options{Consumer: writeCheckArchive(t, consumerCheckIdentity(), "complete", checkCapture(false, checkFixtureFlow())), Provider: writeCheckArchive(t, providerCheckIdentity(), state, provider)}
 			if kind == "capture incomplete" {
 				if _, err := Check(t.Context(), opts); !errors.Is(err, ErrInput) {
 					t.Fatalf("incomplete Arazzo capture accepted: %v", err)
@@ -280,7 +279,7 @@ func TestCheckFailedAndIncompleteProviderAttemptsAreNotWitnesses(t *testing.T) {
 }
 
 func TestCheckRejectsCorruptMissingAndStaleInputs(t *testing.T) {
-	for _, kind := range []string{"capture corruption", "missing provider document", "stale provider criterion", "wrong consumer document", "same archive", "invalid mode", "invalid ignored header"} {
+	for _, kind := range []string{"capture corruption", "missing provider document", "stale provider criterion", "wrong consumer document", "same archive", "invalid ignored header"} {
 		t.Run(kind, func(t *testing.T) {
 			opts := checkHTTPPair(t, []*artifact.Artifact{checkCapture(false, checkFixtureFlow())}, []*artifact.Artifact{checkCapture(true, checkFixtureFlow())})
 			switch kind {
@@ -305,8 +304,6 @@ func TestCheckRejectsCorruptMissingAndStaleInputs(t *testing.T) {
 				opts.ConsumerArazzo = filepath.Join(opts.Provider, "exports", "arazzo", "arazzo.json")
 			case "same archive":
 				opts.Provider = opts.Consumer
-			case "invalid mode":
-				opts.Mode = "sideways"
 			case "invalid ignored header":
 				opts.IgnoreHeaders = []string{"invalid header"}
 			}
@@ -320,7 +317,7 @@ func TestCheckRejectsCorruptMissingAndStaleInputs(t *testing.T) {
 func TestCheckDependencySelectionAndManifestPaths(t *testing.T) {
 	consumer := consumerCheckIdentity()
 	consumer.DependencyKinds["currency"] = "mock"
-	opts := Options{Mode: "consumer", Consumer: writeCheckArchive(t, consumer, "complete", checkCapture(false, checkFixtureFlow())), Provider: writeCheckArchive(t, providerCheckIdentity(), "complete", checkCapture(true, checkFixtureFlow()))}
+	opts := Options{Consumer: writeCheckArchive(t, consumer, "complete", checkCapture(false, checkFixtureFlow())), Provider: writeCheckArchive(t, providerCheckIdentity(), "complete", checkCapture(true, checkFixtureFlow()))}
 	if _, err := Check(t.Context(), opts); !errors.Is(err, ErrInput) {
 		t.Fatalf("ambiguous mock selection was silently guessed: %v", err)
 	}

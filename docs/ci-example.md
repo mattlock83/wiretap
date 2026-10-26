@@ -2,7 +2,7 @@
 
 Run your existing Jest command with the Wiretap integration and upload the
 complete output directory even when tests fail. Jest remains the source of test
-outcomes; schema findings, coverage policies and compatibility checks are
+outcomes; schema findings and compatibility checks are
 separate gates.
 
 ## Run a Jest project
@@ -67,8 +67,8 @@ and inspect its diagnostics. See [artifact limits](artifacts.md).
 Restore complete consumer and provider snapshots from trusted builds, then run:
 
 ```sh
-wiretap check consumer --consumer ./orders-run --provider ./inventory-run \
-  --dependency inventory --format junit --output check-results/inventory.xml
+wiretap check --consumer ./orders-run --provider ./inventory-run \
+  --dependency inventory --format json --output check-results/inventory.json
 ```
 
 Create `check-results/` first and keep it outside the input archives and Arazzo
@@ -76,18 +76,10 @@ export trees. The checker uses each archive's `exports/arazzo/arazzo.json` and
 OpenAPI companions by default. Both sides must represent eligible JSON/REST
 traffic; selected unsupported traffic cannot silently disappear from a pass.
 
-For a shared local artifact store, use declared provider mappings:
-
-```sh
-wiretap check consumer --consumer ./orders-run --artifacts ./api-evidence
-wiretap check provider --provider ./inventory-run --artifacts ./api-evidence
-```
-
 Upload/download snapshots with your existing artifact tooling. Extract ZIP/TAR
-archives before checking and retain their directory structure. The CLI discovers
-local restored runs; it does not upload or fetch evidence. Pin the intended
-application builds and provider versions instead of choosing a moving latest run.
-See [shared snapshot selection](assumption-checks.md#share-provider-snapshots).
+archives before checking and retain their directory structure. Pin the intended
+application builds and provider versions, then supply their paths explicitly.
+For separate suites or jobs, use [same-build run sets](run-sets.md).
 
 Every selected captured mock example needs a complete passing provider witness
 for the same concrete request and paired response. With only a provider OpenAPI
@@ -100,14 +92,13 @@ workflow success criteria are not executed.
 | Exit status | Meaning |
 | --- | --- |
 | `0` | All selected assumptions have verified supporting evidence. |
-| `1` | The comparison completed with uncovered, mismatched or unverified evidence. |
-| `2` | Inputs or flags are invalid, or the command could not complete. |
+| `1` | Uncovered, mismatched or unverified evidence, or an operational/output failure. |
+| `2` | Inputs or flags are invalid. |
 
-Use the exit status alongside JSON, Markdown or JUnit reports. Input validation
+Use the exit status alongside JSON or text reports. Input validation
 leaves an existing output file unchanged, so an old report is not evidence of a
 successful current check. Keep the provider and consumer suites' own exit statuses
 as separate gates.
 
 See [assumption checks](assumption-checks.md) for comparison limits,
-[report policies](report-policies.md) for coverage gates and CI report formats,
-and [run sets](run-sets.md) for explicit shards of the same build.
+[run sets](run-sets.md) for explicit shards of the same build.

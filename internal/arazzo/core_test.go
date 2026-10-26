@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -104,6 +105,27 @@ func TestObservedWorkflowsKeepAttemptsBoundariesAndLiterals(t *testing.T) {
 	_ = Write(&repeated, again.Document)
 	if !bytes.Equal(raw.Bytes(), repeated.Bytes()) {
 		t.Fatal("export is not deterministic")
+	}
+	run, captures, err := bundle.Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Put the shared snapshot in reverse chronological order to exercise sorting.
+	if captures[0].TestCase.ID == "retry-1" {
+		captures[0], captures[1] = captures[1], captures[0]
+	}
+	before := append([]*artifact.Artifact(nil), captures...)
+	snapshot, err := GenerateSnapshot(run, captures, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(export, snapshot) {
+		t.Fatal("snapshot export differs from archive export")
+	}
+	for i := range before {
+		if captures[i] != before[i] {
+			t.Fatal("Arazzo reordered the shared capture snapshot")
+		}
 	}
 }
 

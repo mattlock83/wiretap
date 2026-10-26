@@ -124,7 +124,7 @@ Read a compact report or regenerate the standard exports offline:
 ```sh
 wiretap report --bundle ./artifacts/wiretap/<run-id> --format text
 wiretap report --bundle ./artifacts/wiretap/<run-id> --format html --output report.html
-wiretap export --bundle ./artifacts/wiretap/<run-id> --format all
+wiretap report --bundle ./artifacts/wiretap/<run-id> --format all
 ```
 
 Open `exports/coverage.html` directly in a browser. To rebuild it from coverage
@@ -140,7 +140,7 @@ eligibility, capture limits and strict export behavior.
 Retain complete consumer and provider runs, including their Arazzo exports:
 
 ```sh
-wiretap check consumer --consumer ./orders-run --provider ./inventory-run \
+wiretap check --consumer ./orders-run --provider ./inventory-run \
   --dependency inventory
 ```
 

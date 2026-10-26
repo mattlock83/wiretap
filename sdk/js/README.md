@@ -49,7 +49,7 @@ existing mocks work. Change a shared Supertest client from `supertest(app)` to
 `supertest(process.env.WIRETAP_SUT_URL || app)`, then run your usual Jest command.
 For an already running API, omit `app` and add its `url` under `sut`.
 See the [Jest guide](docs/jest.md) for dynamic fixtures, retries, tracing and
-selective capture, or run the [existing Jest example](https://github.com/mattlock83/wiretap/tree/main/examples/existing-jest).
+session configuration, or run the [existing Jest example](https://github.com/mattlock83/wiretap/tree/main/examples/existing-jest).
 
 The main HTTP API requires an OpenAPI spec by default. HTTP dependencies and
 mocks need only their URL and kind; supplying a dependency schema enables its
@@ -58,8 +58,7 @@ synthetic data and dummy credentials: captured traffic is retained unchanged.
 See [boundary configuration](https://github.com/mattlock83/wiretap/blob/main/docs/configuration.md)
 for mock capture and provider mappings.
 
-The package root and `@wiretap/sdk/jest` expose `withWiretap`, `captureJest` and
-`createJestSuite`. `@wiretap/sdk/tracing` initializes instrumentation before an
+The package root and `@wiretap/sdk/jest` expose `withWiretap` and `captureJest`. `@wiretap/sdk/tracing` initializes instrumentation before an
 application imports its clients. `@wiretap/sdk/jest-environment` supplies the
 Jest environment used by the adapter.
 
@@ -75,7 +74,7 @@ own records. Read `bundle_path`, `outputs.coverage`, `outputs.arazzo` and
 
 Coverage defaults to JSON, text and HTML. Open `outputs.coverage.html` directly
 in a browser for API coverage, condition gaps and linked test runs. The dashboard
-works offline; no report server is needed. Set `capture.outputs.coverage` or
+works offline; no report server is needed. Set the `withWiretap` option `outputs.coverage` or
 project `outputs.coverage` to select formats.
 
 The owned process keeps a stdin lifeline to Wiretap. If Jest dies, EOF asks

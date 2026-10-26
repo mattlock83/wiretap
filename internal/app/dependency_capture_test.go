@@ -190,7 +190,7 @@ func TestExternalDependencyCaptureCorrelatesBothTrafficDirections(t *testing.T) 
 	if dependencySchema == nil || dependencySchema.AssetID != "inventory" || dependencySchema.AssetName != "Inventory Service" || dependencySchema.AssetSHA == "" {
 		t.Fatalf("dependency schema identity missing: %#v", art.Schemas)
 	}
-	if appInstance.proxyComponent == nil {
+	if appInstance.proxyServer == nil {
 		t.Fatal("expected dependency capture to reuse the existing proxy")
 	}
 	report, err := coverage.Generate(t.Context(), appInstance.currentBundle().Path(), "Orders API", true)
@@ -366,8 +366,8 @@ func dependencyCaptureRuntime(t *testing.T) (*httptest.Server, *App) {
 	control := httptest.NewServer(appInstance.routes())
 	t.Cleanup(control.Close)
 	t.Cleanup(func() {
-		if appInstance.proxyComponent != nil {
-			_ = appInstance.proxyComponent.Stop(t.Context())
+		if appInstance.proxyServer != nil {
+			_ = appInstance.proxyServer.Stop(t.Context())
 		}
 	})
 	return control, appInstance

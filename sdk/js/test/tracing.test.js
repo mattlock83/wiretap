@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const http = require('node:http');
 const { once } = require('node:events');
 const { startCapture } = require('../src');
+const { trace } = require('@opentelemetry/api');
 const { BasicTracerProvider, SimpleSpanProcessor, InMemorySpanExporter, AlwaysOffSampler } = require('@opentelemetry/sdk-trace-base');
 async function fixture(t, config = {}) {
   const calls = [], requests = [];
@@ -27,12 +28,16 @@ test('ordinary fetch and Node HTTP clients keep isolated test roots under overla
   const { runtime, calls, requests, url } = await fixture(t);
   let entered = 0, unblock;
   const gate = new Promise(resolve => { unblock = resolve; });
-  await Promise.all(['one', 'two'].map(name => runtime.runTest(name, async session => {
+  await Promise.all(['one', 'two'].map(async name => {
+    const attempt = runtime.createTestAttempt(name);
+    await attempt.run(async session => {
     if (++entered === 2) unblock(); await gate;
-    assert.equal(runtime.activeSession.sessionId, session.sessionId);
+    assert.equal(trace.getActiveSpan(), session.span);
     await fetch(`${url}/${name}/fetch`); await httpGet(`${url}/${name}/http`);
-    assert.equal(runtime.activeSession.sessionId, session.sessionId);
-  })));
+    assert.equal(trace.getActiveSpan(), session.span);
+    });
+    await attempt.finish();
+  }));
   const roots = calls.filter(x => x.path === '/v1/setupTest');
   assert.equal(roots.length, 2); assert.notEqual(roots[0].body.trace_context.traceparent, roots[1].body.trace_context.traceparent);
   for (const root of roots) {
@@ -42,12 +47,16 @@ test('ordinary fetch and Node HTTP clients keep isolated test roots under overla
     for (const req of outgoing) assert.equal(req.parent?.split('-')[1], trace);
   }
   assert.ok(calls.every(call => call.parent === undefined), 'control requests are not test traffic');
-  assert.equal(runtime.activeSession, null); await runtime.finishRun();
+  assert.equal(trace.getActiveSpan(), undefined);
 });
 test('retries create fresh unsampled roots without losing propagation', async t => {
   const provider = new BasicTracerProvider({ sampler: new AlwaysOffSampler() });
   const { runtime, calls, requests, url } = await fixture(t, { tracerProvider: provider });
-  for (let i = 0; i < 2; i++) await runtime.runTest('same test', () => fetch(url + '/attempt'));
+  for (let i = 0; i < 2; i++) {
+    const attempt = runtime.createTestAttempt('same test');
+    await attempt.run(() => fetch(url + '/attempt'));
+    await attempt.finish();
+  }
   const roots = calls.filter(x => x.path === '/v1/setupTest').map(x => x.body.trace_context.traceparent);
   assert.notEqual(roots[0].split('-')[1], roots[1].split('-')[1]); assert.ok(roots.every(parent => parent.endsWith('-00')));
   assert.deepEqual(requests.map(x => x.parent.split('-')[1]), roots.map(x => x.split('-')[1]));
@@ -57,7 +66,7 @@ test('framework lifecycle handles bind separate hooks and preserve overlapping a
   const attempts = ['first', 'second'].map(name => ({ name, attempt: runtime.createTestAttempt(name) }));
   for (const phase of ['setup', 'test', 'cleanup']) {
     await Promise.all(attempts.map(({ name, attempt }) => attempt.run(async session => {
-      assert.equal(runtime.activeSession.sessionId, session.sessionId);
+      assert.equal(trace.getActiveSpan(), session.span);
       await fetch(`${url}/${name}/${phase}`);
     })));
   }
@@ -74,8 +83,7 @@ test('framework lifecycle handles bind separate hooks and preserve overlapping a
     assert.ok(outgoing.every(request => request.parent.split('-')[1] === root.body.trace_context.traceparent.split('-')[1]));
   }
   assert.deepEqual(calls.filter(call => call.path === '/v1/teardownTest').map(call => call.body.status), ['pass', 'pass']);
-  await runtime.finishRun();
-  assert.equal(calls.filter(call => call.path === '/v1/finishRun').length, 1);
+  assert.equal(calls.some(call => call.path === '/v1/finishRun'), false);
 });
 test('a framework can finish a timed-out attempt before its callback settles', async t => {
   const { runtime, calls } = await fixture(t);
@@ -114,9 +122,13 @@ test('schema evidence preserves outcomes while callback and onSession failures c
   const provider = new BasicTracerProvider({ spanProcessors: [new SimpleSpanProcessor(exporter)] });
   const { runtime, calls } = await fixture(t, { tracerProvider: provider, teardown: { capture: { schema_validation: { status: 'fail', errors: [{ message: 'schema mismatch' }] } } } });
   const original = new Error('original failure');
-  await assert.rejects(runtime.runTest('callback failure', () => { throw original; }), err => err === original);
-  await runtime.runTest('schema mismatch', () => {});
-  await assert.rejects(runtime.runTest('hook failure', () => assert.fail('must not run'), { onSession() { throw original; } }), err => err === original);
+  const callback = runtime.createTestAttempt('callback failure');
+  await assert.rejects(callback.run(() => { throw original; }), err => err === original);
+  await callback.finish({ status: 'fail', error: original });
+  await runtime.createTestAttempt('schema mismatch').finish();
+  const hook = runtime.createTestAttempt('hook failure', { onSession() { throw original; } });
+  await assert.rejects(hook.run(() => assert.fail('must not run')), err => err === original);
+  await hook.finish({ status: 'fail', error: original });
   assert.equal(calls.filter(x => x.path === '/v1/teardownTest').length, 3);
   assert.deepEqual(exporter.getFinishedSpans().map(span => span.status.code), [2, 1, 2]);
 });
@@ -126,37 +138,24 @@ test('incomplete capture still fails cleanup after a passing callback', async t 
   const { runtime, calls } = await fixture(t, { tracerProvider: provider, teardown: {
     capture: { capture_incomplete: true, capture_diagnostics: ['capture drain timed out'] }
   } });
-  await assert.rejects(runtime.runTest('capture failure', () => {}), /capture drain timed out/);
+  const attempt = runtime.createTestAttempt('capture failure');
+  await attempt.run(() => {});
+  await assert.rejects(attempt.finish(), /capture drain timed out/);
   assert.equal(calls.find(call => call.path === '/v1/teardownTest').body.status, 'pass');
   assert.equal(exporter.getFinishedSpans()[0].status.code, 2);
-  await runtime.finishRun();
 });
-test('shared suites do not stop the runtime, and manual sessions prevent premature shutdown', async t => {
-  const { runtime, calls } = await fixture(t, { manageRuntime: false });
-  await runtime.setupTest({ name: 'manual' }); await assert.rejects(runtime.finishRun(), /teardown all/); await runtime.teardownTest();
-  assert.deepEqual(await runtime.finishRun(), { status: 'shared' }); assert.equal(calls.some(x => x.path === '/v1/finishRun'), false);
-});
-test('falsy thrown values remain test failures even when cleanup also fails', async t => {
-  const { runtime, calls } = await fixture(t, { teardown: { capture: { capture_incomplete: true } } });
-  let rejected = false;
-  try { await runtime.runTest('falsy failure', () => { throw 0; }); }
-  catch (error) { rejected = true; assert.equal(error, 0); }
-  assert.ok(rejected);
-  assert.equal(calls.find(call => call.path === '/v1/teardownTest').body.status, 'fail');
-});
-
 test('separate fixture activations initialize onSession once per attempt', async t => {
   const { runtime } = await fixture(t);
   let initialized = 0;
   const attempt = runtime.createTestAttempt('fixtures', {
     onSession(session) {
       initialized++;
-      assert.equal(runtime.activeSession, session);
+      assert.equal(trace.getActiveSpan(), session.span);
     }
   });
   for (const phase of ['setup', 'test', 'cleanup']) {
     await attempt.run(session => {
-      assert.equal(runtime.activeSession, session, phase);
+      assert.equal(trace.getActiveSpan(), session.span, phase);
       assert.equal(initialized, 1, phase);
     });
   }

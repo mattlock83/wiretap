@@ -21,73 +21,73 @@ import (
 func TestCLIArazzoExportsPortableWorkflow(t *testing.T) {
 	root := arazzoBundleFixture(t, true, "http")
 	before := arazzoEvidenceFiles(t, root)
-	for _, command := range []string{"report", "export"} {
-		for _, option := range []string{"--output", "--output-dir"} {
-			t.Run(command+option, func(t *testing.T) {
-				directory := filepath.Join(t.TempDir(), "new", "arazzo")
-				output := directory
-				name := "arazzo.json"
-				if option == "--output" {
-					directory = t.TempDir()
-					name = "captured-workflows.json"
-					output = filepath.Join(directory, name)
-					if err := os.WriteFile(output, []byte("old document"), 0600); err != nil {
-						t.Fatal(err)
-					}
-				}
-				if code := execute(context.Background(), []string{command, "--bundle", root, "--format", "arazzo", "--sut-name", "Inventory API", option, output}); code != 0 {
-					t.Fatalf("Arazzo export exit = %d", code)
-				}
-				export, err := arazzo.Generate(root, "Inventory API")
-				if err != nil {
+
+	for _, option := range []string{"--output", "--output-dir"} {
+		t.Run(option, func(t *testing.T) {
+			directory := filepath.Join(t.TempDir(), "new", "arazzo")
+			output := directory
+			name := "arazzo.json"
+			if option == "--output" {
+				directory = t.TempDir()
+				name = "captured-workflows.json"
+				output = filepath.Join(directory, name)
+				if err := os.WriteFile(output, []byte("old document"), 0600); err != nil {
 					t.Fatal(err)
 				}
-				var want bytes.Buffer
-				if err := arazzo.Write(&want, export.Document); err != nil {
-					t.Fatal(err)
+			}
+			if code := execute(context.Background(), []string{"report", "--bundle", root, "--format", "arazzo", "--sut-name", "Inventory API", option, output}); code != 0 {
+				t.Fatalf("Arazzo export exit = %d", code)
+			}
+			export, err := arazzo.Generate(root, "Inventory API")
+			if err != nil {
+				t.Fatal(err)
+			}
+			var want bytes.Buffer
+			if err := arazzo.Write(&want, export.Document); err != nil {
+				t.Fatal(err)
+			}
+			data, err := os.ReadFile(filepath.Join(directory, name))
+			if err != nil || !bytes.Equal(data, want.Bytes()) {
+				t.Fatalf("Arazzo document differs: %s, %v", data, err)
+			}
+			var document struct {
+				Arazzo string `json:"arazzo"`
+				Info   struct {
+					Title string `json:"title"`
+				} `json:"info"`
+				Sources []struct {
+					URL string `json:"url"`
+				} `json:"sourceDescriptions"`
+				Workflows []struct {
+					Steps []struct {
+						OperationPath string `json:"operationPath"`
+					} `json:"steps"`
+				} `json:"workflows"`
+			}
+			if err := json.Unmarshal(data, &document); err != nil || document.Arazzo != "1.0.1" || !strings.HasPrefix(document.Info.Title, "Inventory API") || len(document.Workflows) != 1 || len(document.Sources) != 1 {
+				t.Fatalf("invalid Arazzo document: %+v, %v", document, err)
+			}
+			if steps := document.Workflows[0].Steps; len(steps) != 1 || !strings.Contains(steps[0].OperationPath, "#/paths/~1items/get") {
+				t.Fatalf("missing captured OpenAPI operation: %+v", steps)
+			}
+			for _, companion := range export.Files {
+				data, err := os.ReadFile(filepath.Join(directory, filepath.FromSlash(companion.Path)))
+				if err != nil || !bytes.Equal(data, companion.Data) {
+					t.Fatalf("missing or changed companion %q: %v", companion.Path, err)
 				}
-				data, err := os.ReadFile(filepath.Join(directory, name))
-				if err != nil || !bytes.Equal(data, want.Bytes()) {
-					t.Fatalf("Arazzo document differs: %s, %v", data, err)
+			}
+			if _, err := os.Stat(filepath.Join(directory, filepath.FromSlash(document.Sources[0].URL))); err != nil {
+				t.Fatalf("OpenAPI reference does not resolve beside Arazzo document: %v", err)
+			}
+			if option == "--output" {
+				info, err := os.Stat(output)
+				if err != nil || (runtime.GOOS != "windows" && info.Mode().Perm() != 0600) {
+					t.Fatalf("existing permissions changed: %v, %v", info, err)
 				}
-				var document struct {
-					Arazzo string `json:"arazzo"`
-					Info   struct {
-						Title string `json:"title"`
-					} `json:"info"`
-					Sources []struct {
-						URL string `json:"url"`
-					} `json:"sourceDescriptions"`
-					Workflows []struct {
-						Steps []struct {
-							OperationPath string `json:"operationPath"`
-						} `json:"steps"`
-					} `json:"workflows"`
-				}
-				if err := json.Unmarshal(data, &document); err != nil || document.Arazzo != "1.0.1" || !strings.HasPrefix(document.Info.Title, "Inventory API") || len(document.Workflows) != 1 || len(document.Sources) != 1 {
-					t.Fatalf("invalid Arazzo document: %+v, %v", document, err)
-				}
-				if steps := document.Workflows[0].Steps; len(steps) != 1 || !strings.Contains(steps[0].OperationPath, "#/paths/~1items/get") {
-					t.Fatalf("missing captured OpenAPI operation: %+v", steps)
-				}
-				for _, companion := range export.Files {
-					data, err := os.ReadFile(filepath.Join(directory, filepath.FromSlash(companion.Path)))
-					if err != nil || !bytes.Equal(data, companion.Data) {
-						t.Fatalf("missing or changed companion %q: %v", companion.Path, err)
-					}
-				}
-				if _, err := os.Stat(filepath.Join(directory, filepath.FromSlash(document.Sources[0].URL))); err != nil {
-					t.Fatalf("OpenAPI reference does not resolve beside Arazzo document: %v", err)
-				}
-				if option == "--output" {
-					info, err := os.Stat(output)
-					if err != nil || (runtime.GOOS != "windows" && info.Mode().Perm() != 0600) {
-						t.Fatalf("existing permissions changed: %v, %v", info, err)
-					}
-				}
-			})
-		}
+			}
+		})
 	}
+
 	if !reflect.DeepEqual(before, arazzoEvidenceFiles(t, root)) {
 		t.Fatal("Arazzo export changed archive evidence")
 	}
@@ -103,13 +103,13 @@ func TestCLIArazzoOutputValidation(t *testing.T) {
 		{"--run-set", "run-set.json"},
 	} {
 		t.Run(strings.Join(options, " "), func(t *testing.T) {
-			args := append([]string{"export", "--bundle", root, "--format", "arazzo"}, options...)
+			args := append([]string{"report", "--bundle", root, "--format", "arazzo"}, options...)
 			if code := execute(context.Background(), args); code != 2 {
 				t.Fatalf("invalid options exit = %d", code)
 			}
 		})
 	}
-	code, output := executeCapturingStdout(t, []string{"export", "--bundle", root, "--format", "arazzo"})
+	code, output := executeCapturingStdout(t, []string{"report", "--bundle", root, "--format", "arazzo"})
 	if code != 2 || len(output) != 0 {
 		t.Fatalf("stdout export without OpenAPI companions = %d, %q", code, output)
 	}
@@ -118,7 +118,7 @@ func TestCLIArazzoOutputValidation(t *testing.T) {
 func TestCLIArazzoExportsObservedJSONWithoutContract(t *testing.T) {
 	root := arazzoBundleFixture(t, false, "http")
 	directory := t.TempDir()
-	if code := execute(context.Background(), []string{"export", "--bundle", root, "--format", "arazzo", "--output-dir", directory}); code != 0 {
+	if code := execute(context.Background(), []string{"report", "--bundle", root, "--format", "arazzo", "--output-dir", directory}); code != 0 {
 		t.Fatalf("observed JSON/REST export exit = %d", code)
 	}
 	data, err := os.ReadFile(filepath.Join(directory, "arazzo.json"))
@@ -141,7 +141,7 @@ func TestCLIArazzoRequiresEligibleTrafficBeforeWriting(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			root := arazzoBundleFixture(t, tc.schema, tc.protocol)
 			directory := filepath.Join(t.TempDir(), "uncreated")
-			if code := execute(context.Background(), []string{"export", "--bundle", root, "--format", "arazzo", "--output-dir", directory}); code != 1 {
+			if code := execute(context.Background(), []string{"report", "--bundle", root, "--format", "arazzo", "--output-dir", directory}); code != 1 {
 				t.Fatalf("ineligible traffic exit = %d", code)
 			}
 			if _, err := os.Stat(directory); !os.IsNotExist(err) {
@@ -199,7 +199,7 @@ func TestCLIArazzoProtectsSourceDestinations(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			if code := execute(context.Background(), []string{"export", "--bundle", root, "--format", "arazzo", option, output}); code == 0 {
+			if code := execute(context.Background(), []string{"report", "--bundle", root, "--format", "arazzo", option, output}); code == 0 {
 				t.Fatal("accepted unsafe export destination")
 			}
 			if existing != "" {
@@ -223,14 +223,14 @@ func TestCLIArazzoCorruptArchivePreservesOutput(t *testing.T) {
 	if err := os.WriteFile(output, []byte("keep"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if code := execute(context.Background(), []string{"export", "--bundle", root, "--format", "arazzo", "--output", output}); code != 2 {
+	if code := execute(context.Background(), []string{"report", "--bundle", root, "--format", "arazzo", "--output", output}); code != 2 {
 		t.Fatalf("corrupt archive exit = %d", code)
 	}
 	if data, err := os.ReadFile(output); err != nil || string(data) != "keep" {
 		t.Fatalf("corrupt archive changed document: %q, %v", data, err)
 	}
 	directory := filepath.Join(t.TempDir(), "uncreated")
-	if code := execute(context.Background(), []string{"export", "--bundle", root, "--format", "arazzo", "--output-dir", directory}); code != 2 {
+	if code := execute(context.Background(), []string{"report", "--bundle", root, "--format", "arazzo", "--output-dir", directory}); code != 2 {
 		t.Fatalf("corrupt archive exit = %d", code)
 	}
 	if _, err := os.Stat(directory); !os.IsNotExist(err) {

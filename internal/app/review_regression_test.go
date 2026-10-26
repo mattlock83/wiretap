@@ -104,7 +104,7 @@ func TestDrainDoesNotBlockOtherTestsOrLoseResponse(t *testing.T) {
 	control.Config.WriteTimeout = app.server.WriteTimeout
 	control.Start()
 	defer control.Close()
-	defer app.proxyComponent.Stop(t.Context())
+	defer app.proxyServer.Stop(t.Context())
 	var releaseOnce sync.Once
 	releaseSUT := func() { releaseOnce.Do(func() { close(release) }) }
 	defer releaseSUT() // Unblock requests before deferred proxy/server shutdown.

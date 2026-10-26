@@ -31,7 +31,9 @@ test('existing provider and client instrumentation are reused without duplicate 
   const url = `http://127.0.0.1:${server.address().port}`;
   t.after(() => new Promise(resolve => server.close(resolve)));
   const runtime = await startCapture({ baseUrl: url, schemaRequired: false, instrumentation: false });
-  await runtime.runTest('existing provider', async () => { const response = await fetch(url + '/sut'); await response.text(); });
+  const attempt = runtime.createTestAttempt('existing provider');
+  await attempt.run( async () => { const response = await fetch(url + '/sut'); await response.text(); });
+  await attempt.finish();
   assert.equal(api.trace.getTracerProvider().getDelegate(), provider);
   const spans = exporter.getFinishedSpans();
   const root = spans.find(span => span.name === 'existing provider');
@@ -40,5 +42,5 @@ test('existing provider and client instrumentation are reused without duplicate 
   assert.equal(spans.filter(span => span.kind === api.SpanKind.CLIENT).length, 1);
   const noOp = { getTracer: () => ({ startSpan: () => api.trace.wrapSpanContext(api.INVALID_SPAN_CONTEXT) }) };
   const invalid = await startCapture({ baseUrl: url, schemaRequired: false, instrumentation: false, tracerProvider: noOp });
-  await assert.rejects(invalid.runTest('invalid', () => {}), /valid test span contexts/);
+  await assert.rejects(invalid.createTestAttempt('invalid').run(() => {}), /valid test span contexts/);
 });

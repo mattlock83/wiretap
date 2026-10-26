@@ -100,12 +100,12 @@ archive without complete exports. Forced process termination cannot run cleanup.
 Files run with one worker by default. Parallel workers require
 `withWiretap(existingConfig, { explicitSession: true })` and W3C trace-context
 propagation through every relevant SUT boundary. Jest `.concurrent` tests also
-require that propagation. Custom environments, watch mode and a shared
-multi-project run need a project-owned lifecycle integration.
+require that propagation. Custom environments and watch mode are unsupported. Run separate Jest projects
+individually, then combine their archives with a run set.
 Existing global setup runs before Wiretap starts; existing global teardown runs
 after Wiretap finalizes. Use per-test hooks for requests that should be captured.
 
-## Dynamic fixtures and selective capture
+## Dynamic fixtures and session settings
 
 For an app created by a fixture, dynamic SDK settings or `onSession` callbacks,
 omit the configuration `app` option and call `captureJest` from your existing
@@ -125,12 +125,14 @@ captureJest({
 For serializable capture overrides, use the configuration's `capture` option,
 for example `{ capture: { tags: ['integration'] } }`. Dynamic callbacks and a
 custom tracer provider belong in `captureJest`, because Jest serializes its
-configuration when starting workers.
+configuration when starting workers. Set output formats alongside `capture`:
 
-`createJestSuite` supports selective Jest capture with a project-owned runtime. Use
-`testEnvironment: '@wiretap/sdk/jest-environment'` when supplying those hooks
-yourself. The selective `createJestSuite` wrapper supports async test callbacks;
-the automatic adapter above supports Jest's existing callback forms.
+```js
+withWiretap(existingConfig, {
+  capture: { tags: ['integration'] },
+  outputs: { coverage: ['json', 'text', 'html'], arazzo: true },
+});
+```
 
 The [pinned external Express/Jest demo](https://github.com/mattlock83/wiretap/tree/main/examples/existing-jest)
 verifies all 120 existing outcomes before and after capture, HTML/JSON API coverage and

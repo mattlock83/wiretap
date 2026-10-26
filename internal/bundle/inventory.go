@@ -71,8 +71,6 @@ func apiInventory(run Run, captures []*artifact.Artifact) ([]API, []API) {
 			switch s.Type {
 			case "openapi":
 				protocol = "http"
-			case "graphql":
-				protocol = "graphql"
 			}
 		}
 		if protocol != "" {
@@ -107,12 +105,7 @@ func apiInventory(run Run, captures []*artifact.Artifact) ([]API, []API) {
 	for _, capture := range captures {
 		for _, flow := range capture.Traffic {
 			role, id := 0, run.APIID
-			if flow.Interaction != nil {
-				id = flow.Interaction.Boundary.ID
-				if flow.Interaction.Boundary.Role == "dependency" {
-					role = 1
-				}
-			} else if flow.Channel == "sut_to_dependency" {
+			if flow.Channel == "sut_to_dependency" {
 				role, id = 1, flow.AssetID
 			} else if flow.Channel != "test_to_sut" {
 				continue

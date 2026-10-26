@@ -5,7 +5,7 @@ const http = require('node:http');
 const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
-const { withWiretap } = require('../src/jest-config');
+const { withWiretap, captureJest } = require('../jest');
 
 test('Jest app option preserves setup ordering without passing the handler to the runtime', () => {
   const setupFilesAfterEnv = ['<rootDir>/first.cjs', '<rootDir>/second.cjs'];
@@ -21,8 +21,14 @@ test('Jest app option preserves setup ordering without passing the handler to th
   assert.equal(withWiretap(original).setupFilesAfterEnv, setupFilesAfterEnv);
   for (const app of [null, '', '  ', {}, () => {}]) assert.throws(() => withWiretap({}, { app }), /module path/);
   for (const capture of [null, [], 'invalid']) assert.throws(() => withWiretap({}, { capture }), /options object/);
-  for (const capture of [{ onSession() {} }, { tracerProvider: {} }, { testDefaults: { onSession() {} } }]) {
+  for (const capture of [{ onSession() {} }, { tracerProvider: {} }]) {
     assert.throws(() => withWiretap({}, { capture }), /captureJest in setupFilesAfterEnv/);
+  }
+  const outputs = { coverage: ['json', 'html'], arazzo: true };
+  assert.equal(withWiretap({}, { outputs }).testEnvironmentOptions.wiretap.managed.outputs, outputs);
+  for (const [capture, error] of [[{ outputs }, /withWiretap options/], [{ testDefaults: {} }, /settings directly/]]) {
+    assert.throws(() => withWiretap({}, { capture }), error);
+    assert.throws(() => captureJest(capture), error);
   }
 });
 

@@ -11,7 +11,7 @@ configuration stay in the project.
 wiretap-bundle/
   bundle.json                  identity, API inventory and committed test references
   contracts/<hash>/            frozen contracts, imports and integrity manifests
-  tests/<attempt-id>.json       test metadata, interactions, assertions and outcomes
+  tests/<attempt-id>.json       test metadata, HTTP exchanges, validation and outcomes
   payloads/<sha256>.bin         retained message bodies and binary representations
 ```
 
@@ -30,7 +30,7 @@ Each boundary includes:
 | `id` | The configured API/dependency ID, local to this system. An unidentified boundary uses `unknown`. |
 | `target_kind` | `mock`, `service` or `unknown`; this describes the test target. |
 | `configured` | Whether the boundary was declared through configuration or registered contracts. |
-| `protocols` | Known protocols, such as `http` or an opaque event protocol; an empty array means unknown. |
+| `protocols` | `http` when known; an empty array means unknown. |
 | `contracts` | Contract IDs, types and frozen source references, or an explicit `omitted` source. |
 | `observed_in` | IDs of committed test attempts containing traffic for this boundary. |
 
@@ -42,11 +42,10 @@ jq '.dependencies[] | {id, target_kind, protocols, configured, observed_in, cont
 
 A configured dependency appears even when no test called it. Follow its
 `observed_in` IDs through the manifest's `tests` references to find exact
-interactions. In each test file, `capture.traffic` entries identify their boundary
-through `interaction.boundary` for event recordings, or `channel` and `asset_id`
-for request/response recordings. A dependency event has boundary role
-`dependency`; a dependency request/response pair has `channel: sut_to_dependency`.
-HTTP exchanges identify methods and URLs.
+HTTP exchanges. In each test file, `capture.traffic` entries identify their
+boundary through `channel` and `asset_id`. Outbound dependency exchanges use
+`channel: sut_to_dependency`; calls to the SUT use `channel: test_to_sut`.
+Each exchange records its request method, URL and response when available.
 Contracts list the declared operations, including unobserved ones.
 
 `inventory_scope: configured_and_observed` is deliberately limited: an empty
@@ -129,24 +128,17 @@ keeps declared operations visible even if the suite has no tests. Each
 document hashes. The reader checks the
 manifest identity and every file.
 
-Writers produce `3.1`. Readers accept supported `3.x` records subject to their
-structure and required capabilities. Older captures retain only the guarantees
-they recorded; reading them does not infer newer observation fields. `required_capabilities` declares structural features a reader
-must understand. Readers reject unknown required capabilities and recordings
-that omit the capabilities their structure requires; they must not silently
-discard an event interaction and interpret the remaining traffic as complete.
-Unknown optional metadata may be ignored. Minor versions may add optional
-metadata; incompatible interpretation requires a major version. Unsupported
-major versions and corrupt or missing required evidence fail explicitly.
-A stable exchange identity is `{run_id, attempt_id, flow_id}`; an event adds
-`event_id`. Test names, trace IDs, filesystem paths, ephemeral ports and timestamps
-are labels or evidence, not exchange identity.
+Writers produce `3.1`. Readers accept supported `3.x` HTTP/OpenAPI records
+subject to their structure and integrity. Older captures retain only the
+guarantees they recorded; reading them does not infer newer observation fields.
+Both the run and each attempt must include `required_capabilities: []`.
+Unsupported capabilities, event records and non-OpenAPI contracts are rejected
+explicitly. Unknown optional metadata may be ignored. Unsupported major
+versions and corrupt or missing required evidence fail explicitly.
 
-Both the run and each attempt explicitly list `required_capabilities`, including
-an empty array for ordinary request/response recordings. Event interactions
-require `event-interactions.v1`; frozen Avro/AsyncAPI/GraphQL packages require
-`contract-packages.v1`. These capabilities describe storage structure, not the
-availability of a live capture, coverage or execution adapter.
+A stable exchange identity is `{run_id, attempt_id, flow_id}`. Test names, trace
+IDs, filesystem paths, ephemeral ports and timestamps are labels or evidence,
+not exchange identity.
 
 For outbound flows, `assumption` says `evidence_basis: observed_exchange`,
 `consumed_fields: unknown`, and `provider_check.status: not_checked`. Capturing a
@@ -162,93 +154,13 @@ lists its ID in `schema_validation.skipped`; mixed attempts have status `partial
 unless an enforced schema fails. Coverage remains unknown for the omitted API,
 while concrete observed paths and exchanges remain browsable.
 
-## Generic event records
-
-A flow has exactly one representation: the HTTP `request` and
-`response` pair, or an `interaction` containing ordered events. The event form
-does not require a response and does not flatten a stream into two lists.
-`protocol` on the flow identifies the API or messaging protocol; transport,
-contract language and payload encoding are separate. For example, a Kafka
-interaction can contain Avro messages described by an AsyncAPI contract, while
-a GraphQL subscription can use a WebSocket transport.
-
-| Interaction field | Meaning |
-| --- | --- |
-| `kind` | `request_response`, `publish`, `consume` or `stream`. |
-| `boundary` | `{role: provided\|dependency, id}` identifies the system boundary independently of message direction. |
-| `transport` | Transport or transport binding, such as `http2`, `websocket` or `kafka`. |
-| `operation` | Protocol-specific procedure, operation or channel identity. |
-| `capture_state` | `complete` or `incomplete`; complete capture is not a successful test or contract check. |
-| `stream_mode` | For streams: `client`, `server`, `bidirectional` or `subscription`. |
-| `events` | Ordered observations belonging to this interaction. |
-
-Each event has an `id`, a contiguous zero-based `sequence`, a `direction` (`sent`
-or `received`, relative to the system being tested), a contiguous zero-based
-`direction_sequence` within that direction, and a `kind`. Both sequences include
-all event kinds. Event kinds
-include `headers`, `message`, `half_close`, `trailers`, `complete`, `cancel`,
-`error` and `ack`. Optional `observed_at` describes observation time. `metadata`
-preserves protocol-specific values. `links` records qualified relationships to
-other flows/events through `flow_id` and optional `event_id`. `relation` is
-`caused_by`, `reply_to`, `delivery_of` or `acknowledges`; `evidence` is `trace`,
-`protocol`, `hook`, `timing` or `unknown`. A relation describes the recorded claim;
-timing or an unknown source does not establish causality. Local targets must
-resolve within the attempt. External links additionally carry all three of
-`run_id`, `attempt_id` and `attempt_sha256`. They are preserved without fetching
-the other bundle and do not verify the referenced evidence merely by naming it.
-
-Sequences describe the recorder's observation order, with a separate order in
-each direction. They do not establish global ordering across Kafka partitions,
-independent connections or systems. Retries and duplicate deliveries remain
-distinct events even if they reference the same payload hash.
-
-A generic stream preserves message interleaving, half-close, cancellation, errors and completion as separate observations. The reader validates ordering and references; `capture_state: complete` does not establish successful protocol execution or application behavior.
-
-Events carry named `payloads` so a Kafka key, value and binary header or an
-encoded message and decoded projection can coexist. Each payload records:
-
-- `name`, `encoding` and optional `media_type`/`message_type`.
-- `availability`: `present`, `empty`, `null`, `truncated` or `unavailable`. The
-  compatibility value `redacted` is retained for legacy evidence only. A Kafka
-  tombstone (`null`) differs from a zero-byte value.
-- Optional `writer_schema` and `reader_schema` references containing contract ID
-  and the frozen root file's `sha256`. They must resolve unambiguously to a schema
-  on the same boundary in this attempt. Its package path/manifest pins imports;
-  the root digest alone does not identify the complete import closure across
-  bundles. A registry's numeric schema ID alone is not portable.
-- Optional `derived_from` and `transformation` for a decoded representation.
-  `derived_from` names another payload in the same event; projection chains and
-  self-references are rejected. A projection is derived evidence; its presence
-  does not prove it was correctly decoded by an unsupported protocol adapter.
-- A body whose retained bytes use the existing content-addressed `.bin` store.
-  `bodies` references use `phase: event`, `event_id` and `payload_name`.
-
-Payload `encoding` describes the message format, such as `avro` or `json`. The body's `encoding` describes its storage representation; binary bodies
-use base64 before attachment extraction. An `empty` payload still has a zero-byte
-attachment. `null`, `redacted` and `unavailable` payloads have no retained body.
-For compatibility with older records, a redacted representation cannot retain
-source bytes or an available decoded projection that would reveal the original
-value. These checks validate legacy evidence; they are not a capture feature.
-
-Frozen GraphQL SDL, Avro schemas and AsyncAPI documents can be stored as opaque
-contract packages with their supplied imports. Package manifests record the
-contract type/profile, root and file hashes; bytes and relative paths are
-preserved. The producer supplies the complete reference closure. Wiretap can
-verify package integrity without claiming it resolved every language-specific
-import or validated the schema's semantics.
-
-This envelope represents these protocols; it does not enable their live capture,
-semantic validation, replay or coverage adapters. Live capture and contract
-measurement currently cover HTTP/OpenAPI. Execution adapters are outside the local capture tool. Generic event recordings remain visible as unsupported for measurement and execution.
-GraphQL `errors` can coexist with `data` and HTTP 200; Kafka acknowledgement does
-not prove downstream processing; a complete stream does not prove every message
-was asserted. Readers must preserve those distinctions.
-
 ## External analysis and replay
 
 The bundle is a build artifact. External tools can read
-`tests/<attempt-id>.json`, frozen contracts and ordinary payload files. Sequence, stream events and correlation remain available without a second
-scenario representation. Wiretap exports Arazzo workflows for supported JSON/REST exchanges; it does not execute the workflows. Captured
+`tests/<attempt-id>.json`, frozen contracts and ordinary payload files. HTTP
+request timing and trace correlation remain available in the raw records.
+Wiretap exports Arazzo workflows for supported JSON/REST exchanges; it does not
+execute the workflows. Captured
 responses are observations, not exact-match assertions or permission to execute code.
 
 Authentication, fixture setup, substitutions and cleanup belong to project-owned
@@ -257,7 +169,7 @@ results must remain distinguishable from the captured run.
 
 ## Derived contract coverage
 
-`wiretap report` and `wiretap export` calculate JSON/YAML coverage reports from
+`wiretap report` calculates JSON, text and HTML coverage reports from
 this evidence and the supplied frozen contracts. Reports never become evidence
 inputs. The catalogue under `contract_coverage` identifies the run snapshot, measurement
 rule version, content-based contract revision, and API/operation/condition keys.

@@ -1,11 +1,8 @@
-const { AsyncLocalStorage } = require("node:async_hooks");
 const tracing = require("./tracing");
 const { CoreClient } = require("./control-client");
-const { retainCleanupError } = require("./cleanup-error");
 
 function rejectRemovedRedactions(options) {
-  if (options && (Object.hasOwn(options, "redactions") ||
-      (options.testDefaults && Object.hasOwn(options.testDefaults, "redactions")))) {
+  if (options && Object.hasOwn(options, "redactions")) {
     throw new Error("The redactions option was removed. Wiretap retains test traffic unchanged; use synthetic data and dummy secrets.");
   }
 }
@@ -91,195 +88,105 @@ function normalizeDependencies(value) {
   });
 }
 
-
+// The Jest environment owns attempts; the managed owner alone finalizes runs.
 class Runtime {
-  constructor(client, config = {}, runtimeInfo = {}) {
+  constructor(client, config = {}) {
     this.client = client;
-    this.runtimeInfo = runtimeInfo;
-    this.defaultSutBaseUrl = config.sutBaseUrl || null;
-    const schemaConfig = schemaConfiguration(config);
-    this.defaultSchemas = [...schemaConfig.schemas];
-    this.schemaRequired = config.schemaRequired;
-    this.defaultDependencies = normalizeDependencies(config.dependencies);
-    this.application = config.application;
-    this.apiId = pickFirstString(config.apiId);
-    this.sutTargetKind = pickFirstString(config.sutTargetKind);
-    this.testSource = config.testSource;
-    this.sutSource = config.sutSource;
-    this.outputs = config.outputs;
-    this.sutUrl = runtimeInfo.sut_url;
-    this.runDependencyUrls = runtimeInfo.dependencies || {};
-    this.sessions = new AsyncLocalStorage();
-    this.manualSession = null;
-    this.manageRuntime = config.manageRuntime !== false;
-    this.explicitSession = Boolean(config.explicitSession);
-    this.tracerProvider = config.tracerProvider;
-    this.openSessions = new Set();
-    this.pendingCleanup = new Set();
-
+    this.config = config;
+    this.schemas = schemaConfiguration(config).schemas;
+    this.dependencies = normalizeDependencies(config.dependencies);
   }
 
-  get activeSession() { return this.sessions.getStore()?.session ?? (this.sessions.getStore() ? null : this.manualSession); }
-  set activeSession(value) {
-    const scope = this.sessions.getStore();
-    if (scope) scope.session = value; else this.manualSession = value;
-  }
-
-  // Framework completion hooks own the outcome independently of callback
-  // settlement. Keep this handle per attempt so fixtures and retries are isolated.
   createTestAttempt(name, options = {}) {
     rejectRemovedRedactions(options);
-    const scope = { session: null, closed: false };
-    const ready = this.sessions.run(scope, () => this.setupTest({ ...options, name, identity: options.identity || (typeof name === "string" && name.trim() && Buffer.byteLength(name) <= 256 ? { id: name } : undefined) }));
-    // A runner may execute hooks before invoking run/finish. Observe setup
-    // rejection immediately while preserving it for those awaited paths.
+    const ready = this.#startSession({ ...options, name });
+    // Observe setup errors even when a fixture fails before running the callback.
     ready.catch(() => {});
-    let finishing;
-    let sessionInitialization;
+    let closed = false, finishing, sessionInitialization;
     return {
       run: async (fn) => {
         const session = await ready;
-        if (scope.closed) throw new Error("capture attempt is already closed");
-        return this.sessions.run(scope, () => tracing.api.context.with(
+        if (closed) throw new Error("capture attempt is already closed");
+        return tracing.api.context.with(
           tracing.api.trace.setSpan(tracing.api.ROOT_CONTEXT, session.span),
           async () => {
             if (typeof options.onSession === "function") {
-              // Separate fixture callbacks share one attempt. Initialize the
-              // session once even when setup, test and cleanup activate it.
               sessionInitialization ??= Promise.resolve().then(() => options.onSession(session));
               await sessionInitialization;
             }
-            // A framework timeout may close the attempt while async setup is
-            // still settling. Never start the test body after that cleanup.
-            if (scope.closed) throw new Error("capture attempt is already closed");
+            // A timeout may finish an attempt while its async fixture is settling.
+            if (closed) throw new Error("capture attempt is already closed");
             return fn(session);
           }
-        ));
+        );
       },
       finish: (outcome = {}) => {
         if (!finishing) {
-          scope.closed = true;
-          finishing = ready.then(() => this.sessions.run(scope, () => this.teardownTest({
-            ...outcome, drainTimeoutMs: options.drainTimeoutMs
-          })));
+          closed = true;
+          finishing = ready.then(async session => {
+            let failure;
+            try {
+              const response = await this.client.teardownTest({
+                session_id: session.sessionId,
+                status: outcome.status || "pass",
+                ...(options.drainTimeoutMs !== undefined ? { drain_timeout_ms: options.drainTimeoutMs } : {})
+              });
+              if (response?.capture?.capture_incomplete) {
+                const error = new Error(response.capture.capture_diagnostics?.join("; ") || "Wiretap capture incomplete");
+                error.response = response;
+                throw error;
+              }
+              return response;
+            } catch (error) { failure = error; throw error; }
+            finally {
+              tracing.finish(session.span, failure || outcome.error || (outcome.status === "fail" ? new Error("test failed") : null));
+            }
+          });
         }
         return finishing;
       }
     };
   }
 
-  async runTest(name, fn, options = {}) {
-    const attempt = this.createTestAttempt(name, options);
-    let result, failure, failed = false;
-    try { result = await attempt.run(fn); }
-    catch (err) { failed = true; failure = err; }
-    try { await attempt.finish({ status: failed ? "fail" : "pass", error: failure }); }
-    catch (err) {
-      if (failed) retainCleanupError(failure, err);
-      else { failed = true; failure = err; }
-    }
-    if (failed) throw failure;
-    return result;
-  }
-
-  dependencyUrl(assetId) {
-    if (typeof assetId !== "string" || !assetId.trim()) throw new Error("dependency assetId is required");
-    const selected = assetId.trim();
-    const dependencies = this.activeSession?.dependencyUrls;
-    if (dependencies && dependencies[selected]) return dependencies[selected];
-    if (this.runDependencyUrls[selected]) return this.runDependencyUrls[selected];
-    if (!this.defaultDependencies.some((dependency) => dependency.asset_id === selected)) {
-      throw new Error(`dependency "${selected}" is not configured`);
-    }
-    const proxyBase = this.sutUrl;
-    if (!proxyBase) throw new Error("proxy listen address is not available");
-    const base = proxyBase.startsWith("http") ? proxyBase : `http://${proxyBase}`;
-    return `${base.replace(/\/$/, "")}/__wiretap/dep/${encodeURIComponent(selected)}`;
-  }
-
-  async setupTest(options = {}) {
-    rejectRemovedRedactions(options);
+  async #startSession(options) {
     if (Object.hasOwn(options, "sutProtocol")) throw new Error("sutProtocol was removed; Wiretap supports HTTP APIs");
-    const owner = this.sessions.getStore() || this;
-    if (owner.closed) throw new Error("capture attempt is already closed");
-    if (this.activeSession || owner.setupPending) throw new Error("a capture session is already active");
-    const selectedSchemas = Array.isArray(options.schemas) ? options.schemas : this.defaultSchemas;
-    const schemaConfig = schemaConfiguration({ schemas: selectedSchemas, schemaRequired: options.schemaRequired ?? this.schemaRequired });
-    const dependencies = options.dependencies === undefined
-      ? this.defaultDependencies
-      : normalizeDependencies(options.dependencies);
+    const defaults = this.config;
+    const { schemas } = schemaConfiguration({
+      schemas: Array.isArray(options.schemas) ? options.schemas : this.schemas,
+      schemaRequired: options.schemaRequired ?? defaults.schemaRequired
+    });
+    const identity = options.identity;
     const payload = {
-      application: options.application ?? this.application,
-      test_identity: options.identity ? { id: options.identity.id, variant: options.identity.variant, attempt_ordinal: options.identity.attemptOrdinal } : undefined,
+      application: options.application ?? defaults.application,
+      test_identity: identity ? { id: identity.id, variant: identity.variant, attempt_ordinal: identity.attemptOrdinal } : undefined,
       name: pickFirstString(options.name) || undefined,
       tags: options.tags,
       meta: options.meta,
-      api_id: pickFirstString(options.apiId, this.apiId) || undefined,
-      sut_target_kind: pickFirstString(options.sutTargetKind, this.sutTargetKind) || undefined,
-      test_source: options.testSource || this.testSource,
-      sut_source: options.sutSource || this.sutSource,
-      sut_base_url: options.sutBaseUrl || this.defaultSutBaseUrl,
-      explicit_session: Boolean(options.explicitSession ?? this.explicitSession),
-      schemas: schemaConfig.schemas,
-      schema_required: options.schemaRequired ?? this.schemaRequired,
-      dependencies
+      api_id: pickFirstString(options.apiId, defaults.apiId) || undefined,
+      sut_target_kind: pickFirstString(options.sutTargetKind, defaults.sutTargetKind) || undefined,
+      test_source: options.testSource || defaults.testSource,
+      sut_source: options.sutSource || defaults.sutSource,
+      sut_base_url: options.sutBaseUrl || defaults.sutBaseUrl,
+      explicit_session: Boolean(options.explicitSession ?? defaults.explicitSession),
+      schemas,
+      schema_required: options.schemaRequired ?? defaults.schemaRequired,
+      dependencies: options.dependencies === undefined ? this.dependencies : normalizeDependencies(options.dependencies)
     };
-    const span = tracing.newTestSpan(payload.name || "test", this.tracerProvider);
+    const span = tracing.newTestSpan(payload.name || "test", defaults.tracerProvider);
     payload.trace_context = tracing.serialize(span);
     let session;
-    owner.setupPending = true;
     try { session = await this.client.setupTest(payload); }
-    catch (err) { tracing.finish(span, err); throw err; }
-    finally { owner.setupPending = false; }
-    this.openSessions.add(session.session_id);
-    this.activeSession = {
+    catch (error) { tracing.finish(span, error); throw error; }
+    return {
       span,
       traceContext: payload.trace_context,
       sessionId: session.session_id,
       name: session.name,
-      explicit: Boolean(session.explicit),
-      sutBaseUrl: payload.sut_base_url,
-      proxyListen: session.proxy_listen,
       sutUrl: session.sut_url,
       runId: session.run_id,
       bundlePath: session.bundle_path,
-      dependencyUrls: session.dependencies,
+      dependencyUrls: session.dependencies || {}
     };
-    return this.activeSession;
-  }
-
-  async teardownTest(options = {}) {
-    const sessionId = options.sessionId || this.activeSession?.sessionId;
-    if (!sessionId) return { status: "idle" };
-    const session = this.activeSession;
-    if (session?.sessionId === sessionId && this.sessions.getStore()) this.sessions.getStore().closed = true;
-    let failure;
-    try {
-      const response = await this.client.teardownTest({ session_id: sessionId, status: options.status || "pass",
-        ...(options.drainTimeoutMs !== undefined ? { drain_timeout_ms: options.drainTimeoutMs } : {}) });
-      this.openSessions.delete(sessionId);
-      if (session?.sessionId === sessionId) this.activeSession = null;
-      if (response?.capture?.capture_incomplete) {
-        const err = new Error(response.capture.capture_diagnostics?.join("; ") || "Wiretap capture incomplete");
-        err.response = response;
-        throw err;
-      }
-      return response;
-    } catch (err) { failure = err; throw err; }
-    finally {
-      if (session?.sessionId === sessionId) tracing.finish(session.span, failure || options.error || (options.status === "fail" ? new Error("test failed") : null));
-    }
-  }
-
-  report(options = {}) {
-    return this.client.report({ bundle_path: options.bundlePath });
-  }
-
-  async finishRun(options = {}) {
-    await Promise.all(this.pendingCleanup);
-    if (this.openSessions.size) throw new Error("teardown all capture sessions before closing the runtime");
-    if (!this.manageRuntime) return { status: "shared" };
-    return this.client.finishRun({ outputs: options.outputs ?? this.outputs });
   }
 }
 
@@ -312,7 +219,7 @@ async function startCapture(config = {}) {
     })),
     ...config
   };
-  return new Runtime(client, resolved, runtimeInfo);
+  return new Runtime(client, resolved);
 }
 
 module.exports = { startCapture, initializeTracing: tracing.initializeTracing };

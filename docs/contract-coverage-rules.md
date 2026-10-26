@@ -14,12 +14,11 @@ still apply. Register specs even for APIs whose operations were not exercised;
 Wiretap cannot discover APIs you never register.
 
 `wiretap report --bundle <path>` calculates a JSON report from verified evidence.
-Use `--format yaml` for YAML, or `--format html --output report.html` for an
+Use `--format text` for a compact summary or `--format html --output report.html` for an
 offline dashboard with coverage evidence linked to test runs. The report
 contains a per-spec catalogue under `contract_coverage`: keys, counts, violations,
 request/response combinations and exact attempt/flow evidence references.
-`wiretap export` supports the same coverage formats. These reports are derived
-outputs, not authoritative capture artifacts.
+Reports are derived outputs; the capture archive remains authoritative.
 
 For cross-repository comparison, first resolve a local dependency to its provider
 using explicit `provider_mappings` or an external mapping. Comparable condition
@@ -77,7 +76,7 @@ examples and the supported assurance claim.
 
 ## Current measurement profile
 
-HTTP uses `wiretap-contract-1`. Conditions are derived from the frozen OpenAPI 3.0 contract; custom event evidence remains unmeasured.
+HTTP uses `wiretap-contract-1`. Conditions are derived from the frozen OpenAPI 3.0 contract.
 
 Supported: declared HTTP operations, exact/range/default response alternatives,
 media alternatives, JSON bodies, scalar path/query/header/cookie parameters and
@@ -394,10 +393,6 @@ Response status is a condition under an operation, so responses with different
 statuses remain associated with the same operation. Contract revision is part
 of target identity; an operation key remains discoverable across revisions.
 
-`wiretap compare` reports gained/lost coverage for unchanged target identities
-and additions/removals when a contract changes. It does not map changed targets
-across revisions. See [coverage comparisons](report-policies.md#compare-two-existing-coverage-reports).
-
 Equal combination fingerprints identify equal measured condition combinations.
 They do not establish equal payloads or consumer/provider compatibility. The
 [assumption checker](assumption-checks.md) separately compares retained concrete
@@ -415,12 +410,8 @@ membership or pattern matches. Readers preserve those limits: affected messages
 remain unknown and placeholders never count as original observations. Current
 capture retains synthetic test data unchanged.
 
-The coverage model is protocol neutral; extraction is protocol specific:
-
-- HTTP uses route/method, parameters, request/response bodies, status, and media
-  alternatives from the selected OpenAPI dialect.
-
-Generic event recordings remain explicitly unmeasured. HTTP request/response records are the supported extraction boundary.
+Coverage uses HTTP route/method, parameters, request/response bodies, status
+and media alternatives from the selected OpenAPI dialect.
 
 ## Measurement guarantees
 

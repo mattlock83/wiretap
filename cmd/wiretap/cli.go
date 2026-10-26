@@ -49,8 +49,8 @@ func execute(ctx context.Context, args []string) int {
 		err = runtimeCommand(ctx, command, args)
 	case "version":
 		err = versionCommand(args, os.Stdout)
-	case "report", "export":
-		err = reportCommand(command, args)
+	case "report":
+		err = reportCommand(args)
 	case "check":
 		code, err := checkCommand(ctx, args)
 		if err != nil {
@@ -63,8 +63,6 @@ func execute(ctx context.Context, args []string) int {
 		err = doctorCommand(ctx, args)
 	case "init":
 		err = initCommand(args)
-	case "compare":
-		err = compareCommand(ctx, args)
 	default:
 		err = fmt.Errorf("%w: unknown command %q; run wiretap --help for commands", errUsage, command)
 	}
@@ -98,11 +96,9 @@ Start the capture API; run tests with your existing test framework.
 Commands:
   init       Create a project configuration
   doctor     Check local capture setup
-  report     Report coverage from captures or exported JSON
-  export     Export coverage or Arazzo workflows
+  report     Generate coverage reports and Arazzo exports
   check      Check consumer/provider compatibility
   run-set    Group captures from one application build
-  compare    Compare coverage against a baseline
   version    Print the Wiretap version
   ca         Print the capture CA certificate
 

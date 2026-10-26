@@ -40,7 +40,6 @@ export interface TestOptions {
   onSession?: (session: Session) => unknown | Promise<unknown>;
 }
 export interface CaptureOptions extends TestOptions {
-  outputs?: OutputOptions;
   baseUrl?: string;
   /** Control HTTP deadline: 30 seconds by default; default teardown allows its
    * requested drain plus 10 seconds. Set 0 to disable or a positive integer to
@@ -49,11 +48,6 @@ export interface CaptureOptions extends TestOptions {
   proxy?: true | { listenAddr?: string; targetUrl?: string };
   instrumentation?: boolean;
   tracerProvider?: TracerProvider;
-  testDefaults?: TestOptions;
-}
-/** Framework-neutral options remain compatible with existing callers. */
-export interface Config extends CaptureOptions {
-  manageRuntime?: boolean;
 }
 export interface Session {
   span: Span;
@@ -72,18 +66,7 @@ export interface CaptureResponse {
   attempt_path?: string;
   [key: string]: unknown;
 }
-export interface Runtime {
-  readonly sutUrl: string;
-  readonly activeSession: Session | null;
-  createTestAttempt(name: string, options?: TestOptions): TestAttempt;
-  setupTest(options?: TestOptions): Promise<Session>;
-  teardownTest(options?: { sessionId?: string; status?: 'pass' | 'fail' | 'skip'; drainTimeoutMs?: number }): Promise<CaptureResponse>;
-  runTest<T>(name: string, callback: (session: Session) => T | Promise<T>, options?: TestOptions): Promise<T>;
-  dependencyUrl(assetId: string): string;
-  report(options?: { bundlePath?: string }): Promise<CaptureResponse>;
-  finishRun(options?: { outputs?: OutputOptions }): Promise<CaptureResponse>;
-}
-export interface OutputOptions { coverage?: ('json' | 'yaml' | 'text' | 'html')[]; arazzo?: boolean; }
+export interface OutputOptions { coverage?: ('json' | 'text' | 'html')[]; arazzo?: boolean; }
 export interface OutputResult {
   bundle_path: string;
   coverage: Record<string, string>;
@@ -91,12 +74,3 @@ export interface OutputResult {
   arazzo_files?: string[];
   errors: { format: string; message: string }[];
 }
-export interface TestAttempt {
-  /** Run test or fixture work inside this attempt's trace context. */
-  run<T>(callback: (session: Session) => T | Promise<T>): Promise<T>;
-  /** Call from the framework's completion hook, including failures/timeouts. */
-  finish(outcome?: { status?: 'pass' | 'fail' | 'skip'; error?: unknown }): Promise<CaptureResponse>;
-}
-/** Internal runtime connection used by the Jest environment. */
-export function startCapture(config?: Config): Promise<Runtime>;
-export function initializeTracing(options?: { instrumentation?: boolean }): void;

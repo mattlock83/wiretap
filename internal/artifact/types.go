@@ -104,34 +104,23 @@ type SchemaRef struct {
 
 // SchemaSource identifies where the schema came from.
 type SchemaSource struct {
-	Type    string         `json:"type"`
-	Path    string         `json:"path,omitempty"`
-	URL     string         `json:"url,omitempty"`
-	Content string         `json:"content,omitempty"`
-	SHA256  string         `json:"sha256,omitempty"`
-	Format  string         `json:"format,omitempty"`
-	Files   []ContractFile `json:"files,omitempty"`
-}
-
-// ContractFile is one caller-supplied member of a portable contract package.
-// Paths use slash-separated names relative to the package root. Wiretap stores
-// these bytes without interpreting imports or asserting semantic validity.
-type ContractFile struct {
-	Path     string `json:"path"`
-	Content  string `json:"content"`
-	Encoding string `json:"encoding,omitempty"`
+	Type    string `json:"type"`
+	Path    string `json:"path,omitempty"`
+	URL     string `json:"url,omitempty"`
+	Content string `json:"content,omitempty"`
+	SHA256  string `json:"sha256,omitempty"`
+	Format  string `json:"format,omitempty"`
 }
 
 // Flow captures one request/response exchange.
 type Flow struct {
-	Interaction *Interaction `json:"interaction,omitempty"`
-	ID          string       `json:"id"`
-	Protocol    string       `json:"protocol"`
-	Channel     string       `json:"channel"`
-	StartedAt   time.Time    `json:"started_at,omitempty"`
-	DurationMS  int64        `json:"duration_ms,omitempty"`
-	Request     Message      `json:"request"`
-	Response    Message      `json:"response"`
+	ID         string    `json:"id"`
+	Protocol   string    `json:"protocol"`
+	Channel    string    `json:"channel"`
+	StartedAt  time.Time `json:"started_at,omitempty"`
+	DurationMS int64     `json:"duration_ms,omitempty"`
+	Request    Message   `json:"request"`
+	Response   Message   `json:"response"`
 	// AssetID identifies the externally owned dependency receiving this flow.
 	AssetID string `json:"asset_id,omitempty"`
 	// TraceID correlates the captured exchange with application traces and logs.
@@ -142,9 +131,6 @@ type Flow struct {
 	ParentCorrelation  string `json:"parent_correlation,omitempty"`
 	// ParentFlowID identifies the inbound test request that caused a dependency call.
 	ParentFlowID string `json:"parent_flow_id,omitempty"`
-	// Fingerprint is a stable hash of the interaction shape (channel, method,
-	// path, status, JSON body key/type structure) for cross-run dedup.
-	Fingerprint string `json:"fingerprint,omitempty"`
 	// TransportError preserves an upstream connection or TLS failure alongside
 	// the recorded 502 response.
 	TransportError string                `json:"transport_error,omitempty"`

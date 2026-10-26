@@ -8,18 +8,15 @@ import (
 	"github.com/mattlock83/wiretap/internal/core"
 )
 
-func TestLifecycleEndpointsStartComponents(t *testing.T) {
+func TestRunEndpointsStartAndStopProxy(t *testing.T) {
 	cfg := core.DefaultConfig()
 	cfg.HTTP.ListenAddr = "127.0.0.1:0"
 	cfg.Proxy.ListenAddr = "127.0.0.1:0"
 	cfg.Proxy.CABaseDir = t.TempDir()
 
 	cfg.Artifact.OutputDir = t.TempDir()
-	proxyComponent, err := NewProxyComponent(cfg.Proxy, nil, cfg.Capture.MaxBodyBytes)
-	if err != nil {
-		t.Fatalf("new proxy component: %v", err)
-	}
-	appInstance, err := New(Deps{Config: cfg, Proxy: proxyComponent})
+	proxyServer := newProxyServer(cfg.Proxy, nil, cfg.Capture.MaxBodyBytes)
+	appInstance, err := New(Deps{Config: cfg, Proxy: proxyServer})
 	if err != nil {
 		t.Fatalf("new app: %v", err)
 	}
@@ -36,7 +33,7 @@ func TestLifecycleEndpointsStartComponents(t *testing.T) {
 		t.Fatalf("unexpected start status: %d", resp.StatusCode)
 	}
 
-	if proxyComponent.Info().ListenAddr == "" {
+	if proxyServer.ListenAddr() == "" {
 		t.Fatalf("expected proxy to start and report listen address")
 	}
 

@@ -13,7 +13,7 @@ and the [runtime API](runtime-api.md) for request and response fields.
 | Phase | Suite owner | Jest environment |
 | --- | --- | --- |
 | Startup | Start the local executable; validate private readiness from that child, its loopback address and run identity. | Connect to the owner's runtime. |
-| Attempt | Keep the runtime alive through worker and fixture cleanup. | Start before test hooks; use stable test identity and retry ordinal with a fresh trace. |
+| Attempt | Keep the runtime alive through worker and fixture cleanup. | Start before test hooks; preserve stable identity across retries and use a fresh trace. |
 | Outcome | Preserve Jest's unsuccessful exit. | Record the final Jest outcome after test cleanup, including hook failures, retries and timeouts. |
 | Completion | Finalize once; validate matching run ID, archive and complete status; retain partial export paths on error. | Await teardown and report capture errors alongside any existing test failure. |
 | Shutdown | Close the parent lifeline, wait for exit, fail on unsuccessful shutdown or forced kill, and retain bounded logs. | Await spawned work before ending the attempt. |
@@ -45,8 +45,7 @@ evidence and frozen contracts remain authoritative.
 
 ## Public package and runtime versions
 
-`@wiretap/sdk` and `@wiretap/sdk/jest` expose `withWiretap`, `captureJest` and
-`createJestSuite`. The package also exports its Jest environment and tracing
+`@wiretap/sdk` and `@wiretap/sdk/jest` expose `withWiretap` and `captureJest`. The package also exports its Jest environment and tracing
 initialization module. Process ownership and the control client are internal
 implementation details.
 

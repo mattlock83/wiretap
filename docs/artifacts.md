@@ -31,7 +31,7 @@ run state and source provenance. Follow each test's `path` to its recording.
 Configured but uncalled boundaries remain in the inventory. Each recording
 contains the test outcome, traffic, validation results, diagnostics and references
 to retained payloads. See the [format reference](bundle-evidence.md) for integrity
-rules and protocol-specific fields.
+rules and HTTP fields.
 
 Application identity is separate from API identity. The format can represent
 provider-only, consumer-only and mixed systems, while the current runtime setup
@@ -40,10 +40,9 @@ scope; they do not prove that no other APIs or dependencies exist.
 
 ## Verify consumer/provider examples
 
-Use `wiretap check consumer` or `wiretap check provider` with a local run and
-`--artifacts <root>` to discover mapped peers beneath application folders. You
-can also select an explicit pair with `--consumer` and `--provider`, or explicit
-[same-build run sets](run-sets.md) with `--consumer-set` and `--provider-set`. Every run
+Use `wiretap check` with an explicit pair selected by `--consumer` and
+`--provider`, or [same-build run sets](run-sets.md) selected by `--consumer-set`
+and `--provider-set`. Every run
 needs its complete archive, Arazzo workflows and their OpenAPI source
 companions on both sides. The checker verifies those projections against their
 raw evidence, then requires each selected mock request and paired
@@ -61,25 +60,23 @@ unknown contract coverage. A matching passing provider test is still required.
 
 ## Generate coverage
 
-`report` and `export` read and verify captured evidence, frozen contracts and
-retained payloads. They work offline without the original workspace or servers.
-Both default to JSON coverage. Start with the compact text summary or HTML
-dashboard, and use JSON/YAML for machine processing:
+`report` reads and verifies captured evidence, frozen contracts and retained
+payloads. It works offline without the original workspace or servers and
+defaults to JSON coverage. Start with the compact text summary or HTML
+dashboard, and use JSON for machine processing:
 
 ```bash
 wiretap report --bundle ./artifacts/<run-id> --format text
 wiretap report --bundle ./artifacts/<run-id> --format html --output coverage.html
 wiretap report --bundle ./artifacts/<run-id> --output coverage.json
-wiretap export --bundle ./artifacts/<run-id> --format yaml --output coverage.yaml
 ```
 
 Omit `--output` to write to stdout. The report includes operation coverage,
 validation diagnostics and detailed condition results under `contract_coverage`.
 These reports are derived from the raw artifact and never become evidence inputs.
-`POST /v1/report` exposes the same JSON coverage calculation through the runtime.
 
 Text limits contract, operation and condition detail lists and names the omitted
-counts. JSON/YAML retain the complete report; truncation never changes totals.
+counts. JSON retain the complete report; truncation never changes totals.
 
 Save output files outside the capture archive or under its `exports/` directory.
 Reports and Arazzo exports reject destinations that replace raw recordings,
@@ -115,8 +112,8 @@ support a decision. The summary does not collapse them into one percentage.
 
 Offline loading uses finite [archive loading budgets](archive-loading.md),
 including limits on individual files, cumulative bytes and file reads.
-[Coverage policies and comparisons](report-policies.md) provide explicit CI gates
-and baseline diffs; [run sets](run-sets.md) group shards from the same build.
+[Run sets](run-sets.md) combine coverage and consumer/provider checks across
+selected shards from the same build.
 
 Operation coverage shows which declared operations were observed. Contract
 coverage measures finite, supported cases from supplied specs, such as an enum
@@ -203,7 +200,7 @@ Export captured JSON/REST requests as an Arazzo document and portable OpenAPI
 source files:
 
 ```bash
-wiretap export --bundle ./artifacts/<run-id> --format arazzo \
+wiretap report --bundle ./artifacts/<run-id> --format arazzo \
   --output-dir ./arazzo
 ```
 
@@ -249,7 +246,7 @@ traffic is present. Export errors are reported independently from coverage error
 Arazzo workflows are the projection inputs to JSON/REST assumption checks:
 
 ```sh
-wiretap check consumer --consumer ./consumer-run --provider ./provider-run \
+wiretap check --consumer ./consumer-run --provider ./provider-run \
   --dependency inventory
 ```
 
@@ -260,7 +257,7 @@ against a regenerated projection. It does not execute workflow expressions.
 Missing, stale or altered inputs fail verification. Unsupported traffic in a
 selected boundary cannot be silently excluded from a passing check. See
 [Arazzo check inputs](assumption-checks.md#arazzo-check-inputs)
-for explicit paths, shared-store and run-set usage.
+for explicit paths and run-set usage.
 
 Automatic exports default to JSON/text/HTML coverage and eligible Arazzo workflows.
 Configure them explicitly with:
