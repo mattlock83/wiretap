@@ -165,7 +165,7 @@ async function startManagedRuntime(options = {}) {
         await Promise.race([exit, wait(Math.min(25, Math.max(1, deadline - Date.now())))]);
       }
     }
-    client = new CoreClient({ baseUrl, timeoutMs, requireJSON: true });
+    client = new CoreClient({ baseUrl, timeoutMs });
     const started = await client.startRun({}, { signal: options.signal });
     await validateStart(started);
     runtimeInfo = started;

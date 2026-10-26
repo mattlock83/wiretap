@@ -11,6 +11,13 @@ import (
 	"unicode/utf8"
 )
 
+// These errors distinguish uncertain input from ordinary JSON syntax errors.
+var (
+	ErrLimit        = errors.New("JSON exceeds its nesting or value limit")
+	ErrDuplicateKey = errors.New("duplicate JSON key")
+	ErrUnicode      = errors.New("invalid JSON Unicode")
+)
+
 // UnicodePolicy controls the encoding/json replacement behavior for malformed
 // strings. Callers comparing retained evidence must use RequireValidUnicode.
 type UnicodePolicy uint8
@@ -37,10 +44,10 @@ func Decode(data []byte, options Options) (any, error) {
 		return nil, errors.New("invalid JSON decoding limits or Unicode policy")
 	}
 	if options.Unicode == RequireUTF8 && !utf8.Valid(data) {
-		return nil, errors.New("JSON must contain valid UTF-8")
+		return nil, fmt.Errorf("%w: JSON must contain valid UTF-8", ErrUnicode)
 	}
 	if options.Unicode == RequireValidUnicode && !validUnicode(data) {
-		return nil, errors.New("JSON must contain valid UTF-8 and paired Unicode surrogate escapes")
+		return nil, fmt.Errorf("%w: JSON must contain valid UTF-8 and paired Unicode surrogate escapes", ErrUnicode)
 	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.UseNumber()
@@ -49,7 +56,7 @@ func Decode(data []byte, options Options) (any, error) {
 	read = func(depth int) (any, error) {
 		nodes++
 		if depth > options.MaxDepth || nodes > options.MaxNodes {
-			return nil, errors.New("JSON exceeds its nesting or value limit")
+			return nil, ErrLimit
 		}
 		token, err := decoder.Token()
 		if err != nil {
@@ -62,7 +69,7 @@ func Decode(data []byte, options Options) (any, error) {
 		// Match encoding/json's syntax nesting ceiling, including empty
 		// containers. Primitive values may sit one level below a container.
 		if depth >= 10000 {
-			return nil, errors.New("JSON exceeds its nesting limit")
+			return nil, ErrLimit
 		}
 		switch delimiter {
 		case '{':
@@ -77,7 +84,7 @@ func Decode(data []byte, options Options) (any, error) {
 					return nil, errors.New("JSON object key must be a string")
 				}
 				if _, exists := object[key]; exists {
-					return nil, fmt.Errorf("duplicate JSON key %q", key)
+					return nil, fmt.Errorf("%w %q", ErrDuplicateKey, key)
 				}
 				object[key], err = read(depth + 1)
 				if err != nil {

@@ -85,7 +85,7 @@ func checkCommand(ctx context.Context, args []string) (int, error) {
 			sources = append(append(sources, report.Consumers...), report.Providers...)
 			manifests = []string{consumerSet, providerSet}
 			if format == "text" {
-				err = writeCheckText(&data, &assumptions.Report{Compatible: report.Compatible, RulesVersion: report.RulesVersion, Dependency: report.Dependency, Binding: "same_build_run_sets", Consumer: assumptions.Source{BundlePath: consumerSet, RunID: "run set"}, Provider: assumptions.Source{BundlePath: providerSet, RunID: "run set"}, Counts: report.Counts, Matches: report.Matches, Findings: report.Findings})
+				err = writeCheckText(&data, &assumptions.Report{Compatible: report.Compatible, Counts: report.Counts, Matches: report.Matches})
 			}
 		}
 	} else {
@@ -135,72 +135,32 @@ func writeCheckText(out io.Writer, report *assumptions.Report) error {
 	if report.Compatible {
 		status = "PASS"
 	}
-	var text strings.Builder
-	fmt.Fprintf(&text, "%s: check — %d of %d mock examples verified\n", status, report.Counts.Verified, report.Counts.Assumptions)
-	fmt.Fprintf(&text, "Consumer: %s (%s)\nProvider: %s (%s)\nMock dependency: %s; binding: %s\n", terminalLabel(report.Consumer.BundlePath), terminalLabel(report.Consumer.RunID), terminalLabel(report.Provider.BundlePath), terminalLabel(report.Provider.RunID), terminalLabel(report.Dependency), terminalLabel(report.Binding))
-	fmt.Fprintf(&text, "Uncovered: %d; mismatched: %d; unverified: %d\n", report.Counts.Uncovered, report.Counts.Mismatched, report.Counts.Unverified)
-	var assurance checkAssurance
-	assurance.add(report.Matches)
-	fmt.Fprintln(&text, assurance)
-	for _, finding := range report.Findings[:min(len(report.Findings), maxTerminalItems)] {
-		fmt.Fprintf(&text, "\n[%s] %s: %s", terminalLabel(finding.Kind), terminalLabel(finding.Code), terminalLabel(finding.Operation))
-		if finding.Operation != "" {
-			text.WriteString(": ")
-		}
-		fmt.Fprintf(&text, "%s\n", terminalLabel(finding.Message))
-		if finding.Consumer != nil {
-			fmt.Fprintf(&text, "  Consumer test %q, flow %s: %s\n", terminalLabel(finding.Consumer.TestName), terminalLabel(finding.Consumer.FlowID), terminalLabel(finding.Consumer.EvidencePath))
-		}
-		for _, ref := range finding.Provider[:min(len(finding.Provider), maxTerminalDetails)] {
-			fmt.Fprintf(&text, "  Provider test %q, flow %s: %s\n", terminalLabel(ref.TestName), terminalLabel(ref.FlowID), terminalLabel(ref.EvidencePath))
-		}
-		terminalOmitted(&text, len(finding.Provider)-maxTerminalDetails, "provider candidates")
-		for _, path := range finding.Differences[:min(len(finding.Differences), maxTerminalDetails)] {
-			fmt.Fprintf(&text, "  Different: %s\n", terminalLabel(path))
-		}
-		terminalOmitted(&text, len(finding.Differences)-maxTerminalDetails, "differences")
-		for _, excerpt := range finding.Excerpts[:min(len(finding.Excerpts), maxTerminalDetails)] {
-			fmt.Fprintf(&text, "  %s: expected %s; actual %s (first provider candidate)\n", terminalLabel(excerpt.Path), terminalLabel(excerpt.Expected), terminalLabel(excerpt.Actual))
-		}
-		terminalOmitted(&text, len(finding.Excerpts)-maxTerminalDetails, "value excerpts")
+	assurance := map[string]int{}
+	for _, match := range report.Matches {
+		assurance[match.ContractCheck]++
 	}
-	terminalOmitted(&text, len(report.Findings)-maxTerminalItems, "findings")
-	if len(report.ExcludedProviderEvidence) > 0 {
-		fmt.Fprintf(&text, "\nExcluded %d provider exchanges that cannot establish coverage.\n", len(report.ExcludedProviderEvidence))
-		for _, excluded := range report.ExcludedProviderEvidence[:min(len(report.ExcludedProviderEvidence), maxTerminalDetails)] {
-			fmt.Fprintf(&text, "  Test %q, flow %s: %s\n", terminalLabel(excluded.Evidence.TestName), terminalLabel(excluded.Evidence.FlowID), terminalLabel(excluded.Reason))
-		}
-		terminalOmitted(&text, len(report.ExcludedProviderEvidence)-maxTerminalDetails, "excluded provider exchanges")
+	declarations, provider, examples := assurance["openapi_3_0_validation_rules"], assurance["openapi_3_0_provider_contract"], assurance["unavailable"]
+	excluded := ""
+	if report.ExcludedProviderEvidence != nil {
+		excluded = fmt.Sprintf("Excluded provider exchanges: %d\n", len(report.ExcludedProviderEvidence))
 	}
-	fmt.Fprintf(&text, "\nRules: %s; exact retained examples and exercised contract rules after endpoint/header normalization.\n", terminalLabel(report.RulesVersion))
-	text.WriteString("Use --format json for complete diagnostics.\n")
-	_, err := io.WriteString(out, text.String())
+	_, err := fmt.Fprintf(out, "%s: check — %d of %d mock examples verified\nUncovered: %d; mismatched: %d; unverified: %d\nAssurance: %d HTTP declaration and value checks; %d HTTP provider-spec checks; %d example-only matches (schemas unavailable); %d matches with unknown assurance.\n%sUse --format json for complete diagnostics and source evidence.\n",
+		status, report.Counts.Verified, report.Counts.Assumptions, report.Counts.Uncovered, report.Counts.Mismatched, report.Counts.Unverified,
+		declarations, provider, examples, len(report.Matches)-declarations-provider-examples, excluded)
 	return err
 }
 
 func writeCheckOutput(path string, sources []assumptions.Source, manifests []string, data []byte) error {
-	absolute, err := filepath.Abs(path)
-	if err != nil {
-		return err
-	}
-	parent, err := filepath.EvalSymlinks(filepath.Dir(absolute))
-	if err != nil {
-		return err
-	}
-	absolute = filepath.Join(parent, filepath.Base(absolute))
+	var inputs []protectedInput
 	for _, input := range manifests {
-		if err := protectCheckInput(absolute, input, "run set"); err != nil {
-			return err
-		}
+		inputs = append(inputs, protectedInput{input, "run set"})
 	}
 	for _, source := range sources {
 		root, err := filepath.EvalSymlinks(source.BundlePath)
 		if err != nil {
 			return err
 		}
-		if withinCheckPath(root, absolute) {
-			return fmt.Errorf("%w: --output must be outside input capture archives", errUsage)
-		}
+		inputs = append(inputs, protectedInput{root, "capture archive"})
 		arazzoInputs := append([]string{}, source.ArazzoFiles...)
 		if source.Arazzo != "" {
 			arazzoInputs = append(arazzoInputs, source.Arazzo)
@@ -221,68 +181,8 @@ func writeCheckOutput(path string, sources []assumptions.Source, manifests []str
 			}
 		}
 		for _, input := range arazzoInputs {
-			if err := protectCheckInput(absolute, input, "Arazzo"); err != nil {
-				return err
-			}
+			inputs = append(inputs, protectedInput{input, "Arazzo"})
 		}
 	}
-	if info, err := os.Lstat(absolute); err == nil {
-		if !info.Mode().IsRegular() {
-			return fmt.Errorf("%w: --output must be a regular file", errUsage)
-		}
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-	return writeArchiveReport(absolute, data)
-}
-
-func protectCheckInput(output, input, kind string) error {
-	inputAbs, err := filepath.Abs(input)
-	if err != nil {
-		return err
-	}
-	if output == inputAbs || sameCheckFile(output, inputAbs) {
-		return fmt.Errorf("%w: --output must not replace %s inputs", errUsage, kind)
-	}
-	resolved, err := filepath.EvalSymlinks(input)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil
-		}
-		return err
-	}
-	info, err := os.Stat(resolved)
-	if err != nil {
-		return err
-	}
-	if output == resolved || info.IsDir() && withinCheckPath(resolved, output) {
-		return fmt.Errorf("%w: --output must not replace %s inputs", errUsage, kind)
-	}
-	return nil
-}
-
-func withinCheckPath(root, path string) bool {
-	relative, err := filepath.Rel(root, path)
-	if err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
-		return true
-	}
-	// EvalSymlinks need not canonicalize casing. Match existing ancestors by
-	// file identity too, so a casing alias cannot overwrite a source archive.
-	for current := filepath.Dir(path); ; current = filepath.Dir(current) {
-		if sameCheckFile(root, current) {
-			return true
-		}
-		if filepath.Dir(current) == current {
-			return false
-		}
-	}
-}
-
-func sameCheckFile(left, right string) bool {
-	a, err := os.Stat(left)
-	if err != nil {
-		return false
-	}
-	b, err := os.Stat(right)
-	return err == nil && os.SameFile(a, b)
+	return writeProtectedReport(path, inputs, data)
 }

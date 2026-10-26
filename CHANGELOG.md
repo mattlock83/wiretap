@@ -58,10 +58,19 @@
 - Share strict JSON decoding, prepare frozen contracts once per registration,
   and defer run-set coverage generation until a report is requested.
 - Flatten the internal HTTP message model while preserving archive JSON, and
-  share runtime configuration resolution between startup and diagnostics.
+  keep configuration precedence consistent for capture and CA access.
+- Remove the `init` and `doctor` convenience commands; use the documented project
+  configuration and runtime contract validation.
+- Keep terminal coverage and compatibility output to brief summaries, with full
+  diagnostics in JSON and coverage evidence in HTML.
+- Share frozen-contract verification and protected report writing, collect
+  mismatch paths and value excerpts together, and remove unused test-only runtime
+  helpers and private SDK declarations.
 
 ### Fixes
 
+- Classify strict JSON ambiguity and resource-limit errors by type, so oversized
+  or deeply nested bodies cannot bypass numeric-precision checks.
 - Preserve escaped URL paths and raw query strings during concurrent capture.
 - Protect source archives and referenced payloads from report, receipt and
   Arazzo output overwrites, including relocated files and hard links.

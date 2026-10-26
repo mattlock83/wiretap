@@ -12,29 +12,34 @@ import (
 	"github.com/mattlock83/wiretap/internal/artifact"
 )
 
-func TestTextSummaryKeepsUnknownsAndSeparateFamilyDenominators(t *testing.T) {
+func TestTextSummaryKeepsUnknownsWithoutDetailedConditionBrowsing(t *testing.T) {
 	report := &Report{SUTName: "Orders\n\x1b[31m", ArtifactCount: 2,
 		Capture:   &CaptureSource{RunID: "run-1", State: "complete"},
 		TestCases: []TestCaseCoverage{{Attempts: []artifact.TestCase{{ID: "a", Status: "pass"}, {ID: "b", Status: "fail"}}}},
 		Provided:  SpecCoverageGroup{Specs: []SpecCoverage{{SchemaID: "orders", DenominatorKnown: true, Exercised: []OperationSamples{{Operation: "POST /orders"}}, NotCovered: []OperationSamples{{Operation: "GET /orders"}}}}},
 		Dependent: SpecCoverageGroup{Specs: []SpecCoverage{{AssetID: "inventory", DenominatorKnown: false}}},
 		Contracts: &ContractCoverage{Complete: false, Specs: []*ContractSpec{{APIID: "orders", Origin: "provided", TargetKind: "service", DenominatorKnown: true,
-			Counts:     map[string]ContractCounts{"presence": {Covered: 2, Unknown: 1}, "enum": {Covered: 1, NotCovered: 2, Unsupported: 1}},
+			Counts:     map[string]ContractCounts{"family:presence": {Covered: 2, Unknown: 1}, "family:enum": {Covered: 1, NotCovered: 2, Unsupported: 1}, "phase:request": {Covered: 3, NotCovered: 2, Unknown: 1, Unsupported: 1}},
 			Targets:    []*ContractTarget{{State: "not_covered", Operation: "POST /orders", Phase: "request", Condition: "CANCELLED", FieldPath: "$.state"}},
 			Violations: []ContractViolation{{Reason: "invalid request"}},
-		}}},
+		}, {APIID: "inventory", DenominatorKnown: false, Counts: map[string]ContractCounts{"family:type": {Covered: 4, Unknown: 2, Excluded: 1}}}}},
 	}
 	var out bytes.Buffer
 	if err := WriteReport(&out, report, "text"); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"2 (1 passed, 1 failed, 0 skipped)", "Capture is incomplete", "1/2 operations exercised", "Untested: GET /orders", "inventory: operation denominator unknown", "enum: 1 / 2 / 0 / 1 / 0", "presence: 2 / 0 / 1 / 0 / 0", "CANCELLED ($.state)", "Contract violations observed: 1", "provider agreement is not verified"} {
+	for _, want := range []string{"2 (1 passed, 1 failed, 0 skipped)", "Capture is incomplete", "1/2 operations exercised; 1 untested", "inventory: operation denominator unknown", "Identified contract conditions: 7 covered, 2 gaps, 3 unknown, 1 unsupported, 1 excluded", "Contracts with unknown denominator: 1", "Contract violations observed: 1", "provider agreement is not verified"} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("summary omitted %q:\n%s", want, out.String())
 		}
 	}
 	if strings.Contains(out.String(), "\x1b") {
 		t.Fatal("terminal escape retained")
+	}
+	for _, detail := range []string{"POST /orders", "GET /orders", "CANCELLED", "$.state", "family:", "phase:"} {
+		if strings.Contains(out.String(), detail) {
+			t.Errorf("detailed evidence %q retained in terminal summary", detail)
+		}
 	}
 }
 
@@ -127,7 +132,7 @@ func TestTextSummaryDoesNotInferZeroTrafficWhenAttemptDetailsAreUnavailable(t *t
 	}
 }
 
-func TestTextSummaryBoundsContractListsAndCountsOmittedDetails(t *testing.T) {
+func TestTextSummaryBoundsAPIsAndCountsAllConditionsWithoutMutatingReport(t *testing.T) {
 	report := &Report{Contracts: &ContractCoverage{Complete: true}}
 	for i := 0; i < 14; i++ {
 		api := fmt.Sprintf("api-%02d", i)
@@ -155,17 +160,17 @@ func TestTextSummaryBoundsContractListsAndCountsOmittedDetails(t *testing.T) {
 	if err := WriteReport(&out, report, "text"); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"4 more contracts", "3 more untested operations", "3 more condition families", "12 more gaps or unknown conditions", "9 more notes", "--format json"} {
+	for _, want := range []string{"4 more contracts", "0/8 operations exercised; 8 untested", "Identified contract conditions: 1470 covered", "Contracts with unknown denominator: 14", "Notes: 14", "--format json or --format html"} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("missing %q in %s", want, out.String())
 		}
 	}
-	for _, hidden := range []string{"api-13", "GET /route-7", "family-14", "condition-14", "note-13"} {
+	for _, hidden := range []string{"api-13", "GET /route-", "family-", "condition-", "note-"} {
 		if strings.Contains(out.String(), hidden) {
 			t.Errorf("unsampled detail %q in text", hidden)
 		}
 	}
-	if out.Len() > 20<<10 {
+	if out.Len() > 4<<10 {
 		t.Fatalf("unbounded summary: %d bytes", out.Len())
 	}
 	after, _ := json.Marshal(report)

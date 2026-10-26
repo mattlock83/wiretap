@@ -5,7 +5,7 @@ import (
 	"github.com/mattlock83/wiretap/internal/project"
 )
 
-// resolveRuntimeConfig gives startup, CA access and diagnostics the same
+// resolveRuntimeConfig gives startup and CA access the same
 // precedence: defaults, project configuration, then process environment.
 func resolveRuntimeConfig(project *project.Config) (core.Config, error) {
 	config := core.DefaultConfig()

@@ -28,7 +28,14 @@ test('large export failures retain the complete receipt', async t => {
   });
 });
 
-test('managed transport reports malformed successful receipts clearly', async t => {
-  t.mock.method(global, 'fetch', () => Promise.resolve(new Response('not JSON')));
-  await assert.rejects(new CoreClient({ requireJSON: true }).startRun(), /POST \/v1\/startRun returned an invalid JSON response/);
+test('control transport requires JSON responses for every lifecycle endpoint', async t => {
+  t.mock.method(global, 'fetch', (_url, options) => {
+    assert.equal(options.method, 'POST');
+    assert.equal(options.body, '{}');
+    return Promise.resolve(new Response('not JSON'));
+  });
+  const client = new CoreClient();
+  for (const operation of ['startRun', 'setupTest', 'teardownTest', 'finishRun']) {
+    await assert.rejects(client[operation](), new RegExp(`POST /v1/${operation} returned an invalid JSON response`));
+  }
 });

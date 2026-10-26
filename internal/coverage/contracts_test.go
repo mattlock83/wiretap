@@ -97,7 +97,7 @@ func freezeCoverageSchema(t *testing.T, ref artifact.SchemaRef) artifact.SchemaR
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := writer.Register(artifact.TestCase{ID: "fixture"}, []artifact.SchemaRef{ref}); err != nil {
+	if _, err := writer.RegisterPrepared(artifact.TestCase{ID: "fixture"}, []artifact.SchemaRef{ref}); err != nil {
 		t.Fatal(err)
 	}
 	run, _, err := bundle.Load(writer.Path())
@@ -401,7 +401,7 @@ func TestFrozenContractKeysSurviveDifferentRepoPaths(t *testing.T) {
 			t.Fatal(err)
 		}
 		tc := artifact.TestCase{ID: "attempt", Name: "test", Status: "pass"}
-		_, err = w.Register(tc, []artifact.SchemaRef{{ID: "orders", Role: "sut", Type: "openapi", Source: artifact.SchemaSource{Type: "file", Path: path}}})
+		_, err = w.RegisterPrepared(tc, []artifact.SchemaRef{{ID: "orders", Role: "sut", Type: "openapi", Source: artifact.SchemaSource{Type: "file", Path: path}}})
 		if err != nil {
 			t.Fatal(err)
 		}

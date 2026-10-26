@@ -34,7 +34,7 @@ func TestCLICoverageReportsUseRawArchive(t *testing.T) {
 
 func httpBundleFixture(t *testing.T) string {
 	t.Helper()
-	writer, err := bundle.NewAt(filepath.Join(t.TempDir(), "capture"))
+	writer, err := bundle.New(filepath.Join(t.TempDir(), "capture"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +62,7 @@ func httpBundleFixture(t *testing.T) string {
 			flow("missing", "GET", "http://sut/items/missing", 404, time.Minute),
 		}},
 	} {
-		if _, err := writer.Register(capture.TestCase, nil); err != nil {
+		if _, err := writer.RegisterPrepared(capture.TestCase, nil); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := writer.Commit(capture); err != nil {

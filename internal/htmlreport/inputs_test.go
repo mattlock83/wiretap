@@ -158,12 +158,12 @@ func TestLoadBoundsLocalFileReads(t *testing.T) {
 
 func htmlArchive(t *testing.T, incomplete, jsonResponse bool, refs []artifact.SchemaRef) string {
 	t.Helper()
-	writer, err := bundle.NewAt(filepath.Join(t.TempDir(), "capture"))
+	writer, err := bundle.New(filepath.Join(t.TempDir(), "capture"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	testcase := artifact.TestCase{ID: "read-items", Name: "reads items", Status: "pass", StartedAt: time.Now().UTC()}
-	frozen, err := writer.Register(testcase, refs)
+	frozen, err := writer.RegisterPrepared(testcase, refs)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -171,7 +171,11 @@ func htmlArchive(t *testing.T, incomplete, jsonResponse bool, refs []artifact.Sc
 	if !jsonResponse {
 		media, body = "text/plain", "ready"
 	}
-	capture := &artifact.Artifact{Version: 2, TestCase: testcase, Schemas: frozen, CaptureIncomplete: incomplete,
+	schemas := make([]artifact.SchemaRef, 0, len(frozen))
+	for _, schema := range frozen {
+		schemas = append(schemas, schema.Ref)
+	}
+	capture := &artifact.Artifact{Version: 2, TestCase: testcase, Schemas: schemas, CaptureIncomplete: incomplete,
 		Traffic: []artifact.Flow{{ID: "read", Protocol: "http", Channel: "test_to_sut", StartedAt: testcase.StartedAt,
 			Request:  &artifact.HttpMessage{Method: "GET", URL: "http://sut/items"},
 			Response: &artifact.HttpMessage{Status: 200, Headers: artifact.Headers{"Content-Type": {media}}, Body: &artifact.Body{Text: body}},

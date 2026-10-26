@@ -56,17 +56,3 @@ export interface Session {
   bundlePath: string;
   traceContext: { traceparent: string; tracestate?: string };
 }
-export interface CaptureResponse {
-  outputs?: OutputResult;
-  run_id?: string;
-  bundle_path?: string;
-  attempt_path?: string;
-  [key: string]: unknown;
-}
-export interface OutputResult {
-  bundle_path: string;
-  coverage: Record<string, string>;
-  arazzo?: string;
-  arazzo_files?: string[];
-  errors: { format: string; message: string }[];
-}

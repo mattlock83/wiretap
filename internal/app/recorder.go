@@ -352,13 +352,6 @@ func bodyFromBytes(raw []byte) *artifact.Body {
 	return &artifact.Body{Encoding: "base64", Bytes: base64.StdEncoding.EncodeToString(raw)}
 }
 
-// bodyFromHTTP captures a payload, transparently decompressing it when the
-// headers declare a Content-Encoding so the stored body is the real content
-// (and is diffable). The original wire encoding is preserved on the Body.
-func bodyFromHTTP(headers artifact.Headers, raw []byte) *artifact.Body {
-	return bodyFromCapturedHTTP(headers, capture.FromBytes(raw, capture.DefaultMaxBodyBytes), capture.DefaultMaxBodyBytes)
-}
-
 func normalizedCapturedBody(data []byte, originalBytes int64, truncated bool) capture.Body {
 	if originalBytes == 0 && len(data) > 0 {
 		originalBytes = int64(len(data))

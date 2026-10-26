@@ -76,11 +76,10 @@ func TestPublicReportSchemas(t *testing.T) {
 			t.Fatal(err)
 		}
 		capture := &artifact.Artifact{Version: 1, TestCase: artifact.TestCase{ID: "attempt", Name: "test", StartedAt: time.Now(), Status: "pass"}, Traffic: []artifact.Flow{{ID: "flow", Protocol: "http", Channel: channel, AssetID: asset, Request: &artifact.HttpMessage{Method: "GET", URL: "http://example/items"}, Response: &artifact.HttpMessage{Status: 200, Headers: artifact.Headers{"Content-Type": {"application/json"}}, Body: &artifact.Body{Text: `{}`}}}}}
-		schemas, err := writer.Register(capture.TestCase, nil)
+		_, err = writer.RegisterPrepared(capture.TestCase, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
-		capture.Schemas = schemas
 		if _, err := writer.Commit(capture); err != nil {
 			t.Fatal(err)
 		}

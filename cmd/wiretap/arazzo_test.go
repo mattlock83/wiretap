@@ -241,7 +241,7 @@ func TestCLIArazzoCorruptArchivePreservesOutput(t *testing.T) {
 func arazzoBundleFixture(t *testing.T, withSchema bool, protocol string) string {
 	t.Helper()
 
-	writer, err := bundle.NewAt(filepath.Join(t.TempDir(), "capture"))
+	writer, err := bundle.New(filepath.Join(t.TempDir(), "capture"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -265,9 +265,12 @@ func arazzoBundleFixture(t *testing.T, withSchema bool, protocol string) string 
 			Source: artifact.SchemaSource{Type: "inline", Content: `{"openapi":"3.0.3","info":{"title":"Items","version":"1"},"paths":{"/items":{"get":{"operationId":"listItems","responses":{"200":{"description":"ok","content":{"application/json":{"schema":{"type":"object"}}}}}}}}}`},
 		}}
 	}
-	capture.Schemas, err = writer.Register(capture.TestCase, schemas)
+	prepared, err := writer.RegisterPrepared(capture.TestCase, schemas)
 	if err != nil {
 		t.Fatal(err)
+	}
+	for _, schema := range prepared {
+		capture.Schemas = append(capture.Schemas, schema.Ref)
 	}
 	if _, err := writer.Commit(capture); err != nil {
 		t.Fatal(err)

@@ -17,10 +17,10 @@ func TestNonHTTPContractsAndCapturesAreUnsupported(t *testing.T) {
 		t.Fatal(err)
 	}
 	tc := artifact.TestCase{ID: "test", Name: "HTTP only", StartedAt: time.Now()}
-	if _, err := writer.Register(tc, []artifact.SchemaRef{{ID: "rpc", Role: "sut", Type: "protobuf"}}); err == nil || !strings.Contains(err.Error(), "unsupported") {
+	if _, err := writer.RegisterPrepared(tc, []artifact.SchemaRef{{ID: "rpc", Role: "sut", Type: "protobuf"}}); err == nil || !strings.Contains(err.Error(), "unsupported") {
 		t.Fatalf("protobuf contract accepted: %v", err)
 	}
-	if _, err := writer.Register(tc, nil); err != nil {
+	if _, err := writer.RegisterPrepared(tc, nil); err != nil {
 		t.Fatal(err)
 	}
 	capture := &artifact.Artifact{Version: 1, TestCase: tc, Traffic: []artifact.Flow{{ID: "rpc", Protocol: "grpc"}}}

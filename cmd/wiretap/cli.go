@@ -58,10 +58,6 @@ func execute(ctx context.Context, args []string) int {
 		return code
 	case "run-set":
 		err = runSetCommand(ctx, args)
-	case "doctor":
-		err = doctorCommand(ctx, args)
-	case "init":
-		err = initCommand(args)
 	default:
 		err = fmt.Errorf("%w: unknown command %q; run wiretap --help for commands", errUsage, command)
 	}
@@ -93,8 +89,6 @@ func runtimeCommand(ctx context.Context, command string, args []string) error {
 Start the capture API; run tests with your existing test framework.
 
 Commands:
-  init       Create a project configuration
-  doctor     Check local capture setup
   report     Generate coverage reports and Arazzo exports
   check      Check consumer/provider compatibility
   run-set    Group captures from one application build

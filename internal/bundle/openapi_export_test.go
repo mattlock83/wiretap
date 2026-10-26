@@ -49,11 +49,11 @@ components:
 	if err != nil {
 		t.Fatal(err)
 	}
-	refs, err := w.Register(artifact.TestCase{ID: "one"}, []artifact.SchemaRef{{ID: "orders", Role: "sut", Type: "openapi", Source: artifact.SchemaSource{Type: "file", Path: root}}})
+	refs, err := w.RegisterPrepared(artifact.TestCase{ID: "one"}, []artifact.SchemaRef{{ID: "orders", Role: "sut", Type: "openapi", Source: artifact.SchemaSource{Type: "file", Path: root}}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := w.Commit(&artifact.Artifact{Version: 1, TestCase: artifact.TestCase{ID: "one"}, Schemas: refs}); err != nil {
+	if _, err := w.Commit(&artifact.Artifact{Version: 1, TestCase: artifact.TestCase{ID: "one"}, Schemas: []artifact.SchemaRef{refs[0].Ref}}); err != nil {
 		t.Fatal(err)
 	}
 	_, captures, err := Load(w.Path())
@@ -168,7 +168,13 @@ func TestOpenAPIFilesRechecksIntegrityAndContainment(t *testing.T) {
 				t.Fatal(err)
 			}
 			if _, _, err := OpenAPIFiles(ref); err == nil {
-				t.Fatal("accepted invalid frozen contract")
+				t.Fatal("export accepted invalid frozen contract")
+			}
+			if name != "wrong selected hash" {
+				root := filepath.Dir(filepath.Dir(setDir))
+				if _, _, err := Load(root); err == nil {
+					t.Fatal("archive loader accepted the same invalid frozen contract")
+				}
 			}
 		})
 	}
@@ -211,5 +217,62 @@ func TestParseOpenAPIUsesOnlyVerifiedInventory(t *testing.T) {
 	}
 	if _, err := ParseOpenAPI(t.Context(), root, files); err == nil {
 		t.Fatal("missing companion was resolved outside the verified inventory")
+	}
+}
+
+func TestFrozenContractReadersPreserveCumulativeAndTighterBudgets(t *testing.T) {
+	ref, manifest := openAPIExportFixture(t)
+	root := filepath.Dir(filepath.Dir(filepath.Dir(ref.Source.Path)))
+	manifestBytes := fileBytes(t, filepath.Join(filepath.Dir(ref.Source.Path), "manifest.json"))
+	graphBytes := manifestBytes
+	for _, file := range manifest.Files {
+		graphBytes += fileBytes(t, filepath.Join(root, filepath.FromSlash(file.Path)))
+	}
+	// The same contract is verified for the run and its attempt. Neither call
+	// receives a fresh archive budget or retains a second copy of the graph.
+	archiveBytes := fileBytes(t, filepath.Join(root, "bundle.json")) + fileBytes(t, filepath.Join(root, "tests", "one.json")) + 2*graphBytes
+	archiveReads := 2 + 2*(1+len(manifest.Files))
+	if _, _, err := LoadWithLimits(root, LoadLimits{MaxTotalBytes: archiveBytes, MaxFileReads: archiveReads}); err != nil {
+		t.Fatalf("exact archive budget: %v", err)
+	}
+	for _, limits := range []LoadLimits{{MaxTotalBytes: archiveBytes - 1}, {MaxFileReads: archiveReads - 1}} {
+		if _, _, err := LoadWithLimits(root, limits); !errors.Is(err, ErrLoadLimit) {
+			t.Fatalf("lost cumulative budget: %v", err)
+		}
+	}
+	if _, _, err := OpenAPIFilesWithLimits(t.Context(), ref, LoadLimits{MaxTotalBytes: graphBytes, MaxFileReads: 1 + len(manifest.Files)}); err != nil {
+		t.Fatalf("exact export budget: %v", err)
+	}
+	for _, limits := range []LoadLimits{{MaxTotalBytes: graphBytes - 1}, {MaxFileReads: len(manifest.Files)}, {MaxFileBytes: manifestBytes - 1}} {
+		if _, _, err := OpenAPIFilesWithLimits(t.Context(), ref, limits); !errors.Is(err, ErrLoadLimit) {
+			t.Fatalf("lost tighter export budget: %v", err)
+		}
+	}
+}
+
+func TestFrozenContractExportRetainsTighterManifestLimit(t *testing.T) {
+	ref, manifest := openAPIExportFixture(t)
+	data, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var value map[string]any
+	if err := json.Unmarshal(data, &value); err != nil {
+		t.Fatal(err)
+	}
+	value["unrecognized_metadata"] = strings.Repeat("x", 1<<20)
+	data, err = json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(filepath.Dir(ref.Source.Path), "manifest.json"), data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	root := filepath.Dir(filepath.Dir(filepath.Dir(ref.Source.Path)))
+	if _, _, err := Load(root); err != nil {
+		t.Fatalf("archive did not honor its own manifest byte budget: %v", err)
+	}
+	if _, _, err := OpenAPIFiles(ref); !errors.Is(err, ErrLoadLimit) {
+		t.Fatalf("export lost tighter manifest budget: %v", err)
 	}
 }

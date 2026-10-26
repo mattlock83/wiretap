@@ -55,7 +55,7 @@ func httpLimitsFixture(t *testing.T, attempts int) (string, Run, []Attempt) {
 	var captures []Attempt
 	for i := 0; i < attempts; i++ {
 		tc := artifact.TestCase{ID: fmt.Sprintf("test-%d", i), Name: "shared test data", Status: "pass", StartedAt: time.Now().UTC()}
-		if _, err := w.Register(tc, nil); err != nil {
+		if _, err := w.RegisterPrepared(tc, nil); err != nil {
 			t.Fatal(err)
 		}
 		capture := &artifact.Artifact{Version: 1, TestCase: tc, Traffic: []artifact.Flow{{

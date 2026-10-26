@@ -16,11 +16,11 @@ func TestFrozenSchemaPreservesExactNumericValues(t *testing.T) {
 		t.Fatal(err)
 	}
 	schema := strings.Replace(testSchema, `version: "1"`, `version: "1", x-values: [0.10000000000000001, 0x10, 0o12, 1.00e-1, "0.1", true]`, 1)
-	refs, err := w.Register(artifact.TestCase{ID: "attempt"}, []artifact.SchemaRef{{ID: "orders", Role: "sut", Type: "openapi", Source: artifact.SchemaSource{Type: "inline", Content: schema}}})
+	refs, err := w.RegisterPrepared(artifact.TestCase{ID: "attempt"}, []artifact.SchemaRef{{ID: "orders", Role: "sut", Type: "openapi", Source: artifact.SchemaSource{Type: "inline", Content: schema}}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	data, err := os.ReadFile(refs[0].Source.Path)
+	data, err := os.ReadFile(refs[0].Ref.Source.Path)
 	if err != nil {
 		t.Fatal(err)
 	}

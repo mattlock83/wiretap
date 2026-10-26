@@ -15,6 +15,7 @@ import (
 
 	"github.com/mattlock83/wiretap/internal/artifact"
 	"github.com/mattlock83/wiretap/internal/bundle"
+	"github.com/mattlock83/wiretap/internal/strictjson"
 )
 
 const validatingHTTPBodySchema = `{"type":"object","required":["name","state","count","tags"],"additionalProperties":false,"properties":{"name":{"type":"string","minLength":2,"maxLength":5,"pattern":"^[a-z]+$"},"state":{"type":"string","enum":["open","closed"]},"count":{"type":"integer","minimum":1,"maximum":5},"tags":{"type":"array","minItems":1,"maxItems":2,"items":{"type":"string"}}}}`
@@ -33,11 +34,11 @@ func freezeAssumptionHTTPContract(t *testing.T, source artifact.SchemaSource) *a
 	if err := writer.Configure(providerCheckIdentity()); err != nil {
 		t.Fatal(err)
 	}
-	refs, err := writer.Register(artifact.TestCase{ID: "contract-example", Name: "contract example"}, []artifact.SchemaRef{{ID: "provider", Role: "sut", Type: "openapi", Source: source}})
+	refs, err := writer.RegisterPrepared(artifact.TestCase{ID: "contract-example", Name: "contract example"}, []artifact.SchemaRef{{ID: "provider", Role: "sut", Type: "openapi", Source: source}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &refs[0]
+	return &refs[0].Ref
 }
 
 func loadAssumptionHTTPContract(t *testing.T, document string) *httpContract {
@@ -314,6 +315,55 @@ func TestHTTPContractRefusesRoundedRulesAndObservedNumbers(t *testing.T) {
 		if err := contract.validate(t.Context(), flow); !errors.Is(err, errHTTPContractUnavailable) {
 			t.Fatalf("rounded query parameter passed: %v", err)
 		}
+	}
+}
+
+func TestHTTPContractBodyBudgetsCannotBypassNumericAssurance(t *testing.T) {
+	contract := loadAssumptionHTTPContract(t, validatingHTTPDocument(`{"type":"object","properties":{"amount":{"type":"integer","maximum":9007199254740992}}}`))
+	for name, padding := range map[string]string{
+		"depth": strings.Repeat("[", maxProjectionDepth+1) + "0" + strings.Repeat("]", maxProjectionDepth+1),
+		"nodes": "[" + strings.Repeat("0,", maxProjectionNodes) + "0]",
+	} {
+		t.Run(name, func(t *testing.T) {
+			flow := validatingHTTPFlow()
+			flow.Request.Body.Text = `{"amount":1}`
+			// The validator can round this number down to the allowed maximum.
+			// Unrelated padding must not make the exact-number guard skip it.
+			flow.Response.Body.Text = `{"amount":9007199254740993,"padding":` + padding + `}`
+			if !json.Valid([]byte(flow.Response.Body.Text)) {
+				t.Fatal("regression fixture must be valid JSON")
+			}
+			err := contract.validate(t.Context(), flow)
+			if !errors.Is(err, errHTTPContractUnavailable) || !errors.Is(err, strictjson.ErrLimit) {
+				t.Fatalf("over-budget response acquired numeric assurance: %v", err)
+			}
+		})
+	}
+}
+
+func TestHTTPContractPreservesBodyErrorClassification(t *testing.T) {
+	contract := loadAssumptionHTTPContract(t, validatingHTTPDocument(`{"type":"object"}`))
+	for _, tc := range []struct {
+		name, body string
+		kind       error
+	}{
+		{"duplicate", `{"a":1,"a":2}`, strictjson.ErrDuplicateKey},
+		{"Unicode", `{"a":"\ud800"}`, strictjson.ErrUnicode},
+		{"syntax", `{"a":`, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			flow := validatingHTTPFlow()
+			flow.Request.Body.Text, flow.Response.Body.Text = `{}`, tc.body
+			guardErr := preciseHTTPBody(flow.Response)
+			validationErr := contract.validate(t.Context(), flow)
+			if tc.kind == nil {
+				if guardErr != nil || validationErr == nil || errors.Is(validationErr, errHTTPContractUnavailable) {
+					t.Fatalf("syntax errors must reach ordinary validation: guard=%v validation=%v", guardErr, validationErr)
+				}
+			} else if !errors.Is(guardErr, tc.kind) || !errors.Is(validationErr, errHTTPContractUnavailable) || !errors.Is(validationErr, tc.kind) {
+				t.Fatalf("ambiguity lost its error class: guard=%v validation=%v", guardErr, validationErr)
+			}
+		})
 	}
 }
 

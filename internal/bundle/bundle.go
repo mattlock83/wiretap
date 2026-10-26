@@ -3,6 +3,7 @@ package bundle
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
@@ -227,33 +228,13 @@ func New(outputRoot string) (*Writer, error) {
 	if strings.TrimSpace(outputRoot) == "" {
 		return nil, errors.New("output root is required")
 	}
-	return newWriter(outputRoot, true)
-}
-
-// NewAt creates a bundle at an exact empty directory, used for explicit imports.
-func NewAt(path string) (*Writer, error) {
-	if strings.TrimSpace(path) == "" {
-		return nil, errors.New("bundle output path is required")
-	}
-	if entries, err := os.ReadDir(path); err == nil && len(entries) > 0 {
-		return nil, fmt.Errorf("bundle destination %q is not empty", path)
-	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return nil, err
-	}
-	return newWriter(path, false)
-}
-
-func newWriter(path string, child bool) (*Writer, error) {
 	var entropy [8]byte
 	if _, err := rand.Read(entropy[:]); err != nil {
 		return nil, err
 	}
 	now := time.Now().UTC()
 	id := "run-" + now.Format("20060102T150405.000000000") + "-" + hex.EncodeToString(entropy[:])
-	if child {
-		path = filepath.Join(path, id)
-	}
-	root, err := filepath.Abs(path)
+	root, err := filepath.Abs(filepath.Join(outputRoot, id))
 	if err != nil {
 		return nil, err
 	}
@@ -274,20 +255,6 @@ func (w *Writer) Snapshot() Run {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	return w.run
-}
-
-// Register freezes schemas before traffic admission and records the pending test.
-// Call RegisterPrepared when live validation also needs the parsed documents.
-func (w *Writer) Register(tc artifact.TestCase, schemas []artifact.SchemaRef) ([]artifact.SchemaRef, error) {
-	prepared, err := w.RegisterPrepared(tc, schemas)
-	if err != nil {
-		return nil, err
-	}
-	refs := make([]artifact.SchemaRef, 0, len(prepared))
-	for _, schema := range prepared {
-		refs = append(refs, schema.Ref)
-	}
-	return refs, nil
 }
 
 // RegisterPrepared freezes and validates all contracts before publishing a pending attempt.
@@ -829,9 +796,6 @@ func resolveSchemas(root string, schemas []artifact.SchemaRef, reader *archiveRe
 		if err := validateSchemaBoundary(*ref); err != nil {
 			return err
 		}
-		if ref.Type != "openapi" {
-			return fmt.Errorf("unsupported contract type %q", ref.Type)
-		}
 		if ref.Source.Type == "omitted" {
 			if ref.Source.Path != "" || ref.Source.URL != "" || ref.Source.Content != "" || ref.Source.SHA256 != "" {
 				return fmt.Errorf("omitted schema %q contains a source", ref.ID)
@@ -854,15 +818,7 @@ func resolveSchemas(root string, schemas []artifact.SchemaRef, reader *archiveRe
 		if err != nil {
 			return err
 		}
-		data, err := reader.readFile(path)
-		if err != nil {
-			return err
-		}
-		if digest(data) != ref.Source.SHA256 {
-			return fmt.Errorf("schema %q hash mismatch", ref.ID)
-		}
-		manifestRel := setBase + "/manifest.json"
-		manifestPath, err := containedPath(root, manifestRel)
+		manifestPath, err := containedPath(root, setBase+"/manifest.json")
 		if err != nil {
 			return err
 		}
@@ -870,44 +826,14 @@ func resolveSchemas(root string, schemas []artifact.SchemaRef, reader *archiveRe
 		if err != nil {
 			return err
 		}
-		if err := rejectDuplicateKeys(manifestData); err != nil {
-			return err
+		selected := *ref
+		selected.Source.Path = path
+		manifestRoot, err := verifyFrozenOpenAPI(context.Background(), selected, filepath.Join(root, filepath.FromSlash(setBase)), manifestData, reader, nil)
+		if err != nil {
+			return fmt.Errorf("schema %q: %w", ref.ID, err)
 		}
-		var manifest schemaManifest
-		if err := json.Unmarshal(manifestData, &manifest); err != nil {
-			return err
-		}
-		if manifest.SetHash != parts[1] || manifest.Root != rootRel {
+		if manifestRoot != rootRel {
 			return fmt.Errorf("schema %q manifest identity mismatch", ref.ID)
-		}
-		if manifest.Profile != "" || manifest.Type != "" {
-			return fmt.Errorf("schema %q has an unsupported package profile", ref.ID)
-		}
-		if err := reader.requireReads(len(manifest.Files)); err != nil {
-			return fmt.Errorf("schema %q file inventory: %w", ref.ID, err)
-		}
-		foundRoot := false
-		seen := map[string]bool{}
-		for _, file := range manifest.Files {
-			if seen[file.Path] {
-				return fmt.Errorf("duplicate schema file %q", file.Path)
-			}
-			seen[file.Path] = true
-			if file.Path == rootRel {
-				if file.SHA256 != ref.Source.SHA256 {
-					return fmt.Errorf("schema %q manifest root hash mismatch", ref.ID)
-				}
-				foundRoot = true
-			}
-			if !strings.HasPrefix(file.Path, setBase+"/") || filepath.ToSlash(filepath.Clean(file.Path)) != file.Path {
-				return fmt.Errorf("schema %q manifest file outside schema set", ref.ID)
-			}
-			if _, err := readRef(root, FileRef{Path: file.Path, SHA256: file.SHA256}, reader.readFile); err != nil {
-				return err
-			}
-		}
-		if !foundRoot {
-			return fmt.Errorf("schema %q root missing from manifest", ref.ID)
 		}
 		ref.Source.Path = path
 	}

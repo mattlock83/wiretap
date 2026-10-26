@@ -12,9 +12,12 @@ import (
 	"github.com/mattlock83/wiretap/internal/assumptions"
 )
 
-func TestTerminalCheckSamplesDetailsWithoutChangingCompleteResult(t *testing.T) {
+func TestTerminalCheckSummarizesWithoutChangingCompleteResult(t *testing.T) {
 	report := formattedCheckFixture()
 	report.Counts = assumptions.Counts{Assumptions: 20, Verified: 7, Mismatched: 13}
+	for _, assurance := range []string{"openapi_3_0_validation_rules", "openapi_3_0_provider_contract", "unavailable", "future-kind"} {
+		report.Matches = append(report.Matches, assumptions.Match{ContractCheck: assurance})
+	}
 	for i := 0; i < 20; i++ {
 		finding := assumptions.Finding{Kind: "mismatch", Code: fmt.Sprintf("finding-%02d", i), Message: strings.Repeat("☃", 1000) + "\n\x1b[31m\u009b"}
 		for j := 0; j < 8; j++ {
@@ -33,17 +36,25 @@ func TestTerminalCheckSamplesDetailsWithoutChangingCompleteResult(t *testing.T) 
 	if err := writeCheckText(&out, report); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"FAIL:", "7 of 20 mock examples verified", "mismatched: 13", "11 more findings", "5 more provider candidates", "5 more differences", "5 more value excerpts", "17 more excluded provider exchanges", "--format json"} {
+	for _, want := range []string{"FAIL:", "7 of 20 mock examples verified", "mismatched: 13", "Excluded provider exchanges: 20", "1 HTTP declaration and value checks", "1 HTTP provider-spec checks", "1 example-only matches", "1 matches with unknown assurance", "--format json"} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("missing %q in %s", want, out.String())
 		}
 	}
-	if strings.Contains(out.String(), "finding-19") || strings.Contains(out.String(), "\x1b") || strings.Contains(out.String(), "\u009b") || !utf8.Valid(out.Bytes()) || out.Len() > 25<<10 {
+	if strings.Contains(out.String(), "finding-") || strings.Contains(out.String(), "\x1b") || strings.Contains(out.String(), "\u009b") || !utf8.Valid(out.Bytes()) || out.Len() > 1<<10 {
 		t.Fatalf("terminal check is unsafe or unbounded: %d bytes", out.Len())
 	}
 	after, _ := json.Marshal(report)
 	if !bytes.Equal(before, after) || !bytes.Contains(after, []byte("finding-19")) {
 		t.Fatal("terminal presentation changed the complete JSON result")
+	}
+	report.ExcludedProviderEvidence = nil // Run-set summaries do not carry this count.
+	out.Reset()
+	if err := writeCheckText(&out, report); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out.String(), "Excluded provider exchanges") {
+		t.Fatal("unavailable excluded-provider count must not be reported as zero")
 	}
 }
 

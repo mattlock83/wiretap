@@ -42,9 +42,12 @@ func cliCheckArchiveWithContracts(t *testing.T, consumer bool, path string, stat
 		Request:  &artifact.HttpMessage{Method: "GET", URL: "http://local.test" + path, Headers: artifact.Headers{"Accept": {"application/json"}}},
 		Response: &artifact.HttpMessage{Status: status, Headers: artifact.Headers{"Content-Type": {"application/json"}}, Body: &artifact.Body{Text: response}},
 	}}}
-	capture.Schemas, err = writer.Register(capture.TestCase, schemas)
+	prepared, err := writer.RegisterPrepared(capture.TestCase, schemas)
 	if err != nil {
 		t.Fatal(err)
+	}
+	for _, schema := range prepared {
+		capture.Schemas = append(capture.Schemas, schema.Ref)
 	}
 	if _, err := writer.Commit(capture); err != nil {
 		t.Fatal(err)
@@ -89,8 +92,8 @@ func TestCLIAssumptionCheckRejectsDeclaredRuleDifferences(t *testing.T) {
 				t.Fatalf("expected %s error, exit %d: %s", scenario.keyword, code, output)
 			}
 			code, output = executeCapturingStdout(t, args)
-			if code != 1 || !strings.Contains(string(output), "validation rules differ") || !strings.Contains(string(output), scenario.keyword) {
-				t.Fatalf("missing useful text diagnostic, exit %d: %s", code, output)
+			if code != 1 || !strings.Contains(string(output), "mismatched: 1") || !strings.Contains(string(output), "--format json") {
+				t.Fatalf("missing mismatch summary, exit %d: %s", code, output)
 			}
 
 		})
@@ -184,7 +187,7 @@ func TestCLIAssumptionCheckReportsFailureAndWritesJSON(t *testing.T) {
 			provider := cliCheckArchive(t, false, scenario.path, scenario.status, scenario.response)
 			args := []string{"check", "--consumer", consumer, "--provider", provider}
 			code, text := executeCapturingStdout(t, args)
-			if code != 1 || !strings.Contains(string(text), "["+scenario.kind+"]") || !strings.Contains(string(text), "tests/attempt.json#/capture/traffic/0") {
+			if code != 1 || !strings.HasPrefix(string(text), "FAIL: check") || !strings.Contains(string(text), "--format json") {
 				t.Fatalf("check exit %d: %s", code, text)
 			}
 			output := filepath.Join(t.TempDir(), "check.json")

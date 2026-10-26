@@ -22,11 +22,11 @@ func failedRun(t *testing.T, changes ...func(*artifact.Artifact)) string {
 		t.Fatal(err)
 	}
 	tc := artifact.TestCase{ID: "attempt-1", Name: "a failed test", Status: "fail", StartedAt: time.Now().UTC()}
-	frozen, err := writer.Register(tc, nil)
+	_, err = writer.RegisterPrepared(tc, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	capture := &artifact.Artifact{Version: 2, TestCase: tc, Schemas: frozen, Traffic: []artifact.Flow{{ID: "f-1", Protocol: "http", Channel: "test_to_sut", Request: &artifact.HttpMessage{Method: "GET", URL: "http://sut.test/orders"}, Response: &artifact.HttpMessage{Status: 503, Headers: artifact.Headers{"Content-Type": {"application/json"}}, Body: &artifact.Body{Text: `{"error":"unavailable"}`}}}}}
+	capture := &artifact.Artifact{Version: 2, TestCase: tc, Traffic: []artifact.Flow{{ID: "f-1", Protocol: "http", Channel: "test_to_sut", Request: &artifact.HttpMessage{Method: "GET", URL: "http://sut.test/orders"}, Response: &artifact.HttpMessage{Status: 503, Headers: artifact.Headers{"Content-Type": {"application/json"}}, Body: &artifact.Body{Text: `{"error":"unavailable"}`}}}}}
 	for _, change := range changes {
 		change(capture)
 	}

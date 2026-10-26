@@ -94,14 +94,14 @@ func TestRunFinalizationVerifiesRawArchive(t *testing.T) {
 					t.Fatal(err)
 				}
 				testcase := artifact.TestCase{ID: "integrity", Name: "retains evidence", StartedAt: time.Now().UTC(), Status: "pass"}
-				schemas, err := writer.Register(testcase, []artifact.SchemaRef{{
+				schemas, err := writer.RegisterPrepared(testcase, []artifact.SchemaRef{{
 					ID: "api", Role: "sut", Type: "openapi",
 					Source: artifact.SchemaSource{Type: "inline", Content: "openapi: 3.0.3\ninfo: {title: Integrity, version: '1'}\npaths: {}\n"},
 				}})
 				if err != nil {
 					t.Fatal(err)
 				}
-				capture := &artifact.Artifact{Version: 2, TestCase: testcase, Schemas: schemas, Traffic: []artifact.Flow{{
+				capture := &artifact.Artifact{Version: 2, TestCase: testcase, Schemas: []artifact.SchemaRef{schemas[0].Ref}, Traffic: []artifact.Flow{{
 					ID: "flow-1", Protocol: "http", Channel: "test_to_sut",
 					Request:  &artifact.HttpMessage{Method: "GET", URL: "http://sut.test/"},
 					Response: &artifact.HttpMessage{Status: 200, Body: &artifact.Body{Text: "retained payload"}},
@@ -113,7 +113,7 @@ func TestRunFinalizationVerifiesRawArchive(t *testing.T) {
 					t.Fatalf("initial archive is invalid: %v", err)
 				}
 				if corruption != "none" {
-					path := schemas[0].Source.Path
+					path := schemas[0].Ref.Source.Path
 					if corruption == "payload" {
 						payloads, err := filepath.Glob(filepath.Join(writer.Path(), "payloads", "*.bin"))
 						if err != nil || len(payloads) != 1 {

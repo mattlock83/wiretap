@@ -87,10 +87,8 @@ Teardown drains accepted exchanges for five seconds by default. Configure the AP
 | --- | --- |
 | `wiretap [--config path]` | Host the control service. |
 | `wiretap version [--json]` | Show producer identity. |
-| `wiretap init --sut-url <url> --schema <path> --application <id>` | Create a minimal HTTP project without overwriting a file. |
-| `wiretap doctor [--config path]` | Inspect local setup without starting capture. |
 | `wiretap report --bundle <run> --format html --output report.html` | Build an offline coverage and test-run dashboard. |
-| `wiretap report --bundle <run> --format text` | Read verified coverage; JSON is the default. |
+| `wiretap report --bundle <run> --format text` | Read a brief coverage summary; JSON is the default. |
 | `wiretap report --coverage-json <json> --format html --output report.html` | Render exported coverage JSON with optional repeatable `--spec` and `--arazzo` inputs. |
 | `wiretap report --bundle <run> --format arazzo --output-dir <dir>` | Write Arazzo workflows and portable source companions. |
 | `wiretap report --bundle <run> --format all` | Generate default coverage formats and Arazzo outputs. |

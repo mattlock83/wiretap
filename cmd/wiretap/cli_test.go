@@ -17,7 +17,7 @@ func TestCLIRejectsTestOrchestration(t *testing.T) {
 }
 
 func TestCLIHelp(t *testing.T) {
-	for _, command := range []string{"", "ca", "report", "check", "init", "doctor", "run-set", "version"} {
+	for _, command := range []string{"", "ca", "report", "check", "run-set", "version"} {
 		args := []string{"--help"}
 		if command != "" {
 			args = append([]string{command}, args...)
@@ -30,7 +30,7 @@ func TestCLIHelp(t *testing.T) {
 }
 
 func TestCLIFlagErrorsArePrintedOnceOnStderr(t *testing.T) {
-	for _, prefix := range [][]string{nil, {"ca"}, {"report"}, {"check"}, {"init"}, {"doctor"}, {"run-set"}, {"version"}, {"--version"}} {
+	for _, prefix := range [][]string{nil, {"ca"}, {"report"}, {"check"}, {"run-set"}, {"version"}, {"--version"}} {
 		args := append(append([]string{}, prefix...), "--not-a-flag")
 		code, out, diagnostic := executeCapturingStreams(t, args)
 		if code != 2 || out != "" || strings.Count(diagnostic, "flag provided but not defined: -not-a-flag") != 1 || strings.Contains(diagnostic, "Usage:") || !strings.Contains(diagnostic, "--help for usage") {
@@ -48,7 +48,7 @@ func TestCLIFlagErrorsArePrintedOnceOnStderr(t *testing.T) {
 func TestCLIMissingInputsUseExitTwo(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "missing")
 	for _, args := range [][]string{
-		{"report"}, {"init"}, {"run-set"},
+		{"report"}, {"run-set"},
 		{"--config", missing}, {"ca", "--config", missing},
 		{"report", "--bundle", missing},
 		{"report", "--bundle", missing, "--format", "postman"},
@@ -70,10 +70,6 @@ func TestCLIOutputFailuresRemainExitOne(t *testing.T) {
 	code, out, diagnostic := executeCapturingStreams(t, []string{"report", "--bundle", archive, "--output", output})
 	if code != 1 || out != "" || diagnostic == "" {
 		t.Fatalf("output failure = %d, stdout %q, stderr %q", code, out, diagnostic)
-	}
-	code, out, diagnostic = executeCapturingStreams(t, []string{"doctor", "--config", filepath.Join(t.TempDir(), "missing"), "--format", "json"})
-	if code != 1 || !strings.Contains(out, `"ok": false`) || diagnostic == "" {
-		t.Fatalf("failed setup check = %d, stdout %q, stderr %q", code, out, diagnostic)
 	}
 }
 
@@ -128,6 +124,7 @@ func TestCLIRejectsRemovedExportFormats(t *testing.T) {
 func TestCLIRejectsRemovedCommandsAndFlags(t *testing.T) {
 	for _, args := range [][]string{
 		{"export", "--help"}, {"compare", "--help"},
+		{"init", "--help"}, {"doctor", "--help"},
 		{"report", "--bundle", "capture", "--policy", "policy.json"},
 		{"check", "consumer", "--consumer", "a", "--provider", "b"},
 		{"check", "provider", "--consumer", "a", "--provider", "b"},

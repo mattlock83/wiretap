@@ -9,18 +9,15 @@ class CoreClient {
       throw new Error("timeoutMs must be an integer between 0 and 2147483647 (0 disables the control request deadline)");
     }
     this.explicitTimeout = config.timeoutMs !== undefined;
-    this.requireJSON = config.requireJSON === true;
   }
 
-  startRun(payload, options) { return this._request("POST", "/v1/startRun", payload || {}, options); }
-  setupTest(payload, options) { return this._request("POST", "/v1/setupTest", payload || {}, options); }
-  teardownTest(payload, options) { return this._request("POST", "/v1/teardownTest", payload || {}, options); }
-  finishRun(payload = {}, options) { return this._request("POST", "/v1/finishRun", payload, options); }
+  startRun(payload, options) { return this._request("/v1/startRun", payload, options); }
+  setupTest(payload, options) { return this._request("/v1/setupTest", payload, options); }
+  teardownTest(payload, options) { return this._request("/v1/teardownTest", payload, options); }
+  finishRun(payload, options) { return this._request("/v1/finishRun", payload, options); }
 
-  async _request(method, path, payload, { signal } = {}) {
-    if (typeof fetch !== "function") throw new Error("global fetch is not available; require Node.js >= 22");
-    const options = { method, headers: { "content-type": "application/json" } };
-    if (payload !== undefined) options.body = JSON.stringify(payload);
+  async _request(path, payload = {}, { signal } = {}) {
+    const options = { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) };
     // A default cleanup deadline must allow the requested runtime drain. An
     // explicitly configured deadline (including zero) always belongs to the caller.
     const timeoutMs = !this.explicitTimeout && path === "/v1/teardownTest"
@@ -36,7 +33,7 @@ class CoreClient {
     signal?.addEventListener("abort", abort, { once: true });
     if (timeoutMs > 0) {
       timeout = setTimeout(() => {
-        deadlineError = new Error(`Wiretap control request ${method} ${path} timed out after ${timeoutMs}ms`);
+        deadlineError = new Error(`Wiretap control request POST ${path} timed out after ${timeoutMs}ms`);
         deadlineError.name = "TimeoutError";
         deadlineError.code = "WIRETAP_CONTROL_TIMEOUT";
         controller.abort(deadlineError);
@@ -45,14 +42,12 @@ class CoreClient {
     try {
       const res = await tracing.withoutTracing(() => fetch(new URL(path, this.baseUrl), options));
       const text = await res.text();
-      let body = text || null;
-      if (this.requireJSON || (text && (res.headers.get("content-type") || "").includes("application/json"))) {
-        try { body = JSON.parse(text); }
-        catch (cause) {
-          const error = new Error(`Wiretap control request ${method} ${path} returned an invalid JSON response (${res.status})`, { cause });
-          error.status = res.status;
-          throw error;
-        }
+      let body;
+      try { body = JSON.parse(text); }
+      catch (cause) {
+        const error = new Error(`Wiretap control request POST ${path} returned an invalid JSON response (${res.status})`, { cause });
+        error.status = res.status;
+        throw error;
       }
       if (!res.ok) {
         const err = new Error(`request failed: ${res.status}${body?.error ? `: ${body.error}` : ""}`);

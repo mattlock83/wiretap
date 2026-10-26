@@ -21,6 +21,7 @@ import (
 	"github.com/mattlock83/wiretap/internal/bundle"
 	"github.com/mattlock83/wiretap/internal/coverage"
 	"github.com/mattlock83/wiretap/internal/openapivalidation"
+	"github.com/mattlock83/wiretap/internal/strictjson"
 )
 
 var errHTTPContractUnavailable = errors.New("HTTP contract validation is unavailable")
@@ -267,8 +268,8 @@ func preciseHTTPBody(message *artifact.HttpMessage) error {
 	if err != nil {
 		// The validator reports ordinary JSON syntax errors. Ambiguity and
 		// unsupported normalization limits cannot earn validation assurance.
-		if strings.Contains(err.Error(), "duplicate") || strings.Contains(err.Error(), "Unicode") || strings.Contains(err.Error(), "limits") {
-			return fmt.Errorf("%w: %v", errHTTPContractUnavailable, err)
+		if errors.Is(err, strictjson.ErrDuplicateKey) || errors.Is(err, strictjson.ErrUnicode) || errors.Is(err, strictjson.ErrLimit) {
+			return fmt.Errorf("%w: %w", errHTTPContractUnavailable, err)
 		}
 		return nil
 	}

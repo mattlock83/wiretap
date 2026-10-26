@@ -32,11 +32,11 @@ paths:
 			t.Fatal(err)
 		}
 		attempt := artifact.TestCase{ID: "attempt-1", Name: "reads inventory", StartedAt: time.Now().UTC(), Status: "pass"}
-		frozen, err := writer.Register(attempt, []artifact.SchemaRef{{ID: "inventory", Role: role, Type: "openapi", AssetID: assetID, Source: artifact.SchemaSource{Type: "inline", Content: schema}}})
+		frozen, err := writer.RegisterPrepared(attempt, []artifact.SchemaRef{{ID: "inventory", Role: role, Type: "openapi", AssetID: assetID, Source: artifact.SchemaSource{Type: "inline", Content: schema}}})
 		if err != nil {
 			t.Fatal(err)
 		}
-		capture := &artifact.Artifact{Version: 1, TestCase: attempt, Schemas: frozen, Traffic: []artifact.Flow{{
+		capture := &artifact.Artifact{Version: 1, TestCase: attempt, Schemas: []artifact.SchemaRef{frozen[0].Ref}, Traffic: []artifact.Flow{{
 			ID: "flow-1", Protocol: "http", Channel: channel, AssetID: assetID,
 			Request:  &artifact.HttpMessage{Method: "GET", URL: "http://inventory/items"},
 			Response: &artifact.HttpMessage{Status: 200, Body: &artifact.Body{Text: `{"available":true}`}},

@@ -19,7 +19,7 @@ func TestBodyFromHTTPDecompressesGzip(t *testing.T) {
 		gz := gzip.NewWriter(&buf)
 		_, _ = gz.Write([]byte(original))
 		_ = gz.Close()
-		body := bodyFromHTTP(artifact.Headers{"Content-Encoding": {"gzip"}}, buf.Bytes())
+		body := bodyFromCapturedHTTP(artifact.Headers{"Content-Encoding": {"gzip"}}, capture.FromBytes(buf.Bytes(), capture.DefaultMaxBodyBytes), capture.DefaultMaxBodyBytes)
 		if body == nil || body.Text != original || body.ContentEncoding != "gzip" {
 			t.Fatalf("unexpected decoded body for %q: %#v", original, body)
 		}

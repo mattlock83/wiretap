@@ -33,7 +33,7 @@ func TestBundleRoundTripAndFrozenSchema(t *testing.T) {
 		t.Fatal(err)
 	}
 	tc := artifact.TestCase{ID: "attempt-1", Name: "reads orders", StartedAt: time.Now().UTC(), Status: "pass"}
-	frozen, err := w.Register(tc, []artifact.SchemaRef{{ID: "orders", Role: "sut", Type: "openapi", Source: artifact.SchemaSource{Type: "file", Path: schemaFile}}})
+	frozen, err := w.RegisterPrepared(tc, []artifact.SchemaRef{{ID: "orders", Role: "sut", Type: "openapi", Source: artifact.SchemaSource{Type: "file", Path: schemaFile}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,7 +41,7 @@ func TestBundleRoundTripAndFrozenSchema(t *testing.T) {
 		t.Fatal(err)
 	}
 	binary := []byte{0, 1, 255, 42}
-	art := &artifact.Artifact{Version: 1, TestCase: tc, Schemas: frozen, Meta: map[string]any{"large": json.Number("9007199254740993")}, Traffic: []artifact.Flow{{
+	art := &artifact.Artifact{Version: 1, TestCase: tc, Schemas: []artifact.SchemaRef{frozen[0].Ref}, Meta: map[string]any{"large": json.Number("9007199254740993")}, Traffic: []artifact.Flow{{
 		ID: "flow-1", Protocol: "http", Channel: "test_to_sut",
 		Request:  &artifact.HttpMessage{Method: "GET", URL: "http://sut/orders", Body: &artifact.Body{Text: "hello"}},
 		Response: &artifact.HttpMessage{Status: 200, Body: &artifact.Body{Bytes: base64.StdEncoding.EncodeToString(binary), Encoding: "base64"}},
@@ -89,7 +89,7 @@ func TestBundleRejectsCorruptBodyAndDuplicateJSONKey(t *testing.T) {
 		t.Fatal(err)
 	}
 	tc := artifact.TestCase{ID: "attempt-1", Name: "test", StartedAt: time.Now().UTC()}
-	if _, err := w.Register(tc, nil); err != nil {
+	if _, err := w.RegisterPrepared(tc, nil); err != nil {
 		t.Fatal(err)
 	}
 	art := &artifact.Artifact{Version: 1, TestCase: tc, Traffic: []artifact.Flow{{ID: "flow-1", Request: &artifact.HttpMessage{Body: &artifact.Body{Text: "secret"}}}}}
@@ -148,11 +148,11 @@ components:
 		t.Fatal(err)
 	}
 	tc := artifact.TestCase{ID: "attempt-1", Name: "cyclic", StartedAt: time.Now().UTC()}
-	frozen, err := w.Register(tc, []artifact.SchemaRef{{ID: "cyclic", Role: "sut", Type: "openapi", Source: artifact.SchemaSource{Type: "file", Path: root}}})
+	frozen, err := w.RegisterPrepared(tc, []artifact.SchemaRef{{ID: "cyclic", Role: "sut", Type: "openapi", Source: artifact.SchemaSource{Type: "file", Path: root}}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := w.Commit(&artifact.Artifact{Version: 1, TestCase: tc, Schemas: frozen}); err != nil {
+	if _, err := w.Commit(&artifact.Artifact{Version: 1, TestCase: tc, Schemas: []artifact.SchemaRef{frozen[0].Ref}}); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Remove(root); err != nil {

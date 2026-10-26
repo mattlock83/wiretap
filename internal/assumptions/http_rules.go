@@ -66,7 +66,8 @@ func verifyHTTPContracts(ctx context.Context, verifier *httpContractVerifier, co
 		return "openapi_3_0_provider_contract", nil
 	}
 	if rules[0] != rules[1] {
-		return "", &contractCheckProblem{"mismatch", "http_contract_mismatch", "consumer and provider OpenAPI validation rules differ for this exercised operation; rule drift is an error even when the captured values satisfy both contracts", jsonDifferencePaths(rules[0], rules[1], "contract")}
+		paths, _ := jsonDifferences(rules[0], rules[1], "contract")
+		return "", &contractCheckProblem{"mismatch", "http_contract_mismatch", "consumer and provider OpenAPI validation rules differ for this exercised operation; rule drift is an error even when the captured values satisfy both contracts", paths}
 	}
 	return "openapi_3_0_validation_rules", nil
 }

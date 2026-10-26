@@ -16,18 +16,16 @@ are printed once on stderr.
 | Exit | Meaning |
 | --- | --- |
 | `0` | Command succeeded, checks passed, or help was requested. |
-| `1` | A compatibility or setup check failed; capture, export or output writing can also fail with this status. |
+| `1` | A compatibility check failed, or capture, export or output writing failed. |
 | `2` | Invalid command/flags, missing required arguments, or unreadable, corrupt or incompatible inputs. |
 
-`doctor` writes its diagnostic report and returns `1` when local setup checks
-fail, including a missing configuration. An invalid invocation returns `2`.
 Offline report commands return `2` for a missing or corrupt capture,
 without replacing existing outputs. Keep stderr and the exit status alongside
 machine reports; a failed command does not make a pre-existing report current.
 
-Text reports show bounded samples with omitted counts. Use JSON for complete
-check diagnostics and coverage data. Display
-limits do not change measured totals or check verdicts.
+Text reports show brief totals and status. Use JSON for complete check diagnostics
+and coverage data, or HTML to browse coverage and test evidence. Presentation
+does not change measured totals or check verdicts.
 
 HTML is a derived offline dashboard.
 `wiretap report --coverage-json <json> --format html --output report.html`

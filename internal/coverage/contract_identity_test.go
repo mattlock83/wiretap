@@ -75,7 +75,7 @@ func TestFrozenContractRetainsImpreciseDecimalConstraint(t *testing.T) {
 		t.Fatal(err)
 	}
 	schema := simpleResponseSpec(`{type: number, minimum: 0.10000000000000001}`)
-	_, err = w.Register(artifact.TestCase{ID: "attempt", Name: "decimal boundary"}, []artifact.SchemaRef{{ID: "orders", Role: "sut", Type: "openapi", Source: artifact.SchemaSource{Type: "inline", Content: schema}}})
+	_, err = w.RegisterPrepared(artifact.TestCase{ID: "attempt", Name: "decimal boundary"}, []artifact.SchemaRef{{ID: "orders", Role: "sut", Type: "openapi", Source: artifact.SchemaSource{Type: "inline", Content: schema}}})
 	if err != nil {
 		t.Fatal(err)
 	}

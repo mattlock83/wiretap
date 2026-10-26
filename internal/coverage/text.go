@@ -3,16 +3,14 @@ package coverage
 import (
 	"fmt"
 	"io"
-	"sort"
 	"strings"
 	"unicode"
 )
 
 const maxTextSpecs = 10
-const maxTextFamilies = 12
 
-// Text is a bounded reading aid over the same report, not another measurement
-// profile. Keep condition families separate: their denominators differ.
+// Text summarizes outcomes and identified evidence. Detailed operations,
+// condition families and findings remain in the JSON and HTML reports.
 func writeTextReport(w io.Writer, report *Report) error {
 	var out strings.Builder
 	fmt.Fprintf(&out, "Wiretap coverage: %s\n", textLabel(report.SUTName))
@@ -71,87 +69,38 @@ func writeTextReport(w io.Writer, report *Report) error {
 				fmt.Fprintf(&out, "  %s: operation denominator unknown\n", textLabel(label))
 				continue
 			}
-			fmt.Fprintf(&out, "  %s: %d/%d operations exercised\n", textLabel(label), len(spec.Exercised), len(spec.Exercised)+len(spec.NotCovered))
-			for i, missing := range spec.NotCovered {
-				if i == 5 {
-					fmt.Fprintf(&out, "    ... %d more untested operations in the JSON report\n", len(spec.NotCovered)-i)
-					break
-				}
-				fmt.Fprintf(&out, "    Untested: %s\n", textLabel(missing.Operation))
-			}
+			fmt.Fprintf(&out, "  %s: %d/%d operations exercised; %d untested\n", textLabel(label), len(spec.Exercised), len(spec.Exercised)+len(spec.NotCovered), len(spec.NotCovered))
 		}
 	}
 	if report.Contracts != nil {
-		out.WriteString("\nContract conditions (covered / gaps / unknown / unsupported / excluded)\n")
-		for i, spec := range report.Contracts.Specs {
-			if i == maxTextSpecs {
-				fmt.Fprintf(&out, "  ... %d more contracts; use --format json for complete details.\n", len(report.Contracts.Specs)-i)
-				break
-			}
-			fmt.Fprintf(&out, "  %s (%s, %s)\n", textLabel(spec.APIID), textLabel(spec.Origin), textLabel(spec.TargetKind))
+		var total ContractCounts
+		unknownDenominators, violations := 0, 0
+		for _, spec := range report.Contracts.Specs {
 			if !spec.DenominatorKnown {
-				out.WriteString("    Contract denominator unknown.\n")
+				unknownDenominators++
 			}
-			families := make([]string, 0, len(spec.Counts))
-			for family := range spec.Counts {
+			violations += len(spec.Violations)
+			for family, count := range spec.Counts {
 				if strings.HasPrefix(family, "phase:") {
 					continue // These overlap the same targets already counted by family.
 				}
-				families = append(families, family)
-			}
-			sort.Strings(families)
-			for i, family := range families {
-				if i == maxTextFamilies {
-					fmt.Fprintf(&out, "    ... %d more condition families in the JSON report.\n", len(families)-i)
-					break
-				}
-				count := spec.Counts[family]
-				label := strings.ReplaceAll(strings.TrimPrefix(family, "family:"), "_", " ")
-				fmt.Fprintf(&out, "    %s: %d / %d / %d / %d / %d\n", textLabel(label), count.Covered, count.NotCovered, count.Unknown, count.Unsupported, count.Excluded)
-			}
-			shown, remaining := 0, 0
-			for _, target := range spec.Targets {
-				if target.State != "not_covered" && target.State != "unknown" {
-					continue
-				}
-				if shown == 3 {
-					remaining++
-					continue
-				}
-				location := target.FieldPath
-				if location == "" {
-					// Prefer the property name over an implementation-shaped schema
-					// pointer. Full pointers and target identities remain in JSON.
-					if _, property, found := strings.Cut(target.Location, "/properties/"); found {
-						location = strings.Split(property, "/")[0]
-						location = strings.ReplaceAll(strings.ReplaceAll(location, "~1", "/"), "~0", "~")
-					} else {
-						location = strings.ReplaceAll(target.Family, "_", " ")
-					}
-				}
-				state := "Gap"
-				if target.State == "unknown" {
-					state = "Unknown"
-				}
-				fmt.Fprintf(&out, "    %s: %s %s %s (%s)\n", state, textLabel(target.Operation), textLabel(target.Phase), textLabel(target.Condition), textLabel(location))
-				shown++
-			}
-			if remaining > 0 {
-				fmt.Fprintf(&out, "    ... %d more gaps or unknown conditions in the JSON report.\n", remaining)
-			}
-			if len(spec.Violations) > 0 {
-				fmt.Fprintf(&out, "    Contract violations observed: %d; framework test outcomes are reported separately.\n", len(spec.Violations))
+				total.Covered += count.Covered
+				total.NotCovered += count.NotCovered
+				total.Unknown += count.Unknown
+				total.Unsupported += count.Unsupported
+				total.Excluded += count.Excluded
 			}
 		}
-	}
-	for i, note := range report.Notes {
-		if i == 5 {
-			fmt.Fprintf(&out, "... %d more notes in the JSON report.\n", len(report.Notes)-i)
-			break
+		fmt.Fprintf(&out, "\nIdentified contract conditions: %d covered, %d gaps, %d unknown, %d unsupported, %d excluded\n", total.Covered, total.NotCovered, total.Unknown, total.Unsupported, total.Excluded)
+		if unknownDenominators > 0 {
+			fmt.Fprintf(&out, "Contracts with unknown denominator: %d; totals describe identified conditions only.\n", unknownDenominators)
 		}
-		fmt.Fprintf(&out, "Note: %s\n", textLabel(note))
+		fmt.Fprintf(&out, "Contract violations observed: %d; framework outcomes are reported separately.\n", violations)
 	}
-	out.WriteString("\nExercised operations show observed traffic. Contract coverage requires qualifying evidence.\nMock replies are test assumptions; provider agreement is not verified.\nUse --format json for the complete report.\n")
+	if len(report.Notes) > 0 {
+		fmt.Fprintf(&out, "Notes: %d; see the complete report.\n", len(report.Notes))
+	}
+	out.WriteString("\nExercised operations show observed traffic. Contract coverage requires qualifying evidence.\nMock replies are test assumptions; provider agreement is not verified.\nUse --format json or --format html for complete details.\n")
 	_, err := io.WriteString(w, out.String())
 	return err
 }

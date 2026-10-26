@@ -102,31 +102,15 @@ working W3C trace propagation through the application and dependencies. Follow
 the [Jest guide](../sdk/js/docs/jest.md) before enabling parallel workers.
 In-process mock function calls do not cross the HTTP proxy and are not captured.
 
-## Check local setup
+## Configure an already running API
 
-For an already running API, generate the configuration with:
+Use the `.wiretap.yaml` example above, set `sut.url` to the application's HTTP
+base URL, and omit the Jest `app` option. Schema paths resolve relative to the
+configuration file. The runtime validates configuration and freezes and validates
+contracts before admitting test traffic. Run the suite to verify routing, trust
+and trace propagation.
 
-```sh
-wiretap init --sut-url http://127.0.0.1:8080 \
-  --schema schemas/orders.openapi.yaml --application orders
-wiretap doctor
-```
-
-`init` writes a new `.wiretap.yaml`. Finalization produces JSON/HTML coverage
-and eligible Arazzo workflows automatically. It refuses to overwrite existing files or symlinks; `--output path`
-selects a new path and `--output -` prints YAML. Parent directories must exist.
-Paths in the generated configuration resolve relative to that file.
-
-`doctor --config .wiretap.yaml` checks configuration, environment substitutions,
-local OpenAPI documents/references and the nearest existing output directory.
-It starts no capture, creates no files or certificates, and makes no HTTP calls.
-Remote references and absent optional dependency specs are reported as
-`deferred`. Permission bits are advisory; actual writes are checked at capture.
-Run the suite to verify routing, trust and trace propagation.
-
-Use `--format json` for `report_version`, `ok`, `config_path` and `checks`
-(`name`, `status`, `message`). Exit 0 means local checks passed, including deferred
-checks; 1 means a check failed; 2 means invalid command options.
+Finalization automatically produces JSON/HTML coverage and eligible Arazzo workflows.
 
 ## Retain and inspect the evidence
 

@@ -2,10 +2,8 @@ package main
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"github.com/mattlock83/wiretap/internal/htmlreport"
 )
@@ -25,28 +23,13 @@ func exportHTMLFiles(files htmlreport.Files, output string) error {
 		_, err = os.Stdout.Write(data.Bytes())
 		return err
 	}
-	absolute, err := filepath.Abs(output)
-	if err != nil {
-		return err
-	}
-	parent, err := filepath.EvalSymlinks(filepath.Dir(absolute))
-	if err != nil {
-		return err
-	}
-	absolute = filepath.Join(parent, filepath.Base(absolute))
 	paths := append([]string{files.Coverage}, files.Specs...)
 	if files.Arazzo != "" {
 		paths = append(paths, files.Arazzo)
 	}
+	inputsToProtect := make([]protectedInput, 0, len(paths))
 	for _, path := range paths {
-		if err := protectCheckInput(absolute, path, "HTML source"); err != nil {
-			return err
-		}
+		inputsToProtect = append(inputsToProtect, protectedInput{path, "HTML source"})
 	}
-	if info, err := os.Lstat(absolute); err == nil && !info.Mode().IsRegular() {
-		return fmt.Errorf("%w: --output must be a regular file", errUsage)
-	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-	return writeArchiveReport(absolute, data.Bytes())
+	return writeProtectedReport(output, inputsToProtect, data.Bytes())
 }

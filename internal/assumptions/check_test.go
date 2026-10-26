@@ -57,11 +57,14 @@ func writeCheckArchive(t *testing.T, identity bundle.Identity, state string, cap
 			capture.TestCase.Status = "pass"
 		}
 		capture.Version = 1
-		frozen, err := writer.Register(capture.TestCase, capture.Schemas)
+		frozen, err := writer.RegisterPrepared(capture.TestCase, capture.Schemas)
 		if err != nil {
 			t.Fatal(err)
 		}
-		capture.Schemas = frozen
+		capture.Schemas = nil
+		for _, schema := range frozen {
+			capture.Schemas = append(capture.Schemas, schema.Ref)
+		}
 		if _, err := writer.Commit(capture); err != nil {
 			t.Fatal(err)
 		}
@@ -359,7 +362,7 @@ func TestCheckExplicitHeaderExceptionsAndCancellation(t *testing.T) {
 func TestDifferencePathsPreservesLargeNumericMismatch(t *testing.T) {
 	left := `{"body":{"value":{"id":9007199254740992}}}`
 	right := `{"body":{"value":{"id":9007199254740993}}}`
-	paths := differencePaths(left, right)
+	paths, _ := jsonDifferences(left, right, "response")
 	encoded, _ := json.Marshal(paths)
 	if string(encoded) != `["response/body/value/id"]` {
 		t.Fatalf("large numeric mismatch lost its field location: %s", encoded)

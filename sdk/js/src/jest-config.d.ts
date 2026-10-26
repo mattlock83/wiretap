@@ -1,7 +1,14 @@
-import type { ManagedRuntimeOptions } from './managed-runtime';
 import type { CaptureOptions } from './index';
 
-export interface WiretapJestOptions extends Omit<ManagedRuntimeOptions, 'signal' | 'cwd'> {
+export interface WiretapJestOptions {
+  /** Executable path or command; defaults to WIRETAP_BINARY or wiretap on PATH. */
+  binary?: string;
+  /** Project configuration; omitted means discover .wiretap.yaml from Jest's rootDir. */
+  config?: string;
+  outputDir?: string;
+  startupTimeoutMs?: number;
+  timeoutMs?: number;
+  shutdownTimeoutMs?: number;
   /** Express/Node handler module, loaded inside each Jest test file. Supports <rootDir>. */
   app?: string;
   /** Advanced serializable capture options; dynamic fixtures use captureJest. */

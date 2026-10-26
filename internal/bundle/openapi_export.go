@@ -32,7 +32,7 @@ func OpenAPIFilesWithLimits(ctx context.Context, ref artifact.SchemaRef, limits 
 	if err := ctx.Err(); err != nil {
 		return "", nil, err
 	}
-	if ref.Type != "openapi" || ref.Source.Type != "file" || !filepath.IsAbs(ref.Source.Path) || !openAPIExportHash(ref.Source.SHA256) {
+	if ref.Type != "openapi" || ref.Source.Type != "file" || !filepath.IsAbs(ref.Source.Path) || !validSchemaHash(ref.Source.SHA256) {
 		return "", nil, errors.New("OpenAPI export requires a hash-pinned frozen OpenAPI file")
 	}
 	configured, err := ConfiguredLoadLimits()
@@ -65,15 +65,28 @@ func OpenAPIFilesWithLimits(ctx context.Context, ref artifact.SchemaRef, limits 
 	if err != nil {
 		return "", nil, err
 	}
-	if err := rejectDuplicateKeys(data); err != nil {
+	files = map[string][]byte{}
+	root, err = verifyFrozenOpenAPI(ctx, ref, setDir, data, reader, files)
+	if err != nil {
 		return "", nil, err
+	}
+	return root, files, nil
+}
+
+// verifyFrozenOpenAPI is the common contract-manifest verifier for archive
+// loading and standalone exports. Reuse the caller's reader so every member
+// contributes to its existing byte/read budgets. A nil files map validates
+// members without retaining another copy of their contents in memory.
+func verifyFrozenOpenAPI(ctx context.Context, ref artifact.SchemaRef, setDir string, manifestData []byte, reader *archiveReader, files map[string][]byte) (string, error) {
+	if err := rejectDuplicateKeys(manifestData); err != nil {
+		return "", err
 	}
 	var manifest schemaManifest
-	if err := json.Unmarshal(data, &manifest); err != nil {
-		return "", nil, err
+	if err := json.Unmarshal(manifestData, &manifest); err != nil {
+		return "", err
 	}
-	if !openAPIExportHash(manifest.SetHash) || manifest.SetHash != filepath.Base(setDir) || manifest.Profile != "" || manifest.Type != "" || len(manifest.Files) == 0 {
-		return "", nil, errors.New("invalid frozen OpenAPI manifest")
+	if !validSchemaHash(manifest.SetHash) || manifest.SetHash != filepath.Base(setDir) || manifest.Profile != "" || manifest.Type != "" || len(manifest.Files) == 0 {
+		return "", errors.New("invalid frozen OpenAPI manifest")
 	}
 	base := "contracts/" + manifest.SetHash + "/"
 	member := func(path string) (string, error) {
@@ -88,57 +101,63 @@ func OpenAPIFilesWithLimits(ctx context.Context, ref artifact.SchemaRef, limits 
 	}
 	rootPath, err := member(manifest.Root)
 	if err != nil {
-		return "", nil, err
+		return "", err
 	}
 	sourceInfo, err := os.Stat(ref.Source.Path)
 	if err != nil {
-		return "", nil, err
+		return "", err
 	}
 	rootInfo, err := os.Stat(rootPath)
 	if err != nil {
-		return "", nil, err
+		return "", err
 	}
 	if !os.SameFile(sourceInfo, rootInfo) {
-		return "", nil, errors.New("frozen OpenAPI manifest root does not match selected schema")
+		return "", errors.New("frozen OpenAPI manifest root does not match selected schema")
 	}
 	if err := reader.requireReads(len(manifest.Files)); err != nil {
-		return "", nil, fmt.Errorf("frozen OpenAPI file inventory: %w", err)
+		return "", fmt.Errorf("frozen OpenAPI file inventory: %w", err)
 	}
-	files = make(map[string][]byte, len(manifest.Files))
+	seen := make(map[string]bool, len(manifest.Files))
+	foundRoot := false
 	for _, file := range manifest.Files {
 		if err := ctx.Err(); err != nil {
-			return "", nil, err
+			return "", err
 		}
-		if _, found := files[file.Path]; found {
-			return "", nil, fmt.Errorf("duplicate frozen OpenAPI manifest member %q", file.Path)
+		if seen[file.Path] {
+			return "", fmt.Errorf("duplicate frozen OpenAPI manifest member %q", file.Path)
 		}
-		if !openAPIExportHash(file.SHA256) {
-			return "", nil, fmt.Errorf("invalid frozen OpenAPI hash for %q", file.Path)
+		seen[file.Path] = true
+		if !validSchemaHash(file.SHA256) {
+			return "", fmt.Errorf("invalid frozen OpenAPI hash for %q", file.Path)
 		}
 		path, err := member(file.Path)
 		if err != nil {
-			return "", nil, err
+			return "", err
 		}
 		data, err := reader.readFile(path)
 		if err != nil {
-			return "", nil, err
+			return "", err
 		}
 		if digest(data) != file.SHA256 {
-			return "", nil, fmt.Errorf("frozen OpenAPI member %q hash mismatch", file.Path)
+			return "", fmt.Errorf("frozen OpenAPI member %q hash mismatch", file.Path)
 		}
-		files[file.Path] = data
+		if file.Path == manifest.Root {
+			if file.SHA256 != ref.Source.SHA256 {
+				return "", errors.New("selected frozen OpenAPI root hash mismatch")
+			}
+			foundRoot = true
+		}
+		if files != nil {
+			files[file.Path] = data
+		}
 	}
-	data, found := files[manifest.Root]
-	if !found {
-		return "", nil, errors.New("frozen OpenAPI root is missing from its manifest")
+	if !foundRoot {
+		return "", errors.New("frozen OpenAPI root is missing from its manifest")
 	}
-	if digest(data) != ref.Source.SHA256 {
-		return "", nil, errors.New("selected frozen OpenAPI root hash mismatch")
-	}
-	return manifest.Root, files, nil
+	return manifest.Root, nil
 }
 
-func openAPIExportHash(value string) bool {
+func validSchemaHash(value string) bool {
 	if len(value) != 64 {
 		return false
 	}

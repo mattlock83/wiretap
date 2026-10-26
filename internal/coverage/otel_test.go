@@ -17,7 +17,7 @@ func TestTraceMetadataSurvivesReports(t *testing.T) {
 	}
 	for _, id := range []string{"first", "retry"} {
 		doc := &artifact.Artifact{Version: 1, TestCase: artifact.TestCase{ID: id, Name: "same name", TraceID: id, RootSpanID: "root", StartedAt: time.Now(), Status: "pass"}, Traffic: []artifact.Flow{{ID: "flow-1", Protocol: "http", Channel: "test_to_sut", TraceID: id, RequestSpanID: "sender", TraceContextSource: "received", TestCorrelation: "trace", Request: &artifact.HttpMessage{Method: "GET", URL: "http://sut/items", Headers: artifact.Headers{"Traceparent": {"old"}, "Tracestate": {"old"}, "X-Wiretap-Session-Id": {"old"}, "Accept": {"application/json"}}}, Response: &artifact.HttpMessage{Status: 200}}}}
-		if _, err := writer.Register(doc.TestCase, nil); err != nil {
+		if _, err := writer.RegisterPrepared(doc.TestCase, nil); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := writer.Commit(doc); err != nil {

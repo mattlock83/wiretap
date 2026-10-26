@@ -21,11 +21,11 @@ func TestBundleInventoryIncludesUnusedAndObservedDependencies(t *testing.T) {
 		t.Fatal(err)
 	}
 	tc := artifact.TestCase{ID: "create-order", Name: "creates an order", StartedAt: time.Now().UTC(), Status: "pass"}
-	refs, err := w.Register(tc, []artifact.SchemaRef{{ID: "stock-api", Role: "dependency", Type: "openapi", AssetID: "stock", Source: artifact.SchemaSource{Type: "omitted"}}})
+	refs, err := w.RegisterPrepared(tc, []artifact.SchemaRef{{ID: "stock-api", Role: "dependency", Type: "openapi", AssetID: "stock", Source: artifact.SchemaSource{Type: "omitted"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	art := &artifact.Artifact{Version: 1, TestCase: tc, Schemas: refs, Traffic: []artifact.Flow{
+	art := &artifact.Artifact{Version: 1, TestCase: tc, Schemas: []artifact.SchemaRef{refs[0].Ref}, Traffic: []artifact.Flow{
 		{ID: "request", Channel: "test_to_sut", Protocol: "http", Request: &artifact.HttpMessage{Method: "POST", URL: "http://sut/orders"}},
 		{ID: "stock-call", Channel: "sut_to_dependency", AssetID: "stock", Protocol: "http", Request: &artifact.HttpMessage{Method: "GET", URL: "http://stock/items"}},
 		{ID: "unregistered-call", Channel: "sut_to_dependency", AssetID: "unregistered", Protocol: "http", Request: &artifact.HttpMessage{Method: "GET", URL: "http://other/items"}},

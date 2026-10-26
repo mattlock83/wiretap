@@ -3,15 +3,12 @@
 package assumptions
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
-	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -277,12 +274,12 @@ func (c *checker) check(ctx context.Context, options Options, consumer, provider
 			for _, candidate := range candidates {
 				refs = append(refs, candidate.evidence)
 			}
-			finding := Finding{Kind: "mismatch", Code: "provider_response_mismatch", Operation: assumption.operation, Message: "provider tests cover the request, but none returns the mocked response", Consumer: &assumption.evidence, Provider: limitedEvidence(refs), Differences: differencePaths(assumption.response, candidates[0].response)}
-			finding.Excerpts = differenceExcerpts(assumption.response, candidates[0].response, finding.Differences)
+			finding := Finding{Kind: "mismatch", Code: "provider_response_mismatch", Operation: assumption.operation, Message: "provider tests cover the request, but none returns the mocked response", Consumer: &assumption.evidence, Provider: limitedEvidence(refs)}
 			if contractProblem != nil {
 				finding.Kind, finding.Code, finding.Message = contractProblem.kind, contractProblem.code, contractProblem.message
 				finding.Differences = contractProblem.differences
-				finding.Excerpts = nil
+			} else {
+				finding.Differences, finding.Excerpts = jsonDifferences(assumption.response, candidates[0].response, "response")
 			}
 			report.add(finding)
 		}
@@ -581,68 +578,4 @@ func headerName(name string) bool {
 		}
 	}
 	return true
-}
-
-func differencePaths(expected, actual string) []string {
-	return jsonDifferencePaths(expected, actual, "response")
-}
-
-func jsonDifferencePaths(expected, actual, root string) []string {
-	var left, right any
-	decode := func(data string, result *any) error {
-		decoder := json.NewDecoder(bytes.NewBufferString(data))
-		decoder.UseNumber()
-		return decoder.Decode(result)
-	}
-	if decode(expected, &left) != nil || decode(actual, &right) != nil {
-		return []string{root}
-	}
-	var paths []string
-	var walk func(any, any, string)
-	walk = func(a, b any, path string) {
-		if len(paths) >= 20 || reflect.DeepEqual(a, b) {
-			return
-		}
-		am, aok := a.(map[string]any)
-		bm, bok := b.(map[string]any)
-		if aok && bok {
-			keys := []string{}
-			for k := range am {
-				keys = append(keys, k)
-			}
-			for k := range bm {
-				if _, ok := am[k]; !ok {
-					keys = append(keys, k)
-				}
-			}
-			sort.Strings(keys)
-			for _, key := range keys {
-				av, ae := am[key]
-				bv, be := bm[key]
-				p := path + "/" + strings.ReplaceAll(strings.ReplaceAll(key, "~", "~0"), "/", "~1")
-				if ae != be {
-					if len(paths) < 20 {
-						paths = append(paths, p)
-					}
-				} else {
-					walk(av, bv, p)
-				}
-			}
-			return
-		}
-		aa, aok := a.([]any)
-		ba, bok := b.([]any)
-		if aok && bok && len(aa) == len(ba) {
-			for i := range aa {
-				walk(aa[i], ba[i], path+"/"+strconv.Itoa(i))
-			}
-			return
-		}
-		paths = append(paths, path)
-	}
-	walk(left, right, root)
-	if len(paths) == 0 {
-		return []string{root}
-	}
-	return paths
 }

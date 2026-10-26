@@ -22,7 +22,7 @@ func jsonFlow(id, method, address string) artifact.Flow {
 
 func captureArchive(t *testing.T, schemas []artifact.SchemaRef, captures ...*artifact.Artifact) string {
 	t.Helper()
-	writer, err := bundle.NewAt(filepath.Join(t.TempDir(), "capture"))
+	writer, err := bundle.New(filepath.Join(t.TempDir(), "capture"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -31,11 +31,14 @@ func captureArchive(t *testing.T, schemas []artifact.SchemaRef, captures ...*art
 	}
 	for _, capture := range captures {
 		capture.Version = 2
-		frozen, err := writer.Register(capture.TestCase, schemas)
+		frozen, err := writer.RegisterPrepared(capture.TestCase, schemas)
 		if err != nil {
 			t.Fatal(err)
 		}
-		capture.Schemas = frozen
+		capture.Schemas = nil
+		for _, schema := range frozen {
+			capture.Schemas = append(capture.Schemas, schema.Ref)
+		}
 		if _, err := writer.Commit(capture); err != nil {
 			t.Fatal(err)
 		}

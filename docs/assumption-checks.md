@@ -244,7 +244,7 @@ excerpts; the comparison itself uses complete retained evidence.
 
 ### Read the exact evidence
 
-Text presents bounded diagnostic samples and assurance counts. JSON retains the
+Text presents verdict, example totals and assurance counts. JSON retains the
 complete report, including excluded provider evidence, source identities,
 manifest digests, Arazzo paths, test identities and matched evidence pairs.
 

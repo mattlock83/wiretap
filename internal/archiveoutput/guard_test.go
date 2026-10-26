@@ -13,7 +13,7 @@ import (
 
 func emptyArchive(t testing.TB) string {
 	t.Helper()
-	writer, err := bundle.NewAt(t.TempDir())
+	writer, err := bundle.New(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -152,15 +152,15 @@ func TestGuardRejectsExternalExportsThroughAnArchiveAlias(t *testing.T) {
 }
 
 func TestGuardProtectsCaseAliasesAndPermitsExports(t *testing.T) {
-	root := filepath.Join(t.TempDir(), "Capture")
-	writer, err := bundle.NewAt(root)
+	writer, err := bundle.New(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := writer.Finalize("complete"); err != nil {
 		t.Fatal(err)
 	}
-	alias := filepath.Join(filepath.Dir(root), "CAPTURE")
+	root := writer.Path()
+	alias := filepath.Join(filepath.Dir(root), strings.ToUpper(filepath.Base(root)))
 	rootInfo, err := os.Stat(root)
 	if err != nil {
 		t.Fatal(err)
