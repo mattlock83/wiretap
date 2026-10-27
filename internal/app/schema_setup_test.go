@@ -116,7 +116,7 @@ func validateTestCapture(t *testing.T, capture *artifact.Artifact) {
 	for _, schema := range prepared {
 		capture.Schemas = append(capture.Schemas, schema.Ref)
 	}
-	applySchemaValidation(capture, preparedValidation(prepared))
+	applySchemaValidation(capture, prepared)
 }
 
 func TestSetupReadsEachContractOnceAndReusesItForValidation(t *testing.T) {

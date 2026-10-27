@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -43,6 +44,39 @@ func TestRunSetCLIReportsAndProtectsOriginals(t *testing.T) {
 	if err := json.Unmarshal(report, &combined); err != nil || code != 0 || len(combined.Members) != 2 || combined.Scope != "same_build_run_set" {
 		t.Fatalf("invalid aggregate: %d %s %v", code, report, err)
 	}
+	reportPath := filepath.Join(t.TempDir(), "coverage.json")
+	if code, _ := executeCapturingStdout(t, []string{"report", "--run-set", output, "--output", reportPath}); code != 0 {
+		t.Fatalf("report file exit %d", code)
+	}
+	if saved, err := os.ReadFile(reportPath); err != nil || !bytes.Equal(saved, report) {
+		t.Fatalf("report file differs from stdout: %v", err)
+	}
+	t.Run("manifest hard link", func(t *testing.T) {
+		alias := filepath.Join(t.TempDir(), "alias.json")
+		if err := os.Link(output, alias); err != nil {
+			t.Skipf("hard links unavailable: %v", err)
+		}
+		if code, _ := executeCapturingStdout(t, []string{"report", "--run-set", output, "--output", alias}); code != 2 {
+			t.Fatalf("manifest alias output exit %d", code)
+		}
+		if unchanged, err := os.ReadFile(output); err != nil || !bytes.Equal(unchanged, raw) {
+			t.Fatalf("manifest changed: %v", err)
+		}
+	})
+	t.Run("archive directory alias", func(t *testing.T) {
+		alias := filepath.Join(t.TempDir(), "alias")
+		if err := os.Symlink(first, alias); err != nil {
+			t.Skipf("symlinks unavailable: %v", err)
+		}
+		for _, args := range [][]string{
+			{"run-set", "--bundle", first, "--output", filepath.Join(alias, "set.json")},
+			{"report", "--run-set", output, "--output", filepath.Join(alias, "coverage.json")},
+		} {
+			if code, _ := executeCapturingStdout(t, args); code != 2 {
+				t.Fatalf("archive alias output exit %d for %v", code, args)
+			}
+		}
+	})
 	for _, bad := range [][]string{
 		{"run-set", "--bundle", first, "--output", filepath.Join(first, "bundle.json")},
 		{"report", "--run-set", output, "--output", output},

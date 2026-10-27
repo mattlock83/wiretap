@@ -78,14 +78,7 @@ func apiInventory(run Run, captures []*artifact.Artifact) ([]API, []API) {
 			a.Protocols = append(a.Protocols, protocol)
 		}
 		ref := APIContract{ID: s.ID, Type: s.Type, Source: s.Source}
-		found := false
-		for _, old := range a.Contracts {
-			if old == ref {
-				found = true
-				break
-			}
-		}
-		if !found {
+		if !slices.Contains(a.Contracts, ref) {
 			a.Contracts = append(a.Contracts, ref)
 		}
 	}

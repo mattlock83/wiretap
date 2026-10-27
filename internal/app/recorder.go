@@ -48,7 +48,7 @@ func (s *TestCaseStore) RegisterActive() error {
 	if err != nil {
 		return err
 	}
-	s.active.specs = preparedValidation(prepared)
+	s.active.specs = prepared
 	s.active.schemas = make([]artifact.SchemaRef, 0, len(prepared))
 	for _, schema := range prepared {
 		s.active.schemas = append(s.active.schemas, schema.Ref)
@@ -75,7 +75,7 @@ type testCaseState struct {
 	sutBaseURL         string
 	flows              []artifact.Flow
 	schemas            []artifact.SchemaRef
-	specs              []openapiSpec
+	specs              []bundle.PreparedSchema
 }
 
 func NewTestCaseStore(sink CaptureSink, maxBodyBytes int64) *TestCaseStore {

@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/mattlock83/wiretap/internal/assumptions"
 	"github.com/mattlock83/wiretap/internal/runset"
 )
 
@@ -39,16 +38,19 @@ func runSetCommand(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	// The same output protection as checks keeps the manifest outside all
-	// input archives and rejects aliases, symlinks and hard links to evidence.
-	sources := make([]assumptions.Source, 0, len(paths))
+	// Keep the manifest outside all input archives, including path aliases.
+	inputs := make([]protectedInput, 0, len(paths))
 	for _, path := range paths {
 		if filepath.Base(path) == "bundle.json" {
 			path = filepath.Dir(path)
 		}
-		sources = append(sources, assumptions.Source{BundlePath: path})
+		root, err := filepath.EvalSymlinks(path)
+		if err != nil {
+			return err
+		}
+		inputs = append(inputs, protectedInput{root, "capture archive"})
 	}
-	if err := writeCheckOutput(*output, sources, nil, append(data, '\n')); err != nil {
+	if err := writeProtectedReport(*output, inputs, append(data, '\n')); err != nil {
 		return err
 	}
 	_, err = fmt.Fprintln(os.Stdout, *output)

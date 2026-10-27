@@ -6,10 +6,10 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/mattlock83/wiretap/internal/archiveoutput"
-	"github.com/mattlock83/wiretap/internal/assumptions"
 	"github.com/mattlock83/wiretap/internal/htmlreport"
 	"github.com/mattlock83/wiretap/internal/runoutput"
 	"github.com/mattlock83/wiretap/internal/runset"
@@ -79,11 +79,15 @@ func reportCommand(args []string) error {
 			_, err = os.Stdout.Write(data)
 			return err
 		}
-		sources := []assumptions.Source{}
+		inputs := []protectedInput{{runSetPath, "run set"}}
 		for _, archive := range set.Archives {
-			sources = append(sources, assumptions.Source{BundlePath: archive.Path})
+			root, err := filepath.EvalSymlinks(archive.Path)
+			if err != nil {
+				return err
+			}
+			inputs = append(inputs, protectedInput{root, "capture archive"})
 		}
-		return writeCheckOutput(outputPath, sources, []string{runSetPath}, data)
+		return writeProtectedReport(outputPath, inputs, data)
 	}
 	if bundlePath == "" {
 		return fmt.Errorf("%w: --bundle is required", errUsage)

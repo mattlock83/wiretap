@@ -14,6 +14,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -307,14 +308,7 @@ func (w *Writer) RegisterPrepared(tc artifact.TestCase, schemas []artifact.Schem
 			stored.Source.Path, _ = filepath.Rel(w.root, stored.Source.Path)
 			stored.Source.Path = filepath.ToSlash(stored.Source.Path)
 		}
-		exists := false
-		for _, existing := range w.run.Schemas {
-			if existing == stored {
-				exists = true
-				break
-			}
-		}
-		if !exists {
+		if !slices.Contains(w.run.Schemas, stored) {
 			w.run.Schemas = append(w.run.Schemas, stored)
 		}
 	}
@@ -347,14 +341,7 @@ func (w *Writer) RegisterSchemas(schemas []artifact.SchemaRef) error {
 			}
 			ref.Source.Path = filepath.ToSlash(rel)
 		}
-		exists := false
-		for _, existing := range w.run.Schemas {
-			if existing == ref {
-				exists = true
-				break
-			}
-		}
-		if !exists {
+		if !slices.Contains(w.run.Schemas, ref) {
 			refs = append(refs, ref)
 		}
 	}
@@ -884,10 +871,6 @@ func readRef(root string, ref FileRef, readFile func(string) ([]byte, error)) ([
 func rejectDuplicateKeys(data []byte) error {
 	_, err := strictjson.Decode(data, strictjson.Options{MaxDepth: 10000, MaxNodes: len(data) + 1})
 	return err
-}
-
-func sortRefs(refs []AttemptRef) {
-	sort.Slice(refs, func(i, j int) bool { return refs[i].AttemptID < refs[j].AttemptID })
 }
 
 func (ref *BodyRef) UnmarshalJSON(data []byte) error {

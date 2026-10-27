@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"reflect"
+	"slices"
 	"testing"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
@@ -30,24 +30,9 @@ func TestCapabilitiesDoNotStartRunOrWaitForControlLock(t *testing.T) {
 		t.Fatal(err)
 	}
 	validateControlResponse(t, "capabilities", document)
-	if w.Code != 200 || result.APIVersion != "1.0" || len(result.Capabilities) != 5 || result.Producer["name"] != "wiretap" || a.currentBundle() != nil {
+	wantCapabilities := []string{"capture.http", "outputs.coverage", "outputs.arazzo", "test.identity", "run.finalize"}
+	if w.Code != 200 || result.APIVersion != "1.0" || !slices.Equal(result.Capabilities, wantCapabilities) || result.Producer["name"] != "wiretap" || a.currentBundle() != nil {
 		t.Fatalf("invalid capabilities: %s", w.Body.String())
-	}
-	data, err := os.ReadFile("../../sdk/conformance/scenarios.json")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var contract struct {
-		Probe struct {
-			Version      string   `json:"api_version"`
-			Capabilities []string `json:"capabilities"`
-		} `json:"capability_probe"`
-	}
-	if err := json.Unmarshal(data, &contract); err != nil {
-		t.Fatal(err)
-	}
-	if result.APIVersion != contract.Probe.Version || !reflect.DeepEqual(result.Capabilities, contract.Probe.Capabilities) {
-		t.Fatalf("SDK capability contract drifted: %+v", result)
 	}
 	w = httptest.NewRecorder()
 	a.routes().ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/v1/capabilities", nil))

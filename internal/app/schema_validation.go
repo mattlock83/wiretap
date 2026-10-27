@@ -12,18 +12,12 @@ import (
 	"strings"
 
 	"github.com/getkin/kin-openapi/openapi3filter"
-	"github.com/getkin/kin-openapi/routers"
 	"github.com/mattlock83/wiretap/internal/artifact"
 	"github.com/mattlock83/wiretap/internal/bundle"
 	"github.com/mattlock83/wiretap/internal/openapivalidation"
 )
 
-type openapiSpec struct {
-	ref    artifact.SchemaRef
-	router routers.Router
-}
-
-func applySchemaValidation(art *artifact.Artifact, specs []openapiSpec) {
+func applySchemaValidation(art *artifact.Artifact, specs []bundle.PreparedSchema) {
 	if art == nil {
 		return
 	}
@@ -69,22 +63,14 @@ func validateSchemaSetup(schemas []artifact.SchemaRef, allowMissing bool) error 
 	return nil
 }
 
-// preparedValidation reuses the routers constructed before attempt registration.
-func preparedValidation(prepared []bundle.PreparedSchema) []openapiSpec {
-	var specs []openapiSpec
-	for _, schema := range prepared {
-		if schema.Router != nil {
-			specs = append(specs, openapiSpec{ref: schema.Ref, router: schema.Router})
-		}
-	}
-	return specs
-}
-
-func validateSchemas(art *artifact.Artifact, specs []openapiSpec) []artifact.SchemaValidationError {
+func validateSchemas(art *artifact.Artifact, specs []bundle.PreparedSchema) []artifact.SchemaValidationError {
 	var issues []artifact.SchemaValidationError
-	openapiByRole := map[string][]openapiSpec{}
+	openapiByRole := map[string][]bundle.PreparedSchema{}
 	for _, spec := range specs {
-		role := spec.ref.Role
+		if spec.Router == nil {
+			continue
+		}
+		role := spec.Ref.Role
 		if role == "" {
 			role = "sut"
 		}
@@ -102,9 +88,9 @@ func validateSchemas(art *artifact.Artifact, specs []openapiSpec) []artifact.Sch
 		if flow.Channel == "sut_to_dependency" {
 			role = "dependency"
 		}
-		var candidates []openapiSpec
+		var candidates []bundle.PreparedSchema
 		for _, spec := range openapiByRole[role] {
-			if role == "dependency" && spec.ref.AssetID != "" && spec.ref.AssetID != flow.AssetID {
+			if role == "dependency" && spec.Ref.AssetID != "" && spec.Ref.AssetID != flow.AssetID {
 				continue
 			}
 			candidates = append(candidates, spec)
@@ -128,7 +114,7 @@ func validateSchemas(art *artifact.Artifact, specs []openapiSpec) []artifact.Sch
 	return issues
 }
 
-func validateHTTPFlow(flow artifact.Flow, specs []openapiSpec) []artifact.SchemaValidationError {
+func validateHTTPFlow(flow artifact.Flow, specs []bundle.PreparedSchema) []artifact.SchemaValidationError {
 	var issues []artifact.SchemaValidationError
 	var reqErrs []string
 	var respErrs []string
@@ -165,7 +151,7 @@ func validateHTTPFlow(flow artifact.Flow, specs []openapiSpec) []artifact.Schema
 	return issues
 }
 
-func validateHTTPAgainstSpec(flow artifact.Flow, spec openapiSpec) (error, error) {
+func validateHTTPAgainstSpec(flow artifact.Flow, spec bundle.PreparedSchema) (error, error) {
 	msg := flow.Request
 	respMsg := flow.Response
 	if msg == nil || respMsg == nil {
@@ -194,7 +180,7 @@ func validateHTTPAgainstSpec(flow artifact.Flow, spec openapiSpec) (error, error
 		}
 	}
 
-	router := spec.router
+	router := spec.Router
 	if router == nil {
 		return errors.New("openapi router not initialized"), nil
 	}

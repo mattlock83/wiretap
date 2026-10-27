@@ -8,9 +8,8 @@ Start with [Getting started](getting-started-existing-tests.md) or the [Express/
 
 | Guide | Purpose |
 | --- | --- |
-| [Getting started](getting-started-existing-tests.md) | Install, configure Jest, capture and check evidence. |
-| [Jest SDK](../sdk/js/README.md) | Configure the supported adapter. |
-| [Jest details](../sdk/js/docs/jest.md) | Handler hosting, existing APIs, fixtures, retries and concurrency. |
+| [Getting started](getting-started-existing-tests.md) | Try the existing Express/Jest suite and find the integration steps. |
+| [Jest guide](../sdk/js/docs/jest.md) | Install, configure, host handlers, use fixtures, trace concurrent tests and retain outputs. |
 | [Configuration](configuration.md) | Project fields, environment settings and CLI commands. |
 | [Tracing](otel-adoption.md) | Correlate tests through application dependencies. |
 | [HTTPS trust](https-trust.md) | Trust the capture proxy certificate. |

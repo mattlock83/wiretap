@@ -6,7 +6,7 @@ Wiretap captures HTTP exchanges during existing Jest tests. Jest owns execution,
 
 | Component | Responsibility |
 | --- | --- |
-| `cmd/wiretap` | Control service, setup checks, reports, exports and offline checks. |
+| `cmd/wiretap` | Control service, reports, exports and offline checks. |
 | `sdk/js` | Jest config/environment, lifecycle, final outcomes and trace context. |
 | `internal/app` | Run/test sessions, dependency routes, drain and validation. |
 | `internal/proxy`, `internal/capture` | HTTP/HTTPS forwarding and bounded retained bodies. |
@@ -47,8 +47,10 @@ Coverage measures declared cases exercised by eligible observations. Checks esta
 ## Jest lifecycle ownership
 
 `withWiretap` manages one runtime per Jest project. The owner waits for every
-worker and cleanup hook before finalizing. The [conformance scenarios](../sdk/conformance/scenarios.json)
-and [SDK tests](../sdk/js/test/) cover receipt validation and lifecycle errors.
+worker and cleanup hook before finalizing. The [runtime ownership tests](../sdk/js/test/managed-runtime.test.js)
+cover receipt validation and lifecycle errors; [Jest adapter tests](../sdk/js/test/jest/adapter.spec.cjs)
+exercise callbacks, hooks, retries and final outcomes. [Capability tests](../internal/app/capabilities_test.go)
+check the runtime's version and advertised features.
 
 | Phase | Suite owner | Jest environment |
 | --- | --- | --- |
@@ -68,5 +70,5 @@ that never starts creates no attempt.
 
 Canonical receipts and bounded logs belong inside each archive. Jest prints the
 exact archive and output paths for each run. Runtime/version
-fields are documented in the [runtime API](runtime-api.md) and
+fields are documented in [capability discovery](runtime-api.md#discover-capabilities) and
 [compatibility policy](support.md#format-compatibility).

@@ -10,7 +10,6 @@ const { startManagedRuntime } = require('../src/managed-runtime');
 const { withWiretap } = require('../src/jest-config');
 const setup = require('../src/jest-global-setup');
 const teardown = require('../src/jest-global-teardown');
-const conformance = require('../../conformance/scenarios.json');
 
 async function fixture(t, behavior = {}) {
   const outputDir = await fs.mkdtemp(path.join(os.tmpdir(), 'wiretap-managed-test-'));
@@ -133,14 +132,25 @@ test('owner.receipt_isolation: process log retains at most 64 KiB of bytes', asy
   assert.deepEqual(log, bytes.subarray(-65536));
 });
 
-for (const { id, set } of conformance.invalid_receipts.readiness) test(`owner.readiness: rejects ${id} before contacting the runtime`, async t => {
+for (const { id, set } of [
+  { id: 'wrong_pid', set: { pid: -1 } },
+  { id: 'external_control', set: { control_url: 'http://example.com:12345' } },
+  { id: 'control_credentials', set: { control_url: 'http://user@127.0.0.1:12345' } },
+  { id: 'control_path', set: { control_url: 'http://127.0.0.1:12345/control' } },
+  { id: 'control_query', set: { control_url: 'http://127.0.0.1:12345?x=1' } },
+  { id: 'control_fragment', set: { control_url: 'http://127.0.0.1:12345#fragment' } },
+  { id: 'control_without_port', set: { control_url: 'http://127.0.0.1' } }
+]) test(`owner.readiness: rejects ${id} before contacting the runtime`, async t => {
   const f = await fixture(t, { ready: set });
   await assert.rejects(startManagedRuntime(), /readiness file did not identify/);
   assert.deepEqual(f.calls, []);
   assert.equal(f.spawned.child.stdin.destroyed, true);
 });
 
-for (const { id, set } of [...conformance.invalid_receipts.start,
+for (const { id, set } of [
+  { id: 'empty_run_id', set: { run_id: '' } },
+  { id: 'relative_bundle', set: { bundle_path: 'relative/run' } },
+  { id: 'external_capture', set: { sut_url: 'http://example.com:12345' } },
   { id: 'missing_directory', set: { bundle_path: path.join(os.tmpdir(), `wiretap-missing-${process.pid}`) } },
 ]) test(`owner.start_identity: rejects ${id} and cannot write a receipt`, async t => {
   const f = await fixture(t, { startReceipt: set });
@@ -150,7 +160,11 @@ for (const { id, set } of [...conformance.invalid_receipts.start,
   assert.equal(f.spawned.child.stdin.destroyed, true);
 });
 
-for (const { id, set } of conformance.invalid_receipts.finish) test(`owner.finalize_once: rejects ${id} and still stops the child`, async t => {
+for (const { id, set } of [
+  { id: 'incomplete_status', set: { status: 'interrupted' } },
+  { id: 'different_run', set: { run_id: 'another-run' } },
+  { id: 'different_bundle', set: { bundle_path: 'another-archive' } }
+]) test(`owner.finalize_once: rejects ${id} and still stops the child`, async t => {
   const f = await fixture(t, { finishReceipt: set });
   const owner = await startManagedRuntime({ outputDir: f.outputDir });
   await assert.rejects(owner.close(), /finishRun returned an incomplete or mismatched/);

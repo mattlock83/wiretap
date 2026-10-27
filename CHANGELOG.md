@@ -69,6 +69,8 @@
 - Share bounded file reads between archives and standalone HTML inputs. Build
   testcase indexes once, compact API inventories once per update, cache prepared
   schemas during Arazzo generation, and avoid repeated JSON parsing and link scans.
+- Keep one comprehensive Jest guide, colocate lifecycle fixtures with their tests,
+  and remove redundant schema and report adapters.
 
 ### Fixes
 
